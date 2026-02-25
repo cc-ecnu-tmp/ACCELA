@@ -1,0 +1,15 @@
+int getint();
+int getch();
+float getfloat();
+int getarray(int a[]);
+int getfarray(float a[]);
+void putint(int a);
+void putch(int a);
+void putfloat(float a);
+void putarray(int n, int a[]);
+void putfarray(int n, float a[]);
+void starttime();
+void stoptime();
+void _sysy_starttime(int lineno);
+void _sysy_stoptime(int lineno);
+void putf(char a[], ...);

@@ -1,0 +1,46 @@
+00_comment2: SUCC 0.00558019
+01_multiple_returns: SUCC 0.00560379
+02_ret_in_block: SUCC 0.00575447
+03_branch: SUCC 0.00555587
+04_break_continue: SUCC 0.00531292
+05_param_name: SUCC 0.00553012
+06_func_name: SUCC 0.00481892
+07_arr_init_nd: SUCC 0.00624228
+08_global_arr_init: SUCC 0.00543332
+09_BFS: SUCC 0.0120938
+10_DFS: SUCC 0.0187924
+11_BST: SUCC 0.00729442
+12_DSU: SUCC 0.0105081
+13_LCA: SUCC 0.00900841
+14_dp: SUCC 0.00690556
+TOTAL: 0H-0M-0S-0us
+15_graph_coloring: SUCC 0.00678539
+16_k_smallest: SUCC 0.01209
+17_maximal_clique: SUCC 0.0191824
+18_prim: SUCC 0.00704765
+19_search: SUCC 0.00699544
+20_sort: SUCC 0.030143
+21_union_find: SUCC 0.00670362
+22_matrix_multiply: SUCC 0.00629663
+23_json: SUCC 0.0091188
+24_array_only: SUCC 0.00663376
+TOTAL: 0H-0M-0S-0us
+25_scope3: SUCC 0.00592399
+TOTAL: 0H-0M-0S-0us
+26_scope4: SUCC 0.00592518
+27_scope5: SUCC 0.00842595
+TOTAL: 0H-0M-0S-0us
+28_side_effect2: SUCC 0.0077951
+29_long_line: FAIL (compile) 0
+30_many_dimensions: FAIL (compile) 0
+TOTAL: 0H-0M-0S-0us
+31_many_indirections: SUCC 0.00597215
+32_many_params3: FAIL (compile) 0
+33_multi_branch: FAIL (compile) 0
+34_multi_loop: SUCC 8.61671
+35_math: FAIL (compile) 0
+36_rotate: FAIL (compile) 0
+37_dct: FAIL (compile) 0
+38_light2d: FAIL (compile) 0
+39_fp_params: FAIL (compile) 0
+SUCC: 31 FAIL: 9
