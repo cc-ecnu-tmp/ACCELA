@@ -1,7 +1,7 @@
-package ast;
+package accela.ast;
 
-import static ast.Node.Op;
-import static ast.Node.Tag.*;
+import static accela.ast.Node.Op;
+import static accela.ast.Node.Tag.*;
 
 import java.io.*;
 import java.util.*;

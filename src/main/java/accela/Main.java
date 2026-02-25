@@ -1,10 +1,13 @@
+package accela;
+
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
-import parse.Lexer;
-import parse.Lexer.Token;
-import parse.Parser;
-import parse.Sema;
+import accela.parse.Lexer;
+import accela.parse.Lexer.Token;
+import accela.parse.Parser;
+import accela.parse.Sema;
+import accela.ast.*;
 
 // TODO: we need a better way of handling cmd args
 public class Main {
@@ -36,12 +39,12 @@ public class Main {
 
       if (printAst || interpret) {
         Parser parser = new Parser(tokens);
-        ast.Node unit = parser.parse();
+        Node unit = parser.parse();
         new Sema().analyze(unit);
         if (printAst) {
-          new ast.AstDumper(System.out).dump(unit);
+          new AstDumper(System.out).dump(unit);
         } else {
-          ast.Interpreter interpreter = new ast.Interpreter();
+          Interpreter interpreter = new Interpreter();
           interpreter.run(unit);
           Object exitCode = interpreter.getExitCode();
           if (exitCode != null) {

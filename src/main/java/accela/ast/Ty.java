@@ -1,4 +1,4 @@
-package ast;
+package accela.ast;
 
 /* Type system in frontend, IR side can be different */
 public final class Ty {

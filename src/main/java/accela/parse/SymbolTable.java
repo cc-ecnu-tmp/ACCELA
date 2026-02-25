@@ -1,6 +1,6 @@
-package parse;
+package accela.parse;
 
-import ast.Node;
+import accela.ast.Node;
 import java.util.HashMap;
 import java.util.Map;
 

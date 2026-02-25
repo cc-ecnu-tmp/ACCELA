@@ -1,15 +1,15 @@
-package parse;
+package accela.parse;
 
-import static parse.Lexer.T.*;
+import static accela.parse.Lexer.T.*;
 
-import ast.Node;
-import ast.Node.Op;
-import ast.Node.Tag;
-import ast.Ty;
+import accela.ast.Node;
+import accela.ast.Node.Op;
+import accela.ast.Node.Tag;
+import accela.ast.Ty;
 import java.util.ArrayList;
 import java.util.List;
-import parse.Lexer.T;
-import parse.Lexer.Token;
+import accela.parse.Lexer.T;
+import accela.parse.Lexer.Token;
 
 // Parser, needs refactoring
 public class Parser {

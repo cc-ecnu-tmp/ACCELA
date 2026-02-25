@@ -1,4 +1,4 @@
-package ir;
+package accela.ir;
 
 // TODO: This is a work in progress, design can change
 // We *really* need to refactor this one.

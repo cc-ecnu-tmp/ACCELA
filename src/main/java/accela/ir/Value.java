@@ -1,4 +1,4 @@
-package ir;
+package accela.ir;
 
 public class Value {
   public final Type type;
