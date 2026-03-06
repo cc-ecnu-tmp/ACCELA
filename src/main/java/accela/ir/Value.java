@@ -1,108 +1,55 @@
 package accela.ir;
 
-public class Value {
-  public final Type type;
-  private final int iVal;
-  private final float fVal;
-  private final Object ptrVal; // mainly for interpreter
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
-  private Value(Type type, int iVal, float fVal, Object ptrVal) {
+public abstract class Value {
+  protected Type type;
+  protected String name;
+  private final List<Use> uses = new ArrayList<>();
+
+  protected Value(Type type, String name) {
     this.type = type;
-    this.iVal = iVal;
-    this.fVal = fVal;
-    this.ptrVal = ptrVal;
+    this.name = name;
   }
 
-  public static Value of(int v) {
-    return new Value(Type.INT, v, 0, null);
+  public Type getType() {
+    return type;
   }
 
-  public static Value of(float v) {
-    return new Value(Type.FLOAT, 0, v, null);
+  public String getName() {
+    return name;
   }
 
-  public static Value of(boolean v) {
-    return new Value(Type.INT, v ? 1 : 0, 0, null);
+  public void setName(String name) {
+    this.name = name;
   }
 
-  public static Value ptr(Object addr) {
-    return new Value(Type.pointer(Type.INT), 0, 0, addr);
+  void addUse(Use use) {
+    uses.add(use);
   }
 
-  public int asInt() {
-    return type.isFloat() ? (int) fVal : iVal;
+  void removeUse(Use use) {
+    uses.remove(use);
   }
 
-  public float asFloat() {
-    return type.isInt() ? (float) iVal : fVal;
+  public List<Use> getUses() {
+    return Collections.unmodifiableList(uses);
   }
 
-  public boolean asBool() {
-    return type.isInt() ? iVal != 0 : fVal != 0.0f;
+  public boolean hasUses() {
+    return !uses.isEmpty();
   }
 
-  public Object asPtr() {
-    return ptrVal;
+  public int getNumUses() {
+    return uses.size();
   }
 
-  public Value add(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() + r.asFloat());
-    return Value.of(this.asInt() + r.asInt());
-  }
-
-  public Value sub(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() - r.asFloat());
-    return Value.of(this.asInt() - r.asInt());
-  }
-
-  public Value mul(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() * r.asFloat());
-    return Value.of(this.asInt() * r.asInt());
-  }
-
-  public Value div(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() / r.asFloat());
-    return Value.of(this.asInt() / r.asInt());
-  }
-
-  public Value mod(Value r) {
-    return Value.of(this.asInt() % r.asInt()); // runtime safety?
-  }
-
-  public Value eq(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() == r.asFloat());
-    return Value.of(this.asInt() == r.asInt());
-  }
-
-  public Value ne(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() != r.asFloat());
-    return Value.of(this.asInt() != r.asInt());
-  }
-
-  public Value lt(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() < r.asFloat());
-    return Value.of(this.asInt() < r.asInt());
-  }
-
-  public Value le(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() <= r.asFloat());
-    return Value.of(this.asInt() <= r.asInt());
-  }
-
-  public Value gt(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() > r.asFloat());
-    return Value.of(this.asInt() > r.asInt());
-  }
-
-  public Value ge(Value r) {
-    if (this.type.isFloat() || r.type.isFloat()) return Value.of(this.asFloat() >= r.asFloat());
-    return Value.of(this.asInt() >= r.asInt());
-  }
-
-  @Override
-  public String toString() {
-    if (type.isInt()) return String.valueOf(iVal);
-    if (type.isFloat()) return String.valueOf(fVal);
-    return ptrVal.toString();
+  public void replaceAllUsesWith(Value newValue) {
+    List<Use> snapshot = new ArrayList<>(uses);
+    for (Use use : snapshot) {
+      use.setValue(newValue);
+    }
   }
 }
