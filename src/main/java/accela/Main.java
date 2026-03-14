@@ -50,6 +50,7 @@ public class Main {
           new AstDumper(System.out).dump(unit);
         } else if (emitIR) {
           accela.ir.Module module = new AST2IR().convert(unit);
+          Mem2Reg.run(module);
           new IRPrinter(System.out).print(module);
         } else {
           Interpreter interpreter = new Interpreter();

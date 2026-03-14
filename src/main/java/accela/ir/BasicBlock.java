@@ -32,6 +32,16 @@ public class BasicBlock extends Value {
     }
   }
 
+  public void addInstructionToFront(Instruction inst) {
+    inst.setParent(this);
+    int insertAt = 0;
+    while (insertAt < instructions.size()
+        && instructions.get(insertAt).getOpcode() == Instruction.Opcode.PHI) {
+      insertAt++;
+    }
+    instructions.add(insertAt, inst);
+  }
+
   public void remove(Instruction inst) {
     instructions.remove(inst);
     inst.setParent(null);
