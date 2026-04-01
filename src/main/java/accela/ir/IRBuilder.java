@@ -12,9 +12,13 @@ import accela.ir.Instruction.Opcode;
  *   b.setInsertPoint(entryBlock);
  *   Instruction add = b.createAdd(lhs, rhs);
  *   b.createStore(add, ptr);
+ *
+ * <p>The builder does not perform semantic validation on its own; callers are expected to supply
+ * type-correct operands and a valid insertion point.
  */
 public class IRBuilder {
   private BasicBlock insertBB;
+  private Instruction insertBefore;
 
   public IRBuilder() {}
 
@@ -24,18 +28,31 @@ public class IRBuilder {
 
   public void setInsertPoint(BasicBlock bb) {
     this.insertBB = bb;
+    this.insertBefore = null;
+  }
+
+  /** Inserts subsequent instructions immediately before {@code inst}. */
+  public void setInsertPointBefore(Instruction inst) {
+    this.insertBB = inst.getParent();
+    this.insertBefore = inst;
   }
 
   public BasicBlock getInsertBlock() {
     return insertBB;
   }
 
+  /** Returns whether the current insertion block already ends in a terminator. */
   public boolean isTerminated() {
     return insertBB != null && insertBB.isTerminated();
   }
 
+  /** Inserts an instruction into the current block and returns it for immediate use. */
   private Instruction insert(Instruction inst) {
-    insertBB.addInstruction(inst);
+    if (insertBefore != null) {
+      insertBB.insertInstructionBefore(insertBefore, inst);
+    } else {
+      insertBB.addInstruction(inst);
+    }
     return inst;
   }
 
@@ -97,10 +114,11 @@ public class IRBuilder {
     return insert(inst);
   }
 
+  /** Creates an alloca directly in the entry block, regardless of the current insertion point. */
   public Instruction createAllocaInEntry(Type allocType, BasicBlock entryBB) {
     Instruction inst = new Instruction(Opcode.ALLOCA, Type.PTR);
     inst.setAllocatedType(allocType);
-    entryBB.addInstruction(inst);
+    entryBB.addInstructionAfterAllocas(inst);
     return inst;
   }
 

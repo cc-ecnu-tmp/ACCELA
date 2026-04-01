@@ -9,6 +9,9 @@ import java.util.List;
  *
  * Extends Value so it can be used as an operand in branch instructions
  * (representing a branch target / label).
+ *
+ * <p>The block owns its instruction list and is also the place where simple CFG queries such as
+ * predecessor/successor discovery are performed.
  */
 public class BasicBlock extends Value {
   private Function parent;
@@ -22,6 +25,13 @@ public class BasicBlock extends Value {
     return Collections.unmodifiableList(instructions);
   }
 
+  /**
+   * Appends an instruction to the block.
+   *
+   * <p>If the block already has a terminator and the new instruction is not itself a terminator,
+   * the instruction is inserted right before the existing terminator to keep the block structurally
+   * valid.
+   */
   public void addInstruction(Instruction inst) {
     inst.setParent(this);
     // Insert before terminator if block is already terminated
@@ -32,6 +42,7 @@ public class BasicBlock extends Value {
     }
   }
 
+  /** Inserts an instruction at the beginning of the non-PHI region. */
   public void addInstructionToFront(Instruction inst) {
     inst.setParent(this);
     int insertAt = 0;
@@ -40,6 +51,32 @@ public class BasicBlock extends Value {
       insertAt++;
     }
     instructions.add(insertAt, inst);
+  }
+
+  /** Inserts an instruction after the existing alloca prefix of the block. */
+  public void addInstructionAfterAllocas(Instruction inst) {
+    inst.setParent(this);
+    int insertAt = 0;
+    while (insertAt < instructions.size()
+        && instructions.get(insertAt).getOpcode() == Instruction.Opcode.ALLOCA) {
+      insertAt++;
+    }
+    instructions.add(insertAt, inst);
+  }
+
+  /**
+   * Inserts an instruction immediately before another instruction already in this block.
+   *
+   * <p>This is primarily used by local rewrite passes such as SROA, where replacement operations
+   * must preserve the original execution order of memory accesses.
+   */
+  public void insertInstructionBefore(Instruction before, Instruction inst) {
+    int index = instructions.indexOf(before);
+    if (index < 0) {
+      throw new IllegalArgumentException("Instruction does not belong to this block");
+    }
+    inst.setParent(this);
+    instructions.add(index, inst);
   }
 
   public void remove(Instruction inst) {
@@ -61,7 +98,7 @@ public class BasicBlock extends Value {
     return getTerminator() != null;
   }
 
-  /** Get successor blocks */
+  /** Returns CFG successors implied by the current terminator, if any. */
   public List<BasicBlock> getSuccessors() {
     Instruction term = getTerminator();
     if (term == null) return Collections.emptyList();
@@ -80,7 +117,7 @@ public class BasicBlock extends Value {
     return succs;
   }
 
-  /** Get predecessor blocks */
+  /** Returns CFG predecessors by scanning sibling blocks in the parent function. */
   public List<BasicBlock> getPredecessors() {
     if (parent == null) return Collections.emptyList();
     List<BasicBlock> preds = new ArrayList<>();

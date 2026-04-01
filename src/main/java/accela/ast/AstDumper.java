@@ -2,7 +2,12 @@ package accela.ast;
 
 import java.io.PrintStream;
 
-// For debugging only
+/**
+ * Pretty-prints the semantic AST in tree view.
+ *
+ * <p>This is a debugging aid: it does not attempt to preserve full source fidelity, and the
+ * output format is simple so parser/sema changes are easy to inspect.
+ */
 public class AstDumper {
   private final PrintStream out;
   private int indent = 0;
@@ -11,6 +16,12 @@ public class AstDumper {
     this.out = out;
   }
 
+  /**
+   * Dumps one node and its subtree.
+   *
+   * <p>The dumper uses a pre-order traversal so each parent is printed before its children, while
+   * {@code indent} tracks the current tree depth.
+   */
   public void dump(Node n) {
     if (n == null) return;
     String pfx = "  ".repeat(indent);
@@ -73,6 +84,8 @@ public class AstDumper {
         out.println(pfx + "ImplicitCast: " + n.ty);
         break;
     }
+
+    // Children are emitted one level deeper to make nesting visible in the text dump.
     indent++;
     for (Node kid : n.kids) dump(kid);
     indent--;

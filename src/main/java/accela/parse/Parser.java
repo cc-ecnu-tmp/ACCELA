@@ -11,7 +11,14 @@ import java.util.List;
 import accela.parse.Lexer.T;
 import accela.parse.Lexer.Token;
 
-// Parser, needs refactoring
+/**
+ * Hand-written parser that builds the project's AST directly.
+ *
+ * <p>The parser uses ordinary recursive descent for declarations/statements and a Pratt-style
+ * precedence parser for expressions. The resulting AST is intentionally close to the surface syntax;
+ * later normalization such as type insertion, declaration binding, and initializer reshaping is
+ * handled by {@link Sema}.
+ */
 public class Parser {
   private final List<Token> tokens;
   private int pos = 0;
@@ -20,6 +27,7 @@ public class Parser {
     this.tokens = tokens;
   }
 
+  /** Parses a whole translation unit into a {@code UNIT} node. */
   public Node parse() {
     Node unit = new Node(Tag.UNIT);
     while (peek().type != EOF) {
@@ -29,6 +37,7 @@ public class Parser {
     return unit;
   }
 
+  /** Distinguishes a function definition from a variable declaration using short lookahead. */
   private boolean isFuncDef() {
     int la = 0;
     if (peek(la).type == CONST) return false;
@@ -39,6 +48,7 @@ public class Parser {
     return false;
   }
 
+  /** Parses a function definition, storing parameters as leading children and the body last. */
   private Node parseFuncDef() {
     Token tt = peek();
     if (tt.type == INT) consume(INT);
@@ -59,6 +69,12 @@ public class Parser {
     return func;
   }
 
+  /**
+   * Parses one formal parameter.
+   *
+   * <p>Array-parameter shape is intentionally recorded in a raw frontend form here. Sema later
+   * resolves dimension expressions and turns it into the final parameter type.
+   */
   private Node parseFuncFParam() {
     Token tt = peek();
     if (tt.type == INT) consume(INT);
@@ -91,6 +107,7 @@ public class Parser {
     return block;
   }
 
+  /** Parses a declaration statement or ordinary statement appearing inside a block. */
   private Node parseBlockItem() {
     Token tok = peek();
     if (tok.type == INT || tok.type == CONST || tok.type == FLOAT) {
@@ -101,6 +118,7 @@ public class Parser {
     return parseStmt();
   }
 
+  /** Parses a comma-separated declaration list sharing the same base type and constness. */
   private List<Node> parseVarDeclList() {
     boolean isConst = false;
     if (peek().type == CONST) {
@@ -122,6 +140,7 @@ public class Parser {
     return decls;
   }
 
+  /** Parses one declared variable/constant, including optional dimensions and initializer. */
   private Node parseVarDef(Ty baseTy, boolean isConst) {
     Node v = new Node(Tag.VAR, consume(IDENT).text, baseTy);
     v.flag = isConst;
@@ -139,11 +158,13 @@ public class Parser {
     return v;
   }
 
+  /** Parses either an expression initializer or a raw brace initializer list. */
   private Node parseInitVal() {
     if (peek().type == LB) return parseRawInitList();
     return parseExp();
   }
 
+  /** Parses a brace initializer without doing semantic reshaping yet. */
   private Node parseRawInitList() {
     consume(LB);
     Node il = new Node(Tag.INIT_LIST);
@@ -158,6 +179,7 @@ public class Parser {
     return il;
   }
 
+  /** Parses one statement form. Empty statements are represented as {@code null}. */
   private Node parseStmt() {
     switch (peek().type) {
       case IF:
@@ -192,6 +214,7 @@ public class Parser {
     }
   }
 
+  /** Parses an if statement and normalizes missing branches to empty blocks. */
   private Node parseIfStmt() {
     consume(IF);
     consume(LP);
@@ -208,6 +231,7 @@ public class Parser {
     return n;
   }
 
+  /** Parses a while statement. */
   private Node parseWhileStmt() {
     consume(WHILE);
     consume(LP);
@@ -219,7 +243,11 @@ public class Parser {
     return n;
   }
 
-  // Pratt: precedence table built from T.ordinal()
+  /**
+   * Pratt precedence table keyed by token-kind ordinal.
+   *
+   * <p>This is why {@link Lexer.T} ordering is effectively part of the parser contract.
+   */
   static final int[] PREC = new int[36];
   static final Op[] BIN_OP = new Op[36];
 
@@ -252,6 +280,11 @@ public class Parser {
     BIN_OP[OR.ordinal()] = Op.OR;
   }
 
+  /**
+   * Parses an expression, treating assignment as the lowest-precedence right-associative operator.
+   *
+   * <p>All other binary operators are handled by {@link #parseExpr(int)}.
+   */
   private Node parseExp() {
     Node lhs = parseExpr(1);
     if (peek().type == EQ) {
@@ -265,6 +298,12 @@ public class Parser {
     return lhs;
   }
 
+  /**
+   * Pratt expression parser.
+   *
+   * <p>{@code minPrec} is the usual binding-power threshold: while the next token has at least that
+   * precedence, parse it as a binary operator and recurse on the RHS with tighter binding.
+   */
   private Node parseExpr(int minPrec) {
     Node lhs = parseUnaryExp();
     while (PREC[peek().type.ordinal()] >= minPrec) {
@@ -278,6 +317,12 @@ public class Parser {
     return lhs;
   }
 
+  /**
+   * Parses unary expressions and postfix subscripting.
+   *
+   * <p>Repeated subscripting is left-associated here as nested {@code SUB} nodes. Sema later
+   * flattens chains such as {@code a[i][j]} into one node carrying all indices.
+   */
   private Node parseUnaryExp() {
     Token tok = peek();
     if (tok.type == PLUS || tok.type == MINUS || tok.type == NOT) {
@@ -300,6 +345,7 @@ public class Parser {
     return primary;
   }
 
+  /** Parses a direct function call. */
   private Node parseFuncCall() {
     Node call = new Node(Tag.CALL);
     call.kids.add(new Node(Tag.REF, consume(IDENT).text));
@@ -315,6 +361,7 @@ public class Parser {
     return call;
   }
 
+  /** Parses parenthesized expressions, references, and literals. */
   private Node parsePrimaryExp() {
     Token tok = peek();
     if (tok.type == LP) {

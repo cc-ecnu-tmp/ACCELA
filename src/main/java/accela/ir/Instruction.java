@@ -8,9 +8,14 @@ import java.util.List;
  * that can be used as an operand in other instructions.
  *
  * Instructions with void results (store, br, ret void) have type VOID.
+ *
+ * <p>Besides the opcode and operand list, this class stores a small amount of opcode-specific
+ * metadata such as compare predicates, alloca element types, GEP source types, and direct call
+ * callees.
  */
 public class Instruction extends Value {
 
+  /** Supported opcodes in the project IR. */
   public enum Opcode {
     // Arithmetic
     ADD, SUB, MUL, SDIV, SREM,
@@ -50,6 +55,11 @@ public class Instruction extends Value {
     }
   }
 
+  /** Creates an empty PHI instruction whose incoming pairs can be filled later. */
+  public static Instruction createPhi(Type resultType) {
+    return new Instruction(Opcode.PHI, resultType);
+  }
+
   public Opcode getOpcode() {
     return opcode;
   }
@@ -66,14 +76,17 @@ public class Instruction extends Value {
     return operands.size();
   }
 
+  /** Returns the operand value currently stored in the given operand slot. */
   public Value getOperand(int index) {
     return operands.get(index).getValue();
   }
 
+  /** Rewrites one operand slot while keeping use-lists consistent. */
   public void setOperand(int index, Value newValue) {
     operands.get(index).setValue(newValue);
   }
 
+  /** Appends a new operand to the instruction. */
   public void addOperand(Value value) {
     operands.add(new Use(value, this, operands.size()));
   }

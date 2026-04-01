@@ -10,17 +10,29 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/** Sema: symbol binding, type inferencing, constant folding. */
-// - TODO: Simple AST rewrite can be done here
-// e.g.
-// if (0) {dead code, remove}
-// if (1) { A;B;C } -> A;B;C
-// This would make IR graph simpler.
-// - TODO: Extract info for super-optimization / poly
-// Not sure we will actually use this, writing SMT Solver seems hard.
+/**
+ * Semantic analysis and frontend normalization pass.
+ *
+ * <p>This stage does more than classic "type checking":
+ *
+ * <p>- binds each reference/call to its declaration via the symbol table
+ *
+ * <p>- computes source-level types for expressions
+ *
+ * <p>- inserts explicit casts for int/float conversions
+ *
+ * <p>- evaluates compile-time constants where the frontend needs them
+ *
+ * <p>- reshapes a few AST forms into easier-to-lower representations, especially array initializers
+ * and chained subscripts
+ *
+ * <p>The rest of the pipeline depends heavily on this normalization. In particular,
+ * AST2IR assumes many of these rewrites have already happened.
+ */
 public class Sema {
   private SymbolTable scope = new SymbolTable(null);
 
+  /** Seeds the outermost scope with builtin runtime function declarations. */
   public Sema() {
     for (String[] b :
         new String[][] {
@@ -42,6 +54,7 @@ public class Sema {
     }
   }
 
+  /** Analyzes the whole translation unit in source order. */
   public void analyze(Node unit) {
     for (Node child : unit.kids) {
       if (child.tag == FUNC) analyzeFuncDef(child);
@@ -50,6 +63,12 @@ public class Sema {
     }
   }
 
+  /**
+   * Analyzes a function definition.
+   *
+   * <p>Parameter types may still contain raw dimension expressions from parsing, so this method
+   * resolves them before entering the function body.
+   */
   private void analyzeFuncDef(Node f) {
     scope.put(f.s, f);
     enter();
@@ -68,12 +87,14 @@ public class Sema {
     exit();
   }
 
+  /** Analyzes a lexical block with a fresh nested scope. */
   private void analyzeBlock(Node block) {
     enter();
     for (Node stmt : block.kids) analyzeStmt(stmt);
     exit();
   }
 
+  /** Analyzes one statement and recursively rewrites any nested expressions. */
   private void analyzeStmt(Node n) {
     if (n == null) return;
     switch (n.tag) {
@@ -101,6 +122,13 @@ public class Sema {
     }
   }
 
+  /**
+   * Analyzes a variable declaration and its initializer.
+   *
+   * <p>Array declarations are a notable special case: dimension expressions are folded to concrete
+   * sizes, and brace initializers are normalized into a full tree with zero-filled omissions so
+   * later passes do not need to re-implement C-style aggregate initialization rules.
+   */
   private void analyzeVarDecl(Node v) {
     if (v.dimExprs != null && !v.dimExprs.isEmpty()) {
       int[] dims = new int[v.dimExprs.size()];
@@ -119,14 +147,33 @@ public class Sema {
       }
     }
     if (v.flag && !v.ty.isArray() && !v.kids.isEmpty() && v.kids.get(0).tag != LIT) {
-      int val = evalConst(v.kids.get(0));
-      Node lit = new Node(LIT, Integer.toString(val));
+      Node lit;
+      if (v.ty.isFloat()) {
+        lit = new Node(LIT, Float.toString(evalConstFloat(v.kids.get(0))));
+      } else {
+        lit = new Node(LIT, Integer.toString(evalConst(v.kids.get(0))));
+      }
       lit.ty = v.ty;
       v.kids.set(0, lit);
     }
   }
 
-  // flatten nested init lists, zero-fill, sub-aggregate alignment
+  /**
+   * Normalizes a raw array initializer list.
+   *
+   * <p>The algorithm is:
+   *
+   * <p>1. allocate a flat buffer for all elements and prefill it with zeros
+   *
+   * <p>2. walk the raw brace tree, placing items into the correct sub-aggregate-aligned positions
+   *
+   * <p>3. analyze/cast each scalar element
+   *
+   * <p>4. rebuild a fully explicit nested {@code INIT_LIST} tree
+   *
+   * <p>This is not full SROA; it is frontend initializer normalization so later stages can treat
+   * aggregates deterministically.
+   */
   private Node flattenInit(Ty ty, Node raw) {
     int total = ty.flatSize();
     int[] dims = ty.dims;
@@ -137,6 +184,12 @@ public class Sema {
     return rebuildInit(flat, ty.elem, dims, 0, 0);
   }
 
+  /**
+   * Recursive worker for {@link #flattenInit(Ty, Node)}.
+   *
+   * <p>{@code cur} advances through the flattened storage order, and nested brace groups are aligned
+   * to sub-aggregate boundaries to match C/SysY initializer semantics.
+   */
   private int fillRec(Node raw, List<Node> flat, int[] dims, int level, int offset) {
     if (raw.tag != INIT_LIST) {
       if (offset < flat.size()) flat.set(offset, raw);
@@ -158,6 +211,7 @@ public class Sema {
     return cur;
   }
 
+  /** Rebuilds a nested initializer tree from the flattened element buffer. */
   private Node rebuildInit(List<Node> flat, Ty elem, int[] dims, int level, int offset) {
     if (level == dims.length) return flat.get(offset);
     int[] subDims = Arrays.copyOfRange(dims, level, dims.length);
@@ -170,6 +224,7 @@ public class Sema {
     return res;
   }
 
+  /** Recursively analyzes a non-array initializer list in place. */
   private void analyzeInitList(Node il) {
     for (int i = 0; i < il.kids.size(); i++) {
       Node child = il.kids.get(i);
@@ -178,6 +233,12 @@ public class Sema {
     }
   }
 
+  /**
+   * Analyzes one expression node and returns the normalized result node.
+   *
+   * <p>This pass is allowed to rewrite the tree shape, not just annotate it. For example, chained
+   * subscripts are flattened and constant array accesses may collapse all the way to literals.
+   */
   private Node analyzeExpr(Node n) {
     if (n == null) return null;
     switch (n.tag) {
@@ -185,6 +246,8 @@ public class Sema {
         return analyzeBinary(n);
       case UNARY:
         n.kids.set(0, analyzeExpr(n.kids.get(0)));
+        if (n.op == Op.NOT) n.ty = Ty.INT;
+        else n.ty = tyOf(n.kids.get(0));
         return n;
       case CALL:
         return analyzeCall(n);
@@ -232,6 +295,13 @@ public class Sema {
     }
   }
 
+  /**
+   * Analyzes left-associative binary chains from the bottom up.
+   *
+   * <p>Walking the left spine first lets us propagate rewritten/type-adjusted children back into the
+   * chain without deep recursion. The method also decides the resulting expression type and inserts
+   * casts where mixed int/float arithmetic requires it.
+   */
   private Node analyzeBinary(Node n) {
     List<Node> spine = new ArrayList<>();
     Node cur = n;
@@ -264,6 +334,12 @@ public class Sema {
     return cur;
   }
 
+  /**
+   * Resolves a direct call and adjusts arguments to declared parameter types when known.
+   *
+   * <p>The call node itself gets the callee's return type so later passes do not need to inspect
+   * the declaration again just to know the result type.
+   */
   private Node analyzeCall(Node n) {
     Node ref = n.kids.get(0);
     Node decl = scope.get(ref.s);
@@ -282,12 +358,14 @@ public class Sema {
     return n;
   }
 
+  /** Returns the semantic type of a node, defaulting conservatively to int. */
   private Ty tyOf(Node n) {
     if (n == null) return Ty.INT;
     Ty t = n.type();
     return t != null ? t : Ty.INT;
   }
 
+  /** Inserts an explicit cast node when source and target scalar types differ. */
   private Node maybeCast(Ty target, Node expr) {
     if (expr == null || target == null) return expr;
     Ty src = tyOf(expr);
@@ -306,6 +384,13 @@ public class Sema {
     return expr;
   }
 
+  /**
+   * Evaluates an expression as a compile-time integer constant.
+   *
+   * <p>This is used for array dimensions, const initializers, and some const-array indexing cases.
+   * The routine follows declaration bindings, so {@code const int x = 3;} can participate in later
+   * constant expressions through references to {@code x}.
+   */
   int evalConst(Node node) {
     if (node.tag == LIT) {
       String v = node.s;
@@ -355,6 +440,7 @@ public class Sema {
       int r = evalConst(node.kids.get(0));
       if (node.op == Op.NEG) return -r;
       if (node.op == Op.POS) return r;
+      if (node.op == Op.NOT) return r == 0 ? 1 : 0;
     }
     if (node.tag == REF) {
       // Follow decl binding to resolve const values
@@ -376,6 +462,63 @@ public class Sema {
     throw new RuntimeException("Constant expected: " + node.tag);
   }
 
+  /**
+   * Evaluates an expression as a compile-time float constant.
+   *
+   * <p>This is used for folding scalar {@code const float} initializers without accidentally routing
+   * them through integer semantics.
+   */
+  private float evalConstFloat(Node node) {
+    if (node.tag == LIT) {
+      if (node.type() != null && node.type().isFloat()) return parseFloat(node.s);
+      return (float) evalConst(node);
+    }
+    if (node.tag == BIN) {
+      float l = evalConstFloat(node.kids.get(0)), r = evalConstFloat(node.kids.get(1));
+      switch (node.op) {
+        case ADD:
+          return l + r;
+        case SUB:
+          return l - r;
+        case MUL:
+          return l * r;
+        case DIV:
+          return l / r;
+        default:
+          break;
+      }
+    }
+    if (node.tag == UNARY) {
+      float r = evalConstFloat(node.kids.get(0));
+      if (node.op == Op.NEG) return -r;
+      if (node.op == Op.POS) return r;
+      if (node.op == Op.NOT) return r == 0.0f ? 1.0f : 0.0f;
+    }
+    if (node.tag == REF) {
+      if (node.decl != null && node.decl.flag && !node.decl.kids.isEmpty()) {
+        return node.decl.ty != null && node.decl.ty.isFloat()
+            ? evalConstFloat(node.decl.kids.get(0))
+            : (float) evalConst(node.decl.kids.get(0));
+      }
+    }
+    if (node.tag == CAST) {
+      if (node.ty != null && node.ty.isFloat()) return evalConstFloat(node.kids.get(0));
+      return (float) evalConst(node.kids.get(0));
+    }
+    if (node.tag == SUB) {
+      Node ref = node.kids.get(0);
+      if (ref.tag == REF
+          && ref.decl != null
+          && ref.decl.flag
+          && !ref.decl.kids.isEmpty()
+          && ref.decl.kids.get(0).tag == INIT_LIST) {
+        Node leaf = constSubscript(ref.decl.kids.get(0), node.kids, 1);
+        if (leaf != null) return evalConstFloat(leaf);
+      }
+    }
+    throw new RuntimeException("Float constant expected: " + node.tag);
+  }
+
   /** Check if all index kids are compile-time constants. */
   private boolean allConst(List<Node> kids, int startIdx) {
     for (int i = startIdx; i < kids.size(); i++) {
@@ -388,6 +531,7 @@ public class Sema {
     return true;
   }
 
+  /** Follows constant array initializer structure using compile-time indices. */
   private Node constSubscript(Node initList, List<Node> kids, int startIdx) {
     Node cur = initList;
     for (int i = startIdx; i < kids.size(); i++) {
@@ -398,10 +542,25 @@ public class Sema {
     return cur;
   }
 
+  /** Parses a float literal spelling accepted by the frontend. */
+  private static float parseFloat(String s) {
+    String v = s.toLowerCase();
+    if (v.endsWith("f") || v.endsWith("l") || v.endsWith("u")) v = v.substring(0, v.length() - 1);
+    try {
+      if (v.startsWith("0x") && (v.contains("p") || v.contains("."))) return Float.parseFloat(v);
+      if (v.startsWith("0x")) return Float.intBitsToFloat((int) Long.parseLong(v.substring(2), 16));
+      return Float.parseFloat(v);
+    } catch (NumberFormatException e) {
+      return 0.0f;
+    }
+  }
+
+  /** Pushes a fresh nested scope. */
   private void enter() {
     scope = new SymbolTable(scope);
   }
 
+  /** Pops the current scope. */
   private void exit() {
     scope = scope.getParent();
   }

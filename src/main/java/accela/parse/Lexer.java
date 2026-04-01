@@ -5,9 +5,20 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Hand-written lexer for the SysY-like frontend.
+ *
+ * <p>The lexer is intentionally small and direct: it scans the whole source string once and emits a
+ * flat token stream consumed by {@link Parser}. Number literals are preserved mostly as text and are
+ * interpreted later by Sema/IR lowering, which keeps tokenization simple.
+ */
 public class Lexer {
-  // Type, don't change the order of this list
-  // THINGS CAN GET TERRIBLY WRONG IF YOU DO THIS!
+  /**
+   * Token kinds.
+   *
+   * <p>The order matters because the parser's precedence table indexes by {@code ordinal()}, so
+   * inserting/reordering entries without updating the parser will silently break expression parsing.
+   */
   public enum T {
     INT,
     VOID,
@@ -47,9 +58,10 @@ public class Lexer {
     EOF
   }
 
-  static final Map<String, T> KW = new HashMap<>(); // keywords
+  /** Keyword lookup table. */
+  static final Map<String, T> KW = new HashMap<>();
 
-  // KW.put("int", T.INT); KW.put("void", T.VOID); simplicity.
+  /** Builds the keyword table from the leading keyword region of {@link T}. */
   static {
     for (int i = 0; i <= T.FLOAT.ordinal(); i++) {
       T t = T.values()[i];
@@ -57,10 +69,12 @@ public class Lexer {
     }
   }
 
-  static final T[] CT = new T[128]; // single-char ops
-  static final T[] CT2 = new T[128]; // double-char ops (<=,==,=>...)
+  /** Single-character punctuation/operator lookup for ASCII input. */
+  static final T[] CT = new T[128];
+  /** Two-character operator lookup keyed by the first character. */
+  static final T[] CT2 = new T[128];
 
-  // O(1) mapping
+  /** Precomputes constant-time punctuation/operator classification tables. */
   static {
     String o = "+-*/%<>=!;,()[]{}";
     T[] t = {
@@ -76,14 +90,15 @@ public class Lexer {
 
   public static class Token {
     public final T type;
-    public final String text; // TODO: replace with (start,end) offsets into source
+    /** Original token text. Keeping slices as strings keeps later stages simple. */
+    public final String text;
 
     Token(T y, String s) {
       type = y;
       text = s;
     }
 
-    // pretty print.
+    /** Returns a compact debug representation used in parser diagnostics/debugging. */
     public String toString() {
       return type + " '" + text + "'";
     }
@@ -98,22 +113,28 @@ public class Lexer {
     n = s.length();
   }
 
-  // current char
+  /** Returns the current character, or {@code 0} when the cursor is at EOF. */
   char ch() {
     return p < n ? s.charAt(p) : 0;
   }
 
-  // look ahead by `d`
+  /** Returns the character {@code d} positions ahead, or {@code 0} past EOF. */
   char ch(int d) {
     int i = p + d;
     return i < n ? s.charAt(i) : 0;
   }
 
-  // advance
+  /** Consumes and returns the current character. */
   char adv() {
     return s.charAt(p++);
   }
 
+  /**
+   * Tokenizes the full input.
+   *
+   * <p>Whitespace and comments are skipped here so the parser only sees syntactically meaningful
+   * tokens. Any unrecognized byte immediately becomes a hard error instead of trying to recover.
+   */
   public List<Token> tokenize() {
     p = 0;
     List<Token> r = new ArrayList<>();
@@ -123,12 +144,12 @@ public class Lexer {
         adv();
         continue;
       }
-      // single-line comments
+      // Skip C++-style line comments.
       if (c == '/' && ch(1) == '/') {
         while (p < n && ch() != '\n') adv();
         continue;
       }
-      // multi-line comments
+      // Skip C-style block comments.
       if (c == '/' && ch(1) == '*') {
         adv();
         adv();
@@ -142,7 +163,7 @@ public class Lexer {
         }
         continue;
       }
-      // identifier or keyword
+      // Scan an identifier first, then classify it as a keyword if present in KW.
       if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_') {
         StringBuilder sb = new StringBuilder();
         while (ch() >= 'a' && ch() <= 'z'
@@ -172,7 +193,12 @@ public class Lexer {
     return r;
   }
 
-  // number
+  /**
+   * Scans a numeric literal.
+   *
+   * <p>This accepts the lexical forms needed by the project, including hex, decimal, fractional,
+   * exponent, and suffix forms. The exact semantic interpretation is deferred to later stages.
+   */
   Token num() {
     StringBuilder sb = new StringBuilder();
     if (ch() == '0' && (ch(1) == 'x' || ch(1) == 'X')) {
@@ -204,6 +230,7 @@ public class Lexer {
     return new Token(T.NUM, sb.toString());
   }
 
+  /** Returns whether {@code c} is a hexadecimal digit. */
   boolean hex(char c) {
     return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F';
   }

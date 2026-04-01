@@ -5,14 +5,25 @@ import static accela.ast.Node.Tag.*;
 import accela.ast.Node;
 import accela.ast.Node.Op;
 import accela.ast.Ty;
+import accela.pass.ir.transform.Mem2Reg;
 import accela.ir.Instruction.Opcode;
 import java.util.*;
 
 /**
  * Converts a Sema-analyzed AST into a structured IR Module.
  *
- * Uses alloca for all local variables (no mem2reg / SSA promotion).
- * Uses IRBuilder API for instruction creation.
+ * <p>This pass is the bridge between frontend semantics and the project IR:
+ *
+ * <p>- source-language names and types are lowered into {@link Value}, {@link Type}, and
+ * {@link Instruction} objects
+ *
+ * <p>- structured control flow becomes explicit basic blocks and branches
+ *
+ * <p>- local variables are initially represented with {@code alloca + load/store}; later passes
+ * such as {@link Mem2Reg} are responsible for SSA promotion
+ *
+ * <p>The implementation intentionally relies on a Sema-normalized AST so later lowering logic can
+ * stay relatively direct.
  */
 public class AST2IR {
   private Module module;
@@ -50,6 +61,16 @@ public class AST2IR {
 
   private int labelCounter = 0;
 
+  /**
+   * Main lowering entry.
+   *
+   * <p>The top level is handled in two phases: globals first, then functions. That guarantees every
+   * function body sees the complete global environment and all builtin declarations.
+   *
+   * <p>This pass deliberately lowers locals into a memory-oriented form ({@code alloca + load/store})
+   * instead of building SSA directly. The frontend stays simple, while {@link Mem2Reg} recovers SSA
+   * later for the promotable cases.
+   */
   public Module convert(Node unit) {
     module = new Module();
     b = new IRBuilder();
@@ -143,6 +164,12 @@ public class AST2IR {
     switchTo(newBB);
   }
 
+  /**
+   * Lowers one global declaration into a {@link GlobalVariable}.
+   *
+   * <p>Unlike local initialization, global initialization cannot emit executable IR, so the whole
+   * initializer must be represented as a constant tree immediately.
+   */
   private void registerGlobal(Node v) {
     Type irType = Type.fromSysY(v.ty);
     globalTypes.put(v.s, irType);
@@ -159,6 +186,12 @@ public class AST2IR {
     globalVars.put(v.s, gv);
   }
 
+  /**
+   * Converts a global initializer AST into a constant IR object.
+   *
+   * <p>Scalars are folded immediately. Arrays are expanded recursively to match the final aggregate
+   * layout expected by the IR printer and backend.
+   */
   private Constant buildGlobalInit(Node initNode, Type type) {
     if (type.isArray()) {
       if (initNode.tag == INIT_LIST) return buildGlobalArrayInit(initNode, type);
@@ -169,6 +202,12 @@ public class AST2IR {
     return Constant.intConst(evalGlobalConstInt(initNode));
   }
 
+  /**
+   * Builds a nested constant array initializer.
+   *
+   * <p>This code relies on Sema to have normalized the brace structure enough that recursive
+   * descent here matches the intended element layout.
+   */
   private Constant buildGlobalArrayInit(Node initList, Type arrType) {
     if (isAllZeroInit(initList)) return Constant.zero(arrType);
 
@@ -179,7 +218,7 @@ public class AST2IR {
         if (child.tag == INIT_LIST) elems.add(buildGlobalArrayInit(child, elemType));
         else elems.add(Constant.zero(elemType));
       } else {
-        elems.add(buildLiteralConst(child.s, elemType));
+        elems.add(buildGlobalInit(child, elemType));
       }
     }
     return Constant.array(arrType, elems);
@@ -199,6 +238,7 @@ public class AST2IR {
     return Constant.intConst(parseInt(s));
   }
 
+  /** Small constant-folder used only while building global integer initializers. */
   private int evalGlobalConstInt(Node n) {
     if (n.tag == LIT) return parseInt(n.s);
     if (n.tag == Node.Tag.UNARY) {
@@ -222,6 +262,7 @@ public class AST2IR {
     return 0;
   }
 
+  /** Float counterpart of {@link #evalGlobalConstInt(Node)}. */
   private float evalGlobalConstFloat(Node n) {
     if (n.tag == LIT) return parseFloat(n.s);
     if (n.tag == Node.Tag.UNARY) {
@@ -241,6 +282,14 @@ public class AST2IR {
     return 0.0f;
   }
 
+  /**
+   * Lowers one function from AST to IR.
+   *
+   * <p>The central choice here is to materialize every source variable, including parameters, as an
+   * entry-block stack slot first. That gives the frontend a uniform "everything addressable" model:
+   * assignments always store to a pointer, references usually load from a pointer, and later SSA
+   * recovery is delegated to {@link Mem2Reg}.
+   */
   private void emitFunction(Node func) {
     Type retType = Type.fromSysY(func.ty);
     curFunc = new Function(func.s, retType);
@@ -263,7 +312,9 @@ public class AST2IR {
     entryBB = entry;
     switchTo(entry);
 
-    // Alloca + store
+    // Parameters first exist as formal IR arguments. We immediately spill each one into an
+    // entry-block slot so the rest of expression/statement lowering can treat parameters and local
+    // variables the same way.
     for (int i = 0; i < nParams; i++) {
       Node parm = func.kids.get(i);
       Type pType = parm.ty.isArray() ? Type.PTR : Type.fromSysY(parm.ty);
@@ -286,6 +337,12 @@ public class AST2IR {
     exitScope();
   }
 
+  /**
+   * Emits a lexical block with its own symbol/type metadata scopes.
+   *
+   * <p>This is not a CFG split by itself. Plain `{ ... }` blocks only affect visibility; explicit
+   * control-flow constructs such as {@code if} and {@code while} are what create new basic blocks.
+   */
   private void emitBlock(Node block) {
     enterScope();
     for (Node stmt : block.kids) emitStmt(stmt);
@@ -312,6 +369,13 @@ public class AST2IR {
     }
   }
 
+  /**
+   * Lowers one local declaration.
+   *
+   * <p>Scalars become one stack slot plus an optional initializing store. Arrays also become one
+   * stack slot, but their initializer is emitted element-by-element because local initialization is
+   * executable code rather than a static constant object.
+   */
   private void emitVarDecl(Node v) {
     Type irType = Type.fromSysY(v.ty);
 
@@ -333,6 +397,20 @@ public class AST2IR {
     }
   }
 
+  /**
+   * Emits executable initialization for a local array.
+   *
+   * <p>The algorithm is intentionally simple:
+   *
+   * <p>1. store a whole-array zero initializer first
+   *
+   * <p>2. flatten the normalized initializer list into scalar element order
+   *
+   * <p>3. store back only the explicitly provided non-zero elements
+   *
+   * <p>This is slightly redundant, but it keeps frontend logic straightforward and matches the
+   * language rule that omitted elements default to zero.
+   */
   private void emitLocalArrayInit(Value base, Node initList, Type arrType, int[] dims) {
     b.createStore(Constant.zero(arrType), base);
 
@@ -354,6 +432,7 @@ public class AST2IR {
     }
   }
 
+  /** Flattens nested initializer braces into left-to-right scalar element order. */
   private void flattenInitList(Node node, List<Node> out) {
     if (node.tag == INIT_LIST) {
       for (Node child : node.kids) flattenInitList(child, out);
@@ -362,6 +441,12 @@ public class AST2IR {
     }
   }
 
+  /**
+   * Lowers an if/else into explicit CFG blocks.
+   *
+   * <p>The shape is current block -> conditional branch -> then/else -> merge. We only synthesize
+   * the jump to the merge block when the branch body did not already terminate on its own.
+   */
   private void emitIf(Node n) {
     Value cond = emitCond(n.kids.get(0));
     boolean hasElse = n.kids.size() > 2;
@@ -385,6 +470,12 @@ public class AST2IR {
     switchTo(endBB);
   }
 
+  /**
+   * Lowers a while-loop into condition, body, and exit blocks.
+   *
+   * <p>{@code break} and {@code continue} are implemented by pushing synthetic targets while the
+   * loop body is being emitted, which also naturally supports nesting.
+   */
   private void emitWhile(Node n) {
     BasicBlock condBB = addBlock(nextLabel("while.cond"));
     BasicBlock bodyBB = addBlock(nextLabel("while.body"));
@@ -418,6 +509,7 @@ public class AST2IR {
     }
   }
 
+  /** Dispatches one expression node to the appropriate lowering routine. */
   private Value emitExpr(Node n) {
     if (n == null) return Constant.intConst(0);
     switch (n.tag) {
@@ -437,6 +529,17 @@ public class AST2IR {
     return Constant.intConst(parseInt(n.s));
   }
 
+  /**
+   * Lowers a source-level reference in rvalue position.
+   *
+   * <p>Three cases matter:
+   *
+   * <p>- scalar locals/globals: load the scalar value
+   *
+   * <p>- array objects: decay to a pointer to the first element
+   *
+   * <p>- pointer-valued variables (for example lowered array parameters): load the pointer itself
+   */
   private Value emitRef(Node n) {
     Value ptr = lookupVar(n.s);
     Type type = lookupType(n.s);
@@ -452,6 +555,14 @@ public class AST2IR {
     return b.createLoad(type, ptr);
   }
 
+  /**
+   * Lowers binary expressions.
+   *
+   * <p>Assignments and short-circuit logical operators are special and are handled separately.
+   * Ordinary left-associative arithmetic/comparison trees are emitted by walking down the left
+   * spine first and then rebuilding iteratively. That avoids deep recursive emission for long
+   * expression chains.
+   */
   private Value emitBinary(Node n) {
     if (n.op == Op.ASSIGN) return emitAssign(n);
     if (n.op.isLogical()) return emitLogical(n);
@@ -471,6 +582,12 @@ public class AST2IR {
     return lhs;
   }
 
+  /**
+   * Emits one already-type-directed binary operation.
+   *
+   * <p>The node's semantic type determines the common operand type, so mixed int/float expressions
+   * are normalized before choosing the final IR opcode.
+   */
   private Value emitBinOp(Node n, Value lhs, Value rhs) {
     Type resultType = (n.ty != null) ? Type.fromSysY(n.ty) : Type.INT;
     lhs = ensureType(lhs, resultType);
@@ -510,7 +627,14 @@ public class AST2IR {
     }
   }
 
-  /** Short-circuit logical && / || */
+  /**
+   * Lowers short-circuit {@code &&} and {@code ||}.
+   *
+   * <p>Instead of introducing PHI nodes directly, this frontend follows the same memory-based style
+   * used elsewhere: allocate one temporary result slot in the entry block, write the short-circuit
+   * default value, evaluate the RHS only on the path where it is semantically required, then load
+   * the final integer result at the merge block.
+   */
   private Value emitLogical(Node n) {
     Instruction allocaReg = b.createAllocaInEntry(Type.INT, entryBB);
 
@@ -551,6 +675,11 @@ public class AST2IR {
     return b.createLoad(Type.INT, allocaReg);
   }
 
+  /**
+   * Lowers assignment by evaluating the RHS first, then materializing the LHS address.
+   *
+   * <p>The stored RHS is also returned so assignment can participate in larger expressions.
+   */
   private Value emitAssign(Node n) {
     Value rhs = emitExpr(n.kids.get(1));
     Node lhs = n.kids.get(0);
@@ -587,6 +716,13 @@ public class AST2IR {
     }
   }
 
+  /**
+   * Lowers a direct call.
+   *
+   * <p>Argument values are emitted left-to-right and then adjusted to the declared parameter types
+   * when that information is available. Builtin timing helpers also get their SysY source names
+   * rewritten to the runtime entry points expected by the rest of the toolchain.
+   */
   private Value emitCall(Node n) {
     Node ref = n.kids.get(0);
     String funcName = ref.s;
@@ -641,6 +777,12 @@ public class AST2IR {
     return b.createCall(callee, retType, argVals.toArray(new Value[0]));
   }
 
+  /**
+   * Lowers subscripting.
+   *
+   * <p>A fully indexed expression loads the element value. A partially indexed array expression
+   * returns the computed address so it can decay/persist as a pointer.
+   */
   private Value emitSubscript(Node n) {
     Value gep = emitGEP(n);
     Type elemType = n.ty != null ? Type.fromSysY(n.ty) : Type.INT;
@@ -651,6 +793,20 @@ public class AST2IR {
     return b.createLoad(elemType, gep);
   }
 
+  /**
+   * Computes the address of a subscript expression.
+   *
+   * <p>This is subtle because the base expression may denote:
+   *
+   * <p>- an aggregate object like a local/global array
+   *
+   * <p>- a pointer variable such as a lowered array parameter
+   *
+   * <p>- an already-computed pointer-valued subexpression
+   *
+   * <p>Those cases require different GEP shapes, especially around whether a leading zero index is
+   * needed.
+   */
   private Value emitGEP(Node n) {
     Node baseNode = n.kids.get(0);
 
@@ -690,6 +846,13 @@ public class AST2IR {
     }
   }
 
+  /**
+   * Applies one or more indices to a base pointer.
+   *
+   * <p>When {@code isFlat} is true, indexing proceeds one pointer step at a time, which matches
+   * decayed pointers and array parameters. Otherwise we emit a single aggregate-style GEP with the
+   * leading zero index needed to step into an array object stored in memory.
+   */
   private Value emitGEPIndices(
       Value basePtr, Type baseType, List<Node> kids, int startIdx, boolean isFlat) {
     Value ptr = basePtr;
@@ -705,7 +868,8 @@ public class AST2IR {
       }
       return ptr;
     } else {
-      // Array alloca: first index is 0, then actual indices
+      // Aggregate objects are addressed as "pointer to whole array object", so LLVM-style GEP needs
+      // a leading zero to stay within the same object before applying the source-language indices.
       Type curType = baseType;
       List<Value> extIndices = new ArrayList<>();
       for (int i = startIdx; i < kids.size(); i++) {
@@ -728,6 +892,13 @@ public class AST2IR {
     return castValue(val, target);
   }
 
+  /**
+   * Lowers an expression used in control-flow position.
+   *
+   * <p>The result is always {@code i1}. Relational operators can produce that directly; logical
+   * operators first compute the language-level integer result and then get normalized back to a
+   * branch condition; everything else follows the usual "compare against zero" rule.
+   */
   private Value emitCond(Node n) {
     if (n.tag == Node.Tag.BIN && n.op.isRelational()) return emitCompareI1(n);
     if (n.tag == Node.Tag.BIN && n.op.isLogical()) {
@@ -756,6 +927,7 @@ public class AST2IR {
     return b.createICmp(intPred(n.op), lhs, rhs);
   }
 
+  /** Normalizes a value into branch-friendly boolean form ({@code i1}). */
   private Value toBool(Value v) {
     if (v.getType() == Type.I1) return v;
     if (v.getType().isFloat())

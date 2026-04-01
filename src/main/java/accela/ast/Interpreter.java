@@ -6,7 +6,14 @@ import static accela.ast.Node.Tag.*;
 import java.io.*;
 import java.util.*;
 
-// NOTE: this file is completely vibe-coded...
+/**
+ * A lightweight AST-level interpreter used as a testing tool.
+ *
+ * <p>In practice it is mainly useful for debugging AST and for test-side result comparison.
+ *
+ * <p>The implementation is intentionally not treated as core infrastructure, so this file should be
+ * viewed as support code rather than a source of semantics.
+ */
 public class Interpreter {
   private static class ReturnException extends RuntimeException {
     final Object value;
@@ -58,7 +65,6 @@ public class Interpreter {
     locals.push(new HashMap<>());
   }
 
-  // ─── I/O helpers ───────────────────────────────────────────
   private int readChar() {
     if (peekedChar != -2) {
       int c = peekedChar;
@@ -123,7 +129,6 @@ public class Interpreter {
     return s;
   }
 
-  // ─── Scope ─────────────────────────────────────────────────
   private void enterScope() {
     locals.push(new HashMap<>());
   }
@@ -154,7 +159,7 @@ public class Interpreter {
     return false;
   }
 
-  // ─── Entry point ───────────────────────────────────────────
+  /** Executes the translation unit by evaluating globals first and then calling {@code main}. */
   public void run(Node unit) {
     for (Node child : unit.kids) if (child.tag != FUNC) exec(child);
     inGlobalScope = false;
@@ -163,7 +168,6 @@ public class Interpreter {
     if (main != null) exitCode = callFunc(main, Collections.emptyList());
   }
 
-  // ─── Statement execution ───────────────────────────────────
   private void exec(Node n) {
     if (n == null) return;
     switch (n.tag) {
@@ -243,7 +247,6 @@ public class Interpreter {
     }
   }
 
-  // ─── Expression evaluation ─────────────────────────────────
   private Object eval(Node n) {
     if (n == null) return null;
     switch (n.tag) {

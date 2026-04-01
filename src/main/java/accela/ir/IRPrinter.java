@@ -6,7 +6,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Emits a structured IR Module as LLVM IR text (.ll format). */
+/**
+ * Emits a structured IR {@link Module} as readable LLVM-like text.
+ *
+ * <p>This printer is primarily a debugging and inspection tool. It assigns stable textual names to
+ * SSA results within each function and renders the subset of IR supported by this project in a form
+ * that is intentionally close to LLVM IR, even though the in-memory IR is much simpler.
+ */
 public class IRPrinter {
   private final PrintStream out;
   private final Map<Value, String> valueNames = new HashMap<>();
@@ -17,6 +23,7 @@ public class IRPrinter {
     this.out = out;
   }
 
+  /** Prints declarations, globals, and function definitions in module order. */
   public void print(Module module) {
     for (Function decl : module.getDeclares()) {
       printDeclare(decl);
@@ -33,6 +40,7 @@ public class IRPrinter {
     }
   }
 
+  /** Prints a single external declaration. */
   private void printDeclare(Function func) {
     StringBuilder sb = new StringBuilder("declare ");
     sb.append(func.getReturnType()).append(" @").append(func.getName()).append("(");
@@ -45,6 +53,7 @@ public class IRPrinter {
     out.println(sb);
   }
 
+  /** Prints a single module-level global definition. */
   private void printGlobal(GlobalVariable gv) {
     String kind = gv.isConstant() ? "constant" : "global";
     Type valType = gv.getValueType();
@@ -54,6 +63,7 @@ public class IRPrinter {
     globalNames.put(gv, "@" + gv.getName());
   }
 
+  /** Prints one function body, assigning textual names to arguments and SSA results first. */
   private void printFunction(Function func) {
     valueNames.clear();
     valueNames.putAll(globalNames);
