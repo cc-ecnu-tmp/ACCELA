@@ -8,12 +8,21 @@ import accela.pass.ir.ModuleToFunctionPassAdaptor;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.Mem2Reg;
+import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 
 /**
  * Builds the project's default pass pipelines.
  */
 public final class PassBuilder {
+  private static boolean isSimplifyCfgEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_SIMPLIFYCFG");
+    return disable == null
+        || disable.isEmpty()
+        || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
   private static boolean isSroaEnabled() {
     // TODO: Remove me once SROA testing is finished
     String disable = System.getenv("ACCELA_DISABLE_SROA");
@@ -50,12 +59,25 @@ public final class PassBuilder {
    * the resulting scalar slots with mem2reg.
    */
   public ModulePassManager buildIRO0Pipeline(PassInstrumentation instrumentation) {
-    return buildIRO0Pipeline(instrumentation, isSroaEnabled(), isMem2RegEnabled());
+    return buildIRO0Pipeline(
+        instrumentation, isSimplifyCfgEnabled(), isSroaEnabled(), isMem2RegEnabled());
   }
 
   public ModulePassManager buildIRO0Pipeline(
       PassInstrumentation instrumentation, boolean enableSroa, boolean enableMem2Reg) {
+    return buildIRO0Pipeline(
+        instrumentation, isSimplifyCfgEnabled(), enableSroa, enableMem2Reg);
+  }
+
+  public ModulePassManager buildIRO0Pipeline(
+      PassInstrumentation instrumentation,
+      boolean enableSimplifyCfg,
+      boolean enableSroa,
+      boolean enableMem2Reg) {
     FunctionPassManager fpm = new FunctionPassManager(instrumentation);
+    if (enableSimplifyCfg) {
+      fpm.addPass(new SimplifyCFG.Pass());
+    }
     // TODO: Remove me once SROA testing is finished
     if (enableSroa) {
       fpm.addPass(new SROA.Pass());

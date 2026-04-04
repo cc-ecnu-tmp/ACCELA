@@ -91,6 +91,14 @@ public class Instruction extends Value {
     operands.add(new Use(value, this, operands.size()));
   }
 
+  /** Removes all operands. */
+  public void clearAllOperands() {
+    for (Use use : new ArrayList<>(operands)) {
+      use.drop();
+    }
+    operands.clear();
+  }
+
   public String getPredicate() {
     return predicate;
   }

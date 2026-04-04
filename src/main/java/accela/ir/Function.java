@@ -49,6 +49,14 @@ public class Function extends Value {
     return blocks.isEmpty() ? null : blocks.get(0);
   }
 
+  /** Detaches a basic block from this function (instructions must be cleared separately). */
+  public void removeBlock(BasicBlock bb) {
+    if (!blocks.remove(bb)) {
+      throw new IllegalArgumentException("basic block does not belong to this function");
+    }
+    bb.setParent(null);
+  }
+
   public Type getReturnType() {
     return returnType;
   }
