@@ -6,6 +6,8 @@ import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.ModuleToFunctionPassAdaptor;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
+import accela.pass.ir.transform.ADCE;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SimplifyCFG;
@@ -35,6 +37,11 @@ public final class PassBuilder {
     return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
   }
 
+  private static boolean isAdceEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_ADCE");
+    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
+  }
+
   /** Creates pass instrumentation with always-on verification and optional reporting. */
   public PassInstrumentation buildIRInstrumentation(boolean printReports) {
     return PassInstrumentation.enabled(printReports);
@@ -49,6 +56,7 @@ public final class PassBuilder {
   public FunctionAnalysisManager buildFunctionAnalysisManager() {
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(PostDominatorTreeAnalysis.class, new PostDominatorTreeAnalysis());
     return fam;
   }
 
@@ -60,20 +68,25 @@ public final class PassBuilder {
    */
   public ModulePassManager buildIRO0Pipeline(PassInstrumentation instrumentation) {
     return buildIRO0Pipeline(
-        instrumentation, isSimplifyCfgEnabled(), isSroaEnabled(), isMem2RegEnabled());
+        instrumentation,
+        isSimplifyCfgEnabled(),
+        isSroaEnabled(),
+        isMem2RegEnabled(),
+        isAdceEnabled());
   }
 
   public ModulePassManager buildIRO0Pipeline(
       PassInstrumentation instrumentation, boolean enableSroa, boolean enableMem2Reg) {
     return buildIRO0Pipeline(
-        instrumentation, isSimplifyCfgEnabled(), enableSroa, enableMem2Reg);
+        instrumentation, isSimplifyCfgEnabled(), enableSroa, enableMem2Reg, isAdceEnabled());
   }
 
   public ModulePassManager buildIRO0Pipeline(
       PassInstrumentation instrumentation,
       boolean enableSimplifyCfg,
       boolean enableSroa,
-      boolean enableMem2Reg) {
+      boolean enableMem2Reg,
+      boolean enableAdce) {
     FunctionPassManager fpm = new FunctionPassManager(instrumentation);
     if (enableSimplifyCfg) {
       fpm.addPass(new SimplifyCFG.Pass());
@@ -84,6 +97,12 @@ public final class PassBuilder {
     }
     if (enableMem2Reg) {
       fpm.addPass(new Mem2Reg.Pass());
+    }
+    if (enableAdce) {
+      fpm.addPass(new ADCE.Pass());
+      if (enableSimplifyCfg) {
+        fpm.addPass(new SimplifyCFG.Pass());
+      }
     }
 
     ModulePassManager mpm = new ModulePassManager(instrumentation);

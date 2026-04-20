@@ -74,6 +74,11 @@ public final class IRVerifier {
       if (operand instanceof Instruction operandInst && operandInst.getParent() == null) {
         fail(function, "instruction operand has been detached from its parent block");
       }
+      if (operand instanceof Instruction operandInst
+          && operandInst.getParent() != null
+          && operandInst.getParent().getParent() != function) {
+        fail(function, "instruction operand belongs to a block outside the current function");
+      }
     }
 
     switch (inst.getOpcode()) {

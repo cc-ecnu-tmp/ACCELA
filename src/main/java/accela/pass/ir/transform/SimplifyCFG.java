@@ -1,6 +1,7 @@
 package accela.pass.ir.transform;
 
 import accela.ir.BasicBlock;
+import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.Instruction;
 import accela.ir.Instruction.Opcode;
@@ -202,6 +203,12 @@ public final class SimplifyCFG {
       if (predsOfBb.isEmpty()) {
         continue;
       }
+      if (phisEscapeSuccessorRewrite(bb, succ)) {
+        continue;
+      }
+      if (!canThreadEmptyBlockThroughSuccessor(bb, succ, predsOfBb)) {
+        continue;
+      }
       for (BasicBlock pred : predsOfBb) {
         Instruction pterm = pred.getTerminator();
         if (pterm == null) {
@@ -219,28 +226,64 @@ public final class SimplifyCFG {
         }
         rewritePhiAfterRemovingEmptyBlock(inst, bb, predsOfBb);
       }
-      term.eraseFromParent();
+      for (Instruction inst : new ArrayList<>(bb.getInstructions())) {
+        inst.eraseFromParent();
+      }
       function.removeBlock(bb);
       changed = true;
     }
     return changed;
   }
 
+  private static boolean phisEscapeSuccessorRewrite(BasicBlock block, BasicBlock succ) {
+    for (Instruction inst : block.getInstructions()) {
+      if (inst.getOpcode() == Opcode.BR) {
+        break;
+      }
+      if (inst.getOpcode() != Opcode.PHI) {
+        continue;
+      }
+      for (var use : new ArrayList<>(inst.getUses())) {
+        Instruction user = use.getUser();
+        if (user.getParent() != succ || user.getOpcode() != Opcode.PHI) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean canThreadEmptyBlockThroughSuccessor(
+      BasicBlock removed, BasicBlock succ, List<BasicBlock> predsOfRemoved) {
+    for (Instruction inst : succ.getInstructions()) {
+      if (inst.getOpcode() != Opcode.PHI) {
+        break;
+      }
+      int removedPairIndex = findIncomingPairIndex(inst, removed);
+      if (removedPairIndex < 0) {
+        continue;
+      }
+      Value valFromRemoved = inst.getOperand(removedPairIndex);
+      for (BasicBlock pred : predsOfRemoved) {
+        Value mapped = mapValueLeavingBlock(removed, pred, valFromRemoved);
+        int existingPairIndex = findIncomingPairIndex(inst, pred);
+        if (existingPairIndex >= 0
+            && !sameIncomingValue(inst.getOperand(existingPairIndex), mapped)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   private static void rewritePhiAfterRemovingEmptyBlock(
       Instruction phi, BasicBlock removed, List<BasicBlock> predsOfRemoved) {
     int n = phi.getNumOperands();
-    int bbPairIndex = -1;
-    Value valFromRemoved = null;
-    for (int i = 0; i < n; i += 2) {
-      if (phi.getOperand(i + 1) == removed) {
-        bbPairIndex = i;
-        valFromRemoved = phi.getOperand(i);
-        break;
-      }
-    }
+    int bbPairIndex = findIncomingPairIndex(phi, removed);
     if (bbPairIndex < 0) {
       return;
     }
+    Value valFromRemoved = phi.getOperand(bbPairIndex);
     List<Value> newPairs = new ArrayList<>();
     for (int i = 0; i < n; i += 2) {
       if (i == bbPairIndex) {
@@ -251,13 +294,35 @@ public final class SimplifyCFG {
     }
     for (BasicBlock pred : predsOfRemoved) {
       Value v = mapValueLeavingBlock(removed, pred, valFromRemoved);
-      newPairs.add(v);
-      newPairs.add(pred);
+      appendIncomingIfAbsentOrEquivalent(newPairs, v, pred);
     }
     phi.clearAllOperands();
     for (Value v : newPairs) {
       phi.addOperand(v);
     }
+  }
+
+  private static int findIncomingPairIndex(Instruction phi, BasicBlock pred) {
+    for (int i = 0; i < phi.getNumOperands(); i += 2) {
+      if (phi.getOperand(i + 1) == pred) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private static void appendIncomingIfAbsentOrEquivalent(
+      List<Value> operandPairs, Value value, BasicBlock pred) {
+    for (int i = 0; i < operandPairs.size(); i += 2) {
+      if (operandPairs.get(i + 1) == pred) {
+        if (!sameIncomingValue(operandPairs.get(i), value)) {
+          throw new IllegalStateException("cannot merge distinct incoming values for one predecessor");
+        }
+        return;
+      }
+    }
+    operandPairs.add(value);
+    operandPairs.add(pred);
   }
 
   private static Value mapValueLeavingBlock(BasicBlock block, BasicBlock pred, Value v) {
@@ -276,5 +341,15 @@ public final class SimplifyCFG {
       }
     }
     throw new IllegalStateException("PHI missing incoming value for predecessor");
+  }
+
+  private static boolean sameIncomingValue(Value first, Value second) {
+    if (first == second) {
+      return true;
+    }
+    if (first instanceof Constant && second instanceof Constant) {
+      return first.getType() == second.getType() && String.valueOf(first.getName()).equals(second.getName());
+    }
+    return false;
   }
 }
