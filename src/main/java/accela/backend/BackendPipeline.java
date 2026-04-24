@@ -1,5 +1,16 @@
 package accela.backend;
 
+import accela.backend.lowering.IRToMachineLowering;
+import accela.backend.lowering.PhiElimination;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineModule;
+import accela.backend.regalloc.AllSpillRegisterAllocator;
+import accela.backend.regalloc.AllocationResult;
+import accela.backend.regalloc.RegisterAllocator;
+import accela.backend.target.RISCVAllocationRewriter;
+import accela.backend.target.RISCVAsmPrinter;
+import accela.backend.target.RISCVFrameLowering;
+import accela.backend.target.RISCVTarget;
 import java.util.LinkedHashMap;
 import java.util.Map;
 

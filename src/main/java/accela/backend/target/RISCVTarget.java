@@ -1,10 +1,12 @@
-package accela.backend;
+package accela.backend.target;
 
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
 import accela.ir.Constant;
 import accela.ir.Type;
 import java.util.List;
 
-final class RISCVTarget {
+public final class RISCVTarget {
   static final PhysicalRegister ZERO = new PhysicalRegister("zero", MachineType.I32);
   static final PhysicalRegister SP = new PhysicalRegister("sp", MachineType.PTR);
   static final PhysicalRegister S0 = new PhysicalRegister("s0", MachineType.PTR);
@@ -23,39 +25,39 @@ final class RISCVTarget {
           new PhysicalRegister("ft2", MachineType.F32),
           new PhysicalRegister("ft3", MachineType.F32));
 
-  List<PhysicalRegister> getIntScratch() {
+  public List<PhysicalRegister> getIntScratch() {
     return intScratch;
   }
 
-  List<PhysicalRegister> getFloatScratch() {
+  public List<PhysicalRegister> getFloatScratch() {
     return floatScratch;
   }
 
-  PhysicalRegister getReturnRegister(MachineType type) {
+  public PhysicalRegister getReturnRegister(MachineType type) {
     if (type.isFloat()) return new PhysicalRegister("fa0", MachineType.F32);
     return new PhysicalRegister("a0", type == MachineType.PTR ? MachineType.PTR : MachineType.I32);
   }
 
-  PhysicalRegister getArgRegister(int index, MachineType type) {
+  public PhysicalRegister getArgRegister(int index, MachineType type) {
     if (type.isFloat()) return new PhysicalRegister("fa" + index, MachineType.F32);
     return new PhysicalRegister("a" + index, type == MachineType.PTR ? MachineType.PTR : MachineType.I32);
   }
 
-  int stackSizeOf(MachineType type) {
+  public int stackSizeOf(MachineType type) {
     if (type == MachineType.PTR) return 8;
     if (type == MachineType.I64) return 8;
     if (type == MachineType.VOID) return 0;
     return 4;
   }
 
-  int stackAlignOf(MachineType type) {
+  public int stackAlignOf(MachineType type) {
     if (type == MachineType.PTR) return 8;
     if (type == MachineType.I64) return 8;
     if (type == MachineType.VOID) return 1;
     return 4;
   }
 
-  int sizeOfIrType(Type type) {
+  public int sizeOfIrType(Type type) {
     if (type == null) return 0;
     switch (type.dataType) {
       case I1:
@@ -74,35 +76,35 @@ final class RISCVTarget {
     }
   }
 
-  int alignOfIrType(Type type) {
+  public int alignOfIrType(Type type) {
     if (type == null) return 1;
     if (type.dataType == Type.DataType.ARRAY) return alignOfIrType(type.innerType);
     return stackAlignOf(MachineType.fromIr(type));
   }
 
-  int alignTo(int value, int align) {
+  public int alignTo(int value, int align) {
     if (align <= 1) return value;
     return ((value + align - 1) / align) * align;
   }
 
-  long lowerIntConstant(Constant.Int constant) {
+  public long lowerIntConstant(Constant.Int constant) {
     return constant.value;
   }
 
-  int lowerFloatBits(Constant.Float constant) {
+  public int lowerFloatBits(Constant.Float constant) {
     return java.lang.Float.floatToRawIntBits(constant.value);
   }
 
-  int callStackSlotSize(MachineType type) {
+  public int callStackSlotSize(MachineType type) {
     if (type == MachineType.VOID) return 0;
     return 8;
   }
 
-  CallArgCursor newCallArgCursor() {
+  public CallArgCursor newCallArgCursor() {
     return new CallArgCursor();
   }
 
-  CallArgAssignment assignCallArg(CallArgCursor cursor, MachineType type) {
+  public CallArgAssignment assignCallArg(CallArgCursor cursor, MachineType type) {
     if (type.isFloat()) {
       if (cursor.nextFloatArg < 8) {
         return CallArgAssignment.inRegister(getArgRegister(cursor.nextFloatArg++, type));
@@ -118,17 +120,17 @@ final class RISCVTarget {
     return CallArgAssignment.onStack(stackOffset);
   }
 
-  static final class CallArgCursor {
+  public static final class CallArgCursor {
     private int nextIntArg = 0;
     private int nextFloatArg = 0;
     private int nextStackOffset = 0;
 
-    int getStackBytes() {
+    public int getStackBytes() {
       return nextStackOffset;
     }
   }
 
-  static final class CallArgAssignment {
+  public static final class CallArgAssignment {
     private final PhysicalRegister register;
     private final int stackOffset;
 
@@ -137,23 +139,23 @@ final class RISCVTarget {
       this.stackOffset = stackOffset;
     }
 
-    static CallArgAssignment inRegister(PhysicalRegister register) {
+    public static CallArgAssignment inRegister(PhysicalRegister register) {
       return new CallArgAssignment(register, -1);
     }
 
-    static CallArgAssignment onStack(int stackOffset) {
+    public static CallArgAssignment onStack(int stackOffset) {
       return new CallArgAssignment(null, stackOffset);
     }
 
-    boolean isInRegister() {
+    public boolean isInRegister() {
       return register != null;
     }
 
-    PhysicalRegister getRegister() {
+    public PhysicalRegister getRegister() {
       return register;
     }
 
-    int getStackOffset() {
+    public int getStackOffset() {
       return stackOffset;
     }
   }

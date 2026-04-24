@@ -1,5 +1,13 @@
-package accela.backend;
+package accela.backend.target;
 
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineModule;
+import accela.backend.regalloc.AllocationResult;
+import accela.backend.regalloc.RegisterLocation;
+import accela.backend.regalloc.StackLocation;
+import accela.backend.regalloc.ValueLocation;
 import accela.ir.Constant;
 import accela.ir.GlobalVariable;
 import accela.ir.Type;
@@ -7,18 +15,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-final class RISCVAsmPrinter {
+public final class RISCVAsmPrinter {
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
   private final RISCVAllocationRewriter allocationRewriter;
 
-  RISCVAsmPrinter(RISCVTarget target, RISCVFrameLowering frameLowering, RISCVAllocationRewriter allocationRewriter) {
+  public RISCVAsmPrinter(RISCVTarget target, RISCVFrameLowering frameLowering, RISCVAllocationRewriter allocationRewriter) {
     this.target = target;
     this.frameLowering = frameLowering;
     this.allocationRewriter = allocationRewriter;
   }
 
-  String print(MachineModule module, Map<MachineFunction, AllocationResult> allocations) {
+  public String print(MachineModule module, Map<MachineFunction, AllocationResult> allocations) {
     List<String> lines = new ArrayList<>();
     lines.add(".attribute arch, \"rv64gc\"");
     emitGlobals(module.getSourceModule(), lines);

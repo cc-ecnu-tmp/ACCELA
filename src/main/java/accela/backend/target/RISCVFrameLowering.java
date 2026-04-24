@@ -1,11 +1,14 @@
-package accela.backend;
+package accela.backend.target;
 
+import accela.backend.frame.MachineFrameInfo;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineType;
 import java.util.List;
 
-final class RISCVFrameLowering {
+public final class RISCVFrameLowering {
   private final RISCVTarget target;
 
-  RISCVFrameLowering(RISCVTarget target) {
+  public RISCVFrameLowering(RISCVTarget target) {
     this.target = target;
   }
 

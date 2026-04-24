@@ -1,12 +1,32 @@
-package accela.backend;
+package accela.backend.target;
 
+import accela.backend.frame.StackSlot;
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.FloatImmOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineOperand;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegOperand;
+import accela.backend.machine.PhysicalRegister;
+import accela.backend.machine.StackSlotOperand;
+import accela.backend.machine.SymbolOperand;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.regalloc.AllocationResult;
+import accela.backend.regalloc.RegisterLocation;
+import accela.backend.regalloc.StackLocation;
+import accela.backend.regalloc.ValueLocation;
 import java.util.List;
 
-final class RISCVAllocationRewriter {
+public final class RISCVAllocationRewriter {
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
 
-  RISCVAllocationRewriter(RISCVTarget target, RISCVFrameLowering frameLowering) {
+  public RISCVAllocationRewriter(RISCVTarget target, RISCVFrameLowering frameLowering) {
     this.target = target;
     this.frameLowering = frameLowering;
   }

@@ -1,5 +1,22 @@
-package accela.backend;
+package accela.backend.lowering;
 
+import accela.backend.frame.StackSlot;
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.FloatImmOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineOperand;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineModule;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegOperand;
+import accela.backend.machine.StackSlotOperand;
+import accela.backend.machine.SymbolOperand;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.target.RISCVTarget;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
@@ -10,14 +27,14 @@ import accela.ir.Value;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
-final class IRToMachineLowering {
+public final class IRToMachineLowering {
   private final RISCVTarget target;
 
-  IRToMachineLowering(RISCVTarget target) {
+  public IRToMachineLowering(RISCVTarget target) {
     this.target = target;
   }
 
-  MachineModule lower(accela.ir.Module module) {
+  public MachineModule lower(accela.ir.Module module) {
     MachineModule machineModule = new MachineModule(module);
     for (Function function : module.getFunctions()) {
       machineModule.addFunction(function, lowerFunction(function));

@@ -1,0 +1,33 @@
+package accela.backend.machine;
+
+public enum MachineOpcode {
+  ARG_IN,
+  CONST_INT,
+  STACK_ADDR,
+  MOVE,
+  ADD,
+  SUB,
+  MUL,
+  DIV,
+  REM,
+  XOR,
+  ICMP,
+  FCMP,
+  ZEXT,
+  SEXT,
+  SITOFP,
+  FPTOSI,
+  LOAD,
+  STORE,
+  MEMZERO,
+  FADD,
+  FSUB,
+  FMUL,
+  FDIV,
+  FNEG,
+  BR,
+  CONDBR,
+  CALL,
+  RET,
+  PHI
+}

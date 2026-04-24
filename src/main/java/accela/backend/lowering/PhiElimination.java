@@ -1,14 +1,23 @@
-package accela.backend;
+package accela.backend.lowering;
 
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOperand;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-final class PhiElimination {
+public final class PhiElimination {
   private int edgeSplitCounter = 0;
 
-  void run(MachineFunction function) {
+  public void run(MachineFunction function) {
     for (MachineBasicBlock block : new ArrayList<>(function.getBlocks())) {
       List<MachineInstr> phis = new ArrayList<>();
       for (MachineInstr instr : block.getInstructions()) {
