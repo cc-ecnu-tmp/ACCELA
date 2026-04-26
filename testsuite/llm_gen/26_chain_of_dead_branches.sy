@@ -1,0 +1,27 @@
+int main() {
+    int a = 1;
+    int b = 0;
+    int c = 0;
+    int d = 0;
+    int i = 0;
+    while (i < 10) {
+        if (a == 1) {
+            b = 5;
+        } else {
+            b = 99;
+        }
+        if (b == 5) {
+            c = 10;
+        } else {
+            c = 99;
+        }
+        if (c == 10) {
+            d = 20;
+        } else {
+            d = 99;
+        }
+        i = i + 1;
+    }
+    putint(d);
+    return d;
+}

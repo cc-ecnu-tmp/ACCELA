@@ -1,0 +1,14 @@
+// Corner: negative numbers, overflow-adjacent arithmetic
+int main() {
+    int a = 2147483647;
+    int b = a + 1;
+    int c = 0 - 2147483647;
+    int d = c - 1;
+    int e = c - 2;
+    putint(b);
+    putch(10);
+    putint(d);
+    putch(10);
+    putint(e);
+    return 0;
+}

@@ -1,0 +1,19 @@
+int main() {
+    int flag = 1;
+    int x = 0;
+    int i = 0;
+    while (i < 10) {
+        if (flag == 1) {
+            if (i == 0) {
+                x = 100;
+            } else {
+                x = 100;
+            }
+        } else {
+            x = 999;
+        }
+        i = i + 1;
+    }
+    putint(x);
+    return x;
+}

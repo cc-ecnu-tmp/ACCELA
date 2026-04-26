@@ -1,0 +1,19 @@
+int main() {
+    int x = 3;
+    int y = 7;
+    int i = 0;
+    while (i < 10) {
+        if (x == 3) {
+            if (y == 7) {
+                // both alive, do nothing to x or y
+            } else {
+                x = 100;
+            }
+        } else {
+            y = 200;
+        }
+        i = i + 1;
+    }
+    putint(x + y);
+    return x + y;
+}

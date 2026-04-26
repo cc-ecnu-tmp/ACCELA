@@ -1,0 +1,15 @@
+int main() {
+    int x = 10;
+    int y = 20;
+    int result;
+    if (x == 10) {
+        if (y == 20) {
+            result = x + y;
+        } else {
+            result = x - y;
+        }
+    } else {
+        result = 0;
+    }
+    return result;
+}

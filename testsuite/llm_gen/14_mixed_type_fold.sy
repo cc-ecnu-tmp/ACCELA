@@ -1,0 +1,12 @@
+// Corner: mixed int/float constant folding
+int main() {
+    int a = 7;
+    float b = 3.0;
+    float c = b + 1.5;
+    int d = a * 2;
+    putint(d);
+    putch(32);
+    putfloat(c);
+    putch(10);
+    return d;
+}

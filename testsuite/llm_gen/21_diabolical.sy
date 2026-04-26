@@ -1,0 +1,121 @@
+// Diabolical test: every optimization pitfall in one program
+//
+// Traps:
+// 1. Constant loop that LOOKS like it modifies x but doesn't (dead else)
+// 2. Side-effecting calls that must not be deleted even though return value unused
+// 3. Overflow that wraps around to exactly the "right" value
+// 4. Short-circuit evaluation order matters for global state
+// 5. Recursive function where base case is constant but recursion is not
+// 6. A variable that is constant through a loop only because the
+//    modifying branch is unreachable — and unreachability depends on
+//    another variable that is constant only because THIS variable is constant
+//    (circular reasoning that must resolve via fixed point)
+
+int g = 0;
+
+int tick() {
+    g = g + 1;
+    return g;
+}
+
+int evil_rec(int n) {
+    if (n <= 0) return 1;
+    return evil_rec(n - 1) + evil_rec(n - 1);
+}
+
+int main() {
+    // --- Trap 1: circular constant through loop ---
+    // x=10, y=20. Inside the loop, x is only modified in the else
+    // branch of (x==10), which is unreachable because x IS 10.
+    // But x being 10 depends on else being dead. Circular.
+    // SCCP must resolve this via optimistic fixed point.
+    int x = 10;
+    int y = 20;
+    int i = 0;
+    while (i < 5) {
+        if (x == 10) {
+            y = y + x;
+        } else {
+            x = 999;
+            y = 0 - 1;
+        }
+        i = i + 1;
+    }
+    // If optimizer is correct: x=10, y=20+10*5=70
+    // If optimizer wrongly enters else: y=-1, x=999
+    putint(x);
+    putch(32);
+    putint(y);
+    putch(10);
+
+    // --- Trap 2: side effects must survive ---
+    // tick() increments global g. Even though we don't use the return
+    // value, the calls must not be deleted.
+    int unused1 = tick();
+    int unused2 = tick();
+    int unused3 = tick();
+    // g should be 3 now
+    putint(g);
+    putch(10);
+
+    // --- Trap 3: short circuit + side effects ---
+    // (tick() == 5) is true (g becomes 4, no wait, g=3+1=4, 4!=5 → false)
+    // Due to short circuit, second tick() should NOT execute in &&
+    // but SHOULD execute in ||
+    int before = g;
+    if (tick() == 5 && tick() == 100) {
+        putint(0 - 1);
+    }
+    // tick() returned 4 (g=4), 4!=5, short circuit, second tick skipped
+    // g should be 4
+    putint(g);
+    putch(10);
+
+    if (tick() == 5 || tick() == 100) {
+        // tick() returned 5 (g=5), 5==5 → true, short circuit
+        // second tick skipped, g=5
+        putint(g);
+        putch(10);
+    }
+
+    // --- Trap 4: overflow arithmetic ---
+    // 2147483647 + 1 = -2147483648 (32-bit signed wrap)
+    // -2147483648 / -1 is UB in C, but we test -2147483648 + 2147483647 = -1
+    int big = 2147483647;
+    int wrapped = big + 1;
+    int back = wrapped + big;
+    // -2147483648 + 2147483647 = -1
+    putint(back);
+    putch(10);
+
+    // --- Trap 5: recursive call that constant-folds at base ---
+    // evil_rec(0) = 1, but evil_rec(3) = 8
+    // The optimizer must NOT assume evil_rec always returns 1
+    int r = evil_rec(3);
+    putint(r);
+    putch(10);
+
+    // --- Trap 6: constant that depends on TWO dead branches being dead ---
+    int p = 7;
+    int q = 13;
+    int j = 0;
+    while (j < 3) {
+        if (p == 7) {
+            if (q == 13) {
+                // both branches alive, do nothing
+            } else {
+                p = 0;
+            }
+        } else {
+            q = 0;
+        }
+        j = j + 1;
+    }
+    // p stays 7, q stays 13 — but only if BOTH dead branches resolve
+    putint(p * q);
+    putch(10);
+
+    // Final: combine everything
+    // x=10, y=70, g=5, back=-1, r=8, p*q=91
+    return x + y + g + back + r + p * q;
+}

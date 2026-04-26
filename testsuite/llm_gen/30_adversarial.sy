@@ -1,0 +1,362 @@
+// Adversarial correctness stress test
+//
+// Every section is designed to break a specific class of compiler bug.
+// If the compiler miscompiles ANY part, the final checksum will be wrong.
+//
+// The program computes a running checksum. Each section contributes a value.
+// At the end we print the checksum and return it.
+// Expected output: a]bsingle number determined by correct execution.
+
+int checksum = 0;
+
+void check(int id, int got, int expected) {
+    if (got != expected) {
+        putch(69);   // 'E'
+        putint(id);
+        putch(10);
+    }
+    checksum = checksum + got * id;
+}
+
+// --- Section 1: short-circuit evaluation order with side effects ---
+// The exact number of calls to tick() matters.
+
+int tick_state = 0;
+int tick() {
+    tick_state = tick_state + 1;
+    return tick_state;
+}
+
+void test_short_circuit() {
+    tick_state = 0;
+
+    // tick()=1, 1!=0 -> true, short-circuit OR, second tick() skipped
+    // result: tick_state=1
+    if (tick() || tick()) {}
+    check(1, tick_state, 1);
+
+    tick_state = 0;
+    // tick()=1, 1!=0 -> true for &&'s left side, need to eval right
+    // tick()=2, 2!=0 -> true
+    // result: tick_state=2
+    if (tick() && tick()) {}
+    check(2, tick_state, 2);
+
+    tick_state = 0;
+    // tick()=1 -> true, OR short-circuits
+    // but we're inside && so we need right side of &&
+    // (tick() || tick()) && (tick() || tick())
+    // left of &&: tick()=1 -> true, OR short-circuits -> true. tick_state=1
+    // right of &&: tick()=2 -> true, OR short-circuits -> true. tick_state=2
+    // result: tick_state=2
+    if ((tick() || tick()) && (tick() || tick())) {}
+    check(3, tick_state, 2);
+}
+
+// --- Section 2: integer edge cases ---
+
+void test_int_edges() {
+    // Division truncation toward zero (not floor)
+    int a = 7 / 2;        // 3, not 3.5
+    check(4, a, 3);
+
+    int b = 0 - 7;
+    int c = b / 2;        // -3, not -4 (truncation toward zero)
+    check(5, c, 0 - 3);
+
+    // Remainder sign follows dividend
+    int d = 7 % 3;        // 1
+    check(6, d, 1);
+    int e = (0 - 7) % 3;  // -1 (not 2)
+    check(7, e, 0 - 1);
+
+    // Multiplication that overflows 32 bits
+    int big = 100000;
+    int prod = big * big;  // 10^10 mod 2^32 = 1410065408
+    // We just check it doesn't crash and is deterministic
+    int prod2 = big * big;
+    check(8, prod - prod2, 0);  // must be same both times
+}
+
+// --- Section 3: loop with variable that is constant only if dead branch is dead ---
+// (The circular reasoning test)
+
+void test_circular_const() {
+    int x = 77;
+    int y = 0;
+    int i = 0;
+    while (i < 10) {
+        if (x == 77) {
+            y = y + 1;
+        } else {
+            // If compiler wrongly enters here, x gets clobbered
+            x = 0;
+            y = 0 - 9999;
+        }
+        i = i + 1;
+    }
+    check(9, x, 77);
+    check(10, y, 10);
+}
+
+// --- Section 4: nested loops where inner loop's trip count depends on outer ---
+
+void test_nested_loops() {
+    int total = 0;
+    int i = 0;
+    while (i < 5) {
+        int j = 0;
+        while (j <= i) {
+            total = total + 1;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    // total = 1+2+3+4+5 = 15
+    check(11, total, 15);
+}
+
+// --- Section 5: global variable modified through function calls ---
+// Optimizer must not cache/propagate global across calls
+
+int glob = 100;
+
+int modify_glob() {
+    glob = glob + 1;
+    return glob;
+}
+
+void test_global_aliasing() {
+    glob = 100;
+    int a = modify_glob();  // glob=101, a=101
+    int b = modify_glob();  // glob=102, b=102
+    int c = glob;           // must re-read, c=102
+    check(12, a, 101);
+    check(13, b, 102);
+    check(14, c, 102);
+}
+
+// --- Section 6: array elements must not be constant-propagated across stores ---
+
+void test_array_aliasing() {
+    int arr[5] = {};
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+
+    // Modify through computed index
+    int idx = 1;
+    arr[idx] = 99;
+
+    // arr[1] must be 99 now, not 20
+    check(15, arr[0], 10);
+    check(16, arr[1], 99);
+    check(17, arr[2], 30);
+}
+
+// --- Section 7: recursive function correctness ---
+// Easy to miscompile if optimizer inlines incorrectly or
+// messes up the call stack
+
+int fib(int n) {
+    if (n <= 1) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+
+void test_recursion() {
+    check(18, fib(0), 0);
+    check(19, fib(1), 1);
+    check(20, fib(10), 55);
+}
+
+// --- Section 8: deeply nested control flow where only one path is taken ---
+// Tests that dead code elimination doesn't remove the live path
+
+void test_deep_control_flow() {
+    int x = 3;
+    int result = 0;
+    if (x == 1) {
+        result = 1;
+    } else if (x == 2) {
+        result = 2;
+    } else if (x == 3) {
+        result = 3;
+    } else if (x == 4) {
+        result = 4;
+    } else if (x == 5) {
+        result = 5;
+    } else {
+        result = 0 - 1;
+    }
+    check(21, result, 3);
+}
+
+// --- Section 9: variable reused across scopes ---
+// Make sure SSA construction handles scope correctly
+
+void test_scope_reuse() {
+    int x = 1;
+    int total = 0;
+    {
+        int x = 10;
+        total = total + x;  // 10
+    }
+    total = total + x;      // 1
+    {
+        int x = 100;
+        total = total + x;  // 100
+    }
+    total = total + x;      // 1 again
+    check(22, total, 112);
+}
+
+// --- Section 10: break and continue ---
+
+void test_break_continue() {
+    int sum = 0;
+    int i = 0;
+    while (i < 20) {
+        i = i + 1;
+        if (i % 2 == 0) continue;  // skip even
+        if (i > 10) break;         // stop after 10
+        sum = sum + i;
+    }
+    // odd numbers 1..9: 1+3+5+7+9 = 25
+    check(23, sum, 25);
+}
+
+// --- Section 11: function that returns different values on different calls ---
+// Optimizer must not assume return value is constant
+
+int call_count = 0;
+int stateful_func() {
+    call_count = call_count + 1;
+    if (call_count == 1) return 10;
+    if (call_count == 2) return 20;
+    if (call_count == 3) return 30;
+    return 0;
+}
+
+void test_stateful_calls() {
+    call_count = 0;
+    int a = stateful_func();
+    int b = stateful_func();
+    int c = stateful_func();
+    check(24, a, 10);
+    check(25, b, 20);
+    check(26, c, 30);
+}
+
+// --- Section 12: while loop that executes exactly 0 times ---
+
+void test_zero_trip_loop() {
+    int x = 42;
+    int i = 10;
+    while (i < 5) {
+        x = 0;   // should never execute
+        i = i + 1;
+    }
+    check(27, x, 42);
+}
+
+// --- Section 13: complex expression with many subexpressions ---
+// Tests that evaluation order and precedence are correct
+
+void test_complex_expr() {
+    int a = 2;
+    int b = 3;
+    int c = 4;
+    int d = 5;
+    // 2 + 3*4 - 5 = 2 + 12 - 5 = 9
+    int r1 = a + b * c - d;
+    check(28, r1, 9);
+
+    // (2+3) * (4-5) = 5 * (-1) = -5
+    int r2 = (a + b) * (c - d);
+    check(29, r2, 0 - 5);
+
+    // a % b + c / d = 2%3 + 4/5 = 2 + 0 = 2
+    int r3 = a % b + c / d;
+    check(30, r3, 2);
+}
+
+// --- Section 14: many parameters passed to function ---
+
+int sum8(int a, int b, int c, int d, int e, int f, int g, int h) {
+    return a + b + c + d + e + f + g + h;
+}
+
+void test_many_params() {
+    int s = sum8(1, 2, 3, 4, 5, 6, 7, 8);
+    check(31, s, 36);
+
+    // Call with expressions, not just literals
+    int x = 10;
+    int s2 = sum8(x, x+1, x+2, x+3, x+4, x+5, x+6, x+7);
+    check(32, s2, 108);  // 10+11+12+13+14+15+16+17 = 108
+}
+
+// --- Section 15: the ultimate trap ---
+// Two mutually-dependent loops where constants protect each other.
+// If the optimizer breaks the invariant in EITHER loop,
+// the other loop's invariant also breaks, causing cascading failure.
+
+void test_mutual_invariant() {
+    int a = 5;
+    int b = 10;
+    int i = 0;
+    while (i < 3) {
+        // a protects b
+        if (a == 5) {
+            // b unchanged
+        } else {
+            b = 0 - 1;
+        }
+        // b protects a
+        if (b == 10) {
+            // a unchanged
+        } else {
+            a = 0 - 1;
+        }
+        i = i + 1;
+    }
+    check(33, a, 5);
+    check(34, b, 10);
+
+    // Triple mutual lock
+    int p = 1;
+    int q = 2;
+    int r = 3;
+    int j = 0;
+    while (j < 5) {
+        if (p != 1) { q = 0 - 1; }
+        if (q != 2) { r = 0 - 1; }
+        if (r != 3) { p = 0 - 1; }
+        j = j + 1;
+    }
+    check(35, p + q + r, 6);
+}
+
+// --- Main: run all tests, compute checksum ---
+
+int main() {
+    test_short_circuit();
+    test_int_edges();
+    test_circular_const();
+    test_nested_loops();
+    test_global_aliasing();
+    test_array_aliasing();
+    test_recursion();
+    test_deep_control_flow();
+    test_scope_reuse();
+    test_break_continue();
+    test_stateful_calls();
+    test_zero_trip_loop();
+    test_complex_expr();
+    test_many_params();
+    test_mutual_invariant();
+
+    putint(checksum);
+    putch(10);
+    return checksum;
+}

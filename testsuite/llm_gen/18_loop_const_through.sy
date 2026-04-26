@@ -1,0 +1,15 @@
+// Corner: loop where variable is constant despite phi node
+// x is set to 5 before loop entry, never modified inside loop
+int main() {
+    int x = 5;
+    int sum = 0;
+    int i = 0;
+    while (i < 100) {
+        sum = sum + x;
+        i = i + 1;
+    }
+    putint(sum);
+    putch(10);
+    putint(x);
+    return 0;
+}

@@ -1,0 +1,18 @@
+// Corner: constant condition kills one phi branch, enabling further folding
+int main() {
+    int x = 1;
+    int y;
+    if (x == 1) {
+        y = 42;
+    } else {
+        y = 99;
+    }
+    int z;
+    if (y == 42) {
+        z = 100;
+    } else {
+        z = 200;
+    }
+    putint(z);
+    return z;
+}

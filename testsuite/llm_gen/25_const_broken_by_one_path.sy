@@ -1,0 +1,12 @@
+int main() {
+    int x = 10;
+    int i = 0;
+    while (i < 5) {
+        if (i == 3) {
+            x = 20;
+        }
+        i = i + 1;
+    }
+    putint(x);
+    return x;
+}

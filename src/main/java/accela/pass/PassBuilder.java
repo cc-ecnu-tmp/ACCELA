@@ -9,7 +9,9 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.transform.ADCE;
 import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
+import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 
@@ -39,6 +41,16 @@ public final class PassBuilder {
 
   private static boolean isAdceEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_ADCE");
+    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isSccpEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_SCCP");
+    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isInstSimplifyEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_INSTSIMPLIFY");
     return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
   }
 
@@ -97,6 +109,12 @@ public final class PassBuilder {
     }
     if (enableMem2Reg) {
       fpm.addPass(new Mem2Reg.Pass());
+    }
+    if (isSccpEnabled()) {
+      fpm.addPass(new SCCP.Pass());
+    }
+    if (isInstSimplifyEnabled()) {
+      fpm.addPass(new InstSimplify.Pass());
     }
     if (enableAdce) {
       fpm.addPass(new ADCE.Pass());

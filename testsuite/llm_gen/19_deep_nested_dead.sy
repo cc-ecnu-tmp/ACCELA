@@ -1,0 +1,30 @@
+// Corner: deeply nested dead branches - all conditions are compile-time known
+int main() {
+    int a = 1;
+    int b = 2;
+    int c = 3;
+    int result = 0;
+    if (a == 1) {
+        if (b == 2) {
+            if (c == 3) {
+                if (a + b == 3) {
+                    if (b + c == 5) {
+                        result = 999;
+                    } else {
+                        result = -1;
+                    }
+                } else {
+                    result = -2;
+                }
+            } else {
+                result = -3;
+            }
+        } else {
+            result = -4;
+        }
+    } else {
+        result = -5;
+    }
+    putint(result);
+    return result;
+}
