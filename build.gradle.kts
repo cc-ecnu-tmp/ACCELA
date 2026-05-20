@@ -1,5 +1,6 @@
 plugins {
     id("java")
+    id("org.graalvm.buildtools.native") version "0.10.3"
 }
 
 group = "accela"
@@ -23,4 +24,14 @@ tasks.withType<Jar>(){
 
 tasks.test {
     useJUnitPlatform()
+}
+
+graalvmNative {
+    binaries {
+        named("main") {
+            imageName.set("accela")
+            mainClass.set("accela.Main")
+            buildArgs.add("--no-fallback")
+        }
+    }
 }

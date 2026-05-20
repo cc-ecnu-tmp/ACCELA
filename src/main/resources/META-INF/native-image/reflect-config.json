@@ -1,0 +1,9 @@
+[
+  {
+    "name": "accela.Main",
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true,
+    "queryAllDeclaredFields": true,
+    "queryAllDeclaredConstructors": true
+  }
+]
