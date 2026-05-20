@@ -17,7 +17,7 @@ dependencies {
 
 tasks.withType<Jar>(){
     manifest{
-        attributes["Main-Class"] = "accela.Main"
+        attributes["Main-Class"] = "Compiler"
     }
 }
 

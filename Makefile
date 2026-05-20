@@ -25,7 +25,7 @@ compile:
 $(TARGET_EXE): compile
 	@mkdir -p $(BIN_DIR)
 	@echo '#!/bin/bash' > $(TARGET_EXE)
-	@echo 'java -cp $(CLASSES_DIR) Main "$$@"' >> $(TARGET_EXE)
+	@echo 'java -XX:-UsePerfData -cp $(CLASSES_DIR) Compiler "$$@"' >> $(TARGET_EXE)
 	@chmod +x $(TARGET_EXE)
 	@echo "Build successful. Executable created at $(TARGET_EXE)"
 
