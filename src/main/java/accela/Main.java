@@ -16,9 +16,38 @@ import accela.parse.Parser;
 import accela.parse.Sema;
 import accela.ast.*;
 import accela.ir.*;
+import accela.cli.*;
 
-// TODO: we need a better way of handling cmd args
-public class Main {
+@Command(
+    name = "java Main",
+    mixinStandardHelpOptions = true,
+    description = "Accela compiler command line interface."
+)
+public class Main implements Runnable {
+  @Option(names = {"--ast"}, description = "Print AST")
+  private boolean printAst = false;
+
+  @Option(names = {"--interpret"}, description = "Run interpreter")
+  private boolean interpret = false;
+
+  @Option(names = {"--ir-raw"}, description = "Emit raw IR")
+  private boolean emitRawIR = false;
+
+  @Option(names = {"--ir-sroa"}, description = "Emit SROA optimized IR")
+  private boolean emitSroaIR = false;
+
+  @Option(names = {"--ir"}, description = "Emit optimized IR")
+  private boolean emitIR = false;
+
+  @Option(names = {"--asm"}, description = "Emit assembly")
+  private boolean emitAsm = false;
+
+  @Option(names = {"--pass-stats"}, description = "Print pass statistics")
+  private boolean printPassStats = false;
+
+  @Parameters(index = "0", description = "Source file to compile/run", required = true)
+  private String fileName;
+
   private static accela.ir.Module buildRawIR(Node unit) {
     accela.ir.Module module = new AST2IR().convert(unit);
     IRVerifier.verifyModule(module);
@@ -45,54 +74,8 @@ public class Main {
     return module;
   }
 
-  public static void main(String[] args) {
-    if (args.length == 0) {
-      System.err.println(
-          "Usage: java Main [--ast | --interpret | --ir-raw | --ir-sroa | --ir | --asm] [--pass-stats] <source file>");
-      System.exit(1);
-    }
-
-    boolean printAst = false;
-    boolean interpret = false;
-    boolean emitRawIR = false;
-    boolean emitSroaIR = false;
-    boolean emitIR = false;
-    boolean emitAsm = false;
-    boolean printPassStats = false;
-    String fileName;
-
-    int argIndex = 0;
-    while (argIndex < args.length - 1) {
-      switch (args[argIndex]) {
-        case "--ast":
-          printAst = true;
-          break;
-        case "--interpret":
-          interpret = true;
-          break;
-        case "--ir-raw":
-          emitRawIR = true;
-          break;
-        case "--ir":
-          emitIR = true;
-          break;
-        case "--ir-sroa":
-          emitSroaIR = true;
-          break;
-        case "--asm":
-          emitAsm = true;
-          break;
-        case "--pass-stats":
-          printPassStats = true;
-          break;
-        default:
-          argIndex = args.length - 1;
-          continue;
-      }
-      argIndex++;
-    }
-    fileName = args[argIndex];
-
+  @Override
+  public void run() {
     try {
       String source = new String(Files.readAllBytes(Paths.get(fileName)));
       Lexer lexer = new Lexer(source, fileName);
@@ -131,8 +114,12 @@ public class Main {
         }
       }
     } catch (Exception e) {
-      e.printStackTrace();
-      System.exit(1);
+      throw new RuntimeException(e);
     }
+  }
+
+  public static void main(String[] args) {
+    int exitCode = new CommandLine(new Main()).execute(args);
+    System.exit(exitCode);
   }
 }
