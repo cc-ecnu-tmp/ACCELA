@@ -16,8 +16,10 @@ def run_test(sy_file):
             input_data = f.read()
 
     try:
+        root_dir = Path(__file__).resolve().parent.parent
+        accela_cmd = ['java', '-cp', str(root_dir / 'build' / 'classes' / 'java' / 'main'), 'accela.Main']
         proc = subprocess.run(
-            ['build/src/main', '--interpret', str(sy_file)],
+            accela_cmd + ['--interpret', str(sy_file)],
             input=input_data,
             capture_output=True,
             text=True,
@@ -55,7 +57,11 @@ def main():
         Path('testsuite/functional'),
         Path('testsuite/hidden_functional'),
     ]
+    pattern = sys.argv[1] if len(sys.argv) > 1 else None
+
     sy_files = sorted(f for d in test_dirs if d.exists() for f in d.glob('*.sy'))
+    if pattern:
+        sy_files = [f for f in sy_files if pattern in f.name or pattern == f.parent.name]
 
     print(f"Running {len(sy_files)} functional tests with AST Interpreter...\n")
 
