@@ -1,0 +1,236 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+final class LivenessAnalysisTest {
+  @Test
+  void computesInstructionLivenessInLinearBlock() {
+    MachineFunction function = new MachineFunction("linear", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+
+    MachineInstr argIn = new MachineInstr(MachineOpcode.ARG_IN, a);
+    argIn.setType(MachineType.I32);
+    entry.addInstruction(argIn);
+
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, b);
+    add.addOperand(new VRegOperand(a));
+    add.addOperand(new ImmOperand(1));
+    add.setType(MachineType.I32);
+    entry.addInstruction(add);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(b));
+    ret.setType(MachineType.I32);
+    entry.addInstruction(ret);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertRegs(live.liveIn(entry));
+    assertRegs(live.liveOut(entry));
+
+    assertRegs(live.liveBefore(argIn));
+    assertRegs(live.liveAfter(argIn), a);
+    assertRegs(live.liveBefore(add), a);
+    assertRegs(live.liveAfter(add), b);
+    assertRegs(live.liveBefore(ret), b);
+    assertRegs(live.liveAfter(ret));
+  }
+
+  @Test
+  void propagatesLivenessAcrossBranchSuccessors() {
+    MachineFunction function = new MachineFunction("branch", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock thenBlock = function.addBlock("then");
+    MachineBasicBlock exitBlock = function.addBlock("exit");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+
+    MachineInstr argIn = new MachineInstr(MachineOpcode.ARG_IN, a);
+    argIn.setType(MachineType.I32);
+    entry.addInstruction(argIn);
+
+    MachineInstr condBr = new MachineInstr(MachineOpcode.CONDBR, null);
+    condBr.addOperand(new VRegOperand(a));
+    condBr.addOperand(new BlockOperand(thenBlock));
+    condBr.addOperand(new BlockOperand(exitBlock));
+    condBr.setType(MachineType.I1);
+    entry.addInstruction(condBr);
+
+    MachineInstr thenRet = new MachineInstr(MachineOpcode.RET, null);
+    thenRet.addOperand(new VRegOperand(a));
+    thenRet.setType(MachineType.I32);
+    thenBlock.addInstruction(thenRet);
+
+    MachineInstr exitRet = new MachineInstr(MachineOpcode.RET, null);
+    exitRet.setType(MachineType.VOID);
+    exitBlock.addInstruction(exitRet);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertRegs(live.liveIn(entry));
+    assertRegs(live.liveOut(entry), a);
+    assertRegs(live.liveIn(thenBlock), a);
+    assertRegs(live.liveIn(exitBlock));
+
+    assertRegs(live.liveAfter(argIn), a);
+    assertRegs(live.liveBefore(condBr), a);
+    assertRegs(live.liveAfter(condBr), a);
+    assertRegs(live.liveBefore(thenRet), a);
+    assertRegs(live.liveAfter(thenRet));
+  }
+
+  @Test
+  void doesNotTreatBlockLocalDefinitionsAsBlockUses() {
+    MachineFunction function = new MachineFunction("local_defs", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+
+    MachineInstr addB = new MachineInstr(MachineOpcode.ADD, b);
+    addB.addOperand(new VRegOperand(a));
+    addB.addOperand(new ImmOperand(1));
+    addB.setType(MachineType.I32);
+    entry.addInstruction(addB);
+
+    MachineInstr addC = new MachineInstr(MachineOpcode.ADD, c);
+    addC.addOperand(new VRegOperand(b));
+    addC.addOperand(new ImmOperand(2));
+    addC.setType(MachineType.I32);
+    entry.addInstruction(addC);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(c));
+    ret.setType(MachineType.I32);
+    entry.addInstruction(ret);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertRegs(live.liveIn(entry), a);
+    assertRegs(live.liveOut(entry));
+    assertRegs(live.liveBefore(addB), a);
+    assertRegs(live.liveAfter(addB), b);
+    assertRegs(live.liveBefore(addC), b);
+    assertRegs(live.liveAfter(addC), c);
+  }
+
+  @Test
+  void propagatesLivenessAroundLoopBackEdge() {
+    MachineFunction function = new MachineFunction("loop", MachineType.I32);
+    MachineBasicBlock header = function.addBlock("header");
+    MachineBasicBlock body = function.addBlock("body");
+    MachineBasicBlock exit = function.addBlock("exit");
+
+    VirtualRegister i = function.createVirtualRegister(MachineType.I32, "i");
+    VirtualRegister n = function.createVirtualRegister(MachineType.I32, "n");
+    VirtualRegister cond = function.createVirtualRegister(MachineType.I1, "cond");
+    VirtualRegister next = function.createVirtualRegister(MachineType.I32, "next");
+
+    MachineInstr cmp = new MachineInstr(MachineOpcode.ICMP, cond);
+    cmp.addOperand(new VRegOperand(i));
+    cmp.addOperand(new VRegOperand(n));
+    cmp.setType(MachineType.I1);
+    header.addInstruction(cmp);
+
+    MachineInstr condBr = new MachineInstr(MachineOpcode.CONDBR, null);
+    condBr.addOperand(new VRegOperand(cond));
+    condBr.addOperand(new BlockOperand(body));
+    condBr.addOperand(new BlockOperand(exit));
+    condBr.setType(MachineType.I1);
+    header.addInstruction(condBr);
+
+    MachineInstr inc = new MachineInstr(MachineOpcode.ADD, next);
+    inc.addOperand(new VRegOperand(i));
+    inc.addOperand(new ImmOperand(1));
+    inc.setType(MachineType.I32);
+    body.addInstruction(inc);
+
+    MachineInstr jump = new MachineInstr(MachineOpcode.BR, null);
+    jump.addOperand(new BlockOperand(header));
+    body.addInstruction(jump);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(i));
+    ret.setType(MachineType.I32);
+    exit.addInstruction(ret);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertRegs(live.liveIn(header), i, n);
+    assertRegs(live.liveOut(header), i, n);
+    assertRegs(live.liveIn(body), i, n);
+    assertRegs(live.liveOut(body), i, n);
+    assertRegs(live.liveIn(exit), i);
+    assertRegs(live.liveAfter(inc), i, n);
+  }
+
+  @Test
+  void repeatedUsesDoNotCreateDuplicateLiveEntries() {
+    MachineFunction function = new MachineFunction("repeated_use", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, b);
+    add.addOperand(new VRegOperand(a));
+    add.addOperand(new VRegOperand(a));
+    add.setType(MachineType.I32);
+    entry.addInstruction(add);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(b));
+    ret.setType(MachineType.I32);
+    entry.addInstruction(ret);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertEquals(1, live.liveBefore(add).size());
+    assertRegs(live.liveBefore(add), a);
+    assertRegs(live.liveAfter(add), b);
+  }
+
+  @Test
+  void definitionStopsValueFromBeingLiveBeforeItsDefiningInstruction() {
+    MachineFunction function = new MachineFunction("def_boundary", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+
+    MachineInstr defineA = new MachineInstr(MachineOpcode.MOVE, a);
+    defineA.addOperand(new ImmOperand(42));
+    defineA.setType(MachineType.I32);
+    entry.addInstruction(defineA);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(a));
+    ret.setType(MachineType.I32);
+    entry.addInstruction(ret);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertRegs(live.liveBefore(defineA));
+    assertRegs(live.liveAfter(defineA), a);
+    assertRegs(live.liveBefore(ret), a);
+  }
+
+  private static void assertRegs(Set<VirtualRegister> actual, VirtualRegister... expected) {
+    assertEquals(Set.of(expected), actual);
+  }
+}
