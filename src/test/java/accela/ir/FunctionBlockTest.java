@@ -17,4 +17,16 @@ final class FunctionBlockTest {
     assertSame(function, newEntry.getParent());
     assertEquals(java.util.List.of(newEntry, oldEntry), function.getBlocks());
   }
+
+  @Test
+  void insertsBlocksAfterExistingBlocks() {
+    Function function = new Function("f", Type.VOID);
+    BasicBlock first = function.addBlock("first");
+    BasicBlock last = function.addBlock("last");
+
+    BasicBlock middle = function.insertBlockAfter(first, "middle");
+
+    assertSame(function, middle.getParent());
+    assertEquals(java.util.List.of(first, middle, last), function.getBlocks());
+  }
 }
