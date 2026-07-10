@@ -129,6 +129,40 @@ public final class RISCVAllocationRewriter {
     }
   }
 
+  void emitCompareBranch(
+      MachineFunction function,
+      MachineInstr compare,
+      MachineInstr branch,
+      AllocationResult allocation,
+      List<String> lines) {
+    materializeInto(lines, compare.getOperands().get(0), "t0", MachineType.I32, allocation);
+    MachineOperand rightOperand = compare.getOperands().get(1);
+    String right = "t1";
+    if (rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0) {
+      right = "zero";
+    } else {
+      materializeInto(lines, rightOperand, right, MachineType.I32, allocation);
+    }
+
+    String opcode;
+    String left = "t0";
+    switch (compare.getPredicate()) {
+      case "eq": opcode = "beq"; break;
+      case "ne": opcode = "bne"; break;
+      case "slt": opcode = "blt"; break;
+      case "sge": opcode = "bge"; break;
+      case "sgt": opcode = "blt"; left = right; right = "t0"; break;
+      case "sle": opcode = "bge"; left = right; right = "t0"; break;
+      default:
+        throw new UnsupportedOperationException(
+            "Unsupported integer branch predicate: " + compare.getPredicate());
+    }
+    lines.add("  " + opcode + " " + left + ", " + right + ", "
+        + labelFor(function, ((BlockOperand) branch.getOperands().get(1)).getBlock()));
+    lines.add("  j "
+        + labelFor(function, ((BlockOperand) branch.getOperands().get(2)).getBlock()));
+  }
+
   private void emitArgIn(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     MachineOperand source = instr.getOperands().get(0);
     if (source instanceof PhysicalRegOperand) {
