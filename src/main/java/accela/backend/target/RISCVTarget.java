@@ -25,6 +25,21 @@ public final class RISCVTarget {
           new PhysicalRegister("ft1", MachineType.F32),
           new PhysicalRegister("ft2", MachineType.F32),
           new PhysicalRegister("ft3", MachineType.F32));
+  private final List<PhysicalRegister> intAllocatable =
+      List.of(
+          new PhysicalRegister("t4", MachineType.I32),
+          new PhysicalRegister("t5", MachineType.I32),
+          new PhysicalRegister("t6", MachineType.I32));
+  private final List<PhysicalRegister> floatAllocatable =
+      List.of(
+          new PhysicalRegister("ft4", MachineType.F32),
+          new PhysicalRegister("ft5", MachineType.F32),
+          new PhysicalRegister("ft6", MachineType.F32),
+          new PhysicalRegister("ft7", MachineType.F32),
+          new PhysicalRegister("ft8", MachineType.F32),
+          new PhysicalRegister("ft9", MachineType.F32),
+          new PhysicalRegister("ft10", MachineType.F32),
+          new PhysicalRegister("ft11", MachineType.F32));
 
   public List<PhysicalRegister> getIntScratch() {
     return intScratch;
@@ -32,6 +47,10 @@ public final class RISCVTarget {
 
   public List<PhysicalRegister> getFloatScratch() {
     return floatScratch;
+  }
+
+  public List<PhysicalRegister> getAllocatableRegisters(MachineType type) {
+    return type.isFloat() ? floatAllocatable : intAllocatable;
   }
 
   public PhysicalRegister getReturnRegister(MachineType type) {
