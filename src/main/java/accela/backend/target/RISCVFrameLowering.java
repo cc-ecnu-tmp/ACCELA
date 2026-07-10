@@ -33,6 +33,11 @@ public final class RISCVFrameLowering {
   }
 
   void emitEpilogue(MachineFunction function, List<String> lines) {
+    emitTailEpilogue(function, lines);
+    lines.add("  ret");
+  }
+
+  void emitTailEpilogue(MachineFunction function, List<String> lines) {
     if (function.getFrameInfo().hasCalls()) {
       emitLoadFromBase(lines, "ra", "sp", function.getFrameInfo().getSaveRaOffset(), "t3", MachineType.PTR);
     }
@@ -46,7 +51,6 @@ public final class RISCVFrameLowering {
     if (frameSize > 0) {
       emitAddImmediate(lines, "sp", "sp", frameSize, "t3");
     }
-    lines.add("  ret");
   }
 
   void emitLoadFromBase(

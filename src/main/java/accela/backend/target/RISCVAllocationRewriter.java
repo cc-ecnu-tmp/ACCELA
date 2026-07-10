@@ -152,6 +152,9 @@ public final class RISCVAllocationRewriter {
       case CALL:
         emitCall(instr, allocation, lines);
         return;
+      case TAILCALL:
+        emitTailCall(function, instr, allocation, lines);
+        return;
       case RET:
         if (!instr.getOperands().isEmpty()) {
           materializeInto(lines, instr.getOperands().get(0), target.getReturnRegister(instr.getType()).getName(), instr.getType(), allocation);
@@ -608,6 +611,23 @@ public final class RISCVAllocationRewriter {
   }
 
   private void emitCall(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+    emitCallArguments(instr, allocation, lines);
+    lines.add("  call " + instr.getCallee());
+    if (instr.getDest() != null) {
+      writeDest(lines, instr.getDest(), target.getReturnRegister(instr.getType()).getName(), allocation, instr.getType());
+    }
+  }
+
+  private void emitTailCall(
+      MachineFunction function, MachineInstr instr,
+      AllocationResult allocation, List<String> lines) {
+    emitCallArguments(instr, allocation, lines);
+    frameLowering.emitTailEpilogue(function, lines);
+    lines.add("  tail " + instr.getCallee());
+  }
+
+  private void emitCallArguments(
+      MachineInstr instr, AllocationResult allocation, List<String> lines) {
     RISCVTarget.CallArgCursor argCursor = target.newCallArgCursor();
     for (int i = 0; i < instr.getOperands().size(); i++) {
       MachineOperand operand = instr.getOperands().get(i);
@@ -622,10 +642,6 @@ public final class RISCVAllocationRewriter {
         materializeInto(lines, operand, "t0", argType, allocation);
         frameLowering.emitStoreToBase(lines, "t0", "sp", assignment.getStackOffset(), "t3", argType);
       }
-    }
-    lines.add("  call " + instr.getCallee());
-    if (instr.getDest() != null) {
-      writeDest(lines, instr.getDest(), target.getReturnRegister(instr.getType()).getName(), allocation, instr.getType());
     }
   }
 
