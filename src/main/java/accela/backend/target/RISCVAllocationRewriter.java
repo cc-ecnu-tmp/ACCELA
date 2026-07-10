@@ -92,6 +92,9 @@ public final class RISCVAllocationRewriter {
       case REM:
       case XOR:
       case AND:
+      case SHL:
+      case ASHR:
+      case LSHR:
         emitBinaryArithmetic(instr, allocation, lines);
         return;
       case ICMP:
@@ -262,6 +265,20 @@ public final class RISCVAllocationRewriter {
     String destination = destinationRegister(instr.getDest(), "t2", allocation);
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
+      if ((instr.getOpcode() == MachineOpcode.SHL
+          || instr.getOpcode() == MachineOpcode.ASHR
+          || instr.getOpcode() == MachineOpcode.LSHR)
+          && value >= 0 && value < (wordResult ? 32 : 64)) {
+        String op = switch (instr.getOpcode()) {
+          case SHL -> wordResult ? "slliw" : "slli";
+          case ASHR -> wordResult ? "sraiw" : "srai";
+          case LSHR -> wordResult ? "srliw" : "srli";
+          default -> throw new IllegalStateException();
+        };
+        lines.add("  " + op + " " + destination + ", " + lhsRegister + ", " + value);
+        writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+        return;
+      }
       if (instr.getOpcode() == MachineOpcode.MUL && value > 0
           && (value & (value - 1)) == 0) {
         int shift = Long.numberOfTrailingZeros(value);
@@ -398,6 +415,15 @@ public final class RISCVAllocationRewriter {
         break;
       case AND:
         op = "and";
+        break;
+      case SHL:
+        op = wordResult ? "sllw" : "sll";
+        break;
+      case ASHR:
+        op = wordResult ? "sraw" : "sra";
+        break;
+      case LSHR:
+        op = wordResult ? "srlw" : "srl";
         break;
       default:
         throw new IllegalStateException();
