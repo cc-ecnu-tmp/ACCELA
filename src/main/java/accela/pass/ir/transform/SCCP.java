@@ -329,7 +329,26 @@ public final class SCCP {
     return new Analysis(result, transfer);
   }
 
-  private static boolean applyTransformations(
+  static ConstVal returnedValue(Analysis analysis) {
+    ConstVal returned = ConstVal.BOT;
+    for (BasicBlock block : analysis.result.reachableBlocks) {
+      SCCPFact fact = analysis.result.blockFacts.getOrDefault(block, LATTICE.bot());
+      for (Instruction instruction : block.getInstructions()) {
+        if (instruction.getOpcode() == Opcode.RET) {
+          if (instruction.getNumOperands() != 0) {
+            returned = ConstVal.join(returned, fact.get(instruction.getOperand(0)));
+          }
+          break;
+        }
+        if (!instruction.isTerminator()) {
+          fact = analysis.transfer.transferInstruction(instruction, fact);
+        }
+      }
+    }
+    return returned;
+  }
+
+  static boolean applyTransformations(
       Function function,
       ForwardDataflowSolver.Result<SCCPFact> solveResult,
       SCCPTransfer transfer) {
@@ -384,7 +403,7 @@ public final class SCCP {
         ConstVal cv = running.get(inst);
         if (cv.isConst() && inst.hasResult()) {
           inst.replaceAllUsesWith(makeConstant(cv));
-          inst.eraseFromParent();
+          if (inst.getOpcode() != Opcode.CALL) inst.eraseFromParent();
           changed = true;
         }
       }
