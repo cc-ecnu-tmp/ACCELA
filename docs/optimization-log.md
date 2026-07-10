@@ -190,3 +190,24 @@ This is the durable record for each research, implementation, correctness, and p
 - Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
 - Full corpus: **147,649 -> 147,157 instructions (-0.33%)** and **457,638 -> 456,182 `.text` bytes (-0.32%)**.
 - **Keep**: small distributed improvement with exact immediate-range guards.
+
+## 2026-07-11 — Fused integer compare branches
+
+### Research and hypothesis
+
+- LLVM RISC-V has direct branch-condition patterns mapping integer `setcc` users to `BEQ`, `BNE`, `BLT`, and `BGE` (with operand swaps for complementary predicates).
+- ACCELA previously materialized every `icmp`, spilled its boolean result, reloaded it in `condbr`, then emitted `bnez`. This is unnecessary when the compare result has only that branch use.
+
+### Implementation
+
+- The assembly printer counts Machine IR virtual-register uses. An `ICMP` is fused only when immediately followed by `CONDBR` on its result and the result has exactly one use.
+- Target emission maps all six signed integer predicates to the four RISC-V branch forms, swaps operands for `>`/`<=`, and uses architectural `zero` without materialization.
+- Comparisons with other uses, non-adjacent branches, and floating comparisons keep the existing value-producing path.
+- Regression tests exercise all six predicates and verify that no `setcc`/`bnez` sequence remains.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Boolean microbenchmark: **35 -> 34 instructions**. `h_functional/29_long_line.sy`: **25,351 -> 22,628 instructions (-10.74%)**.
+- Full corpus: **147,157 -> 138,922 instructions (-5.60%)** and **456,182 -> 429,780 `.text` bytes (-5.79%)**.
+- **Keep**: this is a guarded Machine IR combine, not a textual assembly peephole, and removes a broad all-spill amplification pattern.
