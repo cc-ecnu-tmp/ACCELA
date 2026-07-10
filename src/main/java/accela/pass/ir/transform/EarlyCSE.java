@@ -11,6 +11,7 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,7 +30,29 @@ public final class EarlyCSE {
     boolean changed = false;
     for (BasicBlock block : function.getBlocks()) {
       Map<Expression, Value> available = new HashMap<>();
+      Map<Value, Value> availableLoads = new IdentityHashMap<>();
       for (Instruction instruction : new ArrayList<>(block.getInstructions())) {
+        if (instruction.getOpcode() == Instruction.Opcode.STORE) {
+          availableLoads.clear();
+          availableLoads.put(instruction.getOperand(1), instruction.getOperand(0));
+          continue;
+        }
+        if (instruction.getOpcode() == Instruction.Opcode.CALL) {
+          availableLoads.clear();
+          continue;
+        }
+        if (instruction.getOpcode() == Instruction.Opcode.LOAD) {
+          Value pointer = instruction.getOperand(0);
+          Value existing = availableLoads.get(pointer);
+          if (existing == null) {
+            availableLoads.put(pointer, instruction);
+            continue;
+          }
+          instruction.replaceAllUsesWith(existing);
+          instruction.eraseFromParent();
+          changed = true;
+          continue;
+        }
         if (!isSimple(instruction)) continue;
         Expression expression = expressionFor(instruction);
         Value existing = available.get(expression);
