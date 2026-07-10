@@ -18,6 +18,7 @@ import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
+import accela.pass.ir.transform.TailRecursionElimination;
 
 /**
  * Builds the project's default pass pipelines.
@@ -145,6 +146,7 @@ public final class PassBuilder {
       fpm.addPass(new InstSimplify.Pass());
     }
     if (enableAdce) {
+      fpm.addPass(new TailRecursionElimination.Pass());
       fpm.addPass(new ADCE.Pass());
       if (enableSimplifyCfg) {
         fpm.addPass(new SimplifyCFG.Pass());

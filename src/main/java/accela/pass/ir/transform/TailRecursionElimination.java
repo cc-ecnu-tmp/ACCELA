@@ -4,6 +4,9 @@ import accela.ir.BasicBlock;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
+import accela.pass.PreservedAnalyses;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.FunctionPass;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -64,5 +67,13 @@ public final class TailRecursionElimination {
   private static boolean hasAlloca(Function function) {
     return function.getBlocks().stream().flatMap(block -> block.getInstructions().stream())
         .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA);
+  }
+
+  public static final class Pass implements FunctionPass {
+    @Override
+    public PreservedAnalyses run(Function function, FunctionAnalysisManager fam) {
+      return TailRecursionElimination.run(function)
+          ? PreservedAnalyses.none() : PreservedAnalyses.all();
+    }
   }
 }
