@@ -16,6 +16,7 @@ public final class MachineFrameInfo {
   private int saveS0Offset = -1;
   private int saveRaOffset = -1;
   private final Map<String, Integer> calleeSavedOffsets = new LinkedHashMap<>();
+  private final Map<String, Integer> floatCalleeSavedOffsets = new LinkedHashMap<>();
   private int frameSize = 0;
 
   public StackSlot createLocalSlot(MachineType type, int size, int align) {
@@ -66,6 +67,14 @@ public final class MachineFrameInfo {
     return Collections.unmodifiableMap(calleeSavedOffsets);
   }
 
+  public void markFloatCalleeSavedRegister(String register) {
+    floatCalleeSavedOffsets.putIfAbsent(register, -1);
+  }
+
+  public Map<String, Integer> getFloatCalleeSavedOffsets() {
+    return Collections.unmodifiableMap(floatCalleeSavedOffsets);
+  }
+
   public int getFrameSize() {
     return frameSize;
   }
@@ -89,6 +98,11 @@ public final class MachineFrameInfo {
       offset = target.alignTo(offset, target.stackAlignOf(MachineType.PTR));
       calleeSavedOffsets.put(register, offset);
       offset += target.stackSizeOf(MachineType.PTR);
+    }
+    for (String register : floatCalleeSavedOffsets.keySet()) {
+      offset = target.alignTo(offset, target.stackAlignOf(MachineType.I64));
+      floatCalleeSavedOffsets.put(register, offset);
+      offset += target.stackSizeOf(MachineType.I64);
     }
     frameSize = target.alignTo(offset, 16);
   }
