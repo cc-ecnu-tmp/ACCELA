@@ -49,6 +49,16 @@ public class Function extends Value {
     return bb;
   }
 
+  /** Creates a block immediately after an existing block. */
+  public BasicBlock insertBlockAfter(BasicBlock predecessor, String label) {
+    int index = blocks.indexOf(predecessor);
+    if (index < 0) throw new IllegalArgumentException("block does not belong to function");
+    BasicBlock block = new BasicBlock(label);
+    block.setParent(this);
+    blocks.add(index + 1, block);
+    return block;
+  }
+
   public List<BasicBlock> getBlocks() {
     return Collections.unmodifiableList(blocks);
   }
