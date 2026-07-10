@@ -78,7 +78,11 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
         var physicalRegister = colors.get(entry.getValue());
         result.put(entry.getKey(), new RegisterLocation(physicalRegister));
         if (target.isCalleeSaved(physicalRegister)) {
-          function.getFrameInfo().markCalleeSavedRegister(physicalRegister.getName());
+          if (physicalRegister.getType().isFloat()) {
+            function.getFrameInfo().markFloatCalleeSavedRegister(physicalRegister.getName());
+          } else {
+            function.getFrameInfo().markCalleeSavedRegister(physicalRegister.getName());
+          }
         }
       }
     }
