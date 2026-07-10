@@ -361,6 +361,7 @@ def assembly_command(
             "-march=rv64gc",
             "-mabi=lp64d",
             "-O3",
+            "-fwrapv",
             "-S",
             "-x",
             "c",
