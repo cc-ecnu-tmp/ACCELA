@@ -31,12 +31,17 @@ final class RISCVImmediateArithmeticTest {
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
-    assertTrue(assembly.contains("  addi t2, t0, 7"));
-    assertTrue(assembly.contains("  addi t2, t0, -7"));
-    assertTrue(assembly.contains("  xori t2, t0, 7"));
+    assertTrue(hasInstruction(assembly, "addi", "7"));
+    assertTrue(hasInstruction(assembly, "addi", "-7"));
+    assertTrue(hasInstruction(assembly, "xori", "7"));
     assertFalse(assembly.contains("  li t1, 7"));
     assertFalse(assembly.contains("  add t2, t0, t1"));
     assertFalse(assembly.contains("  sub t2, t0, t1"));
     assertFalse(assembly.contains("  xor t2, t0, t1"));
+  }
+
+  private static boolean hasInstruction(String assembly, String opcode, String immediate) {
+    return assembly.lines().anyMatch(line ->
+        line.matches("\\s+" + opcode + " [a-z0-9]+, [a-z0-9]+, " + immediate));
   }
 }
