@@ -46,8 +46,10 @@ public final class RISCVAllocationRewriter {
         return;
       case STACK_ADDR:
         StackSlot slot = ((StackSlotOperand) instr.getOperands().get(0)).getSlot();
-        frameLowering.emitAddImmediate(lines, "t0", "sp", slot.getOffset(), "t3");
-        writeDest(lines, instr.getDest(), "t0", allocation, instr.getType());
+        String addressDest = destinationRegister(instr.getDest(), "t0", allocation);
+        frameLowering.emitAddImmediate(
+            lines, addressDest, "sp", slot.getOffset(), "t3");
+        writeDest(lines, instr.getDest(), addressDest, allocation, instr.getType());
         return;
       case MOVE:
         if (isRedundantMove(instr, allocation)) return;

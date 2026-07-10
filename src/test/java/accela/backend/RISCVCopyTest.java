@@ -42,4 +42,17 @@ final class RISCVCopyTest {
 
     assertFalse(assembly.contains("  lw t1,"));
   }
+
+  @Test
+  void formsStackAddressesInTheAllocatedRegister() {
+    Module module = new Module();
+    Function function = new Function("address", Type.PTR);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    builder.createRet(builder.createAlloca(Type.INT));
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertFalse(assembly.contains("  addi t0, sp,"));
+  }
 }
