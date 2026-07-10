@@ -96,3 +96,25 @@ This is the durable record for each research, implementation, correctness, and p
 - Full corpus: **2,644,288 -> 507,545 instructions (-80.81%)** and **9,006,760 -> 1,625,882 `.text` bytes (-81.95%)**.
 - `h_functional/30_many_dimensions.sy`: **2,103,498 -> 8,397 instructions**. The next largest case, `functional/86_long_code2.sy`, is unchanged at 330,228 and is not dominated by `MEMZERO`.
 - **Keep**: decisive code-size reduction, matches upstream lowering policy, and should improve dynamic performance by delegating large fills to libc. Dynamic RISC-V execution still needs the Linux runner before claiming a cycle speedup.
+
+## 2026-07-11 — Basic-block early common-subexpression elimination
+
+### Research and hypothesis
+
+- `functional/86_long_code2.sy` repeats one global-array access 4,000 times. After the old pipeline it still contained 4,000 loads, 4,001 GEPs, and 3,999 adds, producing 330,228 machine instructions.
+- LLVM `EarlyCSE.cpp` tracks simple expressions and available loads, assigns memory generations to invalidate values after writes, and forwards the last stored value at an exact pointer. LLVM GVN separately canonicalizes GEPs by address calculation.
+- A conservative block-local version is sufficient here: CSE identical expressions, remember exact-pointer loads/stores, and clear all available memory values at every store or call.
+
+### Implementation
+
+- Added block-local expression keys covering opcode, result type, predicates, GEP metadata, and structurally equal integer/float constants.
+- Repeated loads are replaced only when the exact SSA pointer is available. A store clears all prior load facts, then exposes its own exact pointer/value; calls clear all load facts.
+- EarlyCSE runs before and after SCCP. The first run merges repeated index calculations; SCCP folds them; the second run merges the now-identical GEP and forwards the store; InstSimplify folds the resulting constant add chain.
+- Regression tests cover expression CSE, equivalent-GEP store forwarding, and invalidation by stores and calls.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- `functional/86_long_code2.sy`: **330,228 -> 39 instructions**; optimized IR is reduced from 28,007 instructions to one GEP, one store, and `ret i32 4000`.
+- Full corpus: **507,545 -> 158,475 instructions (-68.78%)** and **1,625,882 -> 488,768 `.text` bytes (-69.94%)**.
+- **Keep**: the pass removes the second dominant static-code hotspot with conservative memory invalidation. Cross-block value numbering and alias-aware memory generations remain future work.
