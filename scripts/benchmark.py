@@ -494,6 +494,14 @@ def run_assembly_benchmark(
             summaries["reference"], summaries["accela"], len(tests),
             "total_memory_operations",
         )
+    if "accela" in summaries and "aaac" in summaries:
+        comparisons["aaac_over_accela_instruction_ratio"] = ratio(
+            summaries["aaac"], summaries["accela"], len(tests)
+        )
+        comparisons["aaac_over_accela_memory_ratio"] = ratio(
+            summaries["aaac"], summaries["accela"], len(tests),
+            "total_memory_operations",
+        )
     if "accela" in summaries and "llvm-o3" in summaries:
         comparisons["llvm_o3_over_accela_instruction_ratio"] = ratio(
             summaries["llvm-o3"], summaries["accela"], len(tests)
@@ -536,6 +544,11 @@ def metadata(args: argparse.Namespace, tests: list[Path], tools: dict[str, str])
         "reference_commit": (
             git_value(["rev-parse", "HEAD"], REFERENCE_ROOT)
             if (REFERENCE_ROOT / ".git").is_dir()
+            else None
+        ),
+        "aaac_commit": (
+            git_value(["rev-parse", "HEAD"], AAAC_ROOT)
+            if (AAAC_ROOT / ".git").is_dir()
             else None
         ),
         "host": {"platform": platform.platform(), "machine": platform.machine()},
