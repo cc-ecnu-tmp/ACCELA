@@ -23,7 +23,9 @@ final class AllSpillRegisterAllocatorTest {
     VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
     VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
     addArg(entry, source);
+    addCall(entry);
     add(entry, result, source, new ImmOperand(1));
+    addCall(entry);
     addReturn(entry, result);
 
     AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, new RISCVTarget());
@@ -40,6 +42,7 @@ final class AllSpillRegisterAllocatorTest {
     VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
     addArg(entry, source);
     add(entry, first, source, new ImmOperand(1));
+    addCall(entry);
     add(entry, result, source, new VRegOperand(first));
     addReturn(entry, result);
 
@@ -68,6 +71,12 @@ final class AllSpillRegisterAllocatorTest {
     MachineInstr instruction = new MachineInstr(MachineOpcode.RET, null);
     instruction.addOperand(new VRegOperand(value));
     instruction.setType(MachineType.I32);
+    block.addInstruction(instruction);
+  }
+
+  private static void addCall(MachineBasicBlock block) {
+    MachineInstr instruction = new MachineInstr(MachineOpcode.CALL, null);
+    instruction.setCallee("callee");
     block.addInstruction(instruction);
   }
 
