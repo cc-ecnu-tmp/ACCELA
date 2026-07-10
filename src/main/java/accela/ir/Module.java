@@ -34,6 +34,13 @@ public class Module {
     functions.add(func);
   }
 
+  public void removeFunction(Function function) {
+    if (!functions.remove(function)) {
+      throw new IllegalArgumentException("function does not belong to this module");
+    }
+    function.setParent(null);
+  }
+
   /** Adds an external function declaration without a body. */
   public void addDeclare(Function func) {
     declares.add(func);
