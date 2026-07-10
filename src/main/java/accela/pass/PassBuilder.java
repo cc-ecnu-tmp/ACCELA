@@ -8,6 +8,7 @@ import accela.pass.ir.ModuleToFunctionPassAdaptor;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.transform.ADCE;
+import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
@@ -52,6 +53,12 @@ public final class PassBuilder {
   private static boolean isInstSimplifyEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_INSTSIMPLIFY");
     return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isEarlyCseEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_EARLYCSE");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
   }
 
   /** Creates pass instrumentation with always-on verification and optional reporting. */
@@ -110,8 +117,14 @@ public final class PassBuilder {
     if (enableMem2Reg) {
       fpm.addPass(new Mem2Reg.Pass());
     }
+    if (isEarlyCseEnabled()) {
+      fpm.addPass(new EarlyCSE.Pass());
+    }
     if (isSccpEnabled()) {
       fpm.addPass(new SCCP.Pass());
+    }
+    if (isEarlyCseEnabled()) {
+      fpm.addPass(new EarlyCSE.Pass());
     }
     if (isInstSimplifyEnabled()) {
       fpm.addPass(new InstSimplify.Pass());
