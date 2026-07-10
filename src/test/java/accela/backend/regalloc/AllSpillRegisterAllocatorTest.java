@@ -136,6 +136,29 @@ final class AllSpillRegisterAllocatorTest {
   }
 
   @Test
+  void coalescesNonInterferingMoves() {
+    MachineFunction function = new MachineFunction("coalesce", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister copy = function.createVirtualRegister(MachineType.I32, "copy");
+    addArg(entry, source);
+    MachineInstr move = new MachineInstr(MachineOpcode.MOVE, copy);
+    move.addOperand(new VRegOperand(source));
+    move.setType(MachineType.I32);
+    entry.addInstruction(move);
+    addReturn(entry, copy);
+
+    AllocationResult allocation = new AllSpillRegisterAllocator().allocate(
+        function, new RISCVTarget());
+
+    RegisterLocation sourceLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+    RegisterLocation copyLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(copy));
+    assertEquals(sourceLocation.getRegister().getName(), copyLocation.getRegister().getName());
+  }
+
+  @Test
   void separatesSimultaneouslyLiveRegisters() {
     MachineFunction function = new MachineFunction("interfere", MachineType.F32);
     MachineBasicBlock entry = function.addBlock("entry");

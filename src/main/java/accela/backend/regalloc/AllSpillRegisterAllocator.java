@@ -29,10 +29,12 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
         CallClobberAnalysis.analyze(function, liveness, target);
     Set<VirtualRegister> argumentHazards = collectArgumentHazards(function);
     Map<VirtualRegister, Integer> spillWeights = collectSpillWeights(function);
+    Map<VirtualRegister, List<VirtualRegister>> movePreferences =
+        collectMovePreferences(function);
     colorRegisters(function, registers, callConflicts, argumentHazards,
-        spillWeights, interference, target, result, false);
+        spillWeights, movePreferences, interference, target, result, false);
     colorRegisters(function, registers, callConflicts, argumentHazards,
-        spillWeights, interference, target, result, true);
+        spillWeights, movePreferences, interference, target, result, true);
 
     Map<VirtualRegister, StackSlot> spills = new LinkedHashMap<>();
     Map<StackSlot, List<VirtualRegister>> occupants = new LinkedHashMap<>();
@@ -68,6 +70,7 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
       Set<VirtualRegister> callConflicts,
       Set<VirtualRegister> argumentHazards,
       Map<VirtualRegister, Integer> spillWeights,
+      Map<VirtualRegister, List<VirtualRegister>> movePreferences,
       InterferenceGraph interference,
       RISCVTarget target,
       AllocationResult result,
@@ -82,7 +85,8 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
         (register, color) ->
             (!callConflicts.contains(register) || target.isCalleeSaved(colors.get(color)))
                 && (!argumentHazards.contains(register)
-                    || !target.isArgumentRegister(colors.get(color))));
+                    || !target.isArgumentRegister(colors.get(color))),
+        register -> movePreferences.getOrDefault(register, List.of()));
     for (var entry : assignments.entrySet()) {
       if (entry.getValue() >= 0) {
         var physicalRegister = colors.get(entry.getValue());
@@ -115,6 +119,23 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
       }
     }
     return weights;
+  }
+
+  private static Map<VirtualRegister, List<VirtualRegister>> collectMovePreferences(
+      MachineFunction function) {
+    Map<VirtualRegister, List<VirtualRegister>> preferences = new IdentityHashMap<>();
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        if (instruction.getOpcode() != accela.backend.machine.MachineOpcode.MOVE
+            || !(instruction.getOperands().get(0) instanceof VRegOperand source)) continue;
+        VirtualRegister destination = instruction.getDest();
+        preferences.computeIfAbsent(destination, unused -> new ArrayList<>())
+            .add(source.getRegister());
+        preferences.computeIfAbsent(source.getRegister(), unused -> new ArrayList<>())
+            .add(destination);
+      }
+    }
+    return preferences;
   }
 
   private static Set<VirtualRegister> collectArgumentHazards(MachineFunction function) {
