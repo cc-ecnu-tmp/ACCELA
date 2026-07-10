@@ -91,6 +91,7 @@ public final class RISCVAllocationRewriter {
       case DIV:
       case REM:
       case XOR:
+      case AND:
         emitBinaryArithmetic(instr, allocation, lines);
         return;
       case ICMP:
@@ -250,7 +251,8 @@ public final class RISCVAllocationRewriter {
     boolean wordResult = instr.getType() == MachineType.I32;
     MachineOperand lhs = instr.getOperands().get(0);
     MachineOperand rhs = instr.getOperands().get(1);
-    if ((instr.getOpcode() == MachineOpcode.ADD || instr.getOpcode() == MachineOpcode.XOR)
+    if ((instr.getOpcode() == MachineOpcode.ADD || instr.getOpcode() == MachineOpcode.XOR
+        || instr.getOpcode() == MachineOpcode.AND)
         && lhs instanceof ImmOperand && !(rhs instanceof ImmOperand)) {
       MachineOperand temporary = lhs;
       lhs = rhs;
@@ -301,6 +303,8 @@ public final class RISCVAllocationRewriter {
         value = -value;
       } else if (instr.getOpcode() == MachineOpcode.XOR && fitsSigned12(value)) {
         immediateOpcode = "xori";
+      } else if (instr.getOpcode() == MachineOpcode.AND && fitsSigned12(value)) {
+        immediateOpcode = "andi";
       }
       if (immediateOpcode != null) {
         lines.add("  " + immediateOpcode + " " + destination + ", " + lhsRegister + ", " + value);
@@ -331,6 +335,9 @@ public final class RISCVAllocationRewriter {
         break;
       case XOR:
         op = "xor";
+        break;
+      case AND:
+        op = "and";
         break;
       default:
         throw new IllegalStateException();

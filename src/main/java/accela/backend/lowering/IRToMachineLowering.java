@@ -177,6 +177,15 @@ public final class IRToMachineLowering {
             lowerValue(inst.getOperand(0), valueToVReg, blocks),
             lowerValue(inst.getOperand(1), valueToVReg, blocks));
         return;
+      case AND:
+        emitBinary(
+            block,
+            MachineOpcode.AND,
+            valueToVReg.get(inst),
+            MachineType.fromIr(inst.getType()),
+            lowerValue(inst.getOperand(0), valueToVReg, blocks),
+            lowerValue(inst.getOperand(1), valueToVReg, blocks));
+        return;
       case ICMP:
         lowerICmp(inst, block, valueToVReg, blocks);
         return;

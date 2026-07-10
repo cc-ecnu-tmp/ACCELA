@@ -11,6 +11,7 @@ public enum MachineOpcode {
   DIV,
   REM,
   XOR,
+  AND,
   ICMP,
   FCMP,
   ZEXT,

@@ -9,6 +9,7 @@ import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineType;
+import accela.backend.machine.ImmOperand;
 import accela.backend.machine.PhysicalRegister;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
@@ -94,6 +95,26 @@ final class RISCVAllocationRewriterTest {
         fixture.function, null, convert, fixture.allocation, fixture.lines);
 
     assertEquals(List.of("  fcvt.s.w ft4, t4"), fixture.lines);
+  }
+
+  @Test
+  void emitsImmediateIntegerAnd() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister result = fixture.function.createVirtualRegister(MachineType.I32, "result");
+    fixture.allocation.put(source,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    fixture.allocation.put(result,
+        new RegisterLocation(new PhysicalRegister("t5", MachineType.I32)));
+    MachineInstr and = new MachineInstr(MachineOpcode.AND, result);
+    and.addOperand(new VRegOperand(source));
+    and.addOperand(new ImmOperand(1));
+    and.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, and, fixture.allocation, fixture.lines);
+
+    assertEquals(List.of("  andi t5, t4, 1"), fixture.lines);
   }
 
   private static final class Fixture {
