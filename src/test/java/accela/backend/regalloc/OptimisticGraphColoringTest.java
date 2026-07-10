@@ -53,6 +53,20 @@ final class OptimisticGraphColoringTest {
     assertEquals(0, colors.get(registers.get(1)));
   }
 
+  @Test
+  void respectsPerNodeColorConstraints() {
+    List<VirtualRegister> registers = registers(2);
+    InterferenceGraph graph = new InterferenceGraph();
+
+    Map<VirtualRegister, Integer> colors =
+        OptimisticGraphColoring.color(
+            registers, graph, 2, unused -> 1,
+            (register, color) -> register == registers.get(0) ? color == 1 : false);
+
+    assertEquals(1, colors.get(registers.get(0)));
+    assertEquals(-1, colors.get(registers.get(1)));
+  }
+
   private static List<VirtualRegister> registers(int count) {
     return java.util.stream.IntStream.range(0, count)
         .mapToObj(id -> new VirtualRegister(id, MachineType.I32, "v" + id))
