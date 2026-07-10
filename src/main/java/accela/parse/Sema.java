@@ -136,7 +136,7 @@ public class Sema {
     scope.put(v.s, v);
     if (!v.kids.isEmpty()) {
       Node init = v.kids.get(0);
-      if (v.ty.isArray() && init.tag == INIT_LIST) {
+      if (v.ty.isArray() && init.tag == INIT_LIST && !init.kids.isEmpty()) {
         v.kids.set(0, flattenInit(v.ty, init));
       } else if (init.tag == INIT_LIST) {
         analyzeInitList(init);
