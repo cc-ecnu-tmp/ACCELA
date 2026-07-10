@@ -75,6 +75,7 @@ final class LoopAddressStrengthReductionTest {
     Function function = new Function("walk", Type.VOID);
     Value condition = function.addArgument(Type.I1, "condition");
     Value base = function.addArgument(Type.PTR, "base");
+    Value offset = function.addArgument(Type.I64, "offset");
     BasicBlock entry = function.addBlock("entry");
     BasicBlock header = function.addBlock("header");
     BasicBlock body = function.addBlock("body");
@@ -87,14 +88,15 @@ final class LoopAddressStrengthReductionTest {
     new IRBuilder(header).createCondBr(condition, body, exit);
     IRBuilder bodyBuilder = new IRBuilder(body);
     Instruction index = bodyBuilder.createSExt(induction, Type.I64);
+    Instruction affineIndex = bodyBuilder.createAdd(index, offset);
     Type rowType = Type.array(Type.INT, 16);
     Instruction row = bodyBuilder.createGEP(
         rowType, base, new Value[] {Constant.int64Const(0)}, true);
     Instruction address = bodyBuilder.createGEP(
-        Type.INT, row, new Value[] {index}, true);
+        Type.INT, row, new Value[] {affineIndex}, true);
     Instruction load = bodyBuilder.createLoad(Type.INT, address);
     Instruction secondAddress = bodyBuilder.createGEP(
-        Type.INT, row, new Value[] {index}, true);
+        Type.INT, row, new Value[] {bodyBuilder.createAdd(index, offset)}, true);
     Instruction secondLoad = bodyBuilder.createLoad(Type.INT, secondAddress);
     bodyBuilder.createLoad(Type.INT,
         bodyBuilder.createGEP(Type.INT, row, new Value[] {index}, true));

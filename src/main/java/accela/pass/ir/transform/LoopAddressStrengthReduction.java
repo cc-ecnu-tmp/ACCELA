@@ -31,14 +31,14 @@ public final class LoopAddressStrengthReduction {
       if ((!transformed.containsKey(loop) && transformed.size() == MAX_TRANSFORMED_LOOPS)
           || transformed.getOrDefault(loop, 0) >= MAX_RECURRENCES_PER_LOOP
           || induction.phi().getNumOperands() != 4
-          || loop.header().getPredecessors().size() != 2
-          || containsCall(loop)) continue;
+          || loop.header().getPredecessors().size() != 2) continue;
       for (BasicBlock block : function.getBlocks()) {
         if (!loop.blocks().contains(block)) continue;
         for (Instruction gep : java.util.List.copyOf(block.getInstructions())) {
           if (gep.getOpcode() != Instruction.Opcode.GEP
               || !AffineGepCandidate.isMemoryAddress(gep)) continue;
-          int varyingIndex = AffineGepCandidate.varyingIndex(gep, induction.phi());
+          int varyingIndex = AffineGepCandidate.varyingIndex(
+              gep, induction.phi(), loop);
           if (varyingIndex < 1
               || !AffineGepCandidate.otherOperandsAreInvariant(gep, varyingIndex, loop)) continue;
           long byteStep = induction.step() * AffineGepCandidate.strideAt(gep, varyingIndex);
@@ -83,9 +83,10 @@ public final class LoopAddressStrengthReduction {
     preheaderBuilder.setInsertPointBefore(induction.loop().preheader().getTerminator());
     Value[] initialIndices = new Value[gep.getNumOperands() - 1];
     for (int index = 1; index < gep.getNumOperands(); index++) {
-      initialIndices[index - 1] = index == varyingIndex
-          ? extendStart(
-              preheaderBuilder, gep.getOperand(index), induction.start(), induction.phi())
+          initialIndices[index - 1] = index == varyingIndex
+              ? extendStart(
+              preheaderBuilder, gep.getOperand(index), induction.start(),
+              induction.phi(), induction.loop())
           : materializeInvariant(preheaderBuilder, gep.getOperand(index), induction.loop());
     }
     Instruction initial = preheaderBuilder.createGEP(
@@ -108,17 +109,24 @@ public final class LoopAddressStrengthReduction {
   }
 
   private static Value extendStart(
-      IRBuilder builder, Value oldIndex, Value start, Instruction induction) {
-    Long offset = AffineGepCandidate.inductionOffset(oldIndex, induction);
-    if (offset == null) return start;
-    Value initial = offset == 0 ? start
-        : builder.createAdd(start, Constant.intConst(offset));
-    if (oldIndex instanceof Instruction extension
-        && extension.getOpcode() == Instruction.Opcode.SEXT
-        && extension.getType() != start.getType()) {
-      return builder.createSExt(initial, extension.getType());
+      IRBuilder builder, Value oldIndex, Value start,
+      Instruction induction, LoopAnalysis.Loop loop) {
+    if (oldIndex == induction) return start;
+    Instruction expression = (Instruction) oldIndex;
+    if (expression.getOpcode() == Instruction.Opcode.SEXT) {
+      return builder.createSExt(extendStart(
+          builder, expression.getOperand(0), start, induction, loop), expression.getType());
     }
-    return initial;
+    boolean leftVaries = AffineGepCandidate.isAffineIndex(
+        expression.getOperand(0), induction, loop);
+    Value left = leftVaries
+        ? extendStart(builder, expression.getOperand(0), start, induction, loop)
+        : materializeInvariant(builder, expression.getOperand(0), loop);
+    Value right = leftVaries
+        ? materializeInvariant(builder, expression.getOperand(1), loop)
+        : extendStart(builder, expression.getOperand(1), start, induction, loop);
+    return expression.getOpcode() == Instruction.Opcode.ADD
+        ? builder.createAdd(left, right) : builder.createSub(left, right);
   }
 
   private static Value materializeInvariant(
@@ -139,11 +147,6 @@ public final class LoopAddressStrengthReduction {
     return instruction.getOpcode() == Instruction.Opcode.SEXT
         ? builder.createSExt(operand, instruction.getType())
         : builder.createZExt(operand, instruction.getType());
-  }
-
-  private static boolean containsCall(LoopAnalysis.Loop loop) {
-    return loop.blocks().stream().flatMap(block -> block.getInstructions().stream())
-        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL);
   }
 
   public static final class Pass implements FunctionPass {

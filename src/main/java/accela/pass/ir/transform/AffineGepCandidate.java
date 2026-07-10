@@ -10,37 +10,32 @@ import accela.pass.ir.analysis.LoopAnalysis;
 final class AffineGepCandidate {
   private AffineGepCandidate() {}
 
-  static int varyingIndex(Instruction gep, Instruction induction) {
+  static int varyingIndex(
+      Instruction gep, Instruction induction, LoopAnalysis.Loop loop) {
     for (int index = 1; index < gep.getNumOperands(); index++) {
       Value operand = gep.getOperand(index);
-      if (inductionOffset(operand, induction) != null) return index;
+      if (isAffineIndex(operand, induction, loop)) return index;
     }
     return -1;
   }
 
-  static Long inductionOffset(Value value, Instruction induction) {
-    if (value == induction) return 0L;
-    if (!(value instanceof Instruction instruction)) return null;
+  static boolean isAffineIndex(
+      Value value, Instruction induction, LoopAnalysis.Loop loop) {
+    if (value == induction) return true;
+    if (!(value instanceof Instruction instruction)) return false;
     if (instruction.getOpcode() == Instruction.Opcode.SEXT) {
-      return inductionOffset(instruction.getOperand(0), induction);
+      return isAffineIndex(instruction.getOperand(0), induction, loop);
     }
-    if (instruction.getNumOperands() != 2) return null;
+    if (instruction.getNumOperands() != 2) return false;
     if (instruction.getOpcode() == Instruction.Opcode.ADD) {
-      if (instruction.getOperand(1) instanceof Constant.Int constant) {
-        Long offset = inductionOffset(instruction.getOperand(0), induction);
-        return offset == null ? null : offset + constant.value;
-      }
-      if (instruction.getOperand(0) instanceof Constant.Int constant) {
-        Long offset = inductionOffset(instruction.getOperand(1), induction);
-        return offset == null ? null : offset + constant.value;
-      }
+      return isAffineIndex(instruction.getOperand(0), induction, loop)
+              && isInvariant(instruction.getOperand(1), loop)
+          || isAffineIndex(instruction.getOperand(1), induction, loop)
+              && isInvariant(instruction.getOperand(0), loop);
     }
-    if (instruction.getOpcode() == Instruction.Opcode.SUB
-        && instruction.getOperand(1) instanceof Constant.Int constant) {
-      Long offset = inductionOffset(instruction.getOperand(0), induction);
-      return offset == null ? null : offset - constant.value;
-    }
-    return null;
+    return instruction.getOpcode() == Instruction.Opcode.SUB
+        && isAffineIndex(instruction.getOperand(0), induction, loop)
+        && isInvariant(instruction.getOperand(1), loop);
   }
 
   static boolean otherOperandsAreInvariant(
@@ -52,7 +47,7 @@ final class AffineGepCandidate {
     return true;
   }
 
-  private static boolean isInvariant(Value value, LoopAnalysis.Loop loop) {
+  static boolean isInvariant(Value value, LoopAnalysis.Loop loop) {
     if (!(value instanceof Instruction definition)
         || !loop.blocks().contains(definition.getParent())) return true;
     if ((definition.getOpcode() == Instruction.Opcode.SEXT
