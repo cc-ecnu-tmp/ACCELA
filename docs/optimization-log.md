@@ -118,3 +118,24 @@ This is the durable record for each research, implementation, correctness, and p
 - `functional/86_long_code2.sy`: **330,228 -> 39 instructions**; optimized IR is reduced from 28,007 instructions to one GEP, one store, and `ret i32 4000`.
 - Full corpus: **507,545 -> 158,475 instructions (-68.78%)** and **1,625,882 -> 488,768 `.text` bytes (-69.94%)**.
 - **Keep**: the pass removes the second dominant static-code hotspot with conservative memory invalidation. Cross-block value numbering and alias-aware memory generations remain future work.
+
+## 2026-07-11 — Boolean PHI diamond folding
+
+### Research and hypothesis
+
+- The new largest case, `h_functional/29_long_line.sy`, retained 887 PHIs and 1,776 branches after optimization. Most are diamonds that assign integer 0/1 from a dynamic condition.
+- LLVM `SimplifyCFG.cpp` if-converts eligible two-entry PHIs to `select`. ACCELA has no `select`, but a 0/1 PHI can be represented exactly as `zext i1`; reversed values use `xor i1 condition, true` before the extension.
+
+### Implementation
+
+- Added a focused SimplifyCFG fold for a merge with exactly two predecessors: one conditional predecessor and one empty forwarding block.
+- The fold requires an `i32` PHI with opposite constant 0/1 incoming values and an indirect block whose only predecessor is the conditional block. Other PHIs and diamonds are left unchanged.
+- After PHI replacement, the existing fixed-point CFG cleanup removes the empty block and now-redundant conditional branch.
+- Added direct/inverted unit tests and a dynamic-input microbenchmark.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Microbenchmark: **49 -> 39 instructions**. `h_functional/29_long_line.sy`: **33,362 -> 27,771 instructions (-16.76%)**; `fib` falls from 1,775 to 685 IR blocks.
+- Full corpus: **158,475 -> 152,849 instructions (-3.55%)** and **488,768 -> 472,304 `.text` bytes (-3.37%)**.
+- **Keep**: a narrow, source-independent CFG canonicalization with measurable corpus-wide benefit. General select-based if-conversion remains future work.
