@@ -25,6 +25,7 @@ BENCH_ROOT = ROOT / "build" / "bench"
 RESULTS_ROOT = ROOT / "bench-results"
 REFERENCE_ROOT = ROOT / "thirdparty" / "sysy-competition"
 REFERENCE_URL = "https://github.com/AdUhTkJm/sysy-competition.git"
+AAAC_ROOT = ROOT / "thirdparty" / "aaac"
 OFFICIAL_SUITES = ("functional", "h_functional")
 DEFAULT_COMPILERS = ("accela", "reference", "llvm-o3")
 MEMORY_OPCODES = {
@@ -143,6 +144,38 @@ def build_reference(tools: dict[str, str], skip_build: bool) -> Path:
         proc = subprocess.run(command, cwd=REFERENCE_ROOT)
         if proc.returncode != 0:
             raise BenchError("comparison compiler build failed")
+    return output
+
+
+def build_aaac(tools: dict[str, str], skip_build: bool) -> Path:
+    if not (AAAC_ROOT / ".git").is_dir():
+        raise BenchError("AAAC repository not found under thirdparty/aaac")
+    sources = sorted((AAAC_ROOT / "src").rglob("*.cc"))
+    inputs = [
+        path for path in (AAAC_ROOT / "src").rglob("*")
+        if path.suffix in {".cc", ".h", ".def", ".inc", ".ih"}
+    ]
+    if not sources:
+        raise BenchError("AAAC has no C++ sources")
+    output = AAAC_ROOT / "build" / "aaac-main"
+    stale = not output.is_file() or any(path.stat().st_mtime > output.stat().st_mtime for path in inputs)
+    if skip_build and output.is_file():
+        stale = False
+    if stale:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        command = [
+            tools["clang++"],
+            "-std=c++17", "-O3", "-w",
+            "-I", str(AAAC_ROOT / "src" / "include"),
+            "-I", str(AAAC_ROOT / "src" / "frontend" / "include"),
+            "-I", str(AAAC_ROOT / "src" / "frontend" / "parser"),
+            "-I", str(AAAC_ROOT / "src" / "frontend" / "lexer"),
+            *(str(source) for source in sources),
+            "-pthread", "-o", str(output),
+        ]
+        compiled = run(command, cwd=AAAC_ROOT)
+        if compiled.returncode != 0:
+            raise BenchError(f"AAAC build failed: {short_error(compiled)}")
     return output
 
 
