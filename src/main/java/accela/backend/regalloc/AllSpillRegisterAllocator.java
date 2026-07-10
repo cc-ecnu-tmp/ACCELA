@@ -10,6 +10,7 @@ import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,10 +28,11 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
     Set<VirtualRegister> callConflicts =
         CallClobberAnalysis.analyze(function, liveness, target);
     Set<VirtualRegister> argumentHazards = collectArgumentHazards(function);
+    Map<VirtualRegister, Integer> spillWeights = collectSpillWeights(function);
     colorRegisters(function, registers, callConflicts, argumentHazards,
-        interference, target, result, false);
+        spillWeights, interference, target, result, false);
     colorRegisters(function, registers, callConflicts, argumentHazards,
-        interference, target, result, true);
+        spillWeights, interference, target, result, true);
 
     Map<VirtualRegister, StackSlot> spills = new LinkedHashMap<>();
     Map<StackSlot, List<VirtualRegister>> occupants = new LinkedHashMap<>();
@@ -65,6 +67,7 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
       Set<VirtualRegister> registers,
       Set<VirtualRegister> callConflicts,
       Set<VirtualRegister> argumentHazards,
+      Map<VirtualRegister, Integer> spillWeights,
       InterferenceGraph interference,
       RISCVTarget target,
       AllocationResult result,
@@ -74,7 +77,8 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
         .toList();
     var colors = target.getAllocatableRegisters(floatingPoint ? MachineType.F32 : MachineType.I32);
     var assignments = OptimisticGraphColoring.color(
-        candidates, interference, colors.size(), unused -> 1,
+        candidates, interference, colors.size(),
+        register -> spillWeights.getOrDefault(register, 1),
         (register, color) ->
             (!callConflicts.contains(register) || target.isCalleeSaved(colors.get(color)))
                 && (!argumentHazards.contains(register)
@@ -92,6 +96,21 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
         }
       }
     }
+  }
+
+  private static Map<VirtualRegister, Integer> collectSpillWeights(MachineFunction function) {
+    Map<VirtualRegister, Integer> weights = new IdentityHashMap<>();
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        if (instruction.getDest() != null) weights.merge(instruction.getDest(), 1, Integer::sum);
+        for (MachineOperand operand : instruction.getOperands()) {
+          if (operand instanceof VRegOperand register) {
+            weights.merge(register.getRegister(), 1, Integer::sum);
+          }
+        }
+      }
+    }
+    return weights;
   }
 
   private static Set<VirtualRegister> collectArgumentHazards(MachineFunction function) {
