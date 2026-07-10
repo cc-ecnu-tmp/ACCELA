@@ -220,6 +220,17 @@ public final class RISCVAllocationRewriter {
     String destination = destinationRegister(instr.getDest(), "t2", allocation);
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
+      if (instr.getOpcode() == MachineOpcode.MUL && value > 0
+          && (value & (value - 1)) == 0) {
+        int shift = Long.numberOfTrailingZeros(value);
+        int maxShift = wordResult ? 31 : 63;
+        if (shift <= maxShift) {
+          lines.add("  " + (wordResult ? "slliw" : "slli") + " "
+              + destination + ", " + lhsRegister + ", " + shift);
+          writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+          return;
+        }
+      }
       String immediateOpcode = null;
       if (instr.getOpcode() == MachineOpcode.ADD && fitsSigned12(value)) {
         immediateOpcode = wordResult ? "addiw" : "addi";

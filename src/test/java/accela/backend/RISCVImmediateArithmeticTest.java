@@ -25,6 +25,7 @@ final class RISCVImmediateArithmeticTest {
     builder.createAdd(argument, seven);
     builder.createAdd(seven, argument);
     builder.createSub(argument, seven);
+    builder.createMul(argument, Constant.intConst(32));
     builder.createXor(argument, seven);
     Value result = builder.createXor(seven, argument);
     builder.createRet(result);
@@ -37,6 +38,8 @@ final class RISCVImmediateArithmeticTest {
     assertTrue(assembly.lines().anyMatch(line ->
         line.matches("\\s+addiw t[4-6], t[4-6], 7")));
     assertTrue(assembly.contains("  sext.w "));
+    assertTrue(hasInstruction(assembly, "slliw", "5"));
+    assertFalse(assembly.contains("  mulw "));
     assertFalse(assembly.contains("  li t1, 7"));
     assertFalse(assembly.contains("  add t2, t0, t1"));
     assertFalse(assembly.contains("  sub t2, t0, t1"));
