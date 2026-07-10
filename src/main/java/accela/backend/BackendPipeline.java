@@ -7,6 +7,7 @@ import accela.backend.lowering.LoopConstantHoisting;
 import accela.backend.lowering.MachineBlockPlacement;
 import accela.backend.lowering.PhiElimination;
 import accela.backend.lowering.SharedReturnBlock;
+import accela.backend.lowering.SiblingTailCallFormation;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineModule;
 import accela.backend.regalloc.AllSpillRegisterAllocator;
@@ -28,6 +29,7 @@ final class BackendPipeline {
   private final CompareBranchFusion compareBranchFusion = new CompareBranchFusion();
   private final LoopConditionDuplication loopConditionDuplication = new LoopConditionDuplication();
   private final SharedReturnBlock sharedReturnBlock = new SharedReturnBlock();
+  private final SiblingTailCallFormation siblingTailCalls = new SiblingTailCallFormation();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
   private final RISCVConstantDivisionLowering constantDivision = new RISCVConstantDivisionLowering();
   private final LoopConstantHoisting loopConstantHoisting = new LoopConstantHoisting();
@@ -44,6 +46,7 @@ final class BackendPipeline {
       phiElimination.run(function);
       compareBranchFusion.run(function);
       loopConditionDuplication.run(function);
+      siblingTailCalls.run(function);
       sharedReturnBlock.run(function);
       constantDivision.run(function);
       loopConstantHoisting.run(function);
