@@ -13,6 +13,7 @@ import accela.backend.regalloc.AllocationResult;
 import accela.backend.regalloc.RegisterAllocator;
 import accela.backend.target.RISCVAllocationRewriter;
 import accela.backend.target.RISCVAsmPrinter;
+import accela.backend.target.RISCVConstantDivisionLowering;
 import accela.backend.target.RISCVFrameLowering;
 import accela.backend.target.RISCVTarget;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ final class BackendPipeline {
   private final LoopConditionDuplication loopConditionDuplication = new LoopConditionDuplication();
   private final SharedReturnBlock sharedReturnBlock = new SharedReturnBlock();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
+  private final RISCVConstantDivisionLowering constantDivision = new RISCVConstantDivisionLowering();
   private final RegisterAllocator allocator = new AllSpillRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
   private final RISCVAllocationRewriter allocationRewriter = new RISCVAllocationRewriter(target, frameLowering);
@@ -41,6 +43,7 @@ final class BackendPipeline {
       compareBranchFusion.run(function);
       loopConditionDuplication.run(function);
       sharedReturnBlock.run(function);
+      constantDivision.run(function);
       blockPlacement.run(function);
       allocations.put(function, allocator.allocate(function, target));
     }
