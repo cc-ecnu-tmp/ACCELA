@@ -23,10 +23,20 @@ final class AffineGepCandidate {
       Instruction gep, int varyingIndex, LoopAnalysis.Loop loop) {
     for (int index = 0; index < gep.getNumOperands(); index++) {
       if (index == varyingIndex) continue;
-      if (gep.getOperand(index) instanceof Instruction definition
-          && loop.blocks().contains(definition.getParent())) return false;
+      if (!isInvariant(gep.getOperand(index), loop)) return false;
     }
     return true;
+  }
+
+  private static boolean isInvariant(Value value, LoopAnalysis.Loop loop) {
+    if (!(value instanceof Instruction definition)
+        || !loop.blocks().contains(definition.getParent())) return true;
+    if ((definition.getOpcode() == Instruction.Opcode.SEXT
+        || definition.getOpcode() == Instruction.Opcode.ZEXT)
+        && definition.getNumOperands() == 1) {
+      return isInvariant(definition.getOperand(0), loop);
+    }
+    return false;
   }
 
   static boolean isMemoryAddress(Instruction gep) {

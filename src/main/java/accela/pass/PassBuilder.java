@@ -16,6 +16,7 @@ import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.FoldPureConstantCalls;
 import accela.pass.ir.transform.GlobalDCE;
 import accela.pass.ir.transform.IPSCCP;
+import accela.pass.ir.transform.LoopAddressStrengthReduction;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
@@ -151,6 +152,7 @@ public final class PassBuilder {
     }
     if (enableAdce) {
       fpm.addPass(new TailRecursionElimination.Pass());
+      fpm.addPass(new LoopAddressStrengthReduction.Pass());
       fpm.addPass(new ADCE.Pass());
       if (enableSimplifyCfg) {
         fpm.addPass(new SimplifyCFG.Pass());

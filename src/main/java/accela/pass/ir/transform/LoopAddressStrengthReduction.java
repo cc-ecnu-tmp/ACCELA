@@ -7,7 +7,9 @@ import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
+import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.FunctionPass;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import java.util.Collections;
@@ -22,11 +24,15 @@ public final class LoopAddressStrengthReduction {
     Set<LoopAnalysis.Loop> transformed =
         Collections.newSetFromMap(new IdentityHashMap<>());
     boolean changed = false;
-    for (var induction : fam.getResult(
-        InductionVariableAnalysis.class, function).inductions()) {
+    var inductions = fam.getResult(InductionVariableAnalysis.class, function).inductions();
+    for (var induction : inductions) {
+      if (transformed.size() == 2) break;
       LoopAnalysis.Loop loop = induction.loop();
       if (transformed.contains(loop) || induction.phi().getNumOperands() != 4
-          || loop.header().getPredecessors().size() != 2) continue;
+          || loop.header().getPredecessors().size() != 2
+          || containsCall(loop)
+          || inductions.stream().anyMatch(other -> other.loop() != loop
+              && loop.blocks().containsAll(other.loop().blocks()))) continue;
       for (BasicBlock block : function.getBlocks()) {
         if (!loop.blocks().contains(block)) continue;
         for (Instruction gep : java.util.List.copyOf(block.getInstructions())) {
@@ -59,7 +65,7 @@ public final class LoopAddressStrengthReduction {
     for (int index = 1; index < gep.getNumOperands(); index++) {
       initialIndices[index - 1] = index == varyingIndex
           ? extendStart(preheaderBuilder, gep.getOperand(index), induction.start())
-          : gep.getOperand(index);
+          : materializeInvariant(preheaderBuilder, gep.getOperand(index), induction.loop());
     }
     Instruction initial = preheaderBuilder.createGEP(
         gep.getGepSourceType(), gep.getOperand(0), initialIndices, gep.isGepInbounds());
@@ -84,6 +90,29 @@ public final class LoopAddressStrengthReduction {
       return builder.createSExt(start, extension.getType());
     }
     return start;
+  }
+
+  private static Value materializeInvariant(
+      IRBuilder builder, Value value, LoopAnalysis.Loop loop) {
+    if (!(value instanceof Instruction instruction)
+        || !loop.blocks().contains(instruction.getParent())) return value;
+    Value operand = materializeInvariant(builder, instruction.getOperand(0), loop);
+    return instruction.getOpcode() == Instruction.Opcode.SEXT
+        ? builder.createSExt(operand, instruction.getType())
+        : builder.createZExt(operand, instruction.getType());
+  }
+
+  private static boolean containsCall(LoopAnalysis.Loop loop) {
+    return loop.blocks().stream().flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL);
+  }
+
+  public static final class Pass implements FunctionPass {
+    @Override
+    public PreservedAnalyses run(Function function, FunctionAnalysisManager fam) {
+      return LoopAddressStrengthReduction.run(function, fam)
+          ? PreservedAnalyses.none() : PreservedAnalyses.all();
+    }
   }
 
 }
