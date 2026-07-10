@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.frame.StackSlot;
 import accela.backend.machine.FloatImmOperand;
@@ -19,6 +20,25 @@ import accela.backend.target.RISCVTarget;
 import org.junit.jupiter.api.Test;
 
 final class AllSpillRegisterAllocatorTest {
+  @Test
+  void assignsLiveAcrossCallToCalleeSavedRegister() {
+    MachineFunction function = new MachineFunction("cross_call", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
+    addArg(entry, source);
+    addCall(entry);
+    addReturn(entry, source);
+    RISCVTarget target = new RISCVTarget();
+
+    AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, target);
+    RegisterLocation location =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+
+    assertTrue(target.isCalleeSaved(location.getRegister()));
+    assertTrue(function.getFrameInfo().getCalleeSavedOffsets()
+        .containsKey(location.getRegister().getName()));
+  }
+
   @Test
   void colorsInterferingValuesDifferently() {
     MachineFunction function = new MachineFunction("color", MachineType.I32);
