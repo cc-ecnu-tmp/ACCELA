@@ -49,6 +49,9 @@ final class ShortCircuitBranchThreadingTest {
     assertSame(second, rhs.getTerminator().getOperand(0));
     assertEquals(0, function.getBlocks().stream()
         .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.ZEXT).count());
+    assertEquals(0, function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
         .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI).count());
   }
 }

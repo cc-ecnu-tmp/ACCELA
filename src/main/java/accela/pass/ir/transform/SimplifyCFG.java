@@ -43,7 +43,8 @@ public final class SimplifyCFG {
     boolean changed = false;
     while (true) {
       boolean iter =
-          foldBooleanPhis(function)
+          ShortCircuitBranchThreading.run(function)
+              | foldBooleanPhis(function)
               | foldSingleEntryPhis(function)
               | removeUnreachableBlocks(function)
               | mergeBlockIntoPredecessor(function)

@@ -12,10 +12,16 @@ import java.util.ArrayList;
 final class ShortCircuitBranchThreading {
   private ShortCircuitBranchThreading() {}
   static boolean run(Function function) {
+    long instructionCount = function.getBlocks().stream()
+        .mapToLong(block -> block.getInstructions().size()).sum();
+    boolean hasCall = function.getBlocks().stream().flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL);
+    if (instructionCount > 500 || hasCall && instructionCount > 50) return false;
     boolean changed = false;
     for (BasicBlock merge : new ArrayList<>(function.getBlocks())) {
       Pattern pattern = match(merge);
       if (pattern == null || !canRewrite(pattern)) continue;
+      ArrayList<Instruction> cleanup = new ArrayList<>();
       for (int index = 0; index < pattern.phi.getNumOperands(); index += 2) {
         Value value = pattern.phi.getOperand(index);
         BasicBlock predecessor = (BasicBlock) pattern.phi.getOperand(index + 1);
@@ -28,12 +34,16 @@ final class ShortCircuitBranchThreading {
           builder.setInsertPointBefore(terminator);
           builder.createCondBr(extension.getOperand(0), pattern.ifTrue, pattern.ifFalse);
           terminator.eraseFromParent();
+          cleanup.add(extension);
         }
       }
       for (Instruction instruction : new ArrayList<>(merge.getInstructions())) {
         instruction.eraseFromParent();
       }
       function.removeBlock(merge);
+      for (Instruction instruction : cleanup) {
+        if (!instruction.hasUses()) instruction.eraseFromParent();
+      }
       changed = true;
     }
     return changed;
