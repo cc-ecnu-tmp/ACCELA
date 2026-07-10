@@ -20,6 +20,57 @@ import org.junit.jupiter.api.Test;
 
 final class LoopAddressStrengthReductionTest {
   @Test
+  void reducesOuterAddressesAcrossInnerLoops() {
+    Function function = new Function("nested", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock outerHeader = function.addBlock("outer.header");
+    BasicBlock outerBody = function.addBlock("outer.body");
+    BasicBlock innerHeader = function.addBlock("inner.header");
+    BasicBlock innerBody = function.addBlock("inner.body");
+    BasicBlock outerLatch = function.addBlock("outer.latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(outerHeader);
+
+    Instruction outer = Instruction.createPhi(Type.INT);
+    outerHeader.addInstructionToFront(outer);
+    outer.addOperand(Constant.intConst(0));
+    outer.addOperand(entry);
+    new IRBuilder(outerHeader).createCondBr(condition, outerBody, exit);
+    IRBuilder outerBuilder = new IRBuilder(outerBody);
+    Instruction address = outerBuilder.createGEP(Type.INT, base,
+        new Value[] {outerBuilder.createSExt(outer, Type.I64)}, true);
+    Instruction load = outerBuilder.createLoad(Type.INT, address);
+    outerBuilder.createBr(innerHeader);
+
+    Instruction inner = Instruction.createPhi(Type.INT);
+    innerHeader.addInstructionToFront(inner);
+    inner.addOperand(Constant.intConst(0));
+    inner.addOperand(outerBody);
+    new IRBuilder(innerHeader).createCondBr(condition, innerBody, outerLatch);
+    IRBuilder innerBuilder = new IRBuilder(innerBody);
+    Instruction innerNext = innerBuilder.createAdd(inner, Constant.intConst(1));
+    innerBuilder.createBr(innerHeader);
+    inner.addOperand(innerNext);
+    inner.addOperand(innerBody);
+
+    IRBuilder latchBuilder = new IRBuilder(outerLatch);
+    Instruction outerNext = latchBuilder.createAdd(outer, Constant.intConst(1));
+    latchBuilder.createBr(outerHeader);
+    outer.addOperand(outerNext);
+    outer.addOperand(outerLatch);
+    new IRBuilder(exit).createRetVoid();
+    FunctionAnalysisManager fam = analysisManager();
+
+    assertTrue(LoopAddressStrengthReduction.run(function, fam));
+    IRVerifier.verifyFunction(function);
+    assertTrue(load.getOperand(0) instanceof Instruction pointer
+        && pointer.getOpcode() == Instruction.Opcode.PHI);
+    assertSame(outerHeader, ((Instruction) load.getOperand(0)).getParent());
+  }
+
+  @Test
   void replacesAffineMemoryAddressesWithPointerRecurrences() {
     Function function = new Function("walk", Type.VOID);
     Value condition = function.addArgument(Type.I1, "condition");
@@ -59,10 +110,7 @@ final class LoopAddressStrengthReductionTest {
     induction.addOperand(next);
     induction.addOperand(body);
     new IRBuilder(exit).createRetVoid();
-    FunctionAnalysisManager fam = new FunctionAnalysisManager();
-    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
-    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
-    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    FunctionAnalysisManager fam = analysisManager();
 
     assertTrue(LoopAddressStrengthReduction.run(function, fam));
     IRVerifier.verifyFunction(function);
@@ -79,5 +127,13 @@ final class LoopAddressStrengthReductionTest {
     assertSame(fourthAddress, fourthLoad.getOperand(0));
     assertTrue(fourthAddress.getOperand(0) instanceof Instruction fourthPointer
         && fourthPointer.getOpcode() == Instruction.Opcode.PHI);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
   }
 }
