@@ -5,6 +5,7 @@ import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOperand;
+import accela.backend.machine.MachineType;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
@@ -23,10 +24,15 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
     LivenessAnalysis.Result liveness = LivenessAnalysis.analyze(function);
     InterferenceGraph interference = InterferenceGraph.build(function, liveness);
     collectRegisters(function, registers);
+    Set<VirtualRegister> callConflicts =
+        CallClobberAnalysis.analyze(function, liveness, target);
+    colorRegisters(registers, callConflicts, interference, target, result, false);
+    colorRegisters(registers, callConflicts, interference, target, result, true);
 
     Map<VirtualRegister, StackSlot> spills = new LinkedHashMap<>();
     Map<StackSlot, List<VirtualRegister>> occupants = new LinkedHashMap<>();
     for (VirtualRegister register : registers) {
+      if (result.locationOf(register) != null) continue;
       StackSlot slot = null;
       for (var entry : occupants.entrySet()) {
         List<VirtualRegister> assigned = entry.getValue();
@@ -49,6 +55,26 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
       result.put(entry.getKey(), new StackLocation(entry.getValue()));
     }
     return result;
+  }
+
+  private static void colorRegisters(
+      Set<VirtualRegister> registers,
+      Set<VirtualRegister> callConflicts,
+      InterferenceGraph interference,
+      RISCVTarget target,
+      AllocationResult result,
+      boolean floatingPoint) {
+    List<VirtualRegister> candidates = registers.stream()
+        .filter(register -> register.getType().isFloat() == floatingPoint)
+        .filter(register -> !callConflicts.contains(register))
+        .toList();
+    var colors = target.getAllocatableRegisters(floatingPoint ? MachineType.F32 : MachineType.I32);
+    for (var entry : OptimisticGraphColoring.color(
+        candidates, interference, colors.size(), unused -> 1).entrySet()) {
+      if (entry.getValue() >= 0) {
+        result.put(entry.getKey(), new RegisterLocation(colors.get(entry.getValue())));
+      }
+    }
   }
 
   private static void collectRegisters(
