@@ -44,3 +44,5 @@ bin/
 /.gradle-local
 /.claude
 /testsuite/perf
+/thirdparty/
+/bench-results/
