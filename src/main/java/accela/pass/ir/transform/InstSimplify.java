@@ -3,6 +3,7 @@ package accela.pass.ir.transform;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
+import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Instruction.Opcode;
 import accela.ir.Type;
@@ -41,6 +42,8 @@ public final class InstSimplify {
       worklist.remove(inst);
       if (inst.getParent() == null) continue;
 
+      if (strengthReduceRemainderCompare(inst, worklist)) changed = true;
+
       Value result = trySimplify(inst);
       if (result != null) {
         for (var use : new ArrayList<>(inst.getUses())) {
@@ -64,6 +67,29 @@ public final class InstSimplify {
       }
     }
     return changed;
+  }
+
+  private static boolean strengthReduceRemainderCompare(
+      Instruction compare, Set<Instruction> worklist) {
+    if (compare.getOpcode() != Opcode.ICMP
+        || !("eq".equals(compare.getPredicate()) || "ne".equals(compare.getPredicate()))) {
+      return false;
+    }
+    int remainderIndex;
+    if (isIntZero(compare.getOperand(1))) remainderIndex = 0;
+    else if (isIntZero(compare.getOperand(0))) remainderIndex = 1;
+    else return false;
+    if (!(compare.getOperand(remainderIndex) instanceof Instruction remainder)
+        || remainder.getOpcode() != Opcode.SREM
+        || !(remainder.getOperand(1) instanceof Constant.Int divisor)
+        || divisor.value <= 0 || (divisor.value & (divisor.value - 1)) != 0) return false;
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(compare);
+    Constant.Int mask = remainder.getType() == Type.I64
+        ? Constant.int64Const(divisor.value - 1) : Constant.intConst(divisor.value - 1);
+    compare.setOperand(remainderIndex, builder.createAnd(remainder.getOperand(0), mask));
+    worklist.add(remainder);
+    return true;
   }
 
   private static Value trySimplify(Instruction inst) {
