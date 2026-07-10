@@ -30,6 +30,19 @@ public final class RISCVTarget {
           new PhysicalRegister("t4", MachineType.I32),
           new PhysicalRegister("t5", MachineType.I32),
           new PhysicalRegister("t6", MachineType.I32));
+  private final List<PhysicalRegister> intCalleeSaved =
+      List.of(
+          new PhysicalRegister("s1", MachineType.I32),
+          new PhysicalRegister("s2", MachineType.I32),
+          new PhysicalRegister("s3", MachineType.I32),
+          new PhysicalRegister("s4", MachineType.I32),
+          new PhysicalRegister("s5", MachineType.I32),
+          new PhysicalRegister("s6", MachineType.I32),
+          new PhysicalRegister("s7", MachineType.I32),
+          new PhysicalRegister("s8", MachineType.I32),
+          new PhysicalRegister("s9", MachineType.I32),
+          new PhysicalRegister("s10", MachineType.I32),
+          new PhysicalRegister("s11", MachineType.I32));
   private final List<PhysicalRegister> floatAllocatable =
       List.of(
           new PhysicalRegister("ft4", MachineType.F32),
@@ -51,6 +64,15 @@ public final class RISCVTarget {
 
   public List<PhysicalRegister> getAllocatableRegisters(MachineType type) {
     return type.isFloat() ? floatAllocatable : intAllocatable;
+  }
+
+  public List<PhysicalRegister> getCalleeSavedRegisters(MachineType type) {
+    return type.isFloat() ? List.of() : intCalleeSaved;
+  }
+
+  public boolean isCalleeSaved(PhysicalRegister register) {
+    return intCalleeSaved.stream()
+        .anyMatch(candidate -> candidate.getName().equals(register.getName()));
   }
 
   public PhysicalRegister getReturnRegister(MachineType type) {
