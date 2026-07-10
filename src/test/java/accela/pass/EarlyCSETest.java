@@ -1,6 +1,7 @@
 package accela.pass;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -51,6 +52,39 @@ final class EarlyCSETest {
     assertEquals(1, count(entry, Instruction.Opcode.GEP));
     assertEquals(0, count(entry, Instruction.Opcode.LOAD));
     assertSame(stored, ret.getOperand(0));
+  }
+
+  @Test
+  void storeInvalidatesAvailableLoads() {
+    Function function = new Function("f", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value firstPointer = builder.createAlloca(Type.INT);
+    Value secondPointer = builder.createAlloca(Type.INT);
+    builder.createLoad(Type.INT, firstPointer);
+    builder.createStore(Constant.intConst(1), secondPointer);
+    Instruction secondLoad = builder.createLoad(Type.INT, firstPointer);
+    Instruction ret = builder.createRet(secondLoad);
+
+    assertFalse(EarlyCSE.runOnFunction(function));
+    assertEquals(2, count(entry, Instruction.Opcode.LOAD));
+    assertSame(secondLoad, ret.getOperand(0));
+  }
+
+  @Test
+  void callInvalidatesAvailableLoads() {
+    Function function = new Function("f", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value pointer = builder.createAlloca(Type.INT);
+    builder.createLoad(Type.INT, pointer);
+    builder.createCall(new Function("unknown", Type.VOID), Type.VOID);
+    Instruction secondLoad = builder.createLoad(Type.INT, pointer);
+    Instruction ret = builder.createRet(secondLoad);
+
+    assertFalse(EarlyCSE.runOnFunction(function));
+    assertEquals(2, count(entry, Instruction.Opcode.LOAD));
+    assertSame(secondLoad, ret.getOperand(0));
   }
 
   private static long count(BasicBlock block, Instruction.Opcode opcode) {
