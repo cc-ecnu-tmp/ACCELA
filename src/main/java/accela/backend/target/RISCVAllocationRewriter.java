@@ -394,11 +394,14 @@ public final class RISCVAllocationRewriter {
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
     if (instr.getType().isFloat()) {
-      lines.add("  flw ft0, 0(t0)");
-      writeDest(lines, instr.getDest(), "ft0", allocation, MachineType.F32);
+      String destination = destinationRegister(instr.getDest(), "ft0", allocation);
+      lines.add("  flw " + destination + ", 0(t0)");
+      writeDest(lines, instr.getDest(), destination, allocation, MachineType.F32);
     } else {
-      lines.add("  " + frameLowering.loadMnemonic(instr.getType()) + " t1, 0(t0)");
-      writeDest(lines, instr.getDest(), "t1", allocation, instr.getType());
+      String destination = destinationRegister(instr.getDest(), "t1", allocation);
+      lines.add("  " + frameLowering.loadMnemonic(instr.getType())
+          + " " + destination + ", 0(t0)");
+      writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
     }
   }
 
