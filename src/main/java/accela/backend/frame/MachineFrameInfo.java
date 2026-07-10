@@ -4,7 +4,9 @@ import accela.backend.machine.MachineType;
 import accela.backend.target.RISCVTarget;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class MachineFrameInfo {
   private final List<StackSlot> slots = new ArrayList<>();
@@ -13,6 +15,7 @@ public final class MachineFrameInfo {
   private boolean hasCalls = false;
   private int saveS0Offset = -1;
   private int saveRaOffset = -1;
+  private final Map<String, Integer> calleeSavedOffsets = new LinkedHashMap<>();
   private int frameSize = 0;
 
   public StackSlot createLocalSlot(MachineType type, int size, int align) {
@@ -55,6 +58,14 @@ public final class MachineFrameInfo {
     return saveRaOffset;
   }
 
+  public void markCalleeSavedRegister(String register) {
+    calleeSavedOffsets.putIfAbsent(register, -1);
+  }
+
+  public Map<String, Integer> getCalleeSavedOffsets() {
+    return Collections.unmodifiableMap(calleeSavedOffsets);
+  }
+
   public int getFrameSize() {
     return frameSize;
   }
@@ -72,6 +83,11 @@ public final class MachineFrameInfo {
     if (hasCalls) {
       offset = target.alignTo(offset, target.stackAlignOf(MachineType.PTR));
       saveRaOffset = offset;
+      offset += target.stackSizeOf(MachineType.PTR);
+    }
+    for (String register : calleeSavedOffsets.keySet()) {
+      offset = target.alignTo(offset, target.stackAlignOf(MachineType.PTR));
+      calleeSavedOffsets.put(register, offset);
       offset += target.stackSizeOf(MachineType.PTR);
     }
     frameSize = target.alignTo(offset, 16);
