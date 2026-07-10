@@ -42,8 +42,10 @@ public final class RISCVAllocationRewriter {
         emitArgIn(function, instr, allocation, lines);
         return;
       case CONST_INT:
-        materializeInto(lines, instr.getOperands().get(0), "t0", instr.getType(), allocation);
-        writeDest(lines, instr.getDest(), "t0", allocation, instr.getType());
+        String constantDest = destinationRegister(instr.getDest(), "t0", allocation);
+        materializeInto(
+            lines, instr.getOperands().get(0), constantDest, instr.getType(), allocation);
+        writeDest(lines, instr.getDest(), constantDest, allocation, instr.getType());
         return;
       case STACK_ADDR:
         StackSlot slot = ((StackSlotOperand) instr.getOperands().get(0)).getSlot();
