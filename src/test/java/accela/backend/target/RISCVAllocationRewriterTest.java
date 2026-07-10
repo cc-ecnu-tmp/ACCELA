@@ -138,6 +138,22 @@ final class RISCVAllocationRewriterTest {
   }
 
   @Test
+  void materializesConstantsDirectlyIntoAllocatedRegisters() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister result = fixture.function.createVirtualRegister(MachineType.I32, "result");
+    fixture.allocation.put(result,
+        new RegisterLocation(new PhysicalRegister("s1", MachineType.I32)));
+    MachineInstr constant = new MachineInstr(MachineOpcode.CONST_INT, result);
+    constant.addOperand(new ImmOperand(998244353));
+    constant.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, constant, fixture.allocation, fixture.lines);
+
+    assertEquals(List.of("  li s1, 998244353"), fixture.lines);
+  }
+
+  @Test
   void strengthReducesSignedPowerOfTwoDivision() {
     Fixture fixture = new Fixture(true);
     VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
