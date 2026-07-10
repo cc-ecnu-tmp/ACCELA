@@ -411,14 +411,23 @@ public final class IRToMachineLowering {
     for (int i = 1; i < inst.getNumOperands(); i++) {
       MachineOperand index = lowerValue(inst.getOperand(i), valueToVReg, blocks);
       int stride = target.sizeOfIrType(currentType);
-      MachineOperand contribution = index;
-      if (stride != 1) {
+      MachineOperand contribution;
+      if (index instanceof ImmOperand immediate) {
+        contribution = new ImmOperand(immediate.getValue() * stride);
+      } else if (stride != 1) {
         VirtualRegister scaled = function.createVirtualRegister(MachineType.PTR, "gep.mul");
         emitBinary(block, MachineOpcode.MUL, scaled, MachineType.PTR, index, new ImmOperand(stride));
         contribution = new VRegOperand(scaled);
+      } else {
+        contribution = index;
       }
-      if (accumulated == null) {
+      if (contribution instanceof ImmOperand immediate && immediate.getValue() == 0) {
+        // Keep descending the aggregate type, but a zero index adds no address offset.
+      } else if (accumulated == null) {
         accumulated = contribution;
+      } else if (accumulated instanceof ImmOperand left
+          && contribution instanceof ImmOperand right) {
+        accumulated = new ImmOperand(left.getValue() + right.getValue());
       } else {
         VirtualRegister next = function.createVirtualRegister(MachineType.PTR, "gep.add");
         emitBinary(block, MachineOpcode.ADD, next, MachineType.PTR, accumulated, contribution);
