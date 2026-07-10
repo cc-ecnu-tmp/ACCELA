@@ -1,6 +1,7 @@
 package accela.backend.target;
 
 import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
@@ -21,20 +22,21 @@ final class MachineConstantPool {
     this.function = function;
   }
 
-  void count(MachineType type, long value) {
-    useCounts.merge(new Key(type, value), 1, Integer::sum);
+  void count(MachineBasicBlock block, MachineType type, long value) {
+    useCounts.merge(new Key(block, type, value), 1, Integer::sum);
   }
 
   VRegOperand materialize(
-      MachineType type, long value, List<MachineInstr> localInstructions) {
-    Key key = new Key(type, value);
+      MachineBasicBlock block, MachineType type, long value,
+      List<MachineInstr> localInstructions) {
+    Key key = new Key(block, type, value);
     if (useCounts.getOrDefault(key, 0) < 2) {
       return new VRegOperand(createConstant(type, value, localInstructions));
     }
     VirtualRegister register = shared.computeIfAbsent(key, ignored -> {
       VirtualRegister result = function.createVirtualRegister(type, "constant");
       MachineInstr constant = constantInstruction(result, type, value);
-      List<MachineInstr> entry = function.getEntryBlock().getInstructions();
+      List<MachineInstr> entry = block.getInstructions();
       int insertionPoint = 0;
       while (insertionPoint < entry.size()
           && entry.get(insertionPoint).getOpcode() == MachineOpcode.ARG_IN) {
@@ -61,5 +63,5 @@ final class MachineConstantPool {
     return constant;
   }
 
-  private record Key(MachineType type, long value) {}
+  private record Key(MachineBasicBlock block, MachineType type, long value) {}
 }

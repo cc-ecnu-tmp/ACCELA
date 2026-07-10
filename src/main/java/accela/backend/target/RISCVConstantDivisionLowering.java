@@ -23,7 +23,8 @@ public final class RISCVConstantDivisionLowering {
       for (MachineInstr instruction : List.copyOf(block.getInstructions())) {
         Candidate candidate = candidates.get(instruction);
         if (candidate == null) continue;
-        List<MachineInstr> replacement = lower(function, instruction, candidate, constants);
+        List<MachineInstr> replacement = lower(
+            function, block, instruction, candidate, constants);
         int index = block.getInstructions().indexOf(instruction);
         block.getInstructions().remove(index);
         block.getInstructions().addAll(index, replacement);
@@ -39,9 +40,9 @@ public final class RISCVConstantDivisionLowering {
         Candidate candidate = candidateFor(instruction);
         if (candidate == null) continue;
         result.put(instruction, candidate);
-        constants.count(MachineType.I64, candidate.magic().multiplier());
+        constants.count(block, MachineType.I64, candidate.magic().multiplier());
         if (instruction.getOpcode() == MachineOpcode.REM) {
-          constants.count(MachineType.I32, candidate.divisor());
+          constants.count(block, MachineType.I32, candidate.divisor());
         }
       }
     }
@@ -60,12 +61,13 @@ public final class RISCVConstantDivisionLowering {
         ? new Candidate((int) value, magic) : null;
   }
   private static List<MachineInstr> lower(
-      MachineFunction function, MachineInstr original, Candidate candidate,
+      MachineFunction function, MachineBasicBlock block,
+      MachineInstr original, Candidate candidate,
       MachineConstantPool constants) {
     List<MachineInstr> result = new ArrayList<>();
     MachineOperand numerator = original.getOperands().get(0);
     VRegOperand multiplier = constants.materialize(
-        MachineType.I64, candidate.magic().multiplier(), result);
+        block, MachineType.I64, candidate.magic().multiplier(), result);
     VirtualRegister product = function.createVirtualRegister(MachineType.I64, "magic.product");
     result.add(binary(MachineOpcode.MUL, product, MachineType.I64, numerator, multiplier));
     VirtualRegister high = function.createVirtualRegister(MachineType.I64, "magic.high");
@@ -80,7 +82,7 @@ public final class RISCVConstantDivisionLowering {
         new VRegOperand(high), new VRegOperand(sign)));
     if (original.getOpcode() == MachineOpcode.DIV) return result;
     VRegOperand divisor = constants.materialize(
-        MachineType.I32, candidate.divisor(), result);
+        block, MachineType.I32, candidate.divisor(), result);
     VirtualRegister scaled = function.createVirtualRegister(MachineType.I32, "magic.scaled");
     result.add(binary(MachineOpcode.MUL, scaled, MachineType.I32,
         new VRegOperand(quotient), divisor));
