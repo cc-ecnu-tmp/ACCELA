@@ -268,6 +268,27 @@ public final class RISCVAllocationRewriter {
           return;
         }
       }
+      if (instr.getOpcode() == MachineOpcode.REM && wordResult && value > 0
+          && (value & (value - 1)) == 0 && value <= (1L << 30)) {
+        int shift = Long.numberOfTrailingZeros(value);
+        if (shift == 0) {
+          lines.add("  li " + destination + ", 0");
+        } else {
+          long mask = value - 1;
+          lines.add("  sraiw t3, " + lhsRegister + ", 31");
+          lines.add("  srliw t3, t3, " + (32 - shift));
+          lines.add("  addw " + destination + ", " + lhsRegister + ", t3");
+          if (fitsSigned12(mask)) {
+            lines.add("  andi " + destination + ", " + destination + ", " + mask);
+          } else {
+            lines.add("  li t1, " + mask);
+            lines.add("  and " + destination + ", " + destination + ", t1");
+          }
+          lines.add("  subw " + destination + ", " + destination + ", t3");
+        }
+        writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+        return;
+      }
       String immediateOpcode = null;
       if (instr.getOpcode() == MachineOpcode.ADD && fitsSigned12(value)) {
         immediateOpcode = wordResult ? "addiw" : "addi";
