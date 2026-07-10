@@ -50,8 +50,8 @@ public final class PhiElimination {
       return pred;
     }
 
-    MachineBasicBlock split =
-        function.addBlock(pred.getLabel() + ".to." + succ.getLabel() + ".phi." + edgeSplitCounter++);
+    MachineBasicBlock split = function.insertBlockBefore(
+        succ, pred.getLabel() + ".to." + succ.getLabel() + ".phi." + edgeSplitCounter++);
     MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
     branch.addOperand(new BlockOperand(succ));
     split.addInstruction(branch);

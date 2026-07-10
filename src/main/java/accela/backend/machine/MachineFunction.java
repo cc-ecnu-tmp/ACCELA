@@ -54,11 +54,11 @@ public final class MachineFunction {
     return block;
   }
 
-  public MachineBasicBlock insertBlockAfter(MachineBasicBlock predecessor, String label) {
-    int index = blocks.indexOf(predecessor);
+  public MachineBasicBlock insertBlockBefore(MachineBasicBlock successor, String label) {
+    int index = blocks.indexOf(successor);
     if (index < 0) throw new IllegalArgumentException("block does not belong to function");
     MachineBasicBlock block = new MachineBasicBlock(label);
-    blocks.add(index + 1, block);
+    blocks.add(index, block);
     return block;
   }
 
