@@ -51,18 +51,22 @@ public final class RISCVAllocationRewriter {
         return;
       case MOVE:
         if (isRedundantMove(instr, allocation)) return;
+        String moveDest = destinationRegister(
+            instr.getDest(), instr.getType().isFloat() ? "ft0" : "t0", allocation);
         materializeInto(
             lines,
             instr.getOperands().get(0),
-            instr.getType().isFloat() ? "ft0" : "t0",
+            moveDest,
             inferOperandType(instr.getOperands().get(0)),
             allocation);
-        writeDest(lines, instr.getDest(), instr.getType().isFloat() ? "ft0" : "t0", allocation, instr.getType());
+        writeDest(lines, instr.getDest(), moveDest, allocation, instr.getType());
         return;
       case ZEXT:
       case SEXT:
-        materializeInto(lines, instr.getOperands().get(0), "t0", inferOperandType(instr.getOperands().get(0)), allocation);
-        writeDest(lines, instr.getDest(), "t0", allocation, instr.getType());
+        String extendDest = destinationRegister(instr.getDest(), "t0", allocation);
+        materializeInto(lines, instr.getOperands().get(0), extendDest,
+            inferOperandType(instr.getOperands().get(0)), allocation);
+        writeDest(lines, instr.getDest(), extendDest, allocation, instr.getType());
         return;
       case SITOFP:
         materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
