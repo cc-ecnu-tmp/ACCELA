@@ -460,12 +460,16 @@ public final class RISCVAllocationRewriter {
   }
 
   private void emitStore(MachineInstr instr, AllocationResult allocation, List<String> lines) {
-    materializeInto(lines, instr.getOperands().get(0), instr.getType().isFloat() ? "ft0" : "t0", instr.getType(), allocation);
-    materializeInto(lines, instr.getOperands().get(1), "t1", MachineType.PTR, allocation);
+    String value = readRegister(
+        lines, instr.getOperands().get(0), instr.getType().isFloat() ? "ft0" : "t0",
+        instr.getType(), allocation);
+    String address = readRegister(
+        lines, instr.getOperands().get(1), "t1", MachineType.PTR, allocation);
     if (instr.getType().isFloat()) {
-      lines.add("  fsw ft0, 0(t1)");
+      lines.add("  fsw " + value + ", 0(" + address + ")");
     } else {
-      lines.add("  " + frameLowering.storeMnemonic(instr.getType()) + " t0, 0(t1)");
+      lines.add("  " + frameLowering.storeMnemonic(instr.getType())
+          + " " + value + ", 0(" + address + ")");
     }
   }
 

@@ -1,5 +1,6 @@
 package accela.backend.target;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,9 +9,11 @@ import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.AllocationResult;
+import accela.backend.regalloc.RegisterLocation;
 import accela.backend.regalloc.StackLocation;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +36,26 @@ final class RISCVAllocationRewriterTest {
     fixture.emitMove();
 
     assertFalse(fixture.lines.isEmpty());
+  }
+
+  @Test
+  void storesDirectlyFromAllocatedRegisters() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister value = fixture.function.createVirtualRegister(MachineType.I32, "value");
+    VirtualRegister address = fixture.function.createVirtualRegister(MachineType.PTR, "address");
+    fixture.allocation.put(value,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    fixture.allocation.put(address,
+        new RegisterLocation(new PhysicalRegister("t5", MachineType.PTR)));
+    MachineInstr store = new MachineInstr(MachineOpcode.STORE, null);
+    store.addOperand(new VRegOperand(value));
+    store.addOperand(new VRegOperand(address));
+    store.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, store, fixture.allocation, fixture.lines);
+
+    assertEquals(List.of("  sw t4, 0(t5)"), fixture.lines);
   }
 
   private static final class Fixture {
