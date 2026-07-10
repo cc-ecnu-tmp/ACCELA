@@ -15,7 +15,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -119,8 +121,9 @@ public final class SimplifyCFG {
 
   private static boolean foldSingleEntryPhis(Function function) {
     boolean changed = false;
+    Map<BasicBlock, List<BasicBlock>> predecessors = collectPredecessors(function);
     for (BasicBlock bb : new ArrayList<>(function.getBlocks())) {
-      List<BasicBlock> preds = bb.getPredecessors();
+      List<BasicBlock> preds = predecessors.get(bb);
       if (preds.size() != 1) {
         continue;
       }
@@ -146,6 +149,19 @@ public final class SimplifyCFG {
       }
     }
     return changed;
+  }
+
+  private static Map<BasicBlock, List<BasicBlock>> collectPredecessors(Function function) {
+    Map<BasicBlock, List<BasicBlock>> predecessors = new IdentityHashMap<>();
+    for (BasicBlock block : function.getBlocks()) {
+      predecessors.put(block, new ArrayList<>());
+    }
+    for (BasicBlock predecessor : function.getBlocks()) {
+      for (BasicBlock successor : predecessor.getSuccessors()) {
+        predecessors.get(successor).add(predecessor);
+      }
+    }
+    return predecessors;
   }
 
   private static boolean removeUnreachableBlocks(Function function) {
