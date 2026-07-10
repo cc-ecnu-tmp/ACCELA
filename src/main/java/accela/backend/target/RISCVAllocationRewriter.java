@@ -72,15 +72,17 @@ public final class RISCVAllocationRewriter {
         writeDest(lines, instr.getDest(), extendDest, allocation, instr.getType());
         return;
       case SITOFP:
-        materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
+        String integerSource = readRegister(
+            lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
         String floatDest = destinationRegister(instr.getDest(), "ft0", allocation);
-        lines.add("  fcvt.s.w " + floatDest + ", t0");
+        lines.add("  fcvt.s.w " + floatDest + ", " + integerSource);
         writeDest(lines, instr.getDest(), floatDest, allocation, MachineType.F32);
         return;
       case FPTOSI:
-        materializeInto(lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
+        String floatSource = readRegister(
+            lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
         String integerDest = destinationRegister(instr.getDest(), "t0", allocation);
-        lines.add("  fcvt.w.s " + integerDest + ", ft0, rtz");
+        lines.add("  fcvt.w.s " + integerDest + ", " + floatSource + ", rtz");
         writeDest(lines, instr.getDest(), integerDest, allocation, MachineType.I32);
         return;
       case ADD:
@@ -104,9 +106,10 @@ public final class RISCVAllocationRewriter {
         emitFloatBinary(instr, allocation, lines);
         return;
       case FNEG:
-        materializeInto(lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
+        String negateSource = readRegister(
+            lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
         String negateDest = destinationRegister(instr.getDest(), "ft1", allocation);
-        lines.add("  fneg.s " + negateDest + ", ft0");
+        lines.add("  fneg.s " + negateDest + ", " + negateSource);
         writeDest(lines, instr.getDest(), negateDest, allocation, MachineType.F32);
         return;
       case LOAD:
