@@ -206,7 +206,8 @@ public final class RISCVAllocationRewriter {
       lhs = rhs;
       rhs = temporary;
     }
-    materializeInto(lines, lhs, "t0", inferOperandType(lhs), allocation);
+    String lhsRegister = readRegister(lines, lhs, "t0", inferOperandType(lhs), allocation);
+    String destination = destinationRegister(instr.getDest(), "t2", allocation);
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
       String immediateOpcode = null;
@@ -220,12 +221,12 @@ public final class RISCVAllocationRewriter {
         immediateOpcode = "xori";
       }
       if (immediateOpcode != null) {
-        lines.add("  " + immediateOpcode + " t2, t0, " + value);
-        writeDest(lines, instr.getDest(), "t2", allocation, instr.getType());
+        lines.add("  " + immediateOpcode + " " + destination + ", " + lhsRegister + ", " + value);
+        writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
         return;
       }
     }
-    materializeInto(lines, rhs, "t1", inferOperandType(rhs), allocation);
+    String rhsRegister = readRegister(lines, rhs, "t1", inferOperandType(rhs), allocation);
     String op;
     switch (instr.getOpcode()) {
       case ADD:
@@ -249,8 +250,8 @@ public final class RISCVAllocationRewriter {
       default:
         throw new IllegalStateException();
     }
-    lines.add("  " + op + " t2, t0, t1");
-    writeDest(lines, instr.getDest(), "t2", allocation, instr.getType());
+    lines.add("  " + op + " " + destination + ", " + lhsRegister + ", " + rhsRegister);
+    writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
   }
 
   private static boolean fitsSigned12(long value) {
@@ -454,6 +455,28 @@ public final class RISCVAllocationRewriter {
       return;
     }
     throw new UnsupportedOperationException("Cannot materialize operand kind " + operand.getKind());
+  }
+
+  private String readRegister(
+      List<String> lines, MachineOperand operand, String fallback, MachineType type,
+      AllocationResult allocation) {
+    if (operand instanceof VRegOperand virtualRegister) {
+      ValueLocation location = allocation.locationOf(virtualRegister.getRegister());
+      if (location instanceof RegisterLocation register) {
+        return register.getRegister().getName();
+      }
+    }
+    materializeInto(lines, operand, fallback, type, allocation);
+    return fallback;
+  }
+
+  private static String destinationRegister(
+      VirtualRegister destination, String fallback, AllocationResult allocation) {
+    ValueLocation location = allocation.locationOf(destination);
+    if (location instanceof RegisterLocation register) {
+      return register.getRegister().getName();
+    }
+    return fallback;
   }
 
   private static boolean isRedundantMove(MachineInstr instruction, AllocationResult allocation) {
