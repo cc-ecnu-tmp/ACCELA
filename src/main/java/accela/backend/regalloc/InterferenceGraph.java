@@ -21,6 +21,11 @@ final class InterferenceGraph {
       for (MachineInstr instruction : block.getInstructions()) {
         graph.addClique(liveness.liveBefore(instruction));
         graph.addClique(liveness.liveAfter(instruction));
+        if (instruction.getDest() != null) {
+          for (VirtualRegister live : liveness.liveAfter(instruction)) {
+            if (instruction.getDest() != live) graph.addEdge(instruction.getDest(), live);
+          }
+        }
       }
     }
     return graph;
