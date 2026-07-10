@@ -102,19 +102,12 @@ public class BasicBlock extends Value {
   public List<BasicBlock> getSuccessors() {
     Instruction term = getTerminator();
     if (term == null) return Collections.emptyList();
-    List<BasicBlock> succs = new ArrayList<>();
-    switch (term.getOpcode()) {
-      case BR:
-        succs.add((BasicBlock) term.getOperand(0));
-        break;
-      case CONDBR:
-        succs.add((BasicBlock) term.getOperand(1)); // true target
-        succs.add((BasicBlock) term.getOperand(2)); // false target
-        break;
-      default:
-        break;
-    }
-    return succs;
+    return switch (term.getOpcode()) {
+      case BR -> List.of((BasicBlock) term.getOperand(0));
+      case CONDBR -> List.of(
+          (BasicBlock) term.getOperand(1), (BasicBlock) term.getOperand(2));
+      default -> Collections.emptyList();
+    };
   }
 
   /** Returns CFG predecessors by scanning sibling blocks in the parent function. */
