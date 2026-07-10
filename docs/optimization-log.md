@@ -48,3 +48,27 @@ This is the durable record for each research, implementation, correctness, and p
 - Keep the baseline infrastructure: it completed the full corpus, retained per-case evidence, and did not abort after individual stages.
 - Defer dynamic-cycle claims until a reproducible RISC-V Linux runner exists. Static counts are explicitly labeled as proxies.
 - Prioritize structured frontend cleanup as requested, then address `MEMZERO` lowering and all-spill register allocation; the baseline now makes the payoff of both backend changes directly measurable.
+
+## 2026-07-10 — Typed numeric values at the parser boundary
+
+### Research and hypothesis
+
+- The official [SysY 2022 language definition](https://gitlab.eduxiji.net/nscscc/compiler2022/-/blob/master/SysY2022%E8%AF%AD%E8%A8%80%E5%AE%9A%E4%B9%89-V1.pdf) defines `Number -> IntConst | FloatConst`, 32-bit signed `int`, 32-bit `float`, C-compatible literal syntax, and ignored suffixes (pages 1, 3-4).
+- ACCELA already had structural enums for token kinds, operators, and source types. The remaining violation was `Node.s` also carrying numeric spellings, which Sema, the interpreter, and AST2IR each reparsed differently.
+- Hypothesis: parse the spelling once into a typed 32-bit value, then pass only that value through later stages. Runtime assembly should be identical; the intended gain is a simpler and consistent frontend representation.
+
+### Implementation
+
+- Added `LiteralValue` with explicit integer/float kind, C/SysY radix handling, hexadecimal floats, suffix handling, conversion, zero checks, and debug-only text creation.
+- `Node` now has a dedicated typed literal field. Parser token text is converted immediately; Sema constant folding creates typed values directly.
+- Interpreter and AST2IR consume numeric accessors. Their duplicate string parsers and the unused `Ty.fromString` path were deleted.
+- Builtin return types are registered with `Ty` objects rather than string type names.
+
+### Validation and decision
+
+- Unit tests: pass, including decimal/octal/hex integers, 32-bit wrap, suffixes, decimal/hex floats, and runtime number kind.
+- Focused optimized-IR and interpreter tests for integer return, hexadecimal/octal values, and float-heavy programs: pass.
+- Full optimized-IR correctness: **140/140 pass**.
+- Full ACCELA RISC-V assembly validation: **140/140 assemble**.
+- Performance proxy: **2,644,288 instructions and 9,006,760 `.text` bytes**, exactly unchanged from baseline as predicted.
+- **Keep**: neutral runtime performance, but it satisfies the structural frontend requirement and removes three inconsistent internal parsing implementations. Next loop targets the measured `MEMZERO` explosion.
