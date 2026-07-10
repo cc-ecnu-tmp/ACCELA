@@ -1,6 +1,8 @@
 package accela.backend.regalloc;
 
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import accela.backend.frame.StackSlot;
@@ -16,6 +18,28 @@ import accela.backend.target.RISCVTarget;
 import org.junit.jupiter.api.Test;
 
 final class AllSpillRegisterAllocatorTest {
+  @Test
+  void colorsInterferingValuesDifferently() {
+    MachineFunction function = new MachineFunction("color", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister first = function.createVirtualRegister(MachineType.I32, "first");
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+    addArg(entry, source);
+    add(entry, first, source, new ImmOperand(1));
+    add(entry, result, source, new VRegOperand(first));
+    addReturn(entry, result);
+
+    AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, new RISCVTarget());
+    RegisterLocation sourceLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+    RegisterLocation firstLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(first));
+
+    assertNotEquals(
+        sourceLocation.getRegister().getName(), firstLocation.getRegister().getName());
+  }
+
   @Test
   void reusesSlotWhenLiveRangesOnlyTouchAtInstructionBoundary() {
     MachineFunction function = new MachineFunction("reuse", MachineType.I32);
