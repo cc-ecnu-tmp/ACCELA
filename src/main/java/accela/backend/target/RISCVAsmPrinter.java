@@ -4,6 +4,9 @@ import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineModule;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.AllocationResult;
 import accela.backend.regalloc.RegisterLocation;
 import accela.backend.regalloc.StackLocation;
@@ -12,6 +15,7 @@ import accela.ir.Constant;
 import accela.ir.GlobalVariable;
 import accela.ir.Type;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -83,12 +87,44 @@ public final class RISCVAsmPrinter {
     lines.add(".globl " + function.getName());
     lines.add(function.getName() + ":");
     frameLowering.emitPrologue(function, lines);
+    Map<VirtualRegister, Integer> useCounts = countUses(function);
     for (MachineBasicBlock block : function.getBlocks()) {
       lines.add(labelFor(function, block) + ":");
-      for (MachineInstr instr : block.getInstructions()) {
+      List<MachineInstr> instructions = block.getInstructions();
+      for (int i = 0; i < instructions.size(); i++) {
+        MachineInstr instr = instructions.get(i);
+        if (i + 1 < instructions.size()
+            && canFuseCompareBranch(instr, instructions.get(i + 1), useCounts)) {
+          allocationRewriter.emitCompareBranch(
+              function, instr, instructions.get(++i), allocation, lines);
+          continue;
+        }
         allocationRewriter.emitInstruction(function, instr, allocation, lines);
       }
     }
+  }
+
+  private static Map<VirtualRegister, Integer> countUses(MachineFunction function) {
+    Map<VirtualRegister, Integer> counts = new IdentityHashMap<>();
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        for (var operand : instruction.getOperands()) {
+          if (operand instanceof VRegOperand register) {
+            counts.merge(register.getRegister(), 1, Integer::sum);
+          }
+        }
+      }
+    }
+    return counts;
+  }
+
+  private static boolean canFuseCompareBranch(
+      MachineInstr compare, MachineInstr branch, Map<VirtualRegister, Integer> useCounts) {
+    if (compare.getOpcode() != MachineOpcode.ICMP
+        || branch.getOpcode() != MachineOpcode.CONDBR
+        || !(branch.getOperands().get(0) instanceof VRegOperand condition)) return false;
+    VirtualRegister result = compare.getDest();
+    return condition.getRegister() == result && useCounts.getOrDefault(result, 0) == 1;
   }
 
   private String labelFor(MachineFunction function, MachineBasicBlock block) {
