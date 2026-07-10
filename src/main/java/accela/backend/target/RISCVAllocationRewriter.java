@@ -116,8 +116,10 @@ public final class RISCVAllocationRewriter {
           emitCompareBranch(function, instr, allocation, lines);
           return;
         }
-        materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
-        lines.add("  bnez t0, " + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
+        String condition = readRegister(
+            lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
+        lines.add("  bnez " + condition + ", "
+            + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
         lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(2)).getBlock()));
         return;
       case CALL:
@@ -152,26 +154,30 @@ public final class RISCVAllocationRewriter {
       MachineInstr branch,
       AllocationResult allocation,
       List<String> lines) {
-    materializeInto(lines, leftOperand, "t0", MachineType.I32, allocation);
+    String left = readRegister(lines, leftOperand, "t0", MachineType.I32, allocation);
     String right = "t1";
     if (rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0) {
       right = "zero";
     } else {
-      materializeInto(lines, rightOperand, right, MachineType.I32, allocation);
+      right = readRegister(lines, rightOperand, right, MachineType.I32, allocation);
     }
 
     String opcode;
-    String left = "t0";
     switch (predicate) {
       case "eq": opcode = "beq"; break;
       case "ne": opcode = "bne"; break;
       case "slt": opcode = "blt"; break;
       case "sge": opcode = "bge"; break;
-      case "sgt": opcode = "blt"; left = right; right = "t0"; break;
-      case "sle": opcode = "bge"; left = right; right = "t0"; break;
+      case "sgt": opcode = "blt"; break;
+      case "sle": opcode = "bge"; break;
       default:
         throw new UnsupportedOperationException(
             "Unsupported integer branch predicate: " + predicate);
+    }
+    if (predicate.equals("sgt") || predicate.equals("sle")) {
+      String temporary = left;
+      left = right;
+      right = temporary;
     }
     lines.add("  " + opcode + " " + left + ", " + right + ", "
         + labelFor(function, ((BlockOperand) branch.getOperands().get(1)).getBlock()));
