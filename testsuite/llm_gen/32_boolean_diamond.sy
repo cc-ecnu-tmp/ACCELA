@@ -1,0 +1,17 @@
+int main() {
+  int value = getint();
+  int direct;
+  int inverted;
+  if (value != 0)
+    direct = 1;
+  else
+    direct = 0;
+  if (value != 0)
+    inverted = 0;
+  else
+    inverted = 1;
+  putint(direct);
+  putch(10);
+  putint(inverted);
+  return 0;
+}
