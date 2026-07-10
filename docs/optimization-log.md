@@ -175,3 +175,18 @@ This is the durable record for each research, implementation, correctness, and p
 - `h_functional/29_long_line.sy`: **25,447 -> 25,355 instructions**.
 - Full corpus: **148,433 -> 147,649 instructions (-0.53%)** and **459,240 -> 457,638 `.text` bytes (-0.35%)**.
 - **Keep**: modest but broad target-level improvement with a small, exact encoding check.
+
+## 2026-07-11 — Signed-12-bit comparison immediates
+
+### Research and implementation
+
+- LLVM RISC-V uses `SLTI` directly for signed less-than immediates and rewrites other predicates through inversion or an adjusted bound.
+- ACCELA now selects `slti` for `< C`, inverts it for `>= C`, and uses `C + 1` for `<= C`/`> C` when the adjusted constant is encodable.
+- Equality predicates use `addi x, -C` followed by `seqz`/`snez`. Every rewrite checks signed-12-bit range and overflow boundaries; otherwise generic register comparison remains.
+- Assembly tests cover all six predicates and confirm that encodable constants do not create `li` plus register comparisons.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Full corpus: **147,649 -> 147,157 instructions (-0.33%)** and **457,638 -> 456,182 `.text` bytes (-0.32%)**.
+- **Keep**: small distributed improvement with exact immediate-range guards.
