@@ -500,7 +500,7 @@ def print_summary(result: dict[str, Any]) -> None:
             print(f"{name}: {value if value is not None else 'n/a'}")
 
 
-def write_result(result: dict[str, Any], requested: str | None) -> Path:
+def write_result(result: dict[str, Any], requested: str | None, update_latest: bool) -> Path:
     RESULTS_ROOT.mkdir(parents=True, exist_ok=True)
     if requested:
         output = Path(requested)
@@ -512,7 +512,8 @@ def write_result(result: dict[str, Any], requested: str | None) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(result, indent=2, sort_keys=True) + "\n"
     output.write_text(serialized)
-    (RESULTS_ROOT / "latest.json").write_text(serialized)
+    if update_latest:
+        (RESULTS_ROOT / "latest.json").write_text(serialized)
     return output
 
 
@@ -565,7 +566,10 @@ def main() -> int:
             args.skip_build,
         )
 
-    output = write_result(result, args.output)
+    update_latest = (
+        args.command == "baseline" and args.suite == "official" and not args.filter and args.limit is None
+    )
+    output = write_result(result, args.output, update_latest)
     print_summary(result)
     print(f"result: {output}")
 
