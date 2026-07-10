@@ -133,17 +133,6 @@ public final class RISCVAllocationRewriter {
     }
   }
 
-  void emitCompareBranch(
-      MachineFunction function,
-      MachineInstr compare,
-      MachineInstr branch,
-      AllocationResult allocation,
-      List<String> lines) {
-    emitCompareBranch(
-        function, compare.getPredicate(), compare.getOperands().get(0),
-        compare.getOperands().get(1), branch, allocation, lines);
-  }
-
   private void emitCompareBranch(
       MachineFunction function,
       MachineInstr branch,
