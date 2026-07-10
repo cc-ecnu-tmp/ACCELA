@@ -6,6 +6,7 @@ import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.ModuleToFunctionPassAdaptor;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.transform.ADCE;
@@ -80,6 +81,7 @@ public final class PassBuilder {
   public FunctionAnalysisManager buildFunctionAnalysisManager() {
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
     fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
     fam.registerPass(PostDominatorTreeAnalysis.class, new PostDominatorTreeAnalysis());
     return fam;
