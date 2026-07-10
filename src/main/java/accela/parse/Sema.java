@@ -34,24 +34,22 @@ public class Sema {
 
   /** Seeds the outermost scope with builtin runtime function declarations. */
   public Sema() {
-    for (String[] b :
-        new String[][] {
-          {"getint", "int"},
-          {"getch", "int"},
-          {"getfloat", "float"},
-          {"getarray", "int"},
-          {"getfarray", "int"},
-          {"putint", "void"},
-          {"putch", "void"},
-          {"putfloat", "void"},
-          {"putarray", "void"},
-          {"putfarray", "void"},
-          {"starttime", "void"},
-          {"stoptime", "void"}
-        }) {
-      Ty ty = b[1].equals("int") ? Ty.INT : b[1].equals("float") ? Ty.FLOAT : Ty.VOID;
-      scope.put(b[0], new Node(Tag.FUNC, b[0], ty));
-    }
+    registerBuiltin("getint", Ty.INT);
+    registerBuiltin("getch", Ty.INT);
+    registerBuiltin("getfloat", Ty.FLOAT);
+    registerBuiltin("getarray", Ty.INT);
+    registerBuiltin("getfarray", Ty.INT);
+    registerBuiltin("putint", Ty.VOID);
+    registerBuiltin("putch", Ty.VOID);
+    registerBuiltin("putfloat", Ty.VOID);
+    registerBuiltin("putarray", Ty.VOID);
+    registerBuiltin("putfarray", Ty.VOID);
+    registerBuiltin("starttime", Ty.VOID);
+    registerBuiltin("stoptime", Ty.VOID);
+  }
+
+  private void registerBuiltin(String name, Ty returnType) {
+    scope.put(name, new Node(Tag.FUNC, name, returnType));
   }
 
   /** Analyzes the whole translation unit in source order. */
