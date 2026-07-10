@@ -379,6 +379,17 @@ def object_metrics(object_file: Path, tools: dict[str, str], timeout: int) -> tu
     return instructions, memory_operations, text_bytes
 
 
+def normalize_aaac_assembly(assembly: Path) -> None:
+    text = assembly.read_text()
+    duplicate = re.compile(
+        r"^([A-Za-z_.$][A-Za-z0-9_.$]*):\n(\s*\.type\s+\1,\s*@function\s*\n)\1:\n",
+        re.MULTILINE,
+    )
+    normalized = duplicate.sub(lambda match: match.group(2) + match.group(1) + ":\n", text)
+    if normalized != text:
+        assembly.write_text(normalized)
+
+
 def assembly_case(
     compiler: str,
     source: Path,
@@ -410,6 +421,8 @@ def assembly_case(
             "stage": "compile",
             "error": short_error(compiled),
         }
+    if compiler == "aaac":
+        normalize_aaac_assembly(assembly)
 
     assembled = run(
         [
