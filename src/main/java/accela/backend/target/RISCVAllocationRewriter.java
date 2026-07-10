@@ -287,6 +287,12 @@ public final class RISCVAllocationRewriter {
         writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
         return;
       }
+      if (instr.getOpcode() == MachineOpcode.DIV && wordResult
+          && value > 1 && value <= (1L << 30)) {
+        emitMagicDivision(lines, lhsRegister, destination, (int) value);
+        writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+        return;
+      }
       if (instr.getOpcode() == MachineOpcode.REM && wordResult && value > 0
           && (value & (value - 1)) == 0 && value <= (1L << 30)) {
         int shift = Long.numberOfTrailingZeros(value);
@@ -365,6 +371,28 @@ public final class RISCVAllocationRewriter {
 
   private static boolean fitsSigned12(long value) {
     return value >= -2048 && value <= 2047;
+  }
+
+  private static void emitMagicDivision(
+      List<String> lines, String numerator, String destination, int divisor) {
+    SignedDivisionMagic magic = SignedDivisionMagic.forDivisor(divisor);
+    long multiplier = magic.multiplier();
+    if (multiplier < (1L << 31)) {
+      lines.add("  li t1, " + multiplier);
+      lines.add("  mul t1, " + numerator + ", t1");
+      lines.add("  srai " + destination + ", t1, " + (32 + magic.postShift()));
+    } else {
+      lines.add("  li t1, " + (multiplier - (1L << 32)));
+      lines.add("  mul t1, " + numerator + ", t1");
+      lines.add("  srai t1, t1, 32");
+      lines.add("  addw " + destination + ", t1, " + numerator);
+      if (magic.postShift() > 0) {
+        lines.add("  sraiw " + destination + ", " + destination
+            + ", " + magic.postShift());
+      }
+    }
+    lines.add("  sraiw t3, " + numerator + ", 31");
+    lines.add("  subw " + destination + ", " + destination + ", t3");
   }
 
   private void emitCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
