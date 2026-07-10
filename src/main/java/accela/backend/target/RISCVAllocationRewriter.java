@@ -72,13 +72,15 @@ public final class RISCVAllocationRewriter {
         return;
       case SITOFP:
         materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
-        lines.add("  fcvt.s.w ft0, t0");
-        writeDest(lines, instr.getDest(), "ft0", allocation, MachineType.F32);
+        String floatDest = destinationRegister(instr.getDest(), "ft0", allocation);
+        lines.add("  fcvt.s.w " + floatDest + ", t0");
+        writeDest(lines, instr.getDest(), floatDest, allocation, MachineType.F32);
         return;
       case FPTOSI:
         materializeInto(lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
-        lines.add("  fcvt.w.s t0, ft0, rtz");
-        writeDest(lines, instr.getDest(), "t0", allocation, MachineType.I32);
+        String integerDest = destinationRegister(instr.getDest(), "t0", allocation);
+        lines.add("  fcvt.w.s " + integerDest + ", ft0, rtz");
+        writeDest(lines, instr.getDest(), integerDest, allocation, MachineType.I32);
         return;
       case ADD:
       case SUB:
@@ -102,8 +104,9 @@ public final class RISCVAllocationRewriter {
         return;
       case FNEG:
         materializeInto(lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
-        lines.add("  fneg.s ft1, ft0");
-        writeDest(lines, instr.getDest(), "ft1", allocation, MachineType.F32);
+        String negateDest = destinationRegister(instr.getDest(), "ft1", allocation);
+        lines.add("  fneg.s " + negateDest + ", ft0");
+        writeDest(lines, instr.getDest(), negateDest, allocation, MachineType.F32);
         return;
       case LOAD:
         emitLoad(instr, allocation, lines);
@@ -582,8 +585,9 @@ public final class RISCVAllocationRewriter {
       default:
         throw new IllegalStateException();
     }
-    lines.add("  " + op + " ft2, ft0, ft1");
-    writeDest(lines, instr.getDest(), "ft2", allocation, MachineType.F32);
+    String destination = destinationRegister(instr.getDest(), "ft2", allocation);
+    lines.add("  " + op + " " + destination + ", ft0, ft1");
+    writeDest(lines, instr.getDest(), destination, allocation, MachineType.F32);
   }
 
   private void emitFloatCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
