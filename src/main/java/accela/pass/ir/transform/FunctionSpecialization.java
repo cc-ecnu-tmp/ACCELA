@@ -18,7 +18,7 @@ import java.util.Map;
 public final class FunctionSpecialization {
   private static final int MAX_CLONES = 3;
   private static final int MIN_SAVINGS_PERCENT = 20;
-  private static final int MAX_CODE_GROWTH = 3;
+  private static final int MAX_CODE_GROWTH = 1;
   private FunctionSpecialization() {}
 
   public static final class Pass implements ModulePass {
@@ -45,26 +45,34 @@ public final class FunctionSpecialization {
         }
       }
       if (groups.size() == 1 && groups.values().iterator().next().size() == calls.size()) continue;
+      int coveredCalls = groups.values().stream().mapToInt(List::size).sum();
+      if (coveredCalls != calls.size() || groups.size() > MAX_CLONES) continue;
 
-      int clones = 0;
       int growth = 0;
+      List<Function> clones = new ArrayList<>();
+      List<List<Instruction>> rewrites = new ArrayList<>();
       for (var group : groups.entrySet()) {
-        if (clones == MAX_CLONES) break;
         Function clone = FunctionCloner.cloneFunction(
-            source, source.getName() + ".specialized." + (clones + 1));
+            source, source.getName() + ".specialized." + (clones.size() + 1));
         group.getKey().applyTo(clone);
         optimize(clone);
         int cloneSize = instructionCount(clone);
         int savings = sourceSize - cloneSize;
-        if (savings * 100 < sourceSize * MIN_SAVINGS_PERCENT) continue;
-        if (growth + cloneSize > sourceSize * MAX_CODE_GROWTH) continue;
-
-        module.addFunction(clone);
-        for (Instruction call : group.getValue()) call.setCallee(clone);
+        if (savings * 100 < sourceSize * MIN_SAVINGS_PERCENT
+            || growth + cloneSize > sourceSize * MAX_CODE_GROWTH) {
+          clones.clear();
+          break;
+        }
         growth += cloneSize;
-        clones++;
-        changed = true;
+        clones.add(clone);
+        rewrites.add(group.getValue());
       }
+      if (clones.size() != groups.size()) continue;
+      for (int i = 0; i < clones.size(); i++) {
+        module.addFunction(clones.get(i));
+        for (Instruction call : rewrites.get(i)) call.setCallee(clones.get(i));
+      }
+      changed = true;
     }
     return changed;
   }
