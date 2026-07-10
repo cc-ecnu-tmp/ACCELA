@@ -1,6 +1,7 @@
 package accela.backend.regalloc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -76,6 +77,41 @@ final class AllSpillRegisterAllocatorTest {
 
     assertNotEquals(
         sourceLocation.getRegister().getName(), firstLocation.getRegister().getName());
+  }
+
+  @Test
+  void usesArgumentRegistersForCallSafeTemporaries() {
+    MachineFunction function = new MachineFunction("argument_colors", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
+    function.addArgument(source, MachineType.I32);
+    addArg(entry, source);
+    VirtualRegister[] values = new VirtualRegister[4];
+    for (int i = 0; i < values.length; i++) {
+      values[i] = function.createVirtualRegister(MachineType.I32, "value" + i);
+      add(entry, values[i], source, new ImmOperand(i + 1));
+    }
+    VirtualRegister left = function.createVirtualRegister(MachineType.I32, "left");
+    VirtualRegister right = function.createVirtualRegister(MachineType.I32, "right");
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+    add(entry, left, values[0], new VRegOperand(values[1]));
+    add(entry, right, values[2], new VRegOperand(values[3]));
+    add(entry, result, left, new VRegOperand(right));
+    addReturn(entry, result);
+    RISCVTarget target = new RISCVTarget();
+
+    AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, target);
+
+    boolean usedArgumentRegister = false;
+    for (VirtualRegister value : values) {
+      RegisterLocation location =
+          assertInstanceOf(RegisterLocation.class, allocation.locationOf(value));
+      usedArgumentRegister |= target.isArgumentRegister(location.getRegister());
+    }
+    assertTrue(usedArgumentRegister);
+    RegisterLocation sourceLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+    assertFalse(target.isArgumentRegister(sourceLocation.getRegister()));
   }
 
   @Test

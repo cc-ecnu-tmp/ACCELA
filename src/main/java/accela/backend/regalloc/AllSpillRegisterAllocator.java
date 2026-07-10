@@ -26,8 +26,11 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
     collectRegisters(function, registers);
     Set<VirtualRegister> callConflicts =
         CallClobberAnalysis.analyze(function, liveness, target);
-    colorRegisters(function, registers, callConflicts, interference, target, result, false);
-    colorRegisters(function, registers, callConflicts, interference, target, result, true);
+    Set<VirtualRegister> argumentHazards = collectArgumentHazards(function);
+    colorRegisters(function, registers, callConflicts, argumentHazards,
+        interference, target, result, false);
+    colorRegisters(function, registers, callConflicts, argumentHazards,
+        interference, target, result, true);
 
     Map<VirtualRegister, StackSlot> spills = new LinkedHashMap<>();
     Map<StackSlot, List<VirtualRegister>> occupants = new LinkedHashMap<>();
@@ -61,6 +64,7 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
       MachineFunction function,
       Set<VirtualRegister> registers,
       Set<VirtualRegister> callConflicts,
+      Set<VirtualRegister> argumentHazards,
       InterferenceGraph interference,
       RISCVTarget target,
       AllocationResult result,
@@ -72,7 +76,9 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
     var assignments = OptimisticGraphColoring.color(
         candidates, interference, colors.size(), unused -> 1,
         (register, color) ->
-            !callConflicts.contains(register) || target.isCalleeSaved(colors.get(color)));
+            (!callConflicts.contains(register) || target.isCalleeSaved(colors.get(color)))
+                && (!argumentHazards.contains(register)
+                    || !target.isArgumentRegister(colors.get(color))));
     for (var entry : assignments.entrySet()) {
       if (entry.getValue() >= 0) {
         var physicalRegister = colors.get(entry.getValue());
@@ -86,6 +92,19 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
         }
       }
     }
+  }
+
+  private static Set<VirtualRegister> collectArgumentHazards(MachineFunction function) {
+    Set<VirtualRegister> hazards = new LinkedHashSet<>(function.getArguments());
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        if (instruction.getOpcode() != accela.backend.machine.MachineOpcode.CALL) continue;
+        for (MachineOperand operand : instruction.getOperands()) {
+          if (operand instanceof VRegOperand register) hazards.add(register.getRegister());
+        }
+      }
+    }
+    return hazards;
   }
 
   private static void collectRegisters(

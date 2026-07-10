@@ -31,6 +31,14 @@ public final class RISCVTarget {
           new PhysicalRegister("t4", MachineType.I32),
           new PhysicalRegister("t5", MachineType.I32),
           new PhysicalRegister("t6", MachineType.I32),
+          new PhysicalRegister("a0", MachineType.I32),
+          new PhysicalRegister("a1", MachineType.I32),
+          new PhysicalRegister("a2", MachineType.I32),
+          new PhysicalRegister("a3", MachineType.I32),
+          new PhysicalRegister("a4", MachineType.I32),
+          new PhysicalRegister("a5", MachineType.I32),
+          new PhysicalRegister("a6", MachineType.I32),
+          new PhysicalRegister("a7", MachineType.I32),
           new PhysicalRegister("s0", MachineType.I32),
           new PhysicalRegister("s1", MachineType.I32),
           new PhysicalRegister("s2", MachineType.I32),
@@ -44,7 +52,7 @@ public final class RISCVTarget {
           new PhysicalRegister("s10", MachineType.I32),
           new PhysicalRegister("s11", MachineType.I32));
   private final List<PhysicalRegister> intCalleeSaved =
-      intAllocatable.subList(3, intAllocatable.size());
+      intAllocatable.subList(11, intAllocatable.size());
   private final List<PhysicalRegister> floatCallerSaved =
       List.of(
           new PhysicalRegister("ft4", MachineType.F32),
@@ -91,6 +99,12 @@ public final class RISCVTarget {
   public boolean isCalleeSaved(PhysicalRegister register) {
     return getCalleeSavedRegisters(register.getType()).stream()
         .anyMatch(candidate -> candidate.getName().equals(register.getName()));
+  }
+
+  public boolean isArgumentRegister(PhysicalRegister register) {
+    String name = register.getName();
+    return name.length() == 2 && name.charAt(0) == 'a'
+        && name.charAt(1) >= '0' && name.charAt(1) <= '7';
   }
 
   public PhysicalRegister getReturnRegister(MachineType type) {
