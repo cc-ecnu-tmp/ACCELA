@@ -19,6 +19,7 @@ import accela.pass.ir.transform.GlobalConstantPropagation;
 import accela.pass.ir.transform.IPSCCP;
 import accela.pass.ir.transform.LoopAddressStrengthReduction;
 import accela.pass.ir.transform.Mem2Reg;
+import accela.pass.ir.transform.ReadNoneCallCSE;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
@@ -164,6 +165,7 @@ public final class PassBuilder {
     ModulePassManager mpm = new ModulePassManager(instrumentation);
     mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
+    mpm.addPass(new ReadNoneCallCSE.Pass());
     mpm.addPass(new SmallFunctionInliner.Pass());
     mpm.addPass(new IPSCCP.Pass());
     mpm.addPass(new FoldPureConstantCalls.Pass());
