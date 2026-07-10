@@ -57,7 +57,8 @@ public class AstDumper {
         out.println(pfx + "DeclRef: " + n.s + ", type: " + n.ty);
         break;
       case LIT:
-        out.println(pfx + "IntegerLiteral: " + n.s);
+        out.println(pfx + (n.literal.isFloat() ? "FloatLiteral: " : "IntegerLiteral: ")
+            + n.literal.debugText());
         break;
       case SUB:
         out.println(pfx + "ArraySubscript: type: " + n.ty);

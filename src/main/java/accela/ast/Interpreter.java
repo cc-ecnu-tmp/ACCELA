@@ -251,7 +251,7 @@ public class Interpreter {
     if (n == null) return null;
     switch (n.tag) {
       case LIT:
-        return evalLiteral(n.s);
+        return n.literal.asNumber();
       case REF:
         return getVariable(n.s);
       case BIN:

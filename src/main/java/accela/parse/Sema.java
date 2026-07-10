@@ -149,9 +149,9 @@ public class Sema {
     if (v.flag && !v.ty.isArray() && !v.kids.isEmpty() && v.kids.get(0).tag != LIT) {
       Node lit;
       if (v.ty.isFloat()) {
-        lit = new Node(LIT, Float.toString(evalConstFloat(v.kids.get(0))));
+        lit = Node.floatLiteral(evalConstFloat(v.kids.get(0)));
       } else {
-        lit = new Node(LIT, Integer.toString(evalConst(v.kids.get(0))));
+        lit = Node.intLiteral(evalConst(v.kids.get(0)));
       }
       lit.ty = v.ty;
       v.kids.set(0, lit);
@@ -178,7 +178,7 @@ public class Sema {
     int total = ty.flatSize();
     int[] dims = ty.dims;
     List<Node> flat = new ArrayList<>(total);
-    for (int i = 0; i < total; i++) flat.add(new Node(LIT, "0"));
+    for (int i = 0; i < total; i++) flat.add(Node.intLiteral(0));
     fillRec(raw, flat, dims, 0, 0);
     for (int i = 0; i < flat.size(); i++) flat.set(i, analyzeExpr(flat.get(i)));
     return rebuildInit(flat, ty.elem, dims, 0, 0);
@@ -393,15 +393,7 @@ public class Sema {
    */
   int evalConst(Node node) {
     if (node.tag == LIT) {
-      String v = node.s;
-      if (v.contains(".")
-          || v.contains("e")
-          || v.contains("E")
-          || v.contains("p")
-          || v.contains("P")) return (int) Double.parseDouble(v);
-      if (v.startsWith("0x") || v.startsWith("0X")) return Integer.parseInt(v.substring(2), 16);
-      if (v.startsWith("0") && v.length() > 1) return Integer.parseInt(v.substring(1), 8);
-      return Integer.parseInt(v);
+      return node.literal.asInt();
     }
     if (node.tag == BIN) {
       int l = evalConst(node.kids.get(0)), r = evalConst(node.kids.get(1));
@@ -470,8 +462,7 @@ public class Sema {
    */
   private float evalConstFloat(Node node) {
     if (node.tag == LIT) {
-      if (node.type() != null && node.type().isFloat()) return parseFloat(node.s);
-      return (float) evalConst(node);
+      return node.literal.asFloat();
     }
     if (node.tag == BIN) {
       float l = evalConstFloat(node.kids.get(0)), r = evalConstFloat(node.kids.get(1));

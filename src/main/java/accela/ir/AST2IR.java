@@ -197,7 +197,7 @@ public class AST2IR {
       if (initNode.tag == INIT_LIST) return buildGlobalArrayInit(initNode, type);
       return Constant.zero(type);
     }
-    if (initNode.tag == LIT) return buildLiteralConst(initNode.s, type);
+    if (initNode.tag == LIT) return buildLiteralConst(initNode, type);
     if (type.isFloat()) return Constant.floatConst(evalGlobalConstFloat(initNode));
     return Constant.intConst(evalGlobalConstInt(initNode));
   }
@@ -227,20 +227,20 @@ public class AST2IR {
   private boolean isAllZeroInit(Node initList) {
     for (Node child : initList.kids) {
       if (child.tag == INIT_LIST) { if (!isAllZeroInit(child)) return false; }
-      else if (child.tag == LIT) { if (!child.s.equals("0")) return false; }
+      else if (child.tag == LIT) { if (!child.literal.isZero()) return false; }
       else return false;
     }
     return true;
   }
 
-  private Constant buildLiteralConst(String s, Type type) {
-    if (type.isFloat()) return Constant.floatConst(parseFloat(s));
-    return Constant.intConst(parseInt(s));
+  private Constant buildLiteralConst(Node literal, Type type) {
+    if (type.isFloat()) return Constant.floatConst(literal.literal.asFloat());
+    return Constant.intConst(literal.literal.asInt());
   }
 
   /** Small constant-folder used only while building global integer initializers. */
   private int evalGlobalConstInt(Node n) {
-    if (n.tag == LIT) return parseInt(n.s);
+    if (n.tag == LIT) return n.literal.asInt();
     if (n.tag == Node.Tag.UNARY) {
       int v = evalGlobalConstInt(n.kids.get(0));
       switch (n.op) {
@@ -264,7 +264,7 @@ public class AST2IR {
 
   /** Float counterpart of {@link #evalGlobalConstInt(Node)}. */
   private float evalGlobalConstFloat(Node n) {
-    if (n.tag == LIT) return parseFloat(n.s);
+    if (n.tag == LIT) return n.literal.asFloat();
     if (n.tag == Node.Tag.UNARY) {
       float v = evalGlobalConstFloat(n.kids.get(0));
       if (n.op == Op.NEG || n.op == Op.SUB) return -v;
@@ -423,7 +423,7 @@ public class AST2IR {
 
     for (int i = 0; i < flatElems.size() && i < totalElems; i++) {
       Node elem = flatElems.get(i);
-      if (elem.tag == LIT && elem.s.equals("0")) continue;
+      if (elem.tag == LIT && elem.literal.isZero()) continue;
       Value val = emitExpr(elem);
       val = ensureType(val, scalarType);
       Instruction gep = b.createGEP(scalarType, base,
@@ -525,8 +525,8 @@ public class AST2IR {
   }
 
   private Value emitLiteral(Node n) {
-    if (n.type() != null && n.type().isFloat()) return Constant.floatConst(parseFloat(n.s));
-    return Constant.intConst(parseInt(n.s));
+    if (n.literal.isFloat()) return Constant.floatConst(n.literal.asFloat());
+    return Constant.intConst(n.literal.asInt());
   }
 
   /**

@@ -372,7 +372,7 @@ public class Parser {
     }
     if (tok.type == NUM) {
       consume(NUM);
-      return new Node(Tag.LIT, tok.text);
+      return Node.literalFromToken(tok.text);
     }
     if (tok.type == IDENT) {
       consume(IDENT);
