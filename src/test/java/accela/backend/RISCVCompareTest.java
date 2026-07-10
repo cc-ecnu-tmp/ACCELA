@@ -30,6 +30,7 @@ final class RISCVCompareTest {
     String assembly = new BackendCompiler().compileToAssembly(module);
 
     assertTrue(hasInstruction(assembly, "seqz [a-z0-9]+, [a-z0-9]+"));
+    assertTrue(hasInstruction(assembly, "seqz t[4-6], t[4-6]"));
     assertTrue(hasInstruction(assembly, "snez [a-z0-9]+, [a-z0-9]+"));
     assertTrue(hasInstruction(assembly, "slt [a-z0-9]+, [a-z0-9]+, zero"));
     assertTrue(hasInstruction(assembly, "slt [a-z0-9]+, zero, [a-z0-9]+"));
