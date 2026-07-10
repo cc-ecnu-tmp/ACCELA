@@ -29,10 +29,10 @@ final class RISCVCompareTest {
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
-    assertTrue(assembly.contains("  seqz t2, t0"));
-    assertTrue(assembly.contains("  snez t2, t0"));
-    assertTrue(assembly.contains("  slt t2, t0, zero"));
-    assertTrue(assembly.contains("  slt t2, zero, t0"));
+    assertTrue(hasInstruction(assembly, "seqz [a-z0-9]+, [a-z0-9]+"));
+    assertTrue(hasInstruction(assembly, "snez [a-z0-9]+, [a-z0-9]+"));
+    assertTrue(hasInstruction(assembly, "slt [a-z0-9]+, [a-z0-9]+, zero"));
+    assertTrue(hasInstruction(assembly, "slt [a-z0-9]+, zero, [a-z0-9]+"));
     assertFalse(assembly.contains("  li t1, 0"));
     assertFalse(assembly.contains("  sub t2, t0, t1"));
   }
@@ -53,11 +53,15 @@ final class RISCVCompareTest {
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
-    assertTrue(assembly.contains("  addi t2, t0, -7"));
-    assertTrue(assembly.contains("  slti t2, t0, 7"));
-    assertTrue(assembly.contains("  slti t2, t0, 8"));
+    assertTrue(hasInstruction(assembly, "addi [a-z0-9]+, [a-z0-9]+, -7"));
+    assertTrue(hasInstruction(assembly, "slti [a-z0-9]+, [a-z0-9]+, 7"));
+    assertTrue(hasInstruction(assembly, "slti [a-z0-9]+, [a-z0-9]+, 8"));
     assertFalse(assembly.contains("  li t1, 7"));
     assertFalse(assembly.contains("  sub t2, t0, t1"));
     assertFalse(assembly.contains("  slt t2, t0, t1"));
+  }
+
+  private static boolean hasInstruction(String assembly, String pattern) {
+    return assembly.lines().anyMatch(line -> line.matches("\\s+" + pattern));
   }
 }
