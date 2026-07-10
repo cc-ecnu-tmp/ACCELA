@@ -30,6 +30,10 @@ final class InterferenceGraph {
     return edges.getOrDefault(first, Collections.emptySet()).contains(second);
   }
 
+  Set<VirtualRegister> neighbors(VirtualRegister register) {
+    return Collections.unmodifiableSet(edges.getOrDefault(register, Collections.emptySet()));
+  }
+
   private void addClique(Set<VirtualRegister> live) {
     List<VirtualRegister> registers = new ArrayList<>(live);
     for (int i = 0; i < registers.size(); i++) {
