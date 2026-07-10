@@ -1,5 +1,6 @@
 package accela.pass.ir.transform;
 
+import accela.ir.Constant;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
@@ -12,11 +13,34 @@ final class AffineGepCandidate {
   static int varyingIndex(Instruction gep, Instruction induction) {
     for (int index = 1; index < gep.getNumOperands(); index++) {
       Value operand = gep.getOperand(index);
-      if (operand == induction || operand instanceof Instruction extension
-          && extension.getOpcode() == Instruction.Opcode.SEXT
-          && extension.getOperand(0) == induction) return index;
+      if (inductionOffset(operand, induction) != null) return index;
     }
     return -1;
+  }
+
+  static Long inductionOffset(Value value, Instruction induction) {
+    if (value == induction) return 0L;
+    if (!(value instanceof Instruction instruction)) return null;
+    if (instruction.getOpcode() == Instruction.Opcode.SEXT) {
+      return inductionOffset(instruction.getOperand(0), induction);
+    }
+    if (instruction.getNumOperands() != 2) return null;
+    if (instruction.getOpcode() == Instruction.Opcode.ADD) {
+      if (instruction.getOperand(1) instanceof Constant.Int constant) {
+        Long offset = inductionOffset(instruction.getOperand(0), induction);
+        return offset == null ? null : offset + constant.value;
+      }
+      if (instruction.getOperand(0) instanceof Constant.Int constant) {
+        Long offset = inductionOffset(instruction.getOperand(1), induction);
+        return offset == null ? null : offset + constant.value;
+      }
+    }
+    if (instruction.getOpcode() == Instruction.Opcode.SUB
+        && instruction.getOperand(1) instanceof Constant.Int constant) {
+      Long offset = inductionOffset(instruction.getOperand(0), induction);
+      return offset == null ? null : offset - constant.value;
+    }
+    return null;
   }
 
   static boolean otherOperandsAreInvariant(
@@ -36,13 +60,21 @@ final class AffineGepCandidate {
         && definition.getNumOperands() == 1) {
       return isInvariant(definition.getOperand(0), loop);
     }
+    if (definition.getOpcode() == Instruction.Opcode.GEP) {
+      for (int index = 0; index < definition.getNumOperands(); index++) {
+        if (!isInvariant(definition.getOperand(index), loop)) return false;
+      }
+      return true;
+    }
     return false;
   }
 
   static boolean isMemoryAddress(Instruction gep) {
     return gep.getUses().stream().anyMatch(use -> {
       var opcode = use.getUser().getOpcode();
-      return opcode == Instruction.Opcode.LOAD || opcode == Instruction.Opcode.STORE;
+      return opcode == Instruction.Opcode.LOAD || opcode == Instruction.Opcode.STORE
+          || opcode == Instruction.Opcode.GEP
+              && isMemoryAddress((Instruction) use.getUser());
     });
   }
 

@@ -18,7 +18,7 @@ import java.util.Map;
 /** Replaces a small number of affine memory addresses with pointer recurrences. */
 public final class LoopAddressStrengthReduction {
   private static final int MAX_TRANSFORMED_LOOPS = 8;
-  private static final int MAX_RECURRENCES_PER_LOOP = 4;
+  private static final int MAX_RECURRENCES_PER_LOOP = 8;
 
   private LoopAddressStrengthReduction() {}
 
@@ -66,11 +66,14 @@ public final class LoopAddressStrengthReduction {
     Value[] initialIndices = new Value[gep.getNumOperands() - 1];
     for (int index = 1; index < gep.getNumOperands(); index++) {
       initialIndices[index - 1] = index == varyingIndex
-          ? extendStart(preheaderBuilder, gep.getOperand(index), induction.start())
+          ? extendStart(
+              preheaderBuilder, gep.getOperand(index), induction.start(), induction.phi())
           : materializeInvariant(preheaderBuilder, gep.getOperand(index), induction.loop());
     }
     Instruction initial = preheaderBuilder.createGEP(
-        gep.getGepSourceType(), gep.getOperand(0), initialIndices, gep.isGepInbounds());
+        gep.getGepSourceType(),
+        materializeInvariant(preheaderBuilder, gep.getOperand(0), induction.loop()),
+        initialIndices, gep.isGepInbounds());
     Instruction pointer = Instruction.createPhi(Type.PTR);
     induction.loop().header().addInstructionToFront(pointer);
     pointer.addOperand(initial);
@@ -85,19 +88,34 @@ public final class LoopAddressStrengthReduction {
     gep.eraseFromParent();
   }
 
-  private static Value extendStart(IRBuilder builder, Value oldIndex, Value start) {
+  private static Value extendStart(
+      IRBuilder builder, Value oldIndex, Value start, Instruction induction) {
+    Long offset = AffineGepCandidate.inductionOffset(oldIndex, induction);
+    if (offset == null) return start;
+    Value initial = offset == 0 ? start
+        : builder.createAdd(start, Constant.intConst(offset));
     if (oldIndex instanceof Instruction extension
         && extension.getOpcode() == Instruction.Opcode.SEXT
-        && extension.getOperand(0).getType() == start.getType()) {
-      return builder.createSExt(start, extension.getType());
+        && extension.getType() != start.getType()) {
+      return builder.createSExt(initial, extension.getType());
     }
-    return start;
+    return initial;
   }
 
   private static Value materializeInvariant(
       IRBuilder builder, Value value, LoopAnalysis.Loop loop) {
     if (!(value instanceof Instruction instruction)
         || !loop.blocks().contains(instruction.getParent())) return value;
+    if (instruction.getOpcode() == Instruction.Opcode.GEP) {
+      Value[] indices = new Value[instruction.getNumOperands() - 1];
+      for (int index = 1; index < instruction.getNumOperands(); index++) {
+        indices[index - 1] = materializeInvariant(builder, instruction.getOperand(index), loop);
+      }
+      return builder.createGEP(
+          instruction.getGepSourceType(),
+          materializeInvariant(builder, instruction.getOperand(0), loop),
+          indices, instruction.isGepInbounds());
+    }
     Value operand = materializeInvariant(builder, instruction.getOperand(0), loop);
     return instruction.getOpcode() == Instruction.Opcode.SEXT
         ? builder.createSExt(operand, instruction.getType())

@@ -36,16 +36,24 @@ final class LoopAddressStrengthReductionTest {
     new IRBuilder(header).createCondBr(condition, body, exit);
     IRBuilder bodyBuilder = new IRBuilder(body);
     Instruction index = bodyBuilder.createSExt(induction, Type.I64);
+    Type rowType = Type.array(Type.INT, 16);
+    Instruction row = bodyBuilder.createGEP(
+        rowType, base, new Value[] {Constant.int64Const(0)}, true);
     Instruction address = bodyBuilder.createGEP(
-        Type.INT, base, new Value[] {index}, true);
+        Type.INT, row, new Value[] {index}, true);
     Instruction load = bodyBuilder.createLoad(Type.INT, address);
     Instruction secondAddress = bodyBuilder.createGEP(
-        Type.INT, base, new Value[] {index}, true);
+        Type.INT, row, new Value[] {index}, true);
     Instruction secondLoad = bodyBuilder.createLoad(Type.INT, secondAddress);
     bodyBuilder.createLoad(Type.INT,
-        bodyBuilder.createGEP(Type.INT, base, new Value[] {index}, true));
-    Instruction fourthLoad = bodyBuilder.createLoad(Type.INT,
-        bodyBuilder.createGEP(Type.INT, base, new Value[] {index}, true));
+        bodyBuilder.createGEP(Type.INT, row, new Value[] {index}, true));
+    Instruction offsetIndex = bodyBuilder.createSExt(
+        bodyBuilder.createAdd(induction, Constant.intConst(1)), Type.I64);
+    Instruction offsetRow = bodyBuilder.createGEP(
+        rowType, base, new Value[] {offsetIndex}, true);
+    Instruction fourthAddress = bodyBuilder.createGEP(
+        Type.INT, offsetRow, new Value[] {Constant.int64Const(0)}, true);
+    Instruction fourthLoad = bodyBuilder.createLoad(Type.INT, fourthAddress);
     Instruction next = bodyBuilder.createAdd(induction, Constant.intConst(1));
     bodyBuilder.createBr(header);
     induction.addOperand(next);
@@ -67,7 +75,8 @@ final class LoopAddressStrengthReductionTest {
     assertSame(entry, ((Instruction) pointer.getOperand(0)).getParent());
     assertTrue(secondLoad.getOperand(0) instanceof Instruction secondPointer
         && secondPointer.getOpcode() == Instruction.Opcode.PHI);
-    assertTrue(fourthLoad.getOperand(0) instanceof Instruction fourthPointer
+    assertSame(fourthAddress, fourthLoad.getOperand(0));
+    assertTrue(fourthAddress.getOperand(0) instanceof Instruction fourthPointer
         && fourthPointer.getOpcode() == Instruction.Opcode.PHI);
   }
 }
