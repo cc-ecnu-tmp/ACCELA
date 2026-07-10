@@ -8,8 +8,10 @@ import accela.ir.Use;
 import accela.ir.Value;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Structural verifier for the ACCELA IR. */
@@ -24,15 +26,17 @@ public final class IRVerifier {
 
   public static void verifyFunction(Function function) {
     Set<String> labels = new HashSet<>();
+    Map<BasicBlock, List<BasicBlock>> predecessors = collectPredecessors(function);
     for (BasicBlock block : function.getBlocks()) {
       if (!labels.add(block.getLabel())) {
         fail(function, "duplicate basic block label: " + block.getLabel());
       }
-      verifyBlock(function, block);
+      verifyBlock(function, block, predecessors.get(block));
     }
   }
 
-  private static void verifyBlock(Function function, BasicBlock block) {
+  private static void verifyBlock(
+      Function function, BasicBlock block, List<BasicBlock> predecessors) {
     if (block.getParent() != function) {
       fail(function, "basic block has wrong parent: " + block.getLabel());
     }
@@ -54,7 +58,7 @@ public final class IRVerifier {
       if (inst.isTerminator() && i != instructions.size() - 1) {
         fail(function, "terminator must be the last instruction in block " + block.getLabel());
       }
-      verifyInstruction(function, block, inst);
+      verifyInstruction(function, block, inst, predecessors);
     }
 
     if (!instructions.isEmpty() && !instructions.get(instructions.size() - 1).isTerminator()) {
@@ -62,7 +66,8 @@ public final class IRVerifier {
     }
   }
 
-  private static void verifyInstruction(Function function, BasicBlock block, Instruction inst) {
+  private static void verifyInstruction(
+      Function function, BasicBlock block, Instruction inst, List<BasicBlock> predecessors) {
     for (int i = 0; i < inst.getNumOperands(); i++) {
       Value operand = inst.getOperand(i);
       if (operand == null) {
@@ -136,18 +141,18 @@ public final class IRVerifier {
         }
         break;
       case PHI:
-        verifyPhi(function, block, inst);
+        verifyPhi(function, block, inst, predecessors);
         break;
       default:
         break;
     }
   }
 
-  private static void verifyPhi(Function function, BasicBlock block, Instruction inst) {
+  private static void verifyPhi(
+      Function function, BasicBlock block, Instruction inst, List<BasicBlock> preds) {
     if (inst.getNumOperands() == 0 || (inst.getNumOperands() & 1) != 0) {
       fail(function, "phi must contain value/block pairs");
     }
-    List<BasicBlock> preds = collectPrintedPredecessors(function, block);
     Set<BasicBlock> incomingBlocks = new LinkedHashSet<>();
     for (int i = 0; i < inst.getNumOperands(); i += 2) {
       Value incomingBlockValue = inst.getOperand(i + 1);
@@ -181,17 +186,17 @@ public final class IRVerifier {
     return type == Type.I1 || type == Type.INT || type == Type.I64;
   }
 
-  private static List<BasicBlock> collectPrintedPredecessors(Function function, BasicBlock block) {
-    List<BasicBlock> preds = new ArrayList<>();
+  private static Map<BasicBlock, List<BasicBlock>> collectPredecessors(Function function) {
+    Map<BasicBlock, List<BasicBlock>> predecessors = new IdentityHashMap<>();
+    for (BasicBlock block : function.getBlocks()) {
+      predecessors.put(block, new ArrayList<>());
+    }
     for (BasicBlock candidate : function.getBlocks()) {
       for (BasicBlock succ : candidate.getSuccessors()) {
-        if (succ == block || succ.getLabel().equals(block.getLabel())) {
-          preds.add(candidate);
-          break;
-        }
+        predecessors.get(succ).add(candidate);
       }
     }
-    return preds;
+    return predecessors;
   }
 
   private static void fail(Function function, String message) {
