@@ -67,6 +67,21 @@ final class OptimisticGraphColoringTest {
     assertEquals(-1, colors.get(registers.get(1)));
   }
 
+  @Test
+  void usesAnAvailablePreferredColor() {
+    List<VirtualRegister> registers = registers(3);
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(registers.get(1), registers.get(2));
+
+    Map<VirtualRegister, Integer> colors =
+        OptimisticGraphColoring.color(
+            registers, graph, 2, unused -> 1, (register, color) -> true,
+            register -> register == registers.get(0)
+                ? List.of(registers.get(1)) : List.of());
+
+    assertEquals(colors.get(registers.get(1)), colors.get(registers.get(0)));
+  }
+
   private static List<VirtualRegister> registers(int count) {
     return java.util.stream.IntStream.range(0, count)
         .mapToObj(id -> new VirtualRegister(id, MachineType.I32, "v" + id))

@@ -11,6 +11,7 @@ import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 import java.util.function.ToIntFunction;
 
 /** Briggs-style optimistic simplify/select graph coloring. */
@@ -32,6 +33,17 @@ final class OptimisticGraphColoring {
       int colorCount,
       ToIntFunction<VirtualRegister> spillWeight,
       BiPredicate<VirtualRegister, Integer> colorAllowed) {
+    return color(registers, graph, colorCount, spillWeight, colorAllowed,
+        unused -> List.of());
+  }
+
+  static Map<VirtualRegister, Integer> color(
+      Collection<VirtualRegister> registers,
+      InterferenceGraph graph,
+      int colorCount,
+      ToIntFunction<VirtualRegister> spillWeight,
+      BiPredicate<VirtualRegister, Integer> colorAllowed,
+      Function<VirtualRegister, Collection<VirtualRegister>> preferences) {
     if (colorCount <= 0) throw new IllegalArgumentException("colorCount must be positive");
     Set<VirtualRegister> remaining = identitySet();
     remaining.addAll(registers);
@@ -71,7 +83,15 @@ final class OptimisticGraphColoring {
         Integer color = colors.get(neighbor);
         if (color != null && color >= 0) unavailable[color] = true;
       }
-      int color = 0;
+      int color = -1;
+      for (VirtualRegister preferred : preferences.apply(register)) {
+        Integer preferredColor = colors.get(preferred);
+        if (preferredColor != null && preferredColor >= 0 && !unavailable[preferredColor]) {
+          color = preferredColor;
+          break;
+        }
+      }
+      if (color < 0) color = 0;
       while (color < colorCount && unavailable[color]) color++;
       colors.put(register, color < colorCount ? color : -1);
     }
