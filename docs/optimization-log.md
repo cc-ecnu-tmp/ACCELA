@@ -267,3 +267,32 @@ This is the durable record for each research, implementation, correctness, and p
 - Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
 - Full corpus: **95,076 -> 91,407 instructions (-3.86%)** and **272,706 -> 249,878 `.text` bytes (-8.37%)**.
 - **Keep**: allocation is correct and reduces memory traffic, but allocated operands still pass through scratch-register moves. Direct physical-register emission is the next isolated layer.
+
+## 2026-07-11 — Late array scalarization and whole-program constant calls
+
+### Research and implementation
+
+- LLVM's SROA pipeline is iterative: simplification can expose constant indices that were not
+  scalarizable during the first visit. ACCELA now retries SROA after SCCP and reruns SCCP,
+  EarlyCSE, and InstSimplify before ADCE.
+- A late-SROA regression reduces a fixed local array to `ret i32 14`, proving that per-element
+  promotion exposes the initialization, loads, and address arithmetic to constant folding/DCE.
+- The first interprocedural step evaluates only side-effect-free, single-block, all-constant
+  integer calls. It is deliberately named `FoldPureConstantCalls`, not IPSCCP.
+- GlobalDCE follows direct call edges from SysY `main` and deletes definitions made unreachable
+  by call folding. LLVM's module SCCP instead solves executable blocks/functions and argument,
+  return, and global lattices together; that fuller solver remains the next implementation.
+
+### Validation and decision
+
+- Late SROA: **67,186 -> 66,005 instructions**, **11,881 -> 11,545 memory ops**.
+- `h_functional/32_many_params3.sy`: **5,998 -> 8 instructions** and
+  **2,047 -> 2 memory ops** after its all-constant call and dead callee are removed.
+- Full correctness: **140/140 pass**; full ACCELA assembly: **140/140 assemble**.
+- Full corpus after GlobalDCE: **59,771 instructions**, **9,446 memory ops**, and
+  **169,704 `.text` bytes**. GlobalDCE alone removes 6,234 instructions and 2,099 memory ops.
+- Remaining memory gap: **+22.7%** versus reference (7,697) and **+15.8%** versus LLVM O3
+  (8,154). Keep both changes; do not describe the narrow call evaluator as IPSCCP.
+- `llvm-mca -mcpu=sifive-p550` on `94_nested_loops` reports 325 cycles for ACCELA versus
+  200 reference and 665 LLVM O3 for one static sequence. Calls, returns, and CFG iteration make
+  these scheduling estimates diagnostic only, not dynamic runtime measurements.
