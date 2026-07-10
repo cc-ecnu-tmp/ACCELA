@@ -32,9 +32,7 @@ public final class LoopAddressStrengthReduction {
           || transformed.getOrDefault(loop, 0) >= MAX_RECURRENCES_PER_LOOP
           || induction.phi().getNumOperands() != 4
           || loop.header().getPredecessors().size() != 2
-          || containsCall(loop)
-          || inductions.stream().anyMatch(other -> other.loop() != loop
-              && loop.blocks().containsAll(other.loop().blocks()))) continue;
+          || containsCall(loop)) continue;
       for (BasicBlock block : function.getBlocks()) {
         if (!loop.blocks().contains(block)) continue;
         for (Instruction gep : java.util.List.copyOf(block.getInstructions())) {
