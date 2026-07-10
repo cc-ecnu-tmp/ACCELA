@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.ToIntFunction;
 
@@ -25,14 +26,28 @@ final class OptimisticGraphColoring {
     Set<VirtualRegister> remaining = identitySet();
     remaining.addAll(registers);
     List<VirtualRegister> stack = new ArrayList<>();
+    Map<VirtualRegister, Integer> degrees = new IdentityHashMap<>();
+    PriorityQueue<VirtualRegister> lowDegree =
+        new PriorityQueue<>(Comparator.comparingInt(VirtualRegister::getId));
+    for (VirtualRegister register : remaining) {
+      int degree = currentDegree(register, remaining, graph);
+      degrees.put(register, degree);
+      if (degree < colorCount) lowDegree.add(register);
+    }
 
     while (!remaining.isEmpty()) {
-      VirtualRegister selected = chooseLowDegree(remaining, graph, colorCount);
+      VirtualRegister selected = pollLowDegree(lowDegree, remaining, degrees, colorCount);
       if (selected == null) {
-        selected = choosePotentialSpill(remaining, graph, spillWeight);
+        selected = choosePotentialSpill(remaining, degrees, spillWeight);
       }
       stack.add(selected);
       remaining.remove(selected);
+      for (VirtualRegister neighbor : graph.neighbors(selected)) {
+        if (!remaining.contains(neighbor)) continue;
+        int degree = degrees.get(neighbor) - 1;
+        degrees.put(neighbor, degree);
+        if (degree == colorCount - 1) lowDegree.add(neighbor);
+      }
     }
 
     Map<VirtualRegister, Integer> colors = new IdentityHashMap<>();
@@ -50,29 +65,33 @@ final class OptimisticGraphColoring {
     return colors;
   }
 
-  private static VirtualRegister chooseLowDegree(
-      Set<VirtualRegister> remaining, InterferenceGraph graph, int colorCount) {
-    return remaining.stream()
-        .filter(register -> degree(register, remaining, graph) < colorCount)
-        .min(Comparator.comparingInt(VirtualRegister::getId))
-        .orElse(null);
+  private static VirtualRegister pollLowDegree(
+      PriorityQueue<VirtualRegister> lowDegree,
+      Set<VirtualRegister> remaining,
+      Map<VirtualRegister, Integer> degrees,
+      int colorCount) {
+    while (!lowDegree.isEmpty()) {
+      VirtualRegister register = lowDegree.remove();
+      if (remaining.contains(register) && degrees.get(register) < colorCount) return register;
+    }
+    return null;
   }
 
   private static VirtualRegister choosePotentialSpill(
       Set<VirtualRegister> remaining,
-      InterferenceGraph graph,
+      Map<VirtualRegister, Integer> degrees,
       ToIntFunction<VirtualRegister> spillWeight) {
     return remaining.stream().min((first, second) -> {
       long firstCost = Math.max(1, spillWeight.applyAsInt(first));
       long secondCost = Math.max(1, spillWeight.applyAsInt(second));
-      long firstDegree = Math.max(1, degree(first, remaining, graph));
-      long secondDegree = Math.max(1, degree(second, remaining, graph));
+      long firstDegree = Math.max(1, degrees.get(first));
+      long secondDegree = Math.max(1, degrees.get(second));
       int comparison = Long.compare(firstCost * secondDegree, secondCost * firstDegree);
       return comparison != 0 ? comparison : Integer.compare(first.getId(), second.getId());
     }).orElseThrow();
   }
 
-  private static int degree(
+  private static int currentDegree(
       VirtualRegister register, Set<VirtualRegister> remaining, InterferenceGraph graph) {
     int degree = 0;
     for (VirtualRegister neighbor : graph.neighbors(register)) {
