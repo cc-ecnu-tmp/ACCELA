@@ -27,6 +27,10 @@ REFERENCE_ROOT = ROOT / "thirdparty" / "sysy-competition"
 REFERENCE_URL = "https://github.com/AdUhTkJm/sysy-competition.git"
 OFFICIAL_SUITES = ("functional", "h_functional")
 DEFAULT_COMPILERS = ("accela", "reference", "llvm-o3")
+MEMORY_OPCODES = {
+    "lb", "lbu", "lh", "lhu", "lw", "lwu", "ld", "flw", "fld",
+    "sb", "sh", "sw", "sd", "fsw", "fsd",
+}
 
 
 class BenchError(RuntimeError):
@@ -305,16 +309,20 @@ def assembly_command(
     raise BenchError(f"unknown compiler: {compiler}")
 
 
-def object_metrics(object_file: Path, tools: dict[str, str], timeout: int) -> tuple[int, int]:
+def object_metrics(object_file: Path, tools: dict[str, str], timeout: int) -> tuple[int, int, int]:
     dumped = run(
         [tools["llvm-objdump"], "-d", "--no-show-raw-insn", str(object_file)],
         timeout=timeout,
     )
     if dumped.returncode != 0:
         raise BenchError(short_error(dumped))
-    instructions = sum(
-        bool(re.match(r"^\s*[0-9a-f]+:\s+\S", line)) for line in dumped.stdout.splitlines()
-    )
+    opcodes = [
+        match.group(1)
+        for line in dumped.stdout.splitlines()
+        if (match := re.match(r"^\s*[0-9a-f]+:\s+([a-z0-9.]+)", line))
+    ]
+    instructions = len(opcodes)
+    memory_operations = sum(opcode in MEMORY_OPCODES for opcode in opcodes)
 
     sized = run([tools["llvm-size"], "-A", str(object_file)], timeout=timeout)
     if sized.returncode != 0:
@@ -324,7 +332,7 @@ def object_metrics(object_file: Path, tools: dict[str, str], timeout: int) -> tu
         match = re.match(r"^\.text(?:\.\S+)?\s+(\d+)\s+", line.strip())
         if match:
             text_bytes += int(match.group(1))
-    return instructions, text_bytes
+    return instructions, memory_operations, text_bytes
 
 
 def assembly_case(
@@ -371,12 +379,13 @@ def assembly_case(
             "error": short_error(assembled),
         }
     try:
-        instructions, text_bytes = object_metrics(object_file, tools, timeout)
+        instructions, memory_operations, text_bytes = object_metrics(object_file, tools, timeout)
     except BenchError as error:
         return compiler, name, {"status": "fail", "stage": "measure", "error": str(error)}
     return compiler, name, {
         "status": "pass",
         "instructions": instructions,
+        "memory_operations": memory_operations,
         "text_bytes": text_bytes,
         "seconds": round(time.monotonic() - started, 3),
     }
@@ -388,16 +397,20 @@ def summarize_compiler(cases: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "compiled": len(successful),
         "failed": len(cases) - len(successful),
         "total_instructions": sum(case["instructions"] for case in successful),
+        "total_memory_operations": sum(case["memory_operations"] for case in successful),
         "total_text_bytes": sum(case["text_bytes"] for case in successful),
         "cases": dict(sorted(cases.items())),
     }
 
 
-def ratio(numerator: dict[str, Any], denominator: dict[str, Any], total: int) -> float | None:
+def ratio(
+    numerator: dict[str, Any], denominator: dict[str, Any], total: int,
+    metric: str = "total_instructions",
+) -> float | None:
     if numerator["compiled"] != total or denominator["compiled"] != total:
         return None
-    value = denominator["total_instructions"]
-    return round(numerator["total_instructions"] / value, 6) if value else None
+    value = denominator[metric]
+    return round(numerator[metric] / value, 6) if value else None
 
 
 def run_assembly_benchmark(
@@ -431,9 +444,17 @@ def run_assembly_benchmark(
         comparisons["reference_over_accela_instruction_ratio"] = ratio(
             summaries["reference"], summaries["accela"], len(tests)
         )
+        comparisons["reference_over_accela_memory_ratio"] = ratio(
+            summaries["reference"], summaries["accela"], len(tests),
+            "total_memory_operations",
+        )
     if "accela" in summaries and "llvm-o3" in summaries:
         comparisons["llvm_o3_over_accela_instruction_ratio"] = ratio(
             summaries["llvm-o3"], summaries["accela"], len(tests)
+        )
+        comparisons["llvm_o3_over_accela_memory_ratio"] = ratio(
+            summaries["llvm-o3"], summaries["accela"], len(tests),
+            "total_memory_operations",
         )
     return {
         "method": "RISC-V objects assembled with LLVM MC; static machine instructions counted by llvm-objdump",
@@ -494,6 +515,7 @@ def print_summary(result: dict[str, Any]) -> None:
             print(
                 f"{name:10s}: {summary['compiled']:3d} compiled, "
                 f"{summary['failed']:3d} failed, {summary['total_instructions']:8d} instructions, "
+                f"{summary['total_memory_operations']:8d} memory ops, "
                 f"{summary['total_text_bytes']:8d} text bytes"
             )
         for name, value in assembly["comparisons"].items():
