@@ -34,7 +34,13 @@ final class MachineConstantPool {
     VirtualRegister register = shared.computeIfAbsent(key, ignored -> {
       VirtualRegister result = function.createVirtualRegister(type, "constant");
       MachineInstr constant = constantInstruction(result, type, value);
-      function.getEntryBlock().insertBeforeTerminator(constant);
+      List<MachineInstr> entry = function.getEntryBlock().getInstructions();
+      int insertionPoint = 0;
+      while (insertionPoint < entry.size()
+          && entry.get(insertionPoint).getOpcode() == MachineOpcode.ARG_IN) {
+        insertionPoint++;
+      }
+      entry.add(insertionPoint, constant);
       return result;
     });
     return new VRegOperand(register);
