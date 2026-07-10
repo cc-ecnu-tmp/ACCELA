@@ -181,6 +181,35 @@ public final class RISCVAllocationRewriter {
 
   private void emitCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
+    if (instr.getOperands().get(1) instanceof ImmOperand immediate && immediate.getValue() == 0) {
+      switch (instr.getPredicate()) {
+        case "eq":
+          lines.add("  seqz t2, t0");
+          break;
+        case "ne":
+          lines.add("  snez t2, t0");
+          break;
+        case "slt":
+          lines.add("  slt t2, t0, zero");
+          break;
+        case "sgt":
+          lines.add("  slt t2, zero, t0");
+          break;
+        case "sle":
+          lines.add("  slt t2, zero, t0");
+          lines.add("  xori t2, t2, 1");
+          break;
+        case "sge":
+          lines.add("  slt t2, t0, zero");
+          lines.add("  xori t2, t2, 1");
+          break;
+        default:
+          throw new UnsupportedOperationException(
+              "Unsupported integer compare predicate: " + instr.getPredicate());
+      }
+      writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+      return;
+    }
     materializeInto(lines, instr.getOperands().get(1), "t1", MachineType.I32, allocation);
     switch (instr.getPredicate()) {
       case "eq":
