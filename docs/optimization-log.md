@@ -159,3 +159,19 @@ This is the durable record for each research, implementation, correctness, and p
 - Boolean microbenchmark: **39 -> 35 instructions**. `h_functional/29_long_line.sy`: **27,771 -> 25,447 instructions (-8.37%)**.
 - Full corpus: **152,849 -> 148,433 instructions (-2.89%)** and **472,304 -> 459,240 `.text` bytes (-2.77%)**.
 - **Keep**: exact target instruction selection, broad corpus benefit, and no IR semantic change. General signed-12-bit immediate selection is the next extension.
+
+## 2026-07-11 — Signed-12-bit arithmetic immediates
+
+### Research and implementation
+
+- LLVM RISC-V patterns select register-plus-signed-12-bit constants as `ADDI` and register XOR constants as `XORI`.
+- ACCELA now emits `addi` for `add x, imm` and `sub x, imm` when the negated subtraction constant fits, plus `xori` for XOR. Commutative add/XOR move a left-side immediate to the encodable right side.
+- Constants outside `[-2048, 2047]`, division, remainder, and multiplication retain register-register lowering.
+- Added assembly tests for positive/negative immediates, commuted operands, and absence of redundant `li` plus register operations.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- `h_functional/29_long_line.sy`: **25,447 -> 25,355 instructions**.
+- Full corpus: **148,433 -> 147,649 instructions (-0.53%)** and **459,240 -> 457,638 `.text` bytes (-0.35%)**.
+- **Keep**: modest but broad target-level improvement with a small, exact encoding check.
