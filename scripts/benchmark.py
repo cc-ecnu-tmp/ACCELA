@@ -311,7 +311,13 @@ def assembly_command(
 
 def object_metrics(object_file: Path, tools: dict[str, str], timeout: int) -> tuple[int, int, int]:
     dumped = run(
-        [tools["llvm-objdump"], "-d", "--no-show-raw-insn", str(object_file)],
+        [
+            tools["llvm-objdump"],
+            "-d",
+            "--no-show-raw-insn",
+            "--mattr=+m,+a,+f,+d,+c",
+            str(object_file),
+        ],
         timeout=timeout,
     )
     if dumped.returncode != 0:
