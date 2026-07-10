@@ -247,3 +247,23 @@ This is the durable record for each research, implementation, correctness, and p
 - Slot coloring alone: **137,262 -> 98,484 instructions (-28.25%)**, `.text` **424,726 -> 280,254 bytes (-34.01%)**; `long_line` **22,239 -> 8,897**.
 - Coalesced MOVE elimination: **98,484 -> 95,076 instructions (-3.46%)**, `.text` **280,254 -> 272,706 bytes (-2.69%)**; `long_line` **8,897 -> 8,081**.
 - **Keep**: a large, general reduction derived from exact CFG liveness. Dynamic RISC-V execution remains unavailable, so runtime claims are still deferred.
+
+## 2026-07-11 — Optimistic caller-saved graph coloring
+
+### Research and design
+
+- Chaitin's simplify/select allocator established interference-graph coloring; Briggs showed that high-degree nodes can be removed optimistically and spilled only if select cannot color them.
+- George/Appel interleave simplify, coalesce, and freeze. ACCELA starts with the smaller Briggs core and defers coalescing until base allocation is stable.
+- LLVM's greedy allocator explicitly checks call regmasks before assignment. ACCELA similarly excludes values live across `CALL` or a lowered `memset` libcall from its caller-saved-only color set.
+
+### Implementation
+
+- Added independent optimistic simplify/select coloring for integer and floating-point classes. Potential spills use a cost/degree choice; only select failures become actual spills.
+- The initial safe colors are non-scratch caller-saved registers: `t4-t6` and `ft4-ft11`. Cross-call values retain the existing stack-slot allocation until callee-saved save/restore exists.
+- Tests cover optimistic coloring, uncolorable graphs, call-clobber boundaries, distinct colors for interference, and spill-slot behavior after coloring.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Full corpus: **95,076 -> 91,407 instructions (-3.86%)** and **272,706 -> 249,878 `.text` bytes (-8.37%)**.
+- **Keep**: allocation is correct and reduces memory traffic, but allocated operands still pass through scratch-register moves. Direct physical-register emission is the next isolated layer.
