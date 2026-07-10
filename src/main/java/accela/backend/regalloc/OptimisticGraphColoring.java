@@ -95,7 +95,31 @@ final class OptimisticGraphColoring {
       while (color < colorCount && unavailable[color]) color++;
       colors.put(register, color < colorCount ? color : -1);
     }
+    recolorPreferences(registers, graph, colorAllowed, preferences, colors);
     return colors;
+  }
+
+  private static void recolorPreferences(
+      Collection<VirtualRegister> registers,
+      InterferenceGraph graph,
+      BiPredicate<VirtualRegister, Integer> colorAllowed,
+      Function<VirtualRegister, Collection<VirtualRegister>> preferences,
+      Map<VirtualRegister, Integer> colors) {
+    List<VirtualRegister> ordered = new ArrayList<>(registers);
+    ordered.sort(Comparator.comparingInt(VirtualRegister::getId));
+    for (VirtualRegister register : ordered) {
+      if (colors.get(register) < 0) continue;
+      for (VirtualRegister preferred : preferences.apply(register)) {
+        Integer color = colors.get(preferred);
+        if (color == null || color < 0 || !colorAllowed.test(register, color)) continue;
+        boolean conflicts = graph.neighbors(register).stream()
+            .anyMatch(neighbor -> colors.getOrDefault(neighbor, -1).equals(color));
+        if (!conflicts) {
+          colors.put(register, color);
+          break;
+        }
+      }
+    }
   }
 
   private static VirtualRegister pollLowDegree(
