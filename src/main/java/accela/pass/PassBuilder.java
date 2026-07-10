@@ -25,6 +25,7 @@ import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.SmallFunctionInliner;
+import accela.pass.ir.transform.SmallLoopInliner;
 import accela.pass.ir.transform.TailRecursionElimination;
 
 /**
@@ -168,6 +169,7 @@ public final class PassBuilder {
     ModulePassManager mpm = new ModulePassManager(instrumentation);
     mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
+    mpm.addPass(new SmallLoopInliner.Pass());
     mpm.addPass(new ReadNoneCallCSE.Pass());
     mpm.addPass(new SmallFunctionInliner.Pass());
     mpm.addPass(new IPSCCP.Pass());
