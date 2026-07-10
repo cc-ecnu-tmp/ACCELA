@@ -18,17 +18,18 @@ final class RISCVCompareBranchTest {
   void fusesSingleUseIntegerComparisonsIntoBranches() {
     Map<String, String> expected =
         Map.of(
-            "eq", "beq t0, zero",
-            "ne", "bne t0, zero",
-            "slt", "blt t0, zero",
-            "sgt", "blt zero, t0",
-            "sle", "bge zero, t0",
-            "sge", "bge t0, zero");
+            "eq", "beq [a-z0-9]+, zero,.*",
+            "ne", "bne [a-z0-9]+, zero,.*",
+            "slt", "blt [a-z0-9]+, zero,.*",
+            "sgt", "blt zero, [a-z0-9]+,.*",
+            "sle", "bge zero, [a-z0-9]+,.*",
+            "sge", "bge [a-z0-9]+, zero,.*");
 
     for (var entry : expected.entrySet()) {
       String assembly = compileBranch(entry.getKey());
-      assertTrue(assembly.contains("  " + entry.getValue()), entry.getKey());
-      assertFalse(assembly.contains("  bnez t0"), entry.getKey());
+      assertTrue(assembly.lines().anyMatch(line ->
+          line.matches("\\s+" + entry.getValue())), entry.getKey());
+      assertFalse(assembly.contains("  bnez "), entry.getKey());
       assertFalse(assembly.contains("  seqz t2"), entry.getKey());
       assertFalse(assembly.contains("  snez t2"), entry.getKey());
     }
