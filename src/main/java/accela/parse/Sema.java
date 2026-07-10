@@ -533,19 +533,6 @@ public class Sema {
     return cur;
   }
 
-  /** Parses a float literal spelling accepted by the frontend. */
-  private static float parseFloat(String s) {
-    String v = s.toLowerCase();
-    if (v.endsWith("f") || v.endsWith("l") || v.endsWith("u")) v = v.substring(0, v.length() - 1);
-    try {
-      if (v.startsWith("0x") && (v.contains("p") || v.contains("."))) return Float.parseFloat(v);
-      if (v.startsWith("0x")) return Float.intBitsToFloat((int) Long.parseLong(v.substring(2), 16));
-      return Float.parseFloat(v);
-    } catch (NumberFormatException e) {
-      return 0.0f;
-    }
-  }
-
   /** Pushes a fresh nested scope. */
   private void enter() {
     scope = new SymbolTable(scope);

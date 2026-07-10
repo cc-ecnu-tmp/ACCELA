@@ -966,29 +966,4 @@ public class AST2IR {
     }
   }
 
-  static int parseInt(String s) {
-    String v = s.toLowerCase();
-    try {
-      if (v.contains(".") || v.contains("e") || v.contains("p"))
-        return (int) Double.parseDouble(v);
-      if (v.startsWith("0x")) return (int) Long.parseLong(v.substring(2), 16);
-      if (v.startsWith("0") && v.length() > 1) return (int) Long.parseLong(v.substring(1), 8);
-      return (int) Long.parseLong(v);
-    } catch (NumberFormatException e) {
-      return 0;
-    }
-  }
-
-  static float parseFloat(String s) {
-    String v = s.toLowerCase();
-    try {
-      if (v.startsWith("0x") && (v.contains("p") || v.contains(".")))
-        return Float.parseFloat(v);
-      if (v.startsWith("0x"))
-        return Float.intBitsToFloat((int) Long.parseLong(v.substring(2), 16));
-      return Float.parseFloat(v);
-    } catch (NumberFormatException e) {
-      return 0.0f;
-    }
-  }
 }

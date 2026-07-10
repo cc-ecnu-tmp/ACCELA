@@ -272,18 +272,6 @@ public class Interpreter {
     }
   }
 
-  private Object evalLiteral(String s) {
-    String v = s.toLowerCase();
-    if (v.contains(".") || v.contains("e") || v.contains("p")) return Float.parseFloat(v);
-    try {
-      if (v.startsWith("0x")) return (int) Long.parseLong(v.substring(2), 16);
-      if (v.startsWith("0") && v.length() > 1) return (int) Long.parseLong(v.substring(1), 8);
-      return Integer.parseInt(v);
-    } catch (Exception e) {
-      return (int) Long.parseLong(v);
-    }
-  }
-
   private Object evalBinary(Node n) {
     // Assignment
     if (n.op == Op.ASSIGN) {
