@@ -193,7 +193,7 @@ def collect_tests(suite: str, pattern: str | None, limit: int | None) -> list[Pa
         directories = (suite,)
         tests = sorted(path for directory in directories for path in (TESTSUITE / directory).glob("*.sy"))
     if pattern:
-        tests = [path for path in tests if pattern in str(path.relative_to(TESTSUITE))]
+        tests = [path for path in tests if pattern in case_name(path)]
     if limit is not None:
         tests = tests[:limit]
     if not tests:
