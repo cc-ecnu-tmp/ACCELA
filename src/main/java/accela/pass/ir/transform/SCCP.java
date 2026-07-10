@@ -127,10 +127,19 @@ public final class SCCP {
 
   static final class SCCPTransfer implements ForwardTransfer<SCCPFact> {
 
+    interface CallResolver {
+      ConstVal resolve(Instruction call, SCCPFact fact);
+    }
+
     private Set<ForwardDataflowSolver.Edge> executableEdges = new LinkedHashSet<>();
+    private CallResolver callResolver = (call, fact) -> ConstVal.TOP;
 
     void setExecutableEdges(Set<ForwardDataflowSolver.Edge> edges) {
       this.executableEdges = edges;
+    }
+
+    void setCallResolver(CallResolver resolver) {
+      this.callResolver = resolver;
     }
 
     @Override
@@ -241,8 +250,8 @@ public final class SCCP {
           if (op.isConst()) return ConstVal.ofInt((long)(int) op.floatVal, inst.getType());
           return ConstVal.TOP;
         }
-        case CALL: case LOAD:
-          return ConstVal.TOP;
+        case CALL: return callResolver.resolve(inst, in);
+        case LOAD: return ConstVal.TOP;
         case STORE: case ALLOCA: case GEP: case BR: case CONDBR: case RET:
           return null;
         default:
