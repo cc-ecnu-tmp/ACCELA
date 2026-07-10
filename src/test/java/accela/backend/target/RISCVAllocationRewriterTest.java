@@ -118,6 +118,26 @@ final class RISCVAllocationRewriterTest {
   }
 
   @Test
+  void emitsImmediateArithmeticShift() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I64, "source");
+    VirtualRegister result = fixture.function.createVirtualRegister(MachineType.I64, "result");
+    fixture.allocation.put(source,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I64)));
+    fixture.allocation.put(result,
+        new RegisterLocation(new PhysicalRegister("t5", MachineType.I64)));
+    MachineInstr shift = new MachineInstr(MachineOpcode.ASHR, result);
+    shift.addOperand(new VRegOperand(source));
+    shift.addOperand(new ImmOperand(37));
+    shift.setType(MachineType.I64);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, shift, fixture.allocation, fixture.lines);
+
+    assertEquals(List.of("  srai t5, t4, 37"), fixture.lines);
+  }
+
+  @Test
   void strengthReducesSignedPowerOfTwoDivision() {
     Fixture fixture = new Fixture(true);
     VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
