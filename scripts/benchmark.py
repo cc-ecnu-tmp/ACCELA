@@ -395,7 +395,13 @@ def assembly_case(
     command = assembly_command(compiler, source, assembly, tools, reference, aaac)
     started = time.monotonic()
     try:
-        compiled = run(command, timeout=timeout)
+        if compiler == "aaac":
+            compiled = subprocess.run(
+                command, cwd=ROOT, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE, text=True, timeout=timeout,
+            )
+        else:
+            compiled = run(command, timeout=timeout)
     except subprocess.TimeoutExpired:
         return compiler, name, {"status": "fail", "stage": "compile", "error": "timeout"}
     if compiled.returncode != 0 or not assembly.is_file():
