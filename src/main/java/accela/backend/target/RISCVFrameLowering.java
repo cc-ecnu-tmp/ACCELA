@@ -25,6 +25,9 @@ public final class RISCVFrameLowering {
     if (function.getFrameInfo().hasCalls()) {
       emitStoreToBase(lines, "ra", "sp", function.getFrameInfo().getSaveRaOffset(), "t3", MachineType.PTR);
     }
+    for (var entry : function.getFrameInfo().getCalleeSavedOffsets().entrySet()) {
+      emitStoreToBase(lines, entry.getKey(), "sp", entry.getValue(), "t3", MachineType.PTR);
+    }
     if (frameSize > 0) {
       emitAddImmediate(lines, "s0", "sp", frameSize, "t3");
     } else {
@@ -36,6 +39,9 @@ public final class RISCVFrameLowering {
     emitLoadFromBase(lines, "s0", "sp", function.getFrameInfo().getSaveS0Offset(), "t3", MachineType.PTR);
     if (function.getFrameInfo().hasCalls()) {
       emitLoadFromBase(lines, "ra", "sp", function.getFrameInfo().getSaveRaOffset(), "t3", MachineType.PTR);
+    }
+    for (var entry : function.getFrameInfo().getCalleeSavedOffsets().entrySet()) {
+      emitLoadFromBase(lines, entry.getKey(), "sp", entry.getValue(), "t3", MachineType.PTR);
     }
     int frameSize = function.getFrameInfo().getFrameSize();
     if (frameSize > 0) {
