@@ -117,6 +117,27 @@ final class RISCVAllocationRewriterTest {
     assertEquals(List.of("  andi t5, t4, 1"), fixture.lines);
   }
 
+  @Test
+  void strengthReducesSignedPowerOfTwoDivision() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister result = fixture.function.createVirtualRegister(MachineType.I32, "result");
+    fixture.allocation.put(source,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    fixture.allocation.put(result,
+        new RegisterLocation(new PhysicalRegister("t5", MachineType.I32)));
+    MachineInstr divide = new MachineInstr(MachineOpcode.DIV, result);
+    divide.addOperand(new VRegOperand(source));
+    divide.addOperand(new ImmOperand(8));
+    divide.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, divide, fixture.allocation, fixture.lines);
+
+    assertEquals("  sraiw t5, t5, 3", fixture.lines.getLast());
+    assertFalse(fixture.lines.stream().anyMatch(line -> line.contains("divw")));
+  }
+
   private static final class Fixture {
     final RISCVTarget target = new RISCVTarget();
     final RISCVFrameLowering frame = new RISCVFrameLowering(target);

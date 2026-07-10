@@ -273,6 +273,20 @@ public final class RISCVAllocationRewriter {
           return;
         }
       }
+      if (instr.getOpcode() == MachineOpcode.DIV && wordResult && value > 0
+          && (value & (value - 1)) == 0) {
+        int shift = Long.numberOfTrailingZeros(value);
+        if (shift == 0) {
+          lines.add("  addiw " + destination + ", " + lhsRegister + ", 0");
+        } else {
+          lines.add("  sraiw t3, " + lhsRegister + ", 31");
+          lines.add("  srliw t3, t3, " + (32 - shift));
+          lines.add("  addw " + destination + ", " + lhsRegister + ", t3");
+          lines.add("  sraiw " + destination + ", " + destination + ", " + shift);
+        }
+        writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+        return;
+      }
       if (instr.getOpcode() == MachineOpcode.REM && wordResult && value > 0
           && (value & (value - 1)) == 0 && value <= (1L << 30)) {
         int shift = Long.numberOfTrailingZeros(value);
