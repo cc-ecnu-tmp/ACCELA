@@ -7,6 +7,7 @@ import accela.ir.Type;
 import java.util.List;
 
 public final class RISCVTarget {
+  private static final int MEMSET_LIBCALL_THRESHOLD = 64;
   static final PhysicalRegister ZERO = new PhysicalRegister("zero", MachineType.I32);
   static final PhysicalRegister SP = new PhysicalRegister("sp", MachineType.PTR);
   static final PhysicalRegister S0 = new PhysicalRegister("s0", MachineType.PTR);
@@ -85,6 +86,10 @@ public final class RISCVTarget {
   public int alignTo(int value, int align) {
     if (align <= 1) return value;
     return ((value + align - 1) / align) * align;
+  }
+
+  public boolean shouldUseMemsetLibcall(int bytes) {
+    return bytes > MEMSET_LIBCALL_THRESHOLD;
   }
 
   public long lowerIntConstant(Constant.Int constant) {

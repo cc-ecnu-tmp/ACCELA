@@ -233,8 +233,15 @@ public final class RISCVAllocationRewriter {
   }
 
   private void emitMemzero(MachineInstr instr, AllocationResult allocation, List<String> lines) {
-    materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
     int size = (int) ((ImmOperand) instr.getOperands().get(1)).getValue();
+    if (target.shouldUseMemsetLibcall(size)) {
+      materializeInto(lines, instr.getOperands().get(0), "a0", MachineType.PTR, allocation);
+      lines.add("  li a1, 0");
+      lines.add("  li a2, " + size);
+      lines.add("  call memset");
+      return;
+    }
+    materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
     for (int offset = 0; offset < size; offset += 4) {
       frameLowering.emitStoreToBase(lines, "zero", "t0", offset, "t3", MachineType.I32);
     }
