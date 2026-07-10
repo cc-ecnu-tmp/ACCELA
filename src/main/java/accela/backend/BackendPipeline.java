@@ -3,6 +3,7 @@ package accela.backend;
 import accela.backend.lowering.IRToMachineLowering;
 import accela.backend.lowering.CompareBranchFusion;
 import accela.backend.lowering.LoopConditionDuplication;
+import accela.backend.lowering.LoopConstantHoisting;
 import accela.backend.lowering.MachineBlockPlacement;
 import accela.backend.lowering.PhiElimination;
 import accela.backend.lowering.SharedReturnBlock;
@@ -29,6 +30,7 @@ final class BackendPipeline {
   private final SharedReturnBlock sharedReturnBlock = new SharedReturnBlock();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
   private final RISCVConstantDivisionLowering constantDivision = new RISCVConstantDivisionLowering();
+  private final LoopConstantHoisting loopConstantHoisting = new LoopConstantHoisting();
   private final RegisterAllocator allocator = new AllSpillRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
   private final RISCVAllocationRewriter allocationRewriter = new RISCVAllocationRewriter(target, frameLowering);
@@ -44,6 +46,7 @@ final class BackendPipeline {
       loopConditionDuplication.run(function);
       sharedReturnBlock.run(function);
       constantDivision.run(function);
+      loopConstantHoisting.run(function);
       blockPlacement.run(function);
       allocations.put(function, allocator.allocate(function, target));
     }
