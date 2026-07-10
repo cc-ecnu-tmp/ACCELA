@@ -7,7 +7,7 @@ import accela.ir.Type;
 import java.util.List;
 
 public final class RISCVTarget {
-  private static final int MEMSET_LIBCALL_THRESHOLD = 64;
+  private static final int MEMSET_LIBCALL_THRESHOLD = 32;
   static final PhysicalRegister ZERO = new PhysicalRegister("zero", MachineType.I32);
   static final PhysicalRegister SP = new PhysicalRegister("sp", MachineType.PTR);
   static final PhysicalRegister S0 = new PhysicalRegister("s0", MachineType.PTR);

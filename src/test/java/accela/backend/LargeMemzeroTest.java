@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 final class LargeMemzeroTest {
   @Test
   void callsMemsetAndPreservesReturnAddressAboveThreshold() {
-    String assembly = compileZeroFill(17);
+    String assembly = compileZeroFill(9);
 
     assertTrue(assembly.contains("  call memset"));
     assertTrue(assembly.contains("  sd ra,"));
@@ -25,10 +25,10 @@ final class LargeMemzeroTest {
 
   @Test
   void keepsSmallZeroFillsInline() {
-    String assembly = compileZeroFill(16);
+    String assembly = compileZeroFill(8);
 
     assertFalse(assembly.contains("call memset"));
-    assertEquals(16, assembly.lines().filter(line -> line.startsWith("  sw zero,")).count());
+    assertEquals(8, assembly.lines().filter(line -> line.startsWith("  sw zero,")).count());
   }
 
   private static String compileZeroFill(int elements) {
