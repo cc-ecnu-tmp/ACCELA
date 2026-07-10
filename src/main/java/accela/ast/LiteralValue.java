@@ -76,7 +76,8 @@ public final class LiteralValue {
   }
 
   public Number asNumber() {
-    return kind == Kind.FLOAT ? Float.valueOf(floatValue) : Integer.valueOf(intValue);
+    if (kind == Kind.FLOAT) return Float.valueOf(floatValue);
+    return Integer.valueOf(intValue);
   }
 
   public boolean isZero() {
