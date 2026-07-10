@@ -259,93 +259,101 @@ public final class RISCVAllocationRewriter {
   }
 
   private void emitCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
-    materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
+    String left = readRegister(
+        lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
+    String destination = destinationRegister(instr.getDest(), "t2", allocation);
     if (instr.getOperands().get(1) instanceof ImmOperand immediate && immediate.getValue() == 0) {
       switch (instr.getPredicate()) {
         case "eq":
-          lines.add("  seqz t2, t0");
+          lines.add("  seqz " + destination + ", " + left);
           break;
         case "ne":
-          lines.add("  snez t2, t0");
+          lines.add("  snez " + destination + ", " + left);
           break;
         case "slt":
-          lines.add("  slt t2, t0, zero");
+          lines.add("  slt " + destination + ", " + left + ", zero");
           break;
         case "sgt":
-          lines.add("  slt t2, zero, t0");
+          lines.add("  slt " + destination + ", zero, " + left);
           break;
         case "sle":
-          lines.add("  slt t2, zero, t0");
-          lines.add("  xori t2, t2, 1");
+          lines.add("  slt " + destination + ", zero, " + left);
+          lines.add("  xori " + destination + ", " + destination + ", 1");
           break;
         case "sge":
-          lines.add("  slt t2, t0, zero");
-          lines.add("  xori t2, t2, 1");
+          lines.add("  slt " + destination + ", " + left + ", zero");
+          lines.add("  xori " + destination + ", " + destination + ", 1");
           break;
         default:
           throw new UnsupportedOperationException(
               "Unsupported integer compare predicate: " + instr.getPredicate());
       }
-      writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+      writeDest(lines, instr.getDest(), destination, allocation, MachineType.I1);
       return;
     }
     if (instr.getOperands().get(1) instanceof ImmOperand immediate
-        && emitImmediateCompare(instr.getPredicate(), immediate.getValue(), lines)) {
-      writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+        && emitImmediateCompare(
+            instr.getPredicate(), immediate.getValue(), left, destination, lines)) {
+      writeDest(lines, instr.getDest(), destination, allocation, MachineType.I1);
       return;
     }
-    materializeInto(lines, instr.getOperands().get(1), "t1", MachineType.I32, allocation);
+    String right = readRegister(
+        lines, instr.getOperands().get(1), "t1", MachineType.I32, allocation);
     switch (instr.getPredicate()) {
       case "eq":
-        lines.add("  sub t2, t0, t1");
-        lines.add("  seqz t2, t2");
+        lines.add("  sub " + destination + ", " + left + ", " + right);
+        lines.add("  seqz " + destination + ", " + destination);
         break;
       case "ne":
-        lines.add("  sub t2, t0, t1");
-        lines.add("  snez t2, t2");
+        lines.add("  sub " + destination + ", " + left + ", " + right);
+        lines.add("  snez " + destination + ", " + destination);
         break;
       case "slt":
-        lines.add("  slt t2, t0, t1");
+        lines.add("  slt " + destination + ", " + left + ", " + right);
         break;
       case "sgt":
-        lines.add("  slt t2, t1, t0");
+        lines.add("  slt " + destination + ", " + right + ", " + left);
         break;
       case "sle":
-        lines.add("  slt t2, t1, t0");
-        lines.add("  xori t2, t2, 1");
+        lines.add("  slt " + destination + ", " + right + ", " + left);
+        lines.add("  xori " + destination + ", " + destination + ", 1");
         break;
       case "sge":
-        lines.add("  slt t2, t0, t1");
-        lines.add("  xori t2, t2, 1");
+        lines.add("  slt " + destination + ", " + left + ", " + right);
+        lines.add("  xori " + destination + ", " + destination + ", 1");
         break;
       default:
         throw new UnsupportedOperationException("Unsupported integer compare predicate: " + instr.getPredicate());
     }
-    writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+    writeDest(lines, instr.getDest(), destination, allocation, MachineType.I1);
   }
 
-  private static boolean emitImmediateCompare(String predicate, long value, List<String> lines) {
+  private static boolean emitImmediateCompare(
+      String predicate, long value, String left, String destination, List<String> lines) {
     switch (predicate) {
       case "eq":
       case "ne":
         if (value == Long.MIN_VALUE || !fitsSigned12(-value)) return false;
-        lines.add("  addi t2, t0, " + -value);
-        lines.add("  " + (predicate.equals("eq") ? "seqz" : "snez") + " t2, t2");
+        lines.add("  addi " + destination + ", " + left + ", " + -value);
+        lines.add("  " + (predicate.equals("eq") ? "seqz" : "snez")
+            + " " + destination + ", " + destination);
         return true;
       case "slt":
         if (!fitsSigned12(value)) return false;
-        lines.add("  slti t2, t0, " + value);
+        lines.add("  slti " + destination + ", " + left + ", " + value);
         return true;
       case "sge":
         if (!fitsSigned12(value)) return false;
-        lines.add("  slti t2, t0, " + value);
-        lines.add("  xori t2, t2, 1");
+        lines.add("  slti " + destination + ", " + left + ", " + value);
+        lines.add("  xori " + destination + ", " + destination + ", 1");
         return true;
       case "sle":
       case "sgt":
         if (value == Long.MAX_VALUE || !fitsSigned12(value + 1)) return false;
-        lines.add("  slti t2, t0, " + (value + 1));
-        if (predicate.equals("sgt")) lines.add("  xori t2, t2, 1");
+        lines.add("  slti " + destination + ", " + left + ", " + (value + 1));
+        if (predicate.equals("sgt")) {
+          lines.add("  xori " + destination + ", " + destination + ", 1");
+        }
         return true;
       default:
         return false;
