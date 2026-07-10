@@ -192,6 +192,7 @@ public final class SCCP {
         BasicBlock trueTarget = (BasicBlock) term.getOperand(1);
         BasicBlock falseTarget = (BasicBlock) term.getOperand(2);
 
+        if (cond.kind == ValKind.BOT) return result;
         if (cond.isConst()) {
           if (cond.intVal != 0) {
             result.put(trueTarget, refineFact(in, term.getOperand(0), true));
