@@ -3,15 +3,15 @@
 
 int getint(void);
 int getch(void);
-int getarray(int array[]);
+int getarray(void *array);
 float getfloat(void);
-int getfarray(float array[]);
+int getfarray(void *array);
 
 void putint(int value);
 void putch(int value);
-void putarray(int count, int array[]);
+void putarray(int count, void *array);
 void putfloat(float value);
-void putfarray(int count, float array[]);
+void putfarray(int count, void *array);
 void putf(char format[], ...);
 
 void _sysy_starttime(int line);
