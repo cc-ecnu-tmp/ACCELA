@@ -111,6 +111,10 @@ public final class RISCVAllocationRewriter {
         lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(0)).getBlock()));
         return;
       case CONDBR:
+        if (instr.getPredicate() != null) {
+          emitCompareBranch(function, instr, allocation, lines);
+          return;
+        }
         materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
         lines.add("  bnez t0, " + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
         lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(2)).getBlock()));
@@ -135,8 +139,30 @@ public final class RISCVAllocationRewriter {
       MachineInstr branch,
       AllocationResult allocation,
       List<String> lines) {
-    materializeInto(lines, compare.getOperands().get(0), "t0", MachineType.I32, allocation);
-    MachineOperand rightOperand = compare.getOperands().get(1);
+    emitCompareBranch(
+        function, compare.getPredicate(), compare.getOperands().get(0),
+        compare.getOperands().get(1), branch, allocation, lines);
+  }
+
+  private void emitCompareBranch(
+      MachineFunction function,
+      MachineInstr branch,
+      AllocationResult allocation,
+      List<String> lines) {
+    emitCompareBranch(
+        function, branch.getPredicate(), branch.getOperands().get(0),
+        branch.getOperands().get(3), branch, allocation, lines);
+  }
+
+  private void emitCompareBranch(
+      MachineFunction function,
+      String predicate,
+      MachineOperand leftOperand,
+      MachineOperand rightOperand,
+      MachineInstr branch,
+      AllocationResult allocation,
+      List<String> lines) {
+    materializeInto(lines, leftOperand, "t0", MachineType.I32, allocation);
     String right = "t1";
     if (rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0) {
       right = "zero";
@@ -146,7 +172,7 @@ public final class RISCVAllocationRewriter {
 
     String opcode;
     String left = "t0";
-    switch (compare.getPredicate()) {
+    switch (predicate) {
       case "eq": opcode = "beq"; break;
       case "ne": opcode = "bne"; break;
       case "slt": opcode = "blt"; break;
@@ -155,7 +181,7 @@ public final class RISCVAllocationRewriter {
       case "sle": opcode = "bge"; left = right; right = "t0"; break;
       default:
         throw new UnsupportedOperationException(
-            "Unsupported integer branch predicate: " + compare.getPredicate());
+            "Unsupported integer branch predicate: " + predicate);
     }
     lines.add("  " + opcode + " " + left + ", " + right + ", "
         + labelFor(function, ((BlockOperand) branch.getOperands().get(1)).getBlock()));
