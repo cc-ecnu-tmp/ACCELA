@@ -26,6 +26,9 @@ RESULTS_ROOT = ROOT / "bench-results"
 REFERENCE_ROOT = ROOT / "thirdparty" / "sysy-competition"
 REFERENCE_URL = "https://github.com/AdUhTkJm/sysy-competition.git"
 AAAC_ROOT = ROOT / "thirdparty" / "aaac"
+PERF_ROOT = ROOT / "thirdparty" / "sysy-perf"
+PERF_SUITE = PERF_ROOT / "2026" / "performance"
+PERF_URL = "https://github.com/hajimionanbeiluduo/test_2026_sysy.git"
 OFFICIAL_SUITES = ("functional", "h_functional")
 DEFAULT_COMPILERS = ("accela", "aaac", "reference", "llvm-o3")
 MEMORY_OPCODES = {
@@ -180,11 +183,15 @@ def build_aaac(tools: dict[str, str], skip_build: bool) -> Path:
 
 
 def collect_tests(suite: str, pattern: str | None, limit: int | None) -> list[Path]:
-    if suite == "official":
+    if suite == "perf-2026":
+        ensure_perf_suite()
+        tests = sorted(PERF_SUITE.glob("*.sy"))
+    elif suite == "official":
         directories = OFFICIAL_SUITES
+        tests = sorted(path for directory in directories for path in (TESTSUITE / directory).glob("*.sy"))
     else:
         directories = (suite,)
-    tests = sorted(path for directory in directories for path in (TESTSUITE / directory).glob("*.sy"))
+        tests = sorted(path for directory in directories for path in (TESTSUITE / directory).glob("*.sy"))
     if pattern:
         tests = [path for path in tests if pattern in str(path.relative_to(TESTSUITE))]
     if limit is not None:
@@ -197,6 +204,25 @@ def collect_tests(suite: str, pattern: str | None, limit: int | None) -> list[Pa
     if missing:
         raise BenchError(f"missing expected output for {missing[0]}")
     return tests
+
+
+def ensure_perf_suite() -> None:
+    if not (PERF_ROOT / ".git").is_dir():
+        PERF_ROOT.parent.mkdir(parents=True, exist_ok=True)
+        cloned = run(["git", "clone", "--depth", "1", PERF_URL, str(PERF_ROOT)])
+        if cloned.returncode != 0:
+            raise BenchError(f"failed to clone perf corpus: {short_error(cloned)}")
+    sample = PERF_SUITE / "crypto-2.sy"
+    if sample.is_file() and sample.read_text().startswith("version https://git-lfs"):
+        pulled = run(["git", "lfs", "pull"], cwd=PERF_ROOT)
+        if pulled.returncode != 0:
+            raise BenchError("perf corpus requires git-lfs: " + short_error(pulled))
+
+
+def case_name(source: Path) -> str:
+    if source.is_relative_to(TESTSUITE):
+        return str(source.relative_to(TESTSUITE))
+    return str(Path("perf-2026") / source.relative_to(PERF_SUITE))
 
 
 def normalized(text: str) -> str:
@@ -214,7 +240,7 @@ def correctness_case(
     sylib_object: Path,
     timeout: int,
 ) -> tuple[str, dict[str, Any]]:
-    name = str(source.relative_to(TESTSUITE))
+    name = case_name(source)
     started = time.monotonic()
     temp_root = BENCH_ROOT / "tmp"
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -398,8 +424,8 @@ def assembly_case(
     aaac: Path | None,
     timeout: int,
 ) -> tuple[str, str, dict[str, Any]]:
-    name = str(source.relative_to(TESTSUITE))
-    relative = source.relative_to(TESTSUITE).with_suffix(".s")
+    name = case_name(source)
+    relative = Path(name).with_suffix(".s")
     assembly = BENCH_ROOT / "assembly" / compiler / relative
     object_file = assembly.with_suffix(".o")
     assembly.parent.mkdir(parents=True, exist_ok=True)
@@ -627,7 +653,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--suite",
-        choices=("official", "functional", "h_functional", "hidden_functional", "llm_gen"),
+        choices=("official", "functional", "h_functional", "hidden_functional", "llm_gen", "perf-2026"),
         default="official",
     )
     parser.add_argument("--filter", help="substring filter for a test path")
