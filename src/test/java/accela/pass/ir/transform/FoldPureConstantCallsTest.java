@@ -13,7 +13,7 @@ import accela.ir.Type;
 import accela.ir.Value;
 import org.junit.jupiter.api.Test;
 
-final class InterproceduralSCCPTest {
+final class FoldPureConstantCallsTest {
   @Test
   void foldsAllConstantPureCall() {
     Module module = new Module();
@@ -30,7 +30,7 @@ final class InterproceduralSCCPTest {
     Value call = callerBuilder.createCall(callee, Type.INT, Constant.intConst(7));
     callerBuilder.createRet(call);
 
-    InterproceduralSCCP.runOnModule(module);
+    FoldPureConstantCalls.runOnModule(module);
 
     assertEquals(1, entry.getInstructions().size());
     Instruction ret = entry.getInstructions().get(0);

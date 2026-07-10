@@ -11,7 +11,7 @@ import accela.pass.ir.transform.ADCE;
 import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.InstSimplify;
-import accela.pass.ir.transform.InterproceduralSCCP;
+import accela.pass.ir.transform.FoldPureConstantCalls;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
@@ -151,7 +151,7 @@ public final class PassBuilder {
 
     ModulePassManager mpm = new ModulePassManager(instrumentation);
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
-    mpm.addPass(new InterproceduralSCCP.Pass());
+    mpm.addPass(new FoldPureConstantCalls.Pass());
     return mpm;
   }
 

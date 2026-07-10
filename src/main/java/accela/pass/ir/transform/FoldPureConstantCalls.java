@@ -11,9 +11,9 @@ import accela.pass.ir.ModulePass;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Initial IPSCCP subset for all-constant calls to pure straight-line functions. */
-public final class InterproceduralSCCP {
-  private InterproceduralSCCP() {}
+/** Folds all-constant calls to pure straight-line functions. */
+public final class FoldPureConstantCalls {
+  private FoldPureConstantCalls() {}
 
   public static final class Pass implements ModulePass {
     @Override
