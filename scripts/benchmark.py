@@ -27,7 +27,7 @@ REFERENCE_ROOT = ROOT / "thirdparty" / "sysy-competition"
 REFERENCE_URL = "https://github.com/AdUhTkJm/sysy-competition.git"
 AAAC_ROOT = ROOT / "thirdparty" / "aaac"
 OFFICIAL_SUITES = ("functional", "h_functional")
-DEFAULT_COMPILERS = ("accela", "reference", "llvm-o3")
+DEFAULT_COMPILERS = ("accela", "aaac", "reference", "llvm-o3")
 MEMORY_OPCODES = {
     "lb", "lbu", "lh", "lhu", "lw", "lwu", "ld", "flw", "fld",
     "sb", "sh", "sw", "sd", "fsw", "fsd",
@@ -307,6 +307,7 @@ def assembly_command(
     assembly: Path,
     tools: dict[str, str],
     reference: Path | None,
+    aaac: Path | None,
 ) -> list[str]:
     if compiler == "accela":
         return [
@@ -322,6 +323,10 @@ def assembly_command(
         if reference is None:
             raise BenchError("comparison compiler was not built")
         return [str(reference), str(source), "--rv", "-S", "-o", str(assembly)]
+    if compiler == "aaac":
+        if aaac is None:
+            raise BenchError("AAAC compiler was not built")
+        return [str(aaac), "-S", str(source), "-o", str(assembly)]
     if compiler == "llvm-o3":
         return [
             tools["clang"],
@@ -379,6 +384,7 @@ def assembly_case(
     source: Path,
     tools: dict[str, str],
     reference: Path | None,
+    aaac: Path | None,
     timeout: int,
 ) -> tuple[str, str, dict[str, Any]]:
     name = str(source.relative_to(TESTSUITE))
@@ -386,7 +392,7 @@ def assembly_case(
     assembly = BENCH_ROOT / "assembly" / compiler / relative
     object_file = assembly.with_suffix(".o")
     assembly.parent.mkdir(parents=True, exist_ok=True)
-    command = assembly_command(compiler, source, assembly, tools, reference)
+    command = assembly_command(compiler, source, assembly, tools, reference, aaac)
     started = time.monotonic()
     try:
         compiled = run(command, timeout=timeout)
@@ -461,11 +467,12 @@ def run_assembly_benchmark(
     skip_build: bool,
 ) -> dict[str, Any]:
     reference = build_reference(tools, skip_build) if "reference" in compilers else None
+    aaac = build_aaac(tools, skip_build) if "aaac" in compilers else None
     cases: dict[str, dict[str, dict[str, Any]]] = {compiler: {} for compiler in compilers}
     work = [(compiler, source) for compiler in compilers for source in tests]
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
         futures = [
-            executor.submit(assembly_case, compiler, source, tools, reference, timeout)
+            executor.submit(assembly_case, compiler, source, tools, reference, aaac, timeout)
             for compiler, source in work
         ]
         for index, future in enumerate(concurrent.futures.as_completed(futures), 1):
