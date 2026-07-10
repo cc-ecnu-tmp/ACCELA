@@ -504,6 +504,22 @@ def ratio(
     return round(numerator[metric] / value, 6) if value else None
 
 
+def common_case_comparison(
+    other: dict[str, Any], accela: dict[str, Any]
+) -> dict[str, Any]:
+    common = sorted(
+        name for name, case in accela["cases"].items()
+        if case["status"] == "pass"
+        and other["cases"].get(name, {}).get("status") == "pass"
+    )
+    result: dict[str, Any] = {"cases": len(common)}
+    for metric in ("instructions", "memory_operations", "text_bytes"):
+        numerator = sum(other["cases"][name][metric] for name in common)
+        denominator = sum(accela["cases"][name][metric] for name in common)
+        result[f"{metric}_ratio"] = round(numerator / denominator, 6) if denominator else None
+    return result
+
+
 def run_assembly_benchmark(
     tests: list[Path],
     compilers: tuple[str, ...],
@@ -556,6 +572,11 @@ def run_assembly_benchmark(
             summaries["llvm-o3"], summaries["accela"], len(tests),
             "total_memory_operations",
         )
+    if "accela" in summaries:
+        comparisons["common_cases_vs_accela"] = {
+            name: common_case_comparison(summary, summaries["accela"])
+            for name, summary in summaries.items() if name != "accela"
+        }
     return {
         "method": "RISC-V objects assembled with LLVM MC; static machine instructions counted by llvm-objdump",
         "scope_note": "Counts generated program text once; it is a code-quality proxy, not dynamic executed cycles.",
