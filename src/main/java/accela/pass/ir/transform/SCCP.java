@@ -125,6 +125,16 @@ public final class SCCP {
     }
   };
 
+  static final class Analysis {
+    final ForwardDataflowSolver.Result<SCCPFact> result;
+    final SCCPTransfer transfer;
+
+    Analysis(ForwardDataflowSolver.Result<SCCPFact> result, SCCPTransfer transfer) {
+      this.result = result;
+      this.transfer = transfer;
+    }
+  }
+
   static final class SCCPTransfer implements ForwardTransfer<SCCPFact> {
 
     interface CallResolver {
@@ -303,16 +313,20 @@ public final class SCCP {
       entryFact = entryFact.with(arg, ConstVal.TOP);
     }
 
-    SCCPTransfer transfer = new SCCPTransfer();
-    ForwardDataflowSolver<SCCPFact> solver = new ForwardDataflowSolver<>();
+    Analysis analysis = analyze(function, entryFact, null);
+    return applyTransformations(function, analysis.result, analysis.transfer);
+  }
 
+  static Analysis analyze(
+      Function function, SCCPFact entryFact, SCCPTransfer.CallResolver resolver) {
+    SCCPTransfer transfer = new SCCPTransfer();
+    if (resolver != null) transfer.setCallResolver(resolver);
     Set<ForwardDataflowSolver.Edge> liveEdges = new LinkedHashSet<>();
     transfer.setExecutableEdges(liveEdges);
-
-    ForwardDataflowSolver.Result<SCCPFact> solveResult =
-        solver.solve(function, LATTICE, transfer, entryFact, liveEdges);
-
-    return applyTransformations(function, solveResult, transfer);
+    ForwardDataflowSolver.Result<SCCPFact> result =
+        new ForwardDataflowSolver<SCCPFact>()
+            .solve(function, LATTICE, transfer, entryFact, liveEdges);
+    return new Analysis(result, transfer);
   }
 
   private static boolean applyTransformations(
