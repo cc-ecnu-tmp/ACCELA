@@ -32,7 +32,8 @@ final class CallClobberAnalysis {
   }
 
   private static boolean clobbersCallerSaved(MachineInstr instruction, RISCVTarget target) {
-    if (instruction.getOpcode() == MachineOpcode.CALL) return true;
+    if (instruction.getOpcode() == MachineOpcode.CALL
+        || instruction.getOpcode() == MachineOpcode.TAILCALL) return true;
     if (instruction.getOpcode() != MachineOpcode.MEMZERO) return false;
     return instruction.getOperands().get(1) instanceof ImmOperand size
         && target.shouldUseMemsetLibcall((int) size.getValue());

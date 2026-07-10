@@ -32,6 +32,7 @@ public enum MachineOpcode {
   BR,
   CONDBR,
   CALL,
+  TAILCALL,
   RET,
   PHI
 }

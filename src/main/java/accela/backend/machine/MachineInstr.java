@@ -63,6 +63,7 @@ public final class MachineInstr {
   }
 
   public boolean isTerminator() {
-    return opcode == MachineOpcode.BR || opcode == MachineOpcode.CONDBR || opcode == MachineOpcode.RET;
+    return opcode == MachineOpcode.BR || opcode == MachineOpcode.CONDBR
+        || opcode == MachineOpcode.RET || opcode == MachineOpcode.TAILCALL;
   }
 }

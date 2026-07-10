@@ -150,7 +150,8 @@ public final class LivenessAnalysis {
       return getBlockTargets(last);
     }
 
-    if (last.getOpcode() == MachineOpcode.RET) {
+    if (last.getOpcode() == MachineOpcode.RET
+        || last.getOpcode() == MachineOpcode.TAILCALL) {
       return Collections.emptyList();
     }
 
