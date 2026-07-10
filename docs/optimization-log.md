@@ -226,3 +226,24 @@ This is the durable record for each research, implementation, correctness, and p
 - `h_functional/29_long_line.sy`: **22,628 -> 22,239 instructions** from smaller frames and fewer large-offset spill sequences.
 - Full corpus: **138,922 -> 137,262 instructions (-1.20%)** and **429,780 -> 424,726 `.text` bytes (-1.18%)**.
 - **Keep**: same guarded fusion semantics, but at the correct Machine IR phase with measurable allocation-side benefit.
+
+## 2026-07-11 — Interference-aware spill-slot coloring
+
+### Research and hypothesis
+
+- ACCELA's allocator assigned every virtual register a unique stack slot. Large functions therefore exceeded RISC-V's signed-12-bit load/store offset range, turning each spill into `li; add; load/store`.
+- Standard register allocation uses liveness-derived interference: values that are never live simultaneously may occupy the same location. The same rule safely applies to stack-slot coloring before physical-register coloring exists.
+
+### Implementation
+
+- Added an undirected interference graph from every instruction's live-before and live-after sets.
+- The all-spill allocator greedily reuses an existing slot only for the same Machine IR type and only when the new virtual register interferes with none of that slot's occupants.
+- A MOVE whose source and destination were coalesced to the same stack slot is omitted; different stack slots and physical registers retain the normal move path.
+- Tests prove boundary-touching live ranges can share, simultaneously live ranges cannot, same-slot moves vanish, and different-slot moves remain.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Slot coloring alone: **137,262 -> 98,484 instructions (-28.25%)**, `.text` **424,726 -> 280,254 bytes (-34.01%)**; `long_line` **22,239 -> 8,897**.
+- Coalesced MOVE elimination: **98,484 -> 95,076 instructions (-3.46%)**, `.text` **280,254 -> 272,706 bytes (-2.69%)**; `long_line` **8,897 -> 8,081**.
+- **Keep**: a large, general reduction derived from exact CFG liveness. Dynamic RISC-V execution remains unavailable, so runtime claims are still deferred.
