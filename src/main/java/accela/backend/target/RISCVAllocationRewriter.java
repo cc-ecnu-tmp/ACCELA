@@ -328,8 +328,7 @@ public final class RISCVAllocationRewriter {
         if (shift == 0) {
           lines.add("  addiw " + destination + ", " + lhsRegister + ", 0");
         } else {
-          lines.add("  sraiw t3, " + lhsRegister + ", 31");
-          lines.add("  srliw t3, t3, " + (32 - shift));
+          lines.add("  srliw t3, " + lhsRegister + ", " + (32 - shift));
           lines.add("  addw " + destination + ", " + lhsRegister + ", t3");
           lines.add("  sraiw " + destination + ", " + destination + ", " + shift);
         }
@@ -349,8 +348,7 @@ public final class RISCVAllocationRewriter {
           lines.add("  li " + destination + ", 0");
         } else {
           long mask = value - 1;
-          lines.add("  sraiw t3, " + lhsRegister + ", 31");
-          lines.add("  srliw t3, t3, " + (32 - shift));
+          lines.add("  srliw t3, " + lhsRegister + ", " + (32 - shift));
           lines.add("  addw " + destination + ", " + lhsRegister + ", t3");
           if (fitsSigned12(mask)) {
             lines.add("  andi " + destination + ", " + destination + ", " + mask);

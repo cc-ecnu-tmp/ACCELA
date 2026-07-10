@@ -23,7 +23,7 @@ final class RISCVRemainderStrengthReductionTest {
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
-    assertTrue(assembly.contains("  srliw t3, t3, 29"));
+    assertTrue(assembly.contains("  srliw t3, t4, 29"));
     assertTrue(assembly.contains("  andi "));
     assertFalse(assembly.contains("  remw "));
   }
