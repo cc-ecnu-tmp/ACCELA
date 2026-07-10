@@ -59,7 +59,7 @@ final class RISCVAllocationRewriterTest {
       MachineInstr move = new MachineInstr(MachineOpcode.MOVE, destination);
       move.addOperand(new VRegOperand(source));
       move.setType(MachineType.I32);
-      rewriter.emitInstruction(function, move, allocation, lines);
+      rewriter.emitInstruction(function, null, move, allocation, lines);
     }
   }
 }

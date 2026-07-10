@@ -83,10 +83,13 @@ public final class RISCVAsmPrinter {
     lines.add(".globl " + function.getName());
     lines.add(function.getName() + ":");
     frameLowering.emitPrologue(function, lines);
-    for (MachineBasicBlock block : function.getBlocks()) {
+    for (int blockIndex = 0; blockIndex < function.getBlocks().size(); blockIndex++) {
+      MachineBasicBlock block = function.getBlocks().get(blockIndex);
+      MachineBasicBlock fallthrough = blockIndex + 1 < function.getBlocks().size()
+          ? function.getBlocks().get(blockIndex + 1) : null;
       lines.add(labelFor(function, block) + ":");
       for (MachineInstr instr : block.getInstructions()) {
-        allocationRewriter.emitInstruction(function, instr, allocation, lines);
+        allocationRewriter.emitInstruction(function, fallthrough, instr, allocation, lines);
       }
     }
   }

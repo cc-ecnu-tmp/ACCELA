@@ -33,6 +33,7 @@ public final class RISCVAllocationRewriter {
 
   void emitInstruction(
       MachineFunction function,
+      MachineBasicBlock fallthrough,
       MachineInstr instr,
       AllocationResult allocation,
       List<String> lines) {
@@ -118,7 +119,10 @@ public final class RISCVAllocationRewriter {
         emitMemzero(instr, allocation, lines);
         return;
       case BR:
-        lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(0)).getBlock()));
+        MachineBasicBlock branchTarget = ((BlockOperand) instr.getOperands().get(0)).getBlock();
+        if (branchTarget != fallthrough) {
+          lines.add("  j " + labelFor(function, branchTarget));
+        }
         return;
       case CONDBR:
         if (instr.getPredicate() != null) {
