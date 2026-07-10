@@ -204,6 +204,7 @@ public final class RISCVAllocationRewriter {
 
   private void emitBinaryArithmetic(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     ensureIntType(instr.getType());
+    boolean wordResult = instr.getType() == MachineType.I32;
     MachineOperand lhs = instr.getOperands().get(0);
     MachineOperand rhs = instr.getOperands().get(1);
     if ((instr.getOpcode() == MachineOpcode.ADD || instr.getOpcode() == MachineOpcode.XOR)
@@ -218,16 +219,19 @@ public final class RISCVAllocationRewriter {
       long value = immediate.getValue();
       String immediateOpcode = null;
       if (instr.getOpcode() == MachineOpcode.ADD && fitsSigned12(value)) {
-        immediateOpcode = "addi";
+        immediateOpcode = wordResult ? "addiw" : "addi";
       } else if (instr.getOpcode() == MachineOpcode.SUB
           && value != Long.MIN_VALUE && fitsSigned12(-value)) {
-        immediateOpcode = "addi";
+        immediateOpcode = wordResult ? "addiw" : "addi";
         value = -value;
       } else if (instr.getOpcode() == MachineOpcode.XOR && fitsSigned12(value)) {
         immediateOpcode = "xori";
       }
       if (immediateOpcode != null) {
         lines.add("  " + immediateOpcode + " " + destination + ", " + lhsRegister + ", " + value);
+        if (wordResult && instr.getOpcode() == MachineOpcode.XOR) {
+          lines.add("  sext.w " + destination + ", " + destination);
+        }
         writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
         return;
       }
@@ -236,19 +240,19 @@ public final class RISCVAllocationRewriter {
     String op;
     switch (instr.getOpcode()) {
       case ADD:
-        op = "add";
+        op = wordResult ? "addw" : "add";
         break;
       case SUB:
-        op = "sub";
+        op = wordResult ? "subw" : "sub";
         break;
       case MUL:
-        op = "mul";
+        op = wordResult ? "mulw" : "mul";
         break;
       case DIV:
-        op = "div";
+        op = wordResult ? "divw" : "div";
         break;
       case REM:
-        op = "rem";
+        op = wordResult ? "remw" : "rem";
         break;
       case XOR:
         op = "xor";
@@ -257,6 +261,9 @@ public final class RISCVAllocationRewriter {
         throw new IllegalStateException();
     }
     lines.add("  " + op + " " + destination + ", " + lhsRegister + ", " + rhsRegister);
+    if (wordResult && instr.getOpcode() == MachineOpcode.XOR) {
+      lines.add("  sext.w " + destination + ", " + destination);
+    }
     writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
   }
 
