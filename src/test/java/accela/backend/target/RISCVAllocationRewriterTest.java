@@ -181,6 +181,27 @@ final class RISCVAllocationRewriterTest {
     assertFalse(fixture.lines.stream().anyMatch(line -> line.contains("remw")));
   }
 
+  @Test
+  void strengthReducesTwoBitMultiplication() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister result = fixture.function.createVirtualRegister(MachineType.I32, "result");
+    fixture.allocation.put(source,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    fixture.allocation.put(result,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    MachineInstr multiply = new MachineInstr(MachineOpcode.MUL, result);
+    multiply.addOperand(new VRegOperand(source));
+    multiply.addOperand(new ImmOperand(5));
+    multiply.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, multiply, fixture.allocation, fixture.lines);
+
+    assertEquals("  addw t4, t4, t3", fixture.lines.getLast());
+    assertFalse(fixture.lines.stream().anyMatch(line -> line.contains("mulw")));
+  }
+
   private static final class Fixture {
     final RISCVTarget target = new RISCVTarget();
     final RISCVFrameLowering frame = new RISCVFrameLowering(target);

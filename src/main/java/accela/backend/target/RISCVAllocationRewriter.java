@@ -273,6 +273,36 @@ public final class RISCVAllocationRewriter {
           return;
         }
       }
+      if (instr.getOpcode() == MachineOpcode.MUL && value > 0) {
+        long lowBit = Long.lowestOneBit(value);
+        long otherBit = value - lowBit;
+        int maxShift = wordResult ? 31 : 63;
+        if (otherBit > 0 && (otherBit & (otherBit - 1)) == 0
+            && Long.numberOfTrailingZeros(otherBit) <= maxShift) {
+          int firstShift = Long.numberOfTrailingZeros(lowBit);
+          int secondShift = Long.numberOfTrailingZeros(otherBit);
+          lines.add("  " + (wordResult ? "slliw" : "slli")
+              + " t3, " + lhsRegister + ", " + firstShift);
+          lines.add("  " + (wordResult ? "slliw" : "slli")
+              + " " + destination + ", " + lhsRegister + ", " + secondShift);
+          lines.add("  " + (wordResult ? "addw" : "add") + " " + destination
+              + ", " + destination + ", t3");
+          writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+          return;
+        }
+        long upperBit = value + lowBit;
+        if (upperBit > 0 && (upperBit & (upperBit - 1)) == 0
+            && Long.numberOfTrailingZeros(upperBit) <= maxShift) {
+          lines.add("  " + (wordResult ? "slliw" : "slli") + " t3, "
+              + lhsRegister + ", " + Long.numberOfTrailingZeros(upperBit));
+          lines.add("  " + (wordResult ? "slliw" : "slli") + " " + destination
+              + ", " + lhsRegister + ", " + Long.numberOfTrailingZeros(lowBit));
+          lines.add("  " + (wordResult ? "subw" : "sub") + " " + destination
+              + ", t3, " + destination);
+          writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
+          return;
+        }
+      }
       if (instr.getOpcode() == MachineOpcode.DIV && wordResult && value > 0
           && (value & (value - 1)) == 0) {
         int shift = Long.numberOfTrailingZeros(value);
