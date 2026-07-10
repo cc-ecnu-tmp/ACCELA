@@ -46,6 +46,9 @@ public final class InstSimplify {
 
       Value result = trySimplify(inst);
       if (result != null) {
+        for (int index = 0; index < inst.getNumOperands(); index++) {
+          if (inst.getOperand(index) instanceof Instruction producer) worklist.add(producer);
+        }
         for (var use : new ArrayList<>(inst.getUses())) {
           if (use.getUser() instanceof Instruction user) {
             worklist.add(user);
@@ -152,6 +155,15 @@ public final class InstSimplify {
       case XOR: {
         if (inst.getOperand(0) == inst.getOperand(1)) return Constant.intConst(0);
         return null;
+      }
+      case ICMP: {
+        if (!"ne".equals(inst.getPredicate()) || !isIntZero(inst.getOperand(1))) return null;
+        if (inst.getOperand(0) instanceof Instruction extension
+            && extension.getOpcode() == Opcode.ZEXT
+            && extension.getOperand(0).getType() == Type.I1) {
+          return extension.getOperand(0);
+        }
+        return inst.getOperand(0).getType() == Type.I1 ? inst.getOperand(0) : null;
       }
       default: return null;
     }

@@ -33,6 +33,23 @@ final class InstSimplifyTest {
     assertSame(input, mask.getOperand(0));
   }
 
+  @Test
+  void removesBooleanExtensionComparedWithZero() {
+    Function function = new Function("boolean", Type.I1);
+    Value input = function.addArgument(Type.I1, "input");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value extension = builder.createZExt(input, Type.INT);
+    Value compare = builder.createICmp("ne", extension, Constant.intConst(0));
+    Instruction ret = builder.createRet(compare);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+
+    assertSame(input, ret.getOperand(0));
+    assertEquals(0, count(entry, Instruction.Opcode.ICMP));
+    assertEquals(0, count(entry, Instruction.Opcode.ZEXT));
+  }
+
   private static long count(BasicBlock block, Instruction.Opcode opcode) {
     return block.getInstructions().stream().filter(i -> i.getOpcode() == opcode).count();
   }
