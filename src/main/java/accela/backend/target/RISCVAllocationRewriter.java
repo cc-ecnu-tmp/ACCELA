@@ -126,14 +126,19 @@ public final class RISCVAllocationRewriter {
         return;
       case CONDBR:
         if (instr.getPredicate() != null) {
-          emitCompareBranch(function, instr, allocation, lines);
+          emitCompareBranch(function, fallthrough, instr, allocation, lines);
           return;
         }
         String condition = readRegister(
             lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
-        lines.add("  bnez " + condition + ", "
-            + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
-        lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(2)).getBlock()));
+        MachineBasicBlock ifTrue = ((BlockOperand) instr.getOperands().get(1)).getBlock();
+        MachineBasicBlock ifFalse = ((BlockOperand) instr.getOperands().get(2)).getBlock();
+        boolean invert = ifTrue == fallthrough;
+        lines.add("  " + (invert ? "beqz " : "bnez ") + condition + ", "
+            + labelFor(function, invert ? ifFalse : ifTrue));
+        if (ifTrue != fallthrough && ifFalse != fallthrough) {
+          lines.add("  j " + labelFor(function, ifFalse));
+        }
         return;
       case CALL:
         emitCall(instr, allocation, lines);
@@ -151,12 +156,20 @@ public final class RISCVAllocationRewriter {
 
   private void emitCompareBranch(
       MachineFunction function,
+      MachineBasicBlock fallthrough,
       MachineInstr branch,
       AllocationResult allocation,
       List<String> lines) {
+    MachineBasicBlock ifTrue = ((BlockOperand) branch.getOperands().get(1)).getBlock();
+    MachineBasicBlock ifFalse = ((BlockOperand) branch.getOperands().get(2)).getBlock();
+    boolean invert = ifTrue == fallthrough;
     emitCompareBranch(
-        function, branch.getPredicate(), branch.getOperands().get(0),
-        branch.getOperands().get(3), branch, allocation, lines);
+        function, invert ? invertPredicate(branch.getPredicate()) : branch.getPredicate(),
+        branch.getOperands().get(0), branch.getOperands().get(3),
+        invert ? ifFalse : ifTrue, allocation, lines);
+    if (ifTrue != fallthrough && ifFalse != fallthrough) {
+      lines.add("  j " + labelFor(function, ifFalse));
+    }
   }
 
   private void emitCompareBranch(
@@ -164,7 +177,7 @@ public final class RISCVAllocationRewriter {
       String predicate,
       MachineOperand leftOperand,
       MachineOperand rightOperand,
-      MachineInstr branch,
+      MachineBasicBlock destination,
       AllocationResult allocation,
       List<String> lines) {
     String left = readRegister(lines, leftOperand, "t0", MachineType.I32, allocation);
@@ -193,9 +206,20 @@ public final class RISCVAllocationRewriter {
       right = temporary;
     }
     lines.add("  " + opcode + " " + left + ", " + right + ", "
-        + labelFor(function, ((BlockOperand) branch.getOperands().get(1)).getBlock()));
-    lines.add("  j "
-        + labelFor(function, ((BlockOperand) branch.getOperands().get(2)).getBlock()));
+        + labelFor(function, destination));
+  }
+
+  private static String invertPredicate(String predicate) {
+    return switch (predicate) {
+      case "eq" -> "ne";
+      case "ne" -> "eq";
+      case "slt" -> "sge";
+      case "sge" -> "slt";
+      case "sgt" -> "sle";
+      case "sle" -> "sgt";
+      default -> throw new UnsupportedOperationException(
+          "Unsupported integer branch predicate: " + predicate);
+    };
   }
 
   private void emitArgIn(
