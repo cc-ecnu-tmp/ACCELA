@@ -12,23 +12,22 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
-import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.Set;
+import java.util.Map;
 
-/** Replaces one affine memory address per loop with a pointer recurrence. */
+/** Replaces a small number of affine memory addresses with pointer recurrences. */
 public final class LoopAddressStrengthReduction {
   private LoopAddressStrengthReduction() {}
 
   public static boolean run(Function function, FunctionAnalysisManager fam) {
-    Set<LoopAnalysis.Loop> transformed =
-        Collections.newSetFromMap(new IdentityHashMap<>());
+    Map<LoopAnalysis.Loop, Integer> transformed = new IdentityHashMap<>();
     boolean changed = false;
     var inductions = fam.getResult(InductionVariableAnalysis.class, function).inductions();
     for (var induction : inductions) {
-      if (transformed.size() == 2) break;
       LoopAnalysis.Loop loop = induction.loop();
-      if (transformed.contains(loop) || induction.phi().getNumOperands() != 4
+      if ((!transformed.containsKey(loop) && transformed.size() == 2)
+          || transformed.getOrDefault(loop, 0) >= 2
+          || induction.phi().getNumOperands() != 4
           || loop.header().getPredecessors().size() != 2
           || containsCall(loop)
           || inductions.stream().anyMatch(other -> other.loop() != loop
@@ -44,11 +43,11 @@ public final class LoopAddressStrengthReduction {
           long byteStep = induction.step() * AffineGepCandidate.strideAt(gep, varyingIndex);
           if (byteStep % 4 != 0) continue;
           rewrite(gep, varyingIndex, byteStep / 4, induction);
-          transformed.add(loop);
+          transformed.merge(loop, 1, Integer::sum);
           changed = true;
-          break;
+          if (transformed.get(loop) >= 2) break;
         }
-        if (transformed.contains(loop)) break;
+        if (transformed.getOrDefault(loop, 0) >= 2) break;
       }
     }
     return changed;

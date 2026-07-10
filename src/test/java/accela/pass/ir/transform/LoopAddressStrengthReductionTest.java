@@ -39,6 +39,9 @@ final class LoopAddressStrengthReductionTest {
     Instruction address = bodyBuilder.createGEP(
         Type.INT, base, new Value[] {index}, true);
     Instruction load = bodyBuilder.createLoad(Type.INT, address);
+    Instruction secondAddress = bodyBuilder.createGEP(
+        Type.INT, base, new Value[] {index}, true);
+    Instruction secondLoad = bodyBuilder.createLoad(Type.INT, secondAddress);
     Instruction next = bodyBuilder.createAdd(induction, Constant.intConst(1));
     bodyBuilder.createBr(header);
     induction.addOperand(next);
@@ -58,5 +61,7 @@ final class LoopAddressStrengthReductionTest {
     assertSame(header, pointer.getParent());
     assertEquals(4, pointer.getNumOperands());
     assertSame(entry, ((Instruction) pointer.getOperand(0)).getParent());
+    assertTrue(secondLoad.getOperand(0) instanceof Instruction secondPointer
+        && secondPointer.getOpcode() == Instruction.Opcode.PHI);
   }
 }
