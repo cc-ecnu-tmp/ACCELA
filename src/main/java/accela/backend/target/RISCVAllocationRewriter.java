@@ -238,6 +238,11 @@ public final class RISCVAllocationRewriter {
       writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
       return;
     }
+    if (instr.getOperands().get(1) instanceof ImmOperand immediate
+        && emitImmediateCompare(instr.getPredicate(), immediate.getValue(), lines)) {
+      writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+      return;
+    }
     materializeInto(lines, instr.getOperands().get(1), "t1", MachineType.I32, allocation);
     switch (instr.getPredicate()) {
       case "eq":
@@ -266,6 +271,34 @@ public final class RISCVAllocationRewriter {
         throw new UnsupportedOperationException("Unsupported integer compare predicate: " + instr.getPredicate());
     }
     writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+  }
+
+  private static boolean emitImmediateCompare(String predicate, long value, List<String> lines) {
+    switch (predicate) {
+      case "eq":
+      case "ne":
+        if (value == Long.MIN_VALUE || !fitsSigned12(-value)) return false;
+        lines.add("  addi t2, t0, " + -value);
+        lines.add("  " + (predicate.equals("eq") ? "seqz" : "snez") + " t2, t2");
+        return true;
+      case "slt":
+        if (!fitsSigned12(value)) return false;
+        lines.add("  slti t2, t0, " + value);
+        return true;
+      case "sge":
+        if (!fitsSigned12(value)) return false;
+        lines.add("  slti t2, t0, " + value);
+        lines.add("  xori t2, t2, 1");
+        return true;
+      case "sle":
+      case "sgt":
+        if (value == Long.MAX_VALUE || !fitsSigned12(value + 1)) return false;
+        lines.add("  slti t2, t0, " + (value + 1));
+        if (predicate.equals("sgt")) lines.add("  xori t2, t2, 1");
+        return true;
+      default:
+        return false;
+    }
   }
 
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {
