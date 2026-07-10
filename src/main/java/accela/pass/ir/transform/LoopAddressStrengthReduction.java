@@ -25,11 +25,20 @@ public final class LoopAddressStrengthReduction {
   public static boolean run(Function function, FunctionAnalysisManager fam) {
     Map<LoopAnalysis.Loop, Integer> transformed = new IdentityHashMap<>();
     boolean changed = false;
+    int functionSize = function.getBlocks().stream()
+        .mapToInt(block -> block.getInstructions().size()).sum();
+    boolean recursive = function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL
+            && instruction.getCallee() == function);
     var inductions = fam.getResult(InductionVariableAnalysis.class, function).inductions();
     for (var induction : inductions) {
       LoopAnalysis.Loop loop = induction.loop();
+      boolean hasCall = containsCall(loop);
+      int recurrenceLimit = hasCall ? 2 : MAX_RECURRENCES_PER_LOOP;
       if ((!transformed.containsKey(loop) && transformed.size() == MAX_TRANSFORMED_LOOPS)
-          || transformed.getOrDefault(loop, 0) >= MAX_RECURRENCES_PER_LOOP
+          || transformed.getOrDefault(loop, 0) >= recurrenceLimit
+          || hasCall && (!recursive || functionSize > 100)
           || induction.phi().getNumOperands() != 4
           || loop.header().getPredecessors().size() != 2) continue;
       for (BasicBlock block : function.getBlocks()) {
@@ -51,9 +60,9 @@ public final class LoopAddressStrengthReduction {
           }
           transformed.merge(loop, 1, Integer::sum);
           changed = true;
-          if (transformed.get(loop) >= MAX_RECURRENCES_PER_LOOP) break;
+          if (transformed.get(loop) >= recurrenceLimit) break;
         }
-        if (transformed.getOrDefault(loop, 0) >= MAX_RECURRENCES_PER_LOOP) break;
+        if (transformed.getOrDefault(loop, 0) >= recurrenceLimit) break;
       }
     }
     return changed;
@@ -147,6 +156,11 @@ public final class LoopAddressStrengthReduction {
     return instruction.getOpcode() == Instruction.Opcode.SEXT
         ? builder.createSExt(operand, instruction.getType())
         : builder.createZExt(operand, instruction.getType());
+  }
+
+  private static boolean containsCall(LoopAnalysis.Loop loop) {
+    return loop.blocks().stream().flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL);
   }
 
   public static final class Pass implements FunctionPass {
