@@ -72,3 +72,27 @@ This is the durable record for each research, implementation, correctness, and p
 - Full ACCELA RISC-V assembly validation: **140/140 assemble**.
 - Performance proxy: **2,644,288 instructions and 9,006,760 `.text` bytes**, exactly unchanged from baseline as predicted.
 - **Keep**: neutral runtime performance, but it satisfies the structural frontend requirement and removes three inconsistent internal parsing implementations. Next loop targets the measured `MEMZERO` explosion.
+
+## 2026-07-10 — Thresholded large zero-fill lowering
+
+### Research and hypothesis
+
+- LLVM upstream was cloned locally at `fe80624d` with Transforms, RISC-V, and SelectionDAG sources. `RISCVProcessors.td` sets `MaxStoresPerMemset` to 8; `SelectionDAG.cpp` emits stores up to the target limit and otherwise lowers to a libcall.
+- A local LLVM RISC-V probe inlined 64 bytes as eight 8-byte stores and called `memset` for 128 bytes. ACCELA's stack objects are only guaranteed 4-byte alignment, so its equivalent eight-store threshold is 32 bytes.
+- The [RISC-V psABI](https://riscv-non-isa.github.io/riscv-elf-psabi-doc/) assigns the first integer arguments to caller-saved `a0-a2`. Large zero fills can therefore use `memset(destination, 0, bytes)`, provided lowering marks the function as calling so the frame saves/restores `ra`.
+
+### Implementation
+
+- Added a 4 KiB zero-initialization microbenchmark; pre-change ACCELA emitted 2,750 instructions versus 15 from both comparison compilers.
+- Zero fills of at most 32 bytes remain inline. Larger fills materialize the destination/zero/size in `a0-a2` and call `memset`.
+- Machine lowering marks libcall-using functions before frame layout, including functions with no source-level calls.
+- Regression tests cover both sides of the threshold and verify `ra` preservation.
+
+### Validation and decision
+
+- Unit tests: pass. Microbenchmark optimized-IR correctness and assembly validation: pass.
+- Microbenchmark: **2,750 -> 194 instructions** and **8,704 -> 572 `.text` bytes**.
+- Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Full corpus: **2,644,288 -> 507,545 instructions (-80.81%)** and **9,006,760 -> 1,625,882 `.text` bytes (-81.95%)**.
+- `h_functional/30_many_dimensions.sy`: **2,103,498 -> 8,397 instructions**. The next largest case, `functional/86_long_code2.sy`, is unchanged at 330,228 and is not dominated by `MEMZERO`.
+- **Keep**: decisive code-size reduction, matches upstream lowering policy, and should improve dynamic performance by delegating large fills to libc. Dynamic RISC-V execution still needs the Linux runner before claiming a cycle speedup.
