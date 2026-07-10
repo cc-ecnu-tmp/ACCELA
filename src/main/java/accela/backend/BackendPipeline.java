@@ -5,6 +5,7 @@ import accela.backend.lowering.CompareBranchFusion;
 import accela.backend.lowering.LoopConditionDuplication;
 import accela.backend.lowering.MachineBlockPlacement;
 import accela.backend.lowering.PhiElimination;
+import accela.backend.lowering.SharedReturnBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineModule;
 import accela.backend.regalloc.AllSpillRegisterAllocator;
@@ -24,6 +25,7 @@ final class BackendPipeline {
   private final PhiElimination phiElimination = new PhiElimination();
   private final CompareBranchFusion compareBranchFusion = new CompareBranchFusion();
   private final LoopConditionDuplication loopConditionDuplication = new LoopConditionDuplication();
+  private final SharedReturnBlock sharedReturnBlock = new SharedReturnBlock();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
   private final RegisterAllocator allocator = new AllSpillRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
@@ -38,6 +40,7 @@ final class BackendPipeline {
       phiElimination.run(function);
       compareBranchFusion.run(function);
       loopConditionDuplication.run(function);
+      sharedReturnBlock.run(function);
       blockPlacement.run(function);
       allocations.put(function, allocator.allocate(function, target));
     }
