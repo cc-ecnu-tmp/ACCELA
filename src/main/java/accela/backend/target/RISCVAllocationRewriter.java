@@ -50,6 +50,7 @@ public final class RISCVAllocationRewriter {
         writeDest(lines, instr.getDest(), "t0", allocation, instr.getType());
         return;
       case MOVE:
+        if (isRedundantMove(instr, allocation)) return;
         materializeInto(
             lines,
             instr.getOperands().get(0),
@@ -453,6 +454,22 @@ public final class RISCVAllocationRewriter {
       return;
     }
     throw new UnsupportedOperationException("Cannot materialize operand kind " + operand.getKind());
+  }
+
+  private static boolean isRedundantMove(MachineInstr instruction, AllocationResult allocation) {
+    if (!(instruction.getOperands().get(0) instanceof VRegOperand source)) return false;
+    ValueLocation sourceLocation = allocation.locationOf(source.getRegister());
+    ValueLocation destinationLocation = allocation.locationOf(instruction.getDest());
+    if (sourceLocation instanceof StackLocation sourceStack
+        && destinationLocation instanceof StackLocation destinationStack) {
+      return sourceStack.getSlot() == destinationStack.getSlot();
+    }
+    if (sourceLocation instanceof RegisterLocation sourceRegister
+        && destinationLocation instanceof RegisterLocation destinationRegister) {
+      return sourceRegister.getRegister().getName()
+          .equals(destinationRegister.getRegister().getName());
+    }
+    return false;
   }
 
   private void writeDest(
