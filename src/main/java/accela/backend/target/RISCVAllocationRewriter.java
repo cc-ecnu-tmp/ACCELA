@@ -38,7 +38,7 @@ public final class RISCVAllocationRewriter {
       List<String> lines) {
     switch (instr.getOpcode()) {
       case ARG_IN:
-        emitArgIn(instr, allocation, lines);
+        emitArgIn(function, instr, allocation, lines);
         return;
       case CONST_INT:
         materializeInto(lines, instr.getOperands().get(0), "t0", instr.getType(), allocation);
@@ -185,7 +185,9 @@ public final class RISCVAllocationRewriter {
         + labelFor(function, ((BlockOperand) branch.getOperands().get(2)).getBlock()));
   }
 
-  private void emitArgIn(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+  private void emitArgIn(
+      MachineFunction function, MachineInstr instr,
+      AllocationResult allocation, List<String> lines) {
     MachineOperand source = instr.getOperands().get(0);
     if (source instanceof PhysicalRegOperand) {
       String src = ((PhysicalRegOperand) source).getRegister().getName();
@@ -193,11 +195,12 @@ public final class RISCVAllocationRewriter {
       return;
     }
     int stackOffset = (int) ((ImmOperand) source).getValue();
+    int incomingOffset = function.getFrameInfo().getFrameSize() + stackOffset;
     if (instr.getType().isFloat()) {
-      frameLowering.emitLoadFromBase(lines, "ft0", "s0", stackOffset, "t3", MachineType.F32);
+      frameLowering.emitLoadFromBase(lines, "ft0", "sp", incomingOffset, "t3", MachineType.F32);
       writeDest(lines, instr.getDest(), "ft0", allocation, instr.getType());
     } else {
-      frameLowering.emitLoadFromBase(lines, "t0", "s0", stackOffset, "t3", instr.getType());
+      frameLowering.emitLoadFromBase(lines, "t0", "sp", incomingOffset, "t3", instr.getType());
       writeDest(lines, instr.getDest(), "t0", allocation, instr.getType());
     }
   }

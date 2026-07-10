@@ -13,7 +13,6 @@ public final class MachineFrameInfo {
   private int nextSlotId = 0;
   private int outgoingArgBytes = 0;
   private boolean hasCalls = false;
-  private int saveS0Offset = -1;
   private int saveRaOffset = -1;
   private final Map<String, Integer> calleeSavedOffsets = new LinkedHashMap<>();
   private final Map<String, Integer> floatCalleeSavedOffsets = new LinkedHashMap<>();
@@ -51,10 +50,6 @@ public final class MachineFrameInfo {
     return outgoingArgBytes;
   }
 
-  public int getSaveS0Offset() {
-    return saveS0Offset;
-  }
-
   public int getSaveRaOffset() {
     return saveRaOffset;
   }
@@ -86,9 +81,6 @@ public final class MachineFrameInfo {
       slot.setOffset(offset);
       offset += slot.getSize();
     }
-    offset = target.alignTo(offset, target.stackAlignOf(MachineType.PTR));
-    saveS0Offset = offset;
-    offset += target.stackSizeOf(MachineType.PTR);
     if (hasCalls) {
       offset = target.alignTo(offset, target.stackAlignOf(MachineType.PTR));
       saveRaOffset = offset;
