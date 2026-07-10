@@ -5,6 +5,7 @@ import accela.backend.machine.PhysicalRegister;
 import accela.ir.Constant;
 import accela.ir.Type;
 import java.util.List;
+import java.util.stream.Stream;
 
 public final class RISCVTarget {
   private static final int MEMSET_LIBCALL_THRESHOLD = 32;
@@ -43,7 +44,7 @@ public final class RISCVTarget {
           new PhysicalRegister("s11", MachineType.I32));
   private final List<PhysicalRegister> intCalleeSaved =
       intAllocatable.subList(3, intAllocatable.size());
-  private final List<PhysicalRegister> floatAllocatable =
+  private final List<PhysicalRegister> floatCallerSaved =
       List.of(
           new PhysicalRegister("ft4", MachineType.F32),
           new PhysicalRegister("ft5", MachineType.F32),
@@ -67,6 +68,8 @@ public final class RISCVTarget {
           new PhysicalRegister("fs9", MachineType.F32),
           new PhysicalRegister("fs10", MachineType.F32),
           new PhysicalRegister("fs11", MachineType.F32));
+  private final List<PhysicalRegister> floatAllocatable =
+      Stream.concat(floatCallerSaved.stream(), floatCalleeSaved.stream()).toList();
 
   public List<PhysicalRegister> getIntScratch() {
     return intScratch;

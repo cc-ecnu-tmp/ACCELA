@@ -1,12 +1,10 @@
 package accela.backend.regalloc;
 
-import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import accela.backend.frame.StackSlot;
 import accela.backend.machine.FloatImmOperand;
 import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
@@ -40,6 +38,25 @@ final class AllSpillRegisterAllocatorTest {
   }
 
   @Test
+  void assignsFloatLiveAcrossCallToCalleeSavedRegister() {
+    MachineFunction function = new MachineFunction("float_cross_call", MachineType.F32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source = function.createVirtualRegister(MachineType.F32, "source");
+    addArg(entry, source);
+    addCall(entry);
+    addReturn(entry, source);
+    RISCVTarget target = new RISCVTarget();
+
+    AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, target);
+    RegisterLocation location =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+
+    assertTrue(target.isCalleeSaved(location.getRegister()));
+    assertTrue(function.getFrameInfo().getFloatCalleeSavedOffsets()
+        .containsKey(location.getRegister().getName()));
+  }
+
+  @Test
   void colorsInterferingValuesDifferently() {
     MachineFunction function = new MachineFunction("color", MachineType.I32);
     MachineBasicBlock entry = function.addBlock("entry");
@@ -62,7 +79,7 @@ final class AllSpillRegisterAllocatorTest {
   }
 
   @Test
-  void reusesSlotWhenLiveRangesOnlyTouchAtInstructionBoundary() {
+  void reusesColorWhenLiveRangesOnlyTouchAtInstructionBoundary() {
     MachineFunction function = new MachineFunction("reuse", MachineType.F32);
     MachineBasicBlock entry = function.addBlock("entry");
     VirtualRegister source = function.createVirtualRegister(MachineType.F32, "source");
@@ -75,7 +92,11 @@ final class AllSpillRegisterAllocatorTest {
 
     AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, new RISCVTarget());
 
-    assertSame(slot(allocation, source), slot(allocation, result));
+    RegisterLocation sourceLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+    RegisterLocation resultLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(result));
+    assertEquals(sourceLocation.getRegister().getName(), resultLocation.getRegister().getName());
   }
 
   @Test
@@ -93,7 +114,11 @@ final class AllSpillRegisterAllocatorTest {
 
     AllocationResult allocation = new AllSpillRegisterAllocator().allocate(function, new RISCVTarget());
 
-    assertNotSame(slot(allocation, source), slot(allocation, first));
+    RegisterLocation sourceLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(source));
+    RegisterLocation firstLocation =
+        assertInstanceOf(RegisterLocation.class, allocation.locationOf(first));
+    assertNotEquals(sourceLocation.getRegister().getName(), firstLocation.getRegister().getName());
   }
 
   private static void addArg(MachineBasicBlock block, VirtualRegister destination) {
@@ -126,7 +151,4 @@ final class AllSpillRegisterAllocatorTest {
     block.addInstruction(instruction);
   }
 
-  private static StackSlot slot(AllocationResult allocation, VirtualRegister register) {
-    return ((StackLocation) allocation.locationOf(register)).getSlot();
-  }
 }
