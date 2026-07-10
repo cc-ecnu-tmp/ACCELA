@@ -211,3 +211,18 @@ This is the durable record for each research, implementation, correctness, and p
 - Boolean microbenchmark: **35 -> 34 instructions**. `h_functional/29_long_line.sy`: **25,351 -> 22,628 instructions (-10.74%)**.
 - Full corpus: **147,157 -> 138,922 instructions (-5.60%)** and **456,182 -> 429,780 `.text` bytes (-5.79%)**.
 - **Keep**: this is a guarded Machine IR combine, not a textual assembly peephole, and removes a broad all-spill amplification pattern.
+
+## 2026-07-11 — Pre-allocation compare branch fusion
+
+### Hypothesis and implementation
+
+- The first fusion ran in the assembly printer, after all-spill allocation. Although compare instructions were no longer emitted, their virtual registers still consumed stack slots and could push spill offsets outside the 12-bit addressing range.
+- Added an explicit Machine IR pass after PHI elimination and before register allocation. It rewrites the conditional branch to carry the compare predicate and operands, then removes the single-use `ICMP`.
+- The RISC-V rewriter now emits this fused Machine IR form directly. The old late printer scan and entry point were deleted.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- `h_functional/29_long_line.sy`: **22,628 -> 22,239 instructions** from smaller frames and fewer large-offset spill sequences.
+- Full corpus: **138,922 -> 137,262 instructions (-1.20%)** and **429,780 -> 424,726 `.text` bytes (-1.18%)**.
+- **Keep**: same guarded fusion semantics, but at the correct Machine IR phase with measurable allocation-side benefit.
