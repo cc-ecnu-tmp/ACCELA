@@ -139,3 +139,23 @@ This is the durable record for each research, implementation, correctness, and p
 - Microbenchmark: **49 -> 39 instructions**. `h_functional/29_long_line.sy`: **33,362 -> 27,771 instructions (-16.76%)**; `fib` falls from 1,775 to 685 IR blocks.
 - Full corpus: **158,475 -> 152,849 instructions (-3.55%)** and **488,768 -> 472,304 `.text` bytes (-3.37%)**.
 - **Keep**: a narrow, source-independent CFG canonicalization with measurable corpus-wide benefit. General select-based if-conversion remains future work.
+
+## 2026-07-11 — Direct RISC-V comparisons with zero
+
+### Research and hypothesis
+
+- `h_functional/29_long_line.sy` still emitted 6,952 `li` instructions. The common `icmp ne x, 0` sequence became `li 0; sub; snez` under the generic two-register comparison lowering.
+- LLVM RISC-V patterns select equality with zero as `sltiu x, 1` (`seqz`) and inequality as `sltu zero, x` (`snez`); signed relations can name the architectural `zero` register directly.
+
+### Implementation
+
+- When an integer comparison's right operand is constant zero, lowering now emits direct `seqz`, `snez`, or `slt ... zero` forms. `sle`/`sge` invert the corresponding strict comparison with `xori`.
+- Other constants and register-register comparisons retain the existing path.
+- Added assembly regression coverage for all six supported integer predicates and for absence of zero materialization/subtraction.
+
+### Validation and decision
+
+- Unit tests: pass. Full optimized-IR correctness: **140/140 pass**; full ACCELA RISC-V assembly: **140/140 assemble**.
+- Boolean microbenchmark: **39 -> 35 instructions**. `h_functional/29_long_line.sy`: **27,771 -> 25,447 instructions (-8.37%)**.
+- Full corpus: **152,849 -> 148,433 instructions (-2.89%)** and **472,304 -> 459,240 `.text` bytes (-2.77%)**.
+- **Keep**: exact target instruction selection, broad corpus benefit, and no IR semantic change. General signed-12-bit immediate selection is the next extension.
