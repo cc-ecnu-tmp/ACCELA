@@ -43,7 +43,7 @@ final class InterferenceGraph {
     }
   }
 
-  private void addEdge(VirtualRegister first, VirtualRegister second) {
+  void addEdge(VirtualRegister first, VirtualRegister second) {
     edges.computeIfAbsent(first, unused -> identitySet()).add(second);
     edges.computeIfAbsent(second, unused -> identitySet()).add(first);
   }
