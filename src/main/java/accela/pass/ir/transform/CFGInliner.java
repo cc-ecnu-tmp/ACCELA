@@ -24,6 +24,7 @@ final class CFGInliner {
     BasicBlock continuation = caller.insertBlockAfter(
         callerBlock, callerBlock.getLabel() + ".inline.cont." + id);
     moveTail(call, callerBlock, continuation);
+    retargetSuccessorPhis(callerBlock, continuation);
 
     Map<Value, Value> values = new IdentityHashMap<>();
     for (int index = 0; index < callee.getNumArgs(); index++) {
@@ -95,6 +96,20 @@ final class CFGInliner {
       Instruction instruction = instructions.get(index);
       source.remove(instruction);
       continuation.addInstruction(instruction);
+    }
+  }
+
+  private static void retargetSuccessorPhis(
+      BasicBlock oldPredecessor, BasicBlock newPredecessor) {
+    for (BasicBlock successor : newPredecessor.getSuccessors()) {
+      for (Instruction instruction : successor.getInstructions()) {
+        if (instruction.getOpcode() != Instruction.Opcode.PHI) break;
+        for (int index = 1; index < instruction.getNumOperands(); index += 2) {
+          if (instruction.getOperand(index) == oldPredecessor) {
+            instruction.setOperand(index, newPredecessor);
+          }
+        }
+      }
     }
   }
 }
