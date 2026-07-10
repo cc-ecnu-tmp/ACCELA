@@ -31,6 +31,7 @@ public final class RISCVTarget {
           new PhysicalRegister("t4", MachineType.I32),
           new PhysicalRegister("t5", MachineType.I32),
           new PhysicalRegister("t6", MachineType.I32),
+          new PhysicalRegister("s0", MachineType.I32),
           new PhysicalRegister("s1", MachineType.I32),
           new PhysicalRegister("s2", MachineType.I32),
           new PhysicalRegister("s3", MachineType.I32),
