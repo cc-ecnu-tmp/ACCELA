@@ -159,6 +159,28 @@ final class RISCVAllocationRewriterTest {
     assertFalse(fixture.lines.stream().anyMatch(line -> line.contains("divw")));
   }
 
+  @Test
+  void strengthReducesSignedConstantRemainder() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister result = fixture.function.createVirtualRegister(MachineType.I32, "result");
+    fixture.allocation.put(source,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    fixture.allocation.put(result,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.I32)));
+    MachineInstr remainder = new MachineInstr(MachineOpcode.REM, result);
+    remainder.addOperand(new VRegOperand(source));
+    remainder.addOperand(new ImmOperand(11));
+    remainder.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, remainder, fixture.allocation, fixture.lines);
+
+    assertEquals("  mv t0, t4", fixture.lines.getFirst());
+    assertEquals("  subw t4, t0, t1", fixture.lines.getLast());
+    assertFalse(fixture.lines.stream().anyMatch(line -> line.contains("remw")));
+  }
+
   private static final class Fixture {
     final RISCVTarget target = new RISCVTarget();
     final RISCVFrameLowering frame = new RISCVFrameLowering(target);
