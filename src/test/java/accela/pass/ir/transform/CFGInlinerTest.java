@@ -28,10 +28,16 @@ final class CFGInlinerTest {
 
     Function caller = new Function("caller", Type.INT);
     BasicBlock callerEntry = caller.addBlock("entry");
+    BasicBlock merge = caller.addBlock("merge");
     IRBuilder builder = new IRBuilder(callerEntry);
     Instruction call = builder.createCall(callee, Type.INT, Constant.boolConst(true));
     Instruction sum = builder.createAdd(call, Constant.intConst(3));
-    builder.createRet(sum);
+    builder.createBr(merge);
+    Instruction mergePhi = Instruction.createPhi(Type.INT);
+    merge.addInstructionToFront(mergePhi);
+    mergePhi.addOperand(sum);
+    mergePhi.addOperand(callerEntry);
+    new IRBuilder(merge).createRet(mergePhi);
 
     CFGInliner.inline(call);
     IRVerifier.verifyFunction(caller);
@@ -41,6 +47,7 @@ final class CFGInlinerTest {
     assertEquals(Instruction.Opcode.PHI, phi.getOpcode());
     assertSame(sum.getParent(), phi.getParent());
     assertEquals(4, phi.getNumOperands());
+    assertSame(sum.getParent(), mergePhi.getOperand(1));
     assertTrue(caller.getBlocks().stream().flatMap(block -> block.getInstructions().stream())
         .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL));
   }
