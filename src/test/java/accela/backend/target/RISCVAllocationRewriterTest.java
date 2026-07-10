@@ -58,6 +58,25 @@ final class RISCVAllocationRewriterTest {
     assertEquals(List.of("  sw t4, 0(t5)"), fixture.lines);
   }
 
+  @Test
+  void loadsDirectlyFromAnAllocatedAddress() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister address = fixture.function.createVirtualRegister(MachineType.PTR, "address");
+    VirtualRegister value = fixture.function.createVirtualRegister(MachineType.I32, "value");
+    fixture.allocation.put(address,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.PTR)));
+    fixture.allocation.put(value,
+        new RegisterLocation(new PhysicalRegister("t5", MachineType.I32)));
+    MachineInstr load = new MachineInstr(MachineOpcode.LOAD, value);
+    load.addOperand(new VRegOperand(address));
+    load.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, load, fixture.allocation, fixture.lines);
+
+    assertEquals(List.of("  lw t5, 0(t4)"), fixture.lines);
+  }
+
   private static final class Fixture {
     final RISCVTarget target = new RISCVTarget();
     final RISCVFrameLowering frame = new RISCVFrameLowering(target);
