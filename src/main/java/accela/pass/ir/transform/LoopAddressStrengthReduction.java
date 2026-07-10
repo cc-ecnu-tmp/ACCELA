@@ -17,6 +17,8 @@ import java.util.Map;
 
 /** Replaces a small number of affine memory addresses with pointer recurrences. */
 public final class LoopAddressStrengthReduction {
+  private static final int MAX_RECURRENCES_PER_LOOP = 4;
+
   private LoopAddressStrengthReduction() {}
 
   public static boolean run(Function function, FunctionAnalysisManager fam) {
@@ -26,7 +28,7 @@ public final class LoopAddressStrengthReduction {
     for (var induction : inductions) {
       LoopAnalysis.Loop loop = induction.loop();
       if ((!transformed.containsKey(loop) && transformed.size() == 2)
-          || transformed.getOrDefault(loop, 0) >= 2
+          || transformed.getOrDefault(loop, 0) >= MAX_RECURRENCES_PER_LOOP
           || induction.phi().getNumOperands() != 4
           || loop.header().getPredecessors().size() != 2
           || containsCall(loop)
@@ -45,9 +47,9 @@ public final class LoopAddressStrengthReduction {
           rewrite(gep, varyingIndex, byteStep / 4, induction);
           transformed.merge(loop, 1, Integer::sum);
           changed = true;
-          if (transformed.get(loop) >= 2) break;
+          if (transformed.get(loop) >= MAX_RECURRENCES_PER_LOOP) break;
         }
-        if (transformed.getOrDefault(loop, 0) >= 2) break;
+        if (transformed.getOrDefault(loop, 0) >= MAX_RECURRENCES_PER_LOOP) break;
       }
     }
     return changed;
