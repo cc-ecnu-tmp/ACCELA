@@ -45,7 +45,12 @@ public final class LoopAddressStrengthReduction {
               || !AffineGepCandidate.otherOperandsAreInvariant(gep, varyingIndex, loop)) continue;
           long byteStep = induction.step() * AffineGepCandidate.strideAt(gep, varyingIndex);
           if (byteStep % 4 != 0) continue;
-          rewrite(gep, varyingIndex, byteStep / 4, induction);
+          var equivalents = equivalentAddresses(function, loop, gep);
+          Instruction pointer = rewrite(gep, varyingIndex, byteStep / 4, induction);
+          for (Instruction equivalent : equivalents) {
+            equivalent.replaceAllUsesWith(pointer);
+            equivalent.eraseFromParent();
+          }
           transformed.merge(loop, 1, Integer::sum);
           changed = true;
           if (transformed.get(loop) >= MAX_RECURRENCES_PER_LOOP) break;
@@ -56,7 +61,22 @@ public final class LoopAddressStrengthReduction {
     return changed;
   }
 
-  private static void rewrite(
+  private static java.util.List<Instruction> equivalentAddresses(
+      Function function, LoopAnalysis.Loop loop, Instruction address) {
+    java.util.List<Instruction> result = new java.util.ArrayList<>();
+    for (BasicBlock block : function.getBlocks()) {
+      if (!loop.blocks().contains(block)) continue;
+      for (Instruction candidate : block.getInstructions()) {
+        if (candidate != address && candidate.getOpcode() == Instruction.Opcode.GEP
+            && AffineGepCandidate.sameAddressExpression(address, candidate)) {
+          result.add(candidate);
+        }
+      }
+    }
+    return result;
+  }
+
+  private static Instruction rewrite(
       Instruction gep,
       int varyingIndex,
       long pointerStep,
@@ -86,6 +106,7 @@ public final class LoopAddressStrengthReduction {
     pointer.addOperand(induction.loop().latch());
     gep.replaceAllUsesWith(pointer);
     gep.eraseFromParent();
+    return pointer;
   }
 
   private static Value extendStart(

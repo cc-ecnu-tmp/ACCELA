@@ -84,6 +84,43 @@ final class AffineGepCandidate {
     return sizeOf(type);
   }
 
+  static boolean sameAddressExpression(Value first, Value second) {
+    return sameAddressExpression(first, second, 0);
+  }
+
+  private static boolean sameAddressExpression(Value first, Value second, int depth) {
+    if (first == second) return true;
+    if (depth > 12) return false;
+    if (first instanceof Constant.Int left && second instanceof Constant.Int right) {
+      return left.value == right.value && sameType(left.getType(), right.getType());
+    }
+    if (!(first instanceof Instruction left) || !(second instanceof Instruction right)
+        || left.getOpcode() != right.getOpcode()
+        || !sameType(left.getType(), right.getType())
+        || left.getNumOperands() != right.getNumOperands()) return false;
+    switch (left.getOpcode()) {
+      case ADD: case SUB: case SEXT: case ZEXT:
+        break;
+      case GEP:
+        if (!sameType(left.getGepSourceType(), right.getGepSourceType())) return false;
+        break;
+      default:
+        return false;
+    }
+    for (int index = 0; index < left.getNumOperands(); index++) {
+      if (!sameAddressExpression(
+          left.getOperand(index), right.getOperand(index), depth + 1)) return false;
+    }
+    return true;
+  }
+
+  private static boolean sameType(Type first, Type second) {
+    if (first == second) return true;
+    if (first == null || second == null || first.dataType != second.dataType
+        || first.size != second.size) return false;
+    return sameType(first.innerType, second.innerType);
+  }
+
   private static long sizeOf(Type type) {
     if (type.isArray()) return type.size * sizeOf(type.innerType);
     return type == Type.I64 || type.isPointer() ? 8 : type == Type.I1 ? 1 : 4;

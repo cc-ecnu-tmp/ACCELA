@@ -70,6 +70,7 @@ final class LoopAddressStrengthReductionTest {
     assertTrue(load.getOperand(0) instanceof Instruction pointer
         && pointer.getOpcode() == Instruction.Opcode.PHI);
     Instruction pointer = (Instruction) load.getOperand(0);
+    assertSame(pointer, secondLoad.getOperand(0));
     assertSame(header, pointer.getParent());
     assertEquals(4, pointer.getNumOperands());
     assertSame(entry, ((Instruction) pointer.getOperand(0)).getParent());
