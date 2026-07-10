@@ -42,6 +42,13 @@ public final class FunctionCloner {
     return clone;
   }
 
+  /** Clones one instruction's opcode and metadata without operands or parent block. */
+  public static Instruction cloneInstruction(Instruction source) {
+    Instruction clone = new Instruction(source.getOpcode(), source.getType());
+    copyMetadata(source, clone);
+    return clone;
+  }
+
   private static void copyMetadata(Instruction source, Instruction clone) {
     clone.setName(source.getName());
     clone.setPredicate(source.getPredicate());
