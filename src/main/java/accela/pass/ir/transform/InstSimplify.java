@@ -74,7 +74,7 @@ public final class InstSimplify {
 
   private static Value tryConstantFold(Instruction inst) {
     switch (inst.getOpcode()) {
-      case ADD: case SUB: case MUL: case SDIV: case SREM: case XOR: {
+      case ADD: case SUB: case MUL: case SDIV: case SREM: case XOR: case AND: {
         if (!(inst.getOperand(0) instanceof Constant.Int a)) return null;
         if (!(inst.getOperand(1) instanceof Constant.Int b)) return null;
         Long r = evalInt(inst.getOpcode(), a.value, b.value);
@@ -179,6 +179,7 @@ public final class InstSimplify {
       case SDIV: return b == 0 ? null : a / b;
       case SREM: return b == 0 ? null : a % b;
       case XOR: return a ^ b;
+      case AND: return a & b;
       default: return null;
     }
   }

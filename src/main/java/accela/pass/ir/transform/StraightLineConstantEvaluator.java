@@ -45,6 +45,7 @@ final class StraightLineConstantEvaluator {
         case SDIV -> lhs / rhs;
         case SREM -> lhs % rhs;
         case XOR -> lhs ^ rhs;
+        case AND -> lhs & rhs;
         default -> throw new IllegalStateException();
       };
       values.put(instruction, Constant.intConst(result));
@@ -62,6 +63,7 @@ final class StraightLineConstantEvaluator {
         || opcode == Instruction.Opcode.MUL
         || opcode == Instruction.Opcode.SDIV
         || opcode == Instruction.Opcode.SREM
-        || opcode == Instruction.Opcode.XOR;
+        || opcode == Instruction.Opcode.XOR
+        || opcode == Instruction.Opcode.AND;
   }
 }

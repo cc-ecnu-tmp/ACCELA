@@ -134,6 +134,7 @@ public class IRPrinter {
       case FPTOSI: return printConv(inst, "fptosi");
 
       case XOR:  return printBinOp(inst, "xor");
+      case AND:  return printBinOp(inst, "and");
       case CALL: return printCall(inst);
       case PHI:  return printPhi(inst);
       default:   return "; unknown instruction";

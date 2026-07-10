@@ -184,6 +184,10 @@ public class IRBuilder {
     return insert(new Instruction(Opcode.XOR, lhs.getType(), lhs, rhs));
   }
 
+  public Instruction createAnd(Value lhs, Value rhs) {
+    return insert(new Instruction(Opcode.AND, lhs.getType(), lhs, rhs));
+  }
+
   /**
    * Create a function call.
    *

@@ -30,7 +30,7 @@ public class Instruction extends Value {
     // Conversion
     ZEXT, SEXT, SITOFP, FPTOSI,
     // Other
-    CALL, PHI, XOR;
+    CALL, PHI, XOR, AND;
 
     public boolean isTerminator() {
       return this == BR || this == CONDBR || this == RET;
