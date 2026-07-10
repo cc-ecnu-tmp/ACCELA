@@ -40,7 +40,7 @@ final class IPSCCPSolverTest {
     Instruction ret = mainBuilder.createRet(call);
 
     assertTrue(new IPSCCPSolver(module).solve());
-    assertEquals(Instruction.Opcode.BR, entry.getInstructions().get(0).getOpcode());
+    assertEquals(1, choose.getBlocks().size());
     Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
     assertEquals(42, result.value);
     assertSame(call, mainEntry.getInstructions().get(0));

@@ -48,6 +48,7 @@ final class IPSCCPSolver {
       SCCP.Analysis analysis =
           SCCP.analyze(function, entryFact(function), this::resolveKnownCall);
       rewritten |= SCCP.applyTransformations(function, analysis.result, analysis.transfer);
+      rewritten |= SimplifyCFG.runOnFunction(function);
     }
     return rewritten;
   }
