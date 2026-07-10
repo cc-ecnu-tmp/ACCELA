@@ -29,9 +29,7 @@ public final class RISCVTarget {
       List.of(
           new PhysicalRegister("t4", MachineType.I32),
           new PhysicalRegister("t5", MachineType.I32),
-          new PhysicalRegister("t6", MachineType.I32));
-  private final List<PhysicalRegister> intCalleeSaved =
-      List.of(
+          new PhysicalRegister("t6", MachineType.I32),
           new PhysicalRegister("s1", MachineType.I32),
           new PhysicalRegister("s2", MachineType.I32),
           new PhysicalRegister("s3", MachineType.I32),
@@ -43,6 +41,8 @@ public final class RISCVTarget {
           new PhysicalRegister("s9", MachineType.I32),
           new PhysicalRegister("s10", MachineType.I32),
           new PhysicalRegister("s11", MachineType.I32));
+  private final List<PhysicalRegister> intCalleeSaved =
+      intAllocatable.subList(3, intAllocatable.size());
   private final List<PhysicalRegister> floatAllocatable =
       List.of(
           new PhysicalRegister("ft4", MachineType.F32),

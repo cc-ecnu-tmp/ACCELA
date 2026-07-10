@@ -26,8 +26,8 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
     collectRegisters(function, registers);
     Set<VirtualRegister> callConflicts =
         CallClobberAnalysis.analyze(function, liveness, target);
-    colorRegisters(registers, callConflicts, interference, target, result, false);
-    colorRegisters(registers, callConflicts, interference, target, result, true);
+    colorRegisters(function, registers, callConflicts, interference, target, result, false);
+    colorRegisters(function, registers, callConflicts, interference, target, result, true);
 
     Map<VirtualRegister, StackSlot> spills = new LinkedHashMap<>();
     Map<StackSlot, List<VirtualRegister>> occupants = new LinkedHashMap<>();
@@ -58,6 +58,7 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
   }
 
   private static void colorRegisters(
+      MachineFunction function,
       Set<VirtualRegister> registers,
       Set<VirtualRegister> callConflicts,
       InterferenceGraph interference,
@@ -66,13 +67,19 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
       boolean floatingPoint) {
     List<VirtualRegister> candidates = registers.stream()
         .filter(register -> register.getType().isFloat() == floatingPoint)
-        .filter(register -> !callConflicts.contains(register))
         .toList();
     var colors = target.getAllocatableRegisters(floatingPoint ? MachineType.F32 : MachineType.I32);
-    for (var entry : OptimisticGraphColoring.color(
-        candidates, interference, colors.size(), unused -> 1).entrySet()) {
+    var assignments = OptimisticGraphColoring.color(
+        candidates, interference, colors.size(), unused -> 1,
+        (register, color) ->
+            !callConflicts.contains(register) || target.isCalleeSaved(colors.get(color)));
+    for (var entry : assignments.entrySet()) {
       if (entry.getValue() >= 0) {
-        result.put(entry.getKey(), new RegisterLocation(colors.get(entry.getValue())));
+        var physicalRegister = colors.get(entry.getValue());
+        result.put(entry.getKey(), new RegisterLocation(physicalRegister));
+        if (target.isCalleeSaved(physicalRegister)) {
+          function.getFrameInfo().markCalleeSavedRegister(physicalRegister.getName());
+        }
       }
     }
   }
