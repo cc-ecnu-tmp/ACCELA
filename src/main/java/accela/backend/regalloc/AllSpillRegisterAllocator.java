@@ -100,12 +100,16 @@ public final class AllSpillRegisterAllocator implements RegisterAllocator {
 
   private static Map<VirtualRegister, Integer> collectSpillWeights(MachineFunction function) {
     Map<VirtualRegister, Integer> weights = new IdentityHashMap<>();
+    Set<MachineBasicBlock> loopBlocks = MachineLoopAnalysis.findLoopBlocks(function);
     for (MachineBasicBlock block : function.getBlocks()) {
+      int weight = loopBlocks.contains(block) ? 16 : 1;
       for (MachineInstr instruction : block.getInstructions()) {
-        if (instruction.getDest() != null) weights.merge(instruction.getDest(), 1, Integer::sum);
+        if (instruction.getDest() != null) {
+          weights.merge(instruction.getDest(), weight, Integer::sum);
+        }
         for (MachineOperand operand : instruction.getOperands()) {
           if (operand instanceof VRegOperand register) {
-            weights.merge(register.getRegister(), 1, Integer::sum);
+            weights.merge(register.getRegister(), weight, Integer::sum);
           }
         }
       }
