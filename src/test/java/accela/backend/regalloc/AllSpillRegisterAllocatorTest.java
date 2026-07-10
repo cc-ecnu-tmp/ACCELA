@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import accela.backend.frame.StackSlot;
+import accela.backend.machine.FloatImmOperand;
 import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
@@ -42,13 +43,13 @@ final class AllSpillRegisterAllocatorTest {
 
   @Test
   void reusesSlotWhenLiveRangesOnlyTouchAtInstructionBoundary() {
-    MachineFunction function = new MachineFunction("reuse", MachineType.I32);
+    MachineFunction function = new MachineFunction("reuse", MachineType.F32);
     MachineBasicBlock entry = function.addBlock("entry");
-    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
-    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+    VirtualRegister source = function.createVirtualRegister(MachineType.F32, "source");
+    VirtualRegister result = function.createVirtualRegister(MachineType.F32, "result");
     addArg(entry, source);
     addCall(entry);
-    add(entry, result, source, new ImmOperand(1));
+    add(entry, result, source, new FloatImmOperand(1));
     addCall(entry);
     addReturn(entry, result);
 
@@ -59,13 +60,13 @@ final class AllSpillRegisterAllocatorTest {
 
   @Test
   void separatesSimultaneouslyLiveRegisters() {
-    MachineFunction function = new MachineFunction("interfere", MachineType.I32);
+    MachineFunction function = new MachineFunction("interfere", MachineType.F32);
     MachineBasicBlock entry = function.addBlock("entry");
-    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
-    VirtualRegister first = function.createVirtualRegister(MachineType.I32, "first");
-    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+    VirtualRegister source = function.createVirtualRegister(MachineType.F32, "source");
+    VirtualRegister first = function.createVirtualRegister(MachineType.F32, "first");
+    VirtualRegister result = function.createVirtualRegister(MachineType.F32, "result");
     addArg(entry, source);
-    add(entry, first, source, new ImmOperand(1));
+    add(entry, first, source, new FloatImmOperand(1));
     addCall(entry);
     add(entry, result, source, new VRegOperand(first));
     addReturn(entry, result);
@@ -77,24 +78,25 @@ final class AllSpillRegisterAllocatorTest {
 
   private static void addArg(MachineBasicBlock block, VirtualRegister destination) {
     MachineInstr instruction = new MachineInstr(MachineOpcode.ARG_IN, destination);
-    instruction.setType(MachineType.I32);
+    instruction.setType(destination.getType());
     block.addInstruction(instruction);
   }
 
   private static void add(
       MachineBasicBlock block, VirtualRegister destination, VirtualRegister left,
       accela.backend.machine.MachineOperand right) {
-    MachineInstr instruction = new MachineInstr(MachineOpcode.ADD, destination);
+    MachineInstr instruction = new MachineInstr(
+        destination.getType().isFloat() ? MachineOpcode.FADD : MachineOpcode.ADD, destination);
     instruction.addOperand(new VRegOperand(left));
     instruction.addOperand(right);
-    instruction.setType(MachineType.I32);
+    instruction.setType(destination.getType());
     block.addInstruction(instruction);
   }
 
   private static void addReturn(MachineBasicBlock block, VirtualRegister value) {
     MachineInstr instruction = new MachineInstr(MachineOpcode.RET, null);
     instruction.addOperand(new VRegOperand(value));
-    instruction.setType(MachineType.I32);
+    instruction.setType(value.getType());
     block.addInstruction(instruction);
   }
 
