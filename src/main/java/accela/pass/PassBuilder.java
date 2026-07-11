@@ -25,7 +25,7 @@ import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.ReadNoneCallCSE;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
-import accela.pass.ir.transform.SROA;
+import accela.pass.ir.transform.sroa.SROA;
 import accela.pass.ir.transform.SmallFunctionInliner;
 import accela.pass.ir.transform.SmallLoopInliner;
 import accela.pass.ir.transform.TailRecursionElimination;

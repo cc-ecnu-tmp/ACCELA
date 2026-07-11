@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.sroa;
 
 import accela.ir.BasicBlock;
 import accela.ir.Function;
@@ -6,9 +6,6 @@ import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
-import accela.pass.ir.transform.sroa.PromoteParameterSlots;
-import accela.pass.ir.transform.sroa.PromoteScalarAllocas;
-import accela.pass.ir.transform.sroa.ScalarizeArrayAllocas;
 
 /**
  * Thin SROA pass wrapper.
