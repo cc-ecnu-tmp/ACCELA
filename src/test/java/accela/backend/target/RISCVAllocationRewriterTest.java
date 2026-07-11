@@ -79,6 +79,26 @@ final class RISCVAllocationRewriterTest {
   }
 
   @Test
+  void emitsOffsetsOnAllocatedMemoryAddresses() {
+    Fixture fixture = new Fixture(true);
+    VirtualRegister address = fixture.function.createVirtualRegister(MachineType.PTR, "address");
+    VirtualRegister value = fixture.function.createVirtualRegister(MachineType.I32, "value");
+    fixture.allocation.put(address,
+        new RegisterLocation(new PhysicalRegister("t4", MachineType.PTR)));
+    fixture.allocation.put(value,
+        new RegisterLocation(new PhysicalRegister("t5", MachineType.I32)));
+    MachineInstr load = new MachineInstr(MachineOpcode.LOAD, value);
+    load.addOperand(new VRegOperand(address));
+    load.addOperand(new ImmOperand(-1000));
+    load.setType(MachineType.I32);
+
+    fixture.rewriter.emitInstruction(
+        fixture.function, null, load, fixture.allocation, fixture.lines);
+
+    assertEquals(List.of("  lw t5, -1000(t4)"), fixture.lines);
+  }
+
+  @Test
   void convertsDirectlyFromAnAllocatedRegister() {
     Fixture fixture = new Fixture(true);
     VirtualRegister source = fixture.function.createVirtualRegister(MachineType.I32, "source");
