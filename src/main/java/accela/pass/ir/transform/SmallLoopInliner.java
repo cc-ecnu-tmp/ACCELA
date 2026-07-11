@@ -14,8 +14,8 @@ import java.util.Set;
 
 /** Inlines uniquely called, leaf functions containing one small loop. */
 public final class SmallLoopInliner {
-  private static final int MAX_BLOCKS = 12;
-  private static final int MAX_INSTRUCTIONS = 96;
+  private static final int MAX_BLOCKS = 24;
+  private static final int MAX_INSTRUCTIONS = 200;
 
   private SmallLoopInliner() {}
 
