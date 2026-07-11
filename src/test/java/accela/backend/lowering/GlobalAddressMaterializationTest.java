@@ -1,6 +1,7 @@
 package accela.backend.lowering;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +16,23 @@ import accela.backend.machine.VRegOperand;
 import org.junit.jupiter.api.Test;
 
 final class GlobalAddressMaterializationTest {
+  @Test
+  void skipsAddressesThatWouldSpanCalls() {
+    MachineFunction function = new MachineFunction("calls", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock body = function.addBlock("body");
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(body));
+    entry.addInstruction(branch);
+    addUse(body, "hot");
+    addUse(body, "hot");
+    addUse(body, "hot");
+    body.addInstruction(new MachineInstr(MachineOpcode.CALL, null));
+    body.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertFalse(new GlobalAddressMaterialization().run(function));
+  }
+
   @Test
   void materializesOnlyFrequentlyUsedGlobalAddresses() {
     MachineFunction function = new MachineFunction("globals", MachineType.VOID);
