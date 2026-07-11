@@ -1,5 +1,6 @@
 package accela.pass.ir.transform;
 
+import accela.utils.ir.PromoteMemoryToRegister;
 import accela.ir.Function;
 import accela.ir.Module;
 import accela.pass.PreservedAnalyses;

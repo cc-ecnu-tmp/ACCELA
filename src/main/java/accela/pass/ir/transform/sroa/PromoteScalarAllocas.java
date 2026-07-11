@@ -2,7 +2,7 @@ package accela.pass.ir.transform.sroa;
 
 import accela.ir.Function;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
-import accela.pass.ir.transform.PromoteMemoryToRegister;
+import accela.utils.ir.PromoteMemoryToRegister;
 
 /**
  * Aggressively promotes remaining scalar allocas during SROA.
