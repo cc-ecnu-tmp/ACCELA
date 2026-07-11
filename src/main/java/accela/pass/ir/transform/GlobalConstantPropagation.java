@@ -18,7 +18,7 @@ public final class GlobalConstantPropagation {
     boolean changed = false;
     for (GlobalVariable global : module.getGlobals()) {
       Constant initializer = global.getInitializer();
-      if (!global.isConstant() || initializer == null
+      if ((!global.isConstant() && !hasOnlyDirectLoads(global)) || initializer == null
           || global.getValueType().isArray()) continue;
       for (Use use : List.copyOf(global.getUses())) {
         Instruction load = use.getUser();
@@ -30,6 +30,12 @@ public final class GlobalConstantPropagation {
       }
     }
     return changed;
+  }
+
+  private static boolean hasOnlyDirectLoads(GlobalVariable global) {
+    return global.getUses().stream().allMatch(use ->
+        use.getOperandIndex() == 0
+            && use.getUser().getOpcode() == Instruction.Opcode.LOAD);
   }
 
   public static final class Pass implements ModulePass {
