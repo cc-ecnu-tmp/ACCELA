@@ -2,6 +2,7 @@ package accela.pass.ir.transform;
 
 import accela.ir.BasicBlock;
 import accela.ir.Function;
+import accela.ir.GlobalVariable;
 import accela.ir.Instruction;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
@@ -62,6 +63,11 @@ public final class GlobalDCE {
         function.removeBlock(block);
       }
       module.removeFunction(function);
+      changed = true;
+    }
+    for (GlobalVariable global : new ArrayList<>(module.getGlobals())) {
+      if (global.hasUses()) continue;
+      module.removeGlobal(global);
       changed = true;
     }
     return changed;
