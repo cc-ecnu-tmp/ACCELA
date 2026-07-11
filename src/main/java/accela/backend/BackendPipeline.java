@@ -2,6 +2,7 @@ package accela.backend;
 
 import accela.backend.lowering.IRToMachineLowering;
 import accela.backend.lowering.CompareBranchFusion;
+import accela.backend.lowering.GlobalAddressMaterialization;
 import accela.backend.lowering.LoopConditionDuplication;
 import accela.backend.lowering.LoopConstantHoisting;
 import accela.backend.lowering.MachineBlockPlacement;
@@ -34,6 +35,7 @@ final class BackendPipeline {
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
   private final RISCVConstantDivisionLowering constantDivision = new RISCVConstantDivisionLowering();
   private final LoopConstantHoisting loopConstantHoisting = new LoopConstantHoisting();
+  private final GlobalAddressMaterialization globalAddresses = new GlobalAddressMaterialization();
   private final MemoryAddressFolding memoryAddressFolding = new MemoryAddressFolding();
   private final RegisterAllocator allocator = new AllSpillRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
@@ -53,6 +55,7 @@ final class BackendPipeline {
       constantDivision.run(function);
       loopConstantHoisting.run(function);
       memoryAddressFolding.run(function);
+      globalAddresses.run(function);
       blockPlacement.run(function);
       allocations.put(function, allocator.allocate(function, target));
     }
