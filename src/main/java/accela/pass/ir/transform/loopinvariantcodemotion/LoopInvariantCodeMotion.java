@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.loopinvariantcodemotion;
 
 import accela.ir.BasicBlock;
 import accela.ir.Function;

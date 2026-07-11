@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.mem2reg;
 
 import accela.utils.ir.PromoteMemoryToRegister;
 import accela.ir.Function;

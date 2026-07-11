@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.globalconstantpropagation;
 
 import accela.ir.Constant;
 import accela.ir.GlobalVariable;

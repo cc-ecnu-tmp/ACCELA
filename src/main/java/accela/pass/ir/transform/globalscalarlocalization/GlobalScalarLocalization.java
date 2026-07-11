@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.globalscalarlocalization;
 
 import accela.utils.ir.PromoteMemoryToRegister;
 import accela.ir.BasicBlock;

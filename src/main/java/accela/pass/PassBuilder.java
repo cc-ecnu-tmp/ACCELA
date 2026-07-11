@@ -9,26 +9,26 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
-import accela.pass.ir.transform.ADCE;
-import accela.pass.ir.transform.EarlyCSE;
+import accela.pass.ir.transform.adce.ADCE;
+import accela.pass.ir.transform.earlycse.EarlyCSE;
 import accela.pass.ir.instrument.PassInstrumentation;
-import accela.pass.ir.transform.InstSimplify;
+import accela.pass.ir.transform.instsimplify.InstSimplify;
 import accela.pass.ir.transform.foldpureconstantcalls.FoldPureConstantCalls;
 import accela.pass.ir.transform.functionspecialization.FunctionSpecialization;
-import accela.pass.ir.transform.GlobalDCE;
-import accela.pass.ir.transform.GlobalConstantPropagation;
-import accela.pass.ir.transform.GlobalScalarLocalization;
+import accela.pass.ir.transform.globaldce.GlobalDCE;
+import accela.pass.ir.transform.globalconstantpropagation.GlobalConstantPropagation;
+import accela.pass.ir.transform.globalscalarlocalization.GlobalScalarLocalization;
 import accela.pass.ir.transform.sccp.IPSCCP;
 import accela.pass.ir.transform.loopstrengthreduce.LoopAddressStrengthReduction;
-import accela.pass.ir.transform.LoopInvariantCSE;
-import accela.pass.ir.transform.Mem2Reg;
-import accela.pass.ir.transform.ReadNoneCallCSE;
+import accela.pass.ir.transform.loopinvariantcse.LoopInvariantCSE;
+import accela.pass.ir.transform.mem2reg.Mem2Reg;
+import accela.pass.ir.transform.readnonecallcse.ReadNoneCallCSE;
 import accela.pass.ir.transform.sccp.SCCP;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.sroa.SROA;
-import accela.pass.ir.transform.SmallFunctionInliner;
+import accela.pass.ir.transform.smallfunctioninliner.SmallFunctionInliner;
 import accela.pass.ir.transform.smallloopinliner.SmallLoopInliner;
-import accela.pass.ir.transform.TailRecursionElimination;
+import accela.pass.ir.transform.tailrecursionelimination.TailRecursionElimination;
 
 /**
  * Builds the project's default pass pipelines.

@@ -5,7 +5,7 @@ import static accela.ast.Node.Tag.*;
 import accela.ast.Node;
 import accela.ast.Node.Op;
 import accela.ast.Ty;
-import accela.pass.ir.transform.Mem2Reg;
+import accela.pass.ir.transform.mem2reg.Mem2Reg;
 import accela.ir.Instruction.Opcode;
 import java.util.*;
 
