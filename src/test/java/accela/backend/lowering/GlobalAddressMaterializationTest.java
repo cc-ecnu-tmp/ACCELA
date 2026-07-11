@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.BlockOperand;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
@@ -24,6 +25,10 @@ final class GlobalAddressMaterializationTest {
     addUse(body, "hot");
     addUse(entry, "cold");
     addUse(body, "cold");
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(body));
+    entry.addInstruction(branch);
+    body.addInstruction(new MachineInstr(MachineOpcode.RET, null));
 
     assertTrue(new GlobalAddressMaterialization().run(function));
 
