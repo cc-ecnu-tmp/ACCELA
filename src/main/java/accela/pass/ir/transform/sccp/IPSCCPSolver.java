@@ -3,7 +3,7 @@ package accela.pass.ir.transform.sccp;
 import accela.ir.Function;
 import accela.ir.Instruction;
 import accela.ir.Module;
-import accela.pass.ir.transform.SimplifyCFG;
+import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.sccp.SCCP.ConstVal;
 import accela.pass.ir.transform.sccp.SCCP.SCCPFact;
 import java.util.ArrayList;

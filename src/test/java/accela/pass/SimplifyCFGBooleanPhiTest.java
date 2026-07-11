@@ -10,7 +10,7 @@ import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
-import accela.pass.ir.transform.SimplifyCFG;
+import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import org.junit.jupiter.api.Test;
 
 final class SimplifyCFGBooleanPhiTest {

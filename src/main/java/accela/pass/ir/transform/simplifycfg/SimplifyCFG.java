@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.simplifycfg;
 
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
