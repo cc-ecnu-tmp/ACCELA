@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.loopstrengthreduce;
 
 import accela.ir.Constant;
 import accela.ir.Instruction;

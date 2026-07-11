@@ -19,7 +19,7 @@ import accela.pass.ir.transform.GlobalDCE;
 import accela.pass.ir.transform.GlobalConstantPropagation;
 import accela.pass.ir.transform.GlobalScalarLocalization;
 import accela.pass.ir.transform.sccp.IPSCCP;
-import accela.pass.ir.transform.LoopAddressStrengthReduction;
+import accela.pass.ir.transform.loopstrengthreduce.LoopAddressStrengthReduction;
 import accela.pass.ir.transform.LoopInvariantCSE;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.ReadNoneCallCSE;
