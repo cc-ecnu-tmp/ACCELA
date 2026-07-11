@@ -8,6 +8,8 @@ import accela.backend.machine.MachineType;
 import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
+import accela.backend.regalloc.LivenessAnalysis;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -16,10 +18,11 @@ import java.util.Set;
 /** Materializes frequently used global addresses once per function. */
 public final class GlobalAddressMaterialization {
   private static final int MIN_USES = 3;
+  private static final int CALLER_SAVED_COLORS = 11;
 
   public boolean run(MachineFunction function) {
     MachineBasicBlock entry = function.getEntryBlock();
-    if (entry == null) return false;
+    if (entry == null || hasCallsOutsideEntry(function, entry)) return false;
 
     Map<String, Integer> counts = new LinkedHashMap<>();
     Set<String> entryUses = new LinkedHashSet<>();
@@ -35,7 +38,10 @@ public final class GlobalAddressMaterialization {
     }
 
     Map<String, VirtualRegister> addresses = new LinkedHashMap<>();
-    for (var symbol : counts.entrySet()) {
+    int availableColors = CALLER_SAVED_COLORS - peakIntegerLiveness(function);
+    for (var symbol : counts.entrySet().stream()
+        .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
+        .limit(Math.max(0, availableColors)).toList()) {
       if (symbol.getValue() < MIN_USES || entryUses.contains(symbol.getKey())) continue;
       addresses.put(symbol.getKey(),
           function.createVirtualRegister(MachineType.PTR, "global.addr"));
@@ -60,5 +66,28 @@ public final class GlobalAddressMaterialization {
       entry.insertBeforeTerminator(materialize);
     }
     return true;
+  }
+
+  private static int peakIntegerLiveness(MachineFunction function) {
+    LivenessAnalysis.Result liveness = LivenessAnalysis.analyze(function);
+    int peak = 0;
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        int before = (int) liveness.liveBefore(instruction).stream()
+            .filter(register -> !register.getType().isFloat()).count();
+        int after = (int) liveness.liveAfter(instruction).stream()
+            .filter(register -> !register.getType().isFloat()).count();
+        peak = Math.max(peak, Math.max(before, after));
+      }
+    }
+    return peak;
+  }
+
+  private static boolean hasCallsOutsideEntry(
+      MachineFunction function, MachineBasicBlock entry) {
+    return function.getBlocks().stream()
+        .filter(block -> block != entry)
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == MachineOpcode.CALL);
   }
 }
