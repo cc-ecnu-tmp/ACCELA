@@ -1,5 +1,6 @@
 package accela.pass.ir.transform;
 
+import accela.utils.ir.CFGUpdateUtils;
 import accela.ir.BasicBlock;
 import accela.ir.Function;
 import accela.ir.Instruction;
