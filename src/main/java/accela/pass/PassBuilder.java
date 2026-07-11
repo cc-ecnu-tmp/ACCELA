@@ -168,12 +168,21 @@ public final class PassBuilder {
     }
 
     ModulePassManager mpm = new ModulePassManager(instrumentation);
+    FunctionPassManager postInlineFpm = new FunctionPassManager(instrumentation);
+    postInlineFpm.addPass(new SimplifyCFG.Pass());
+    postInlineFpm.addPass(new LoopInvariantCSE.Pass());
+    postInlineFpm.addPass(new EarlyCSE.Pass());
+    postInlineFpm.addPass(new SCCP.Pass());
+    postInlineFpm.addPass(new InstSimplify.Pass());
+    postInlineFpm.addPass(new LoopAddressStrengthReduction.Pass());
+    postInlineFpm.addPass(new ADCE.Pass());
+    postInlineFpm.addPass(new SimplifyCFG.Pass());
     mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
     mpm.addPass(new SmallLoopInliner.Pass());
     mpm.addPass(new ReadNoneCallCSE.Pass());
     mpm.addPass(new SmallFunctionInliner.Pass());
-    mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
+    mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
     mpm.addPass(new FunctionSpecialization.Pass());
     mpm.addPass(new IPSCCP.Pass());
     mpm.addPass(new FoldPureConstantCalls.Pass());
