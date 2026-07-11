@@ -11,6 +11,7 @@ import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePass;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -65,7 +66,19 @@ public final class GlobalScalarLocalization {
         accela.ir.Module module,
         ModuleAnalysisManager mam,
         FunctionAnalysisManager fam) {
-      return runOnModule(module) ? PreservedAnalyses.none() : PreservedAnalyses.all();
+      if (!runOnModule(module)) return PreservedAnalyses.all();
+      Function main = module.getFunctions().stream()
+          .filter(function -> function.getName().equals("main"))
+          .findFirst().orElseThrow();
+      fam.invalidate(main, PreservedAnalyses.none());
+      DominatorTreeAnalysis.Result dominators =
+          fam.getResult(DominatorTreeAnalysis.class, main);
+      for (Instruction instruction : List.copyOf(main.getEntryBlock().getInstructions())) {
+        if (instruction.getOpcode() == Instruction.Opcode.ALLOCA) {
+          PromoteMemoryToRegister.run(instruction, dominators);
+        }
+      }
+      return PreservedAnalyses.none();
     }
   }
 }
