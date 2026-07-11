@@ -19,7 +19,7 @@ final class GlobalAddressMaterializationTest {
     MachineFunction function = new MachineFunction("globals", MachineType.VOID);
     MachineBasicBlock entry = function.addBlock("entry");
     MachineBasicBlock body = function.addBlock("body");
-    addUse(entry, "hot");
+    addUse(body, "hot");
     addUse(body, "hot");
     addUse(body, "hot");
     addUse(entry, "cold");
@@ -27,7 +27,9 @@ final class GlobalAddressMaterializationTest {
 
     assertTrue(new GlobalAddressMaterialization().run(function));
 
-    MachineInstr materialize = entry.getInstructions().getFirst();
+    MachineInstr materialize = entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == MachineOpcode.MOVE)
+        .findFirst().orElseThrow();
     assertEquals(MachineOpcode.MOVE, materialize.getOpcode());
     assertEquals("hot",
         assertInstanceOf(SymbolOperand.class, materialize.getOperands().getFirst()).getSymbol());
