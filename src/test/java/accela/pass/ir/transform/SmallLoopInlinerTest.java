@@ -34,7 +34,7 @@ final class SmallLoopInlinerTest {
     new IRBuilder(header).createCondBr(condition, body, exit);
     IRBuilder bodyBuilder = new IRBuilder(body);
     Value value = index;
-    for (int i = 0; i < 22; i++) {
+    for (int i = 0; i < 120; i++) {
       value = bodyBuilder.createAdd(value, Constant.intConst(i));
     }
     bodyBuilder.createBr(latch1);
