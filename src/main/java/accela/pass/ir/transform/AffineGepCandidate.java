@@ -55,6 +55,14 @@ final class AffineGepCandidate {
         && definition.getNumOperands() == 1) {
       return isInvariant(definition.getOperand(0), loop);
     }
+    if (definition.getOpcode() == Instruction.Opcode.ADD
+        || definition.getOpcode() == Instruction.Opcode.SUB
+        || definition.getOpcode() == Instruction.Opcode.MUL) {
+      for (int index = 0; index < definition.getNumOperands(); index++) {
+        if (!isInvariant(definition.getOperand(index), loop)) return false;
+      }
+      return true;
+    }
     if (definition.getOpcode() == Instruction.Opcode.GEP) {
       for (int index = 0; index < definition.getNumOperands(); index++) {
         if (!isInvariant(definition.getOperand(index), loop)) return false;

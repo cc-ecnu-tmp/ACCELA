@@ -152,6 +152,18 @@ public final class LoopAddressStrengthReduction {
           materializeInvariant(builder, instruction.getOperand(0), loop),
           indices, instruction.isGepInbounds());
     }
+    if (instruction.getOpcode() == Instruction.Opcode.ADD
+        || instruction.getOpcode() == Instruction.Opcode.SUB
+        || instruction.getOpcode() == Instruction.Opcode.MUL) {
+      Value left = materializeInvariant(builder, instruction.getOperand(0), loop);
+      Value right = materializeInvariant(builder, instruction.getOperand(1), loop);
+      return switch (instruction.getOpcode()) {
+        case ADD -> builder.createAdd(left, right);
+        case SUB -> builder.createSub(left, right);
+        case MUL -> builder.createMul(left, right);
+        default -> throw new IllegalStateException();
+      };
+    }
     Value operand = materializeInvariant(builder, instruction.getOperand(0), loop);
     return instruction.getOpcode() == Instruction.Opcode.SEXT
         ? builder.createSExt(operand, instruction.getType())

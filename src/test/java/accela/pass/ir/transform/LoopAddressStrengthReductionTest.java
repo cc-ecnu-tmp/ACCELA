@@ -90,8 +90,9 @@ final class LoopAddressStrengthReductionTest {
     Instruction index = bodyBuilder.createSExt(induction, Type.I64);
     Instruction affineIndex = bodyBuilder.createAdd(index, offset);
     Type rowType = Type.array(Type.INT, 16);
+    Instruction invariantRow = bodyBuilder.createSub(offset, Constant.int64Const(1));
     Instruction row = bodyBuilder.createGEP(
-        rowType, base, new Value[] {Constant.int64Const(0)}, true);
+        rowType, base, new Value[] {invariantRow}, true);
     Instruction address = bodyBuilder.createGEP(
         Type.INT, row, new Value[] {affineIndex}, true);
     Instruction load = bodyBuilder.createLoad(Type.INT, address);
