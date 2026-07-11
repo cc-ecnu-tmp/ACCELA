@@ -2,7 +2,6 @@ package accela.pass.ir.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.Constant;
@@ -12,7 +11,9 @@ import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.ir.Type;
-import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.verify.IRVerifier;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -41,14 +42,17 @@ final class GlobalScalarLocalizationTest {
     builder.createLoad(Type.INT, shared);
     builder.createRet(Constant.intConst(0));
 
-    assertTrue(GlobalScalarLocalization.runOnModule(module));
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    new GlobalScalarLocalization.Pass().run(module, new ModuleAnalysisManager(), fam);
     IRVerifier.verifyModule(module);
 
     List<Instruction> entry = main.getEntryBlock().getInstructions();
-    assertEquals(List.of(Instruction.Opcode.ALLOCA, Instruction.Opcode.STORE,
-        Instruction.Opcode.BR), entry.stream().map(Instruction::getOpcode).toList());
-    Value storage = entry.get(0);
-    assertSame(storage, load.getOperand(0));
+    assertEquals(List.of(Instruction.Opcode.BR),
+        entry.stream().map(Instruction::getOpcode).toList());
+    assertTrue(main.getBlocks().stream().flatMap(block -> block.getInstructions().stream())
+        .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA));
+    assertTrue(load.getParent() == null);
     assertFalse(local.hasUses());
     assertTrue(shared.hasUses());
   }
