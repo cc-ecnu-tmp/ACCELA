@@ -42,7 +42,18 @@ public final class PromoteMemoryToRegister {
     if (allocas.isEmpty()) return false;
 
     for (Instruction alloca : allocas) {
-      if (promoteSingleBlockAlloca(alloca)) continue;
+      run(alloca, domTree);
+    }
+    return true;
+  }
+
+  /** Promotes one known stack slot without revisiting unrelated allocas. */
+  public static boolean run(
+      Instruction alloca, DominatorTreeAnalysis.Result domTree) {
+    if (!isPromotableAlloca(alloca) || alloca.getParent() == null) return false;
+    Function function = alloca.getParent().getParent();
+    if (function == null) return false;
+    if (!promoteSingleBlockAlloca(alloca)) {
       promoteMultiBlockAlloca(function, alloca, domTree);
     }
     return true;
