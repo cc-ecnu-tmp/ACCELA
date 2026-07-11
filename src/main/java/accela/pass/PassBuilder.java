@@ -13,7 +13,7 @@ import accela.pass.ir.transform.ADCE;
 import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.InstSimplify;
-import accela.pass.ir.transform.FoldPureConstantCalls;
+import accela.pass.ir.transform.foldpureconstantcalls.FoldPureConstantCalls;
 import accela.pass.ir.transform.functionspecialization.FunctionSpecialization;
 import accela.pass.ir.transform.GlobalDCE;
 import accela.pass.ir.transform.GlobalConstantPropagation;
