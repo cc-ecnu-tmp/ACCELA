@@ -28,6 +28,12 @@ public class Module {
     globals.add(gv);
   }
 
+  public void removeGlobal(GlobalVariable global) {
+    if (!globals.remove(global)) {
+      throw new IllegalArgumentException("global does not belong to this module");
+    }
+  }
+
   /** Adds a full function definition and records the owning module on the function. */
   public void addFunction(Function func) {
     func.setParent(this);
