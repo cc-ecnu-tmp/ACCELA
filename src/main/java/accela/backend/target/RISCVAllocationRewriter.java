@@ -567,31 +567,35 @@ public final class RISCVAllocationRewriter {
   }
 
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+    long offset = instr.getOperands().size() > 1
+        ? ((ImmOperand) instr.getOperands().get(1)).getValue() : 0;
     String address = readRegister(
         lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
     if (instr.getType().isFloat()) {
       String destination = destinationRegister(instr.getDest(), "ft0", allocation);
-      lines.add("  flw " + destination + ", 0(" + address + ")");
+      lines.add("  flw " + destination + ", " + offset + "(" + address + ")");
       writeDest(lines, instr.getDest(), destination, allocation, MachineType.F32);
     } else {
       String destination = destinationRegister(instr.getDest(), "t1", allocation);
       lines.add("  " + frameLowering.loadMnemonic(instr.getType())
-          + " " + destination + ", 0(" + address + ")");
+          + " " + destination + ", " + offset + "(" + address + ")");
       writeDest(lines, instr.getDest(), destination, allocation, instr.getType());
     }
   }
 
   private void emitStore(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+    long offset = instr.getOperands().size() > 2
+        ? ((ImmOperand) instr.getOperands().get(2)).getValue() : 0;
     String value = readRegister(
         lines, instr.getOperands().get(0), instr.getType().isFloat() ? "ft0" : "t0",
         instr.getType(), allocation);
     String address = readRegister(
         lines, instr.getOperands().get(1), "t1", MachineType.PTR, allocation);
     if (instr.getType().isFloat()) {
-      lines.add("  fsw " + value + ", 0(" + address + ")");
+      lines.add("  fsw " + value + ", " + offset + "(" + address + ")");
     } else {
       lines.add("  " + frameLowering.storeMnemonic(instr.getType())
-          + " " + value + ", 0(" + address + ")");
+          + " " + value + ", " + offset + "(" + address + ")");
     }
   }
 
