@@ -173,6 +173,7 @@ public final class PassBuilder {
     mpm.addPass(new SmallLoopInliner.Pass());
     mpm.addPass(new ReadNoneCallCSE.Pass());
     mpm.addPass(new SmallFunctionInliner.Pass());
+    mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
     mpm.addPass(new FunctionSpecialization.Pass());
     mpm.addPass(new IPSCCP.Pass());
     mpm.addPass(new FoldPureConstantCalls.Pass());
