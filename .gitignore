@@ -44,5 +44,6 @@ bin/
 /.gradle-local
 /.claude
 /testsuite/perf
+# Local benchmark and reference checkouts are never part of this repository.
 /thirdparty/
 /bench-results/
