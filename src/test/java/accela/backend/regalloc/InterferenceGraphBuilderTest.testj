@@ -1,0 +1,220 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import org.junit.jupiter.api.Test;
+
+final class InterferenceGraphBuilderTest {
+  @Test
+  void addsEdgeBetweenValuesThatAreLiveTogether() {
+    MachineFunction function = new MachineFunction("interfere", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+
+    entry.addInstruction(moveImm(a, 1));
+    entry.addInstruction(moveImm(b, 2));
+    entry.addInstruction(add(c, a, b));
+    entry.addInstruction(ret(c));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.interferes(a, b));
+    assertTrue(graph.interferes(b, a));
+    assertEquals(1, graph.degree(a));
+    assertEquals(1, graph.degree(b));
+    assertFalse(graph.interferes(a, c));
+    assertFalse(graph.interferes(b, c));
+  }
+
+  @Test
+  void doesNotAddEdgeWhenLifetimesDoNotOverlap() {
+    MachineFunction function = new MachineFunction("no_overlap", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+
+    entry.addInstruction(moveImm(a, 1));
+    entry.addInstruction(addImm(b, a, 1));
+    entry.addInstruction(ret(b));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.nodes().contains(a));
+    assertTrue(graph.nodes().contains(b));
+    assertFalse(graph.interferes(a, b));
+    assertEquals(0, graph.degree(a));
+    assertEquals(0, graph.degree(b));
+  }
+
+  @Test
+  void recordsRegisterMovesWithoutAddingSourceDestinationEdge() {
+    MachineFunction function = new MachineFunction("move", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+
+    entry.addInstruction(moveImm(a, 1));
+    MachineInstr move = moveReg(b, a);
+    entry.addInstruction(move);
+    entry.addInstruction(ret(b));
+
+    InterferenceGraphBuilder.Result result = build(function);
+
+    assertEquals(1, result.moves().size());
+    InterferenceGraphBuilder.Move recorded = result.moves().iterator().next();
+    assertEquals(b, recorded.dst());
+    assertEquals(a, recorded.src());
+    assertEquals(move, recorded.instr());
+    assertFalse(result.graph().interferes(a, b));
+  }
+
+  @Test
+  void immediateMovesStillCreateNormalInterferenceEdges() {
+    MachineFunction function = new MachineFunction("imm_move", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+
+    entry.addInstruction(moveImm(a, 1));
+    entry.addInstruction(moveImm(b, 2));
+    entry.addInstruction(add(c, a, b));
+    entry.addInstruction(ret(c));
+
+    InterferenceGraphBuilder.Result result = build(function);
+
+    assertTrue(result.moves().isEmpty());
+    assertTrue(result.graph().interferes(a, b));
+  }
+
+  @Test
+  void moveDestinationStillInterferesWithOtherLiveValues() {
+    MachineFunction function = new MachineFunction("move_other_live", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister x = function.createVirtualRegister(MachineType.I32, "x");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+
+    entry.addInstruction(moveImm(a, 1));
+    entry.addInstruction(moveImm(x, 2));
+    entry.addInstruction(moveReg(b, a));
+    entry.addInstruction(add(c, b, x));
+    entry.addInstruction(ret(c));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertFalse(graph.interferes(a, b));
+    assertTrue(graph.interferes(b, x));
+  }
+
+  @Test
+  void usesLivenessAcrossBlocks() {
+    MachineFunction function = new MachineFunction("blocks", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock exit = function.addBlock("exit");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+
+    entry.addInstruction(moveImm(a, 1));
+    entry.addInstruction(br(exit));
+
+    exit.addInstruction(moveImm(b, 2));
+    exit.addInstruction(add(c, a, b));
+    exit.addInstruction(ret(c));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.interferes(a, b));
+  }
+
+  @Test
+  void keepsUseOnlyRegistersAsNodes() {
+    MachineFunction function = new MachineFunction("use_only", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+
+    entry.addInstruction(addImm(b, a, 1));
+    entry.addInstruction(ret(b));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.nodes().contains(a));
+    assertTrue(graph.nodes().contains(b));
+  }
+
+  private static InterferenceGraphBuilder.Result build(MachineFunction function) {
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+    return InterferenceGraphBuilder.build(function, live);
+  }
+
+  private static InterferenceGraph buildGraph(MachineFunction function) {
+    return build(function).graph();
+  }
+
+  private static MachineInstr moveImm(VirtualRegister dest, int value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new ImmOperand(value));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr moveReg(VirtualRegister dest, VirtualRegister src) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new VRegOperand(src));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr add(
+      VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
+    instr.addOperand(new VRegOperand(left));
+    instr.addOperand(new VRegOperand(right));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr addImm(VirtualRegister dest, VirtualRegister left, int right) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
+    instr.addOperand(new VRegOperand(left));
+    instr.addOperand(new ImmOperand(right));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr br(MachineBasicBlock target) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.BR, null);
+    instr.addOperand(new BlockOperand(target));
+    return instr;
+  }
+
+  private static MachineInstr ret(VirtualRegister value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.RET, null);
+    instr.addOperand(new VRegOperand(value));
+    instr.setType(value.getType());
+    return instr;
+  }
+}
