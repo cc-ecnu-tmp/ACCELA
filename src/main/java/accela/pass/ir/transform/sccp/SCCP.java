@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.sccp;
 
 import accela.utils.ir.CFGUpdateUtils;
 import accela.ir.BasicBlock;

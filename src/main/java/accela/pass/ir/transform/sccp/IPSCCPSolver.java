@@ -1,10 +1,11 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.sccp;
 
 import accela.ir.Function;
 import accela.ir.Instruction;
 import accela.ir.Module;
-import accela.pass.ir.transform.SCCP.ConstVal;
-import accela.pass.ir.transform.SCCP.SCCPFact;
+import accela.pass.ir.transform.SimplifyCFG;
+import accela.pass.ir.transform.sccp.SCCP.ConstVal;
+import accela.pass.ir.transform.sccp.SCCP.SCCPFact;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;

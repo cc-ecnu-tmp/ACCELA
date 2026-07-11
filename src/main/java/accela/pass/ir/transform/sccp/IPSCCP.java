@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.sccp;
 
 import accela.ir.Module;
 import accela.pass.PreservedAnalyses;
