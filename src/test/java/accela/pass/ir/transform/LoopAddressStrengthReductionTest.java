@@ -99,6 +99,10 @@ final class LoopAddressStrengthReductionTest {
     Instruction secondAddress = bodyBuilder.createGEP(
         Type.INT, row, new Value[] {bodyBuilder.createAdd(index, offset)}, true);
     Instruction secondLoad = bodyBuilder.createLoad(Type.INT, secondAddress);
+    Instruction nearbyAddress = bodyBuilder.createGEP(
+        Type.INT, row,
+        new Value[] {bodyBuilder.createAdd(affineIndex, Constant.int64Const(1))}, true);
+    Instruction nearbyLoad = bodyBuilder.createLoad(Type.INT, nearbyAddress);
     bodyBuilder.createLoad(Type.INT,
         bodyBuilder.createGEP(Type.INT, row, new Value[] {index}, true));
     Instruction offsetIndex = bodyBuilder.createSExt(
@@ -122,6 +126,11 @@ final class LoopAddressStrengthReductionTest {
         && pointer.getOpcode() == Instruction.Opcode.PHI);
     Instruction pointer = (Instruction) load.getOperand(0);
     assertSame(pointer, secondLoad.getOperand(0));
+    assertTrue(nearbyLoad.getOperand(0) instanceof Instruction nearbyPointer
+        && nearbyPointer.getOpcode() == Instruction.Opcode.GEP);
+    Instruction nearbyPointer = (Instruction) nearbyLoad.getOperand(0);
+    assertSame(pointer, nearbyPointer.getOperand(0));
+    assertEquals(1, ((Constant.Int) nearbyPointer.getOperand(1)).value);
     assertSame(header, pointer.getParent());
     assertEquals(4, pointer.getNumOperands());
     assertSame(entry, ((Instruction) pointer.getOperand(0)).getParent());
