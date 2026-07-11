@@ -26,6 +26,38 @@ tasks.test {
     useJUnitPlatform()
 }
 
+val testJavaDir = layout.projectDirectory.dir("src/test/java")
+
+fun renameTestSources(fromSuffix: String, toSuffix: String) {
+    testJavaDir.asFile
+        .walkTopDown()
+        .filter { it.isFile && it.name.endsWith(fromSuffix) }
+        .forEach { file ->
+            file.renameTo(file.resolveSibling(file.name.removeSuffix(fromSuffix) + toSuffix))
+        }
+}
+
+val restoreTestSources by tasks.registering {
+    doLast {
+        renameTestSources(".java", ".testj")
+    }
+}
+
+val prepareTestSources by tasks.registering {
+    doLast {
+        renameTestSources(".testj", ".java")
+    }
+}
+
+tasks.named<JavaCompile>("compileTestJava") {
+    dependsOn(prepareTestSources)
+    finalizedBy(restoreTestSources)
+}
+
+tasks.test {
+    finalizedBy(restoreTestSources)
+}
+
 graalvmNative {
     binaries {
         named("main") {
