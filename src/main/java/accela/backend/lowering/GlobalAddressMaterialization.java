@@ -9,7 +9,9 @@ import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 
 /** Materializes frequently used global addresses once per function. */
 public final class GlobalAddressMaterialization {
@@ -20,11 +22,13 @@ public final class GlobalAddressMaterialization {
     if (entry == null) return false;
 
     Map<String, Integer> counts = new LinkedHashMap<>();
+    Set<String> entryUses = new LinkedHashSet<>();
     for (MachineBasicBlock block : function.getBlocks()) {
       for (MachineInstr instruction : block.getInstructions()) {
         for (var operand : instruction.getOperands()) {
           if (operand instanceof SymbolOperand symbol) {
             counts.merge(symbol.getSymbol(), 1, Integer::sum);
+            if (block == entry) entryUses.add(symbol.getSymbol());
           }
         }
       }
@@ -32,7 +36,7 @@ public final class GlobalAddressMaterialization {
 
     Map<String, VirtualRegister> addresses = new LinkedHashMap<>();
     for (var symbol : counts.entrySet()) {
-      if (symbol.getValue() < MIN_USES) continue;
+      if (symbol.getValue() < MIN_USES || entryUses.contains(symbol.getKey())) continue;
       addresses.put(symbol.getKey(),
           function.createVirtualRegister(MachineType.PTR, "global.addr"));
     }
@@ -49,12 +53,11 @@ public final class GlobalAddressMaterialization {
       }
     }
 
-    int insertAt = 0;
     for (var address : addresses.entrySet()) {
       MachineInstr materialize = new MachineInstr(MachineOpcode.MOVE, address.getValue());
       materialize.setType(MachineType.PTR);
       materialize.addOperand(new SymbolOperand(address.getKey()));
-      entry.getInstructions().add(insertAt++, materialize);
+      entry.insertBeforeTerminator(materialize);
     }
     return true;
   }
