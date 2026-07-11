@@ -23,6 +23,8 @@ final class SmallLoopInlinerTest {
     BasicBlock entry = loop.addBlock("entry");
     BasicBlock header = loop.addBlock("header");
     BasicBlock body = loop.addBlock("body");
+    BasicBlock latch1 = loop.addBlock("latch.1");
+    BasicBlock latch2 = loop.addBlock("latch.2");
     BasicBlock exit = loop.addBlock("exit");
     new IRBuilder(entry).createBr(header);
     Instruction index = Instruction.createPhi(Type.INT);
@@ -31,10 +33,17 @@ final class SmallLoopInlinerTest {
     index.addOperand(entry);
     new IRBuilder(header).createCondBr(condition, body, exit);
     IRBuilder bodyBuilder = new IRBuilder(body);
-    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
-    bodyBuilder.createBr(header);
+    Value value = index;
+    for (int i = 0; i < 22; i++) {
+      value = bodyBuilder.createAdd(value, Constant.intConst(i));
+    }
+    bodyBuilder.createBr(latch1);
+    new IRBuilder(latch1).createBr(latch2);
+    IRBuilder latchBuilder = new IRBuilder(latch2);
+    Instruction next = latchBuilder.createAdd(value, Constant.intConst(1));
+    latchBuilder.createBr(header);
     index.addOperand(next);
-    index.addOperand(body);
+    index.addOperand(latch2);
     new IRBuilder(exit).createRet(index);
 
     Function main = new Function("main", Type.INT);
