@@ -1,5 +1,7 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.functionspecialization;
 
+import accela.pass.ir.transform.ADCE;
+import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.sccp.SCCP;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.ir.BasicBlock;

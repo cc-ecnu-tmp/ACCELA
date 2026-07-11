@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.functionspecialization;
 
 import accela.ir.Constant;
 import accela.ir.Function;
