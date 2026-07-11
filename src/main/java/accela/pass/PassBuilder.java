@@ -27,7 +27,7 @@ import accela.pass.ir.transform.sccp.SCCP;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.sroa.SROA;
 import accela.pass.ir.transform.SmallFunctionInliner;
-import accela.pass.ir.transform.SmallLoopInliner;
+import accela.pass.ir.transform.smallloopinliner.SmallLoopInliner;
 import accela.pass.ir.transform.TailRecursionElimination;
 
 /**

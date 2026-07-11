@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.smallloopinliner;
 
 import accela.ir.BasicBlock;
 import accela.ir.Function;

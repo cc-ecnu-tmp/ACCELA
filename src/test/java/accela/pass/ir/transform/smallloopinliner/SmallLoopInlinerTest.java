@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.smallloopinliner;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
