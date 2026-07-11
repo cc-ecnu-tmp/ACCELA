@@ -183,6 +183,7 @@ public final class PassBuilder {
     mpm.addPass(new ReadNoneCallCSE.Pass());
     mpm.addPass(new SmallFunctionInliner.Pass());
     mpm.addPass(new SmallLoopInliner.Pass());
+    mpm.addPass(new SmallLoopInliner.Pass());
     mpm.addPass(new GlobalDCE.Pass());
     mpm.addPass(new GlobalScalarLocalization.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
