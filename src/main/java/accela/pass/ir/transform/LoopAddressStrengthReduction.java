@@ -53,10 +53,20 @@ public final class LoopAddressStrengthReduction {
           long byteStep = induction.step() * AffineGepCandidate.strideAt(gep, varyingIndex);
           if (byteStep % 4 != 0) continue;
           var equivalents = equivalentAddresses(function, loop, gep);
+          var nearby = nearbyAddresses(function, loop, gep);
           Instruction pointer = rewrite(gep, varyingIndex, byteStep / 4, induction);
           for (Instruction equivalent : equivalents) {
             equivalent.replaceAllUsesWith(pointer);
             equivalent.eraseFromParent();
+          }
+          for (NearbyAddress address : nearby) {
+            IRBuilder builder = new IRBuilder();
+            builder.setInsertPointBefore(address.instruction());
+            Instruction offsetPointer = builder.createGEP(
+                Type.INT, pointer,
+                new Value[] {Constant.int64Const(address.byteOffset() / 4)}, true);
+            address.instruction().replaceAllUsesWith(offsetPointer);
+            address.instruction().eraseFromParent();
           }
           transformed.merge(loop, 1, Integer::sum);
           changed = true;
@@ -82,6 +92,26 @@ public final class LoopAddressStrengthReduction {
     }
     return result;
   }
+
+  private static java.util.List<NearbyAddress> nearbyAddresses(
+      Function function, LoopAnalysis.Loop loop, Instruction address) {
+    java.util.List<NearbyAddress> result = new java.util.ArrayList<>();
+    for (BasicBlock block : function.getBlocks()) {
+      if (!loop.blocks().contains(block)) continue;
+      for (Instruction candidate : block.getInstructions()) {
+        if (candidate == address || candidate.getOpcode() != Instruction.Opcode.GEP
+            || !AffineGepCandidate.isMemoryAddress(candidate)) continue;
+        Long difference = AffineGepCandidate.byteOffsetDifference(address, candidate);
+        if (difference != null && difference != 0 && difference % 4 == 0
+            && difference >= -2048 && difference <= 2047) {
+          result.add(new NearbyAddress(candidate, difference));
+        }
+      }
+    }
+    return result;
+  }
+
+  private record NearbyAddress(Instruction instruction, long byteOffset) {}
 
   private static Instruction rewrite(
       Instruction gep,

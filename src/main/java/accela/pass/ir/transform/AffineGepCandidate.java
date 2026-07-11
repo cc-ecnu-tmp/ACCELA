@@ -87,6 +87,23 @@ final class AffineGepCandidate {
     return sizeOf(type);
   }
 
+  /** Returns {@code right - left} in bytes when both GEPs have one affine shape. */
+  static Long byteOffsetDifference(Instruction left, Instruction right) {
+    if (left.getOpcode() != Instruction.Opcode.GEP
+        || right.getOpcode() != Instruction.Opcode.GEP
+        || left.getNumOperands() != right.getNumOperands()
+        || !sameType(left.getGepSourceType(), right.getGepSourceType())
+        || !sameAddressExpression(left.getOperand(0), right.getOperand(0))) return null;
+    long difference = 0;
+    for (int index = 1; index < left.getNumOperands(); index++) {
+      Long indexDifference = AffineValueForm.difference(
+          left.getOperand(index), right.getOperand(index));
+      if (indexDifference == null) return null;
+      difference += indexDifference * strideAt(left, index);
+    }
+    return difference;
+  }
+
   static boolean sameAddressExpression(Value first, Value second) {
     return sameAddressExpression(first, second, 0);
   }
