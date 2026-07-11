@@ -17,6 +17,7 @@ import accela.pass.ir.transform.FoldPureConstantCalls;
 import accela.pass.ir.transform.FunctionSpecialization;
 import accela.pass.ir.transform.GlobalDCE;
 import accela.pass.ir.transform.GlobalConstantPropagation;
+import accela.pass.ir.transform.GlobalScalarLocalization;
 import accela.pass.ir.transform.IPSCCP;
 import accela.pass.ir.transform.LoopAddressStrengthReduction;
 import accela.pass.ir.transform.LoopInvariantCSE;
@@ -182,6 +183,8 @@ public final class PassBuilder {
     mpm.addPass(new ReadNoneCallCSE.Pass());
     mpm.addPass(new SmallFunctionInliner.Pass());
     mpm.addPass(new SmallLoopInliner.Pass());
+    mpm.addPass(new GlobalDCE.Pass());
+    mpm.addPass(new GlobalScalarLocalization.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
     mpm.addPass(new FunctionSpecialization.Pass());
     mpm.addPass(new IPSCCP.Pass());
