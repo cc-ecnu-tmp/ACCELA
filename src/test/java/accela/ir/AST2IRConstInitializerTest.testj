@@ -1,0 +1,27 @@
+package accela.ir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+
+import accela.ast.Node;
+import accela.parse.Lexer;
+import accela.parse.Parser;
+import accela.parse.Sema;
+import org.junit.jupiter.api.Test;
+
+final class AST2IRConstInitializerTest {
+  @Test
+  void reusesFrontendConstantEvaluationForGlobals() {
+    String source =
+        "const int base = 3; int answer = base * 2 + 1; int zeros[2] = {base - base, 0};";
+    Node unit = new Parser(new Lexer(source, "globals.sy").tokenize()).parse();
+    new Sema().analyze(unit);
+
+    Module module = new AST2IR().convert(unit);
+
+    Constant.Int answer =
+        assertInstanceOf(Constant.Int.class, module.getGlobals().get(1).getInitializer());
+    assertEquals(7, answer.value);
+    assertInstanceOf(Constant.Zero.class, module.getGlobals().get(2).getInitializer());
+  }
+}

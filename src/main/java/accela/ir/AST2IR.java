@@ -2,9 +2,11 @@ package accela.ir;
 
 import static accela.ast.Node.Tag.*;
 
+import accela.ast.LiteralValue;
 import accela.ast.Node;
 import accela.ast.Node.Op;
 import accela.ast.Ty;
+import accela.parse.ConstEvaluator;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.ir.Instruction.Opcode;
 import java.util.*;
@@ -30,6 +32,7 @@ public class AST2IR {
   private Function curFunc;
   private BasicBlock entryBB;
   private IRBuilder b; // builder
+  private final ConstEvaluator constEvaluator = new ConstEvaluator();
 
   private final Deque<Map<String, Value>> scopeStack = new ArrayDeque<>();
   private final Deque<Map<String, Type>> typeStack = new ArrayDeque<>();
@@ -197,9 +200,9 @@ public class AST2IR {
       if (initNode.tag == INIT_LIST) return buildGlobalArrayInit(initNode, type);
       return Constant.zero(type);
     }
-    if (initNode.tag == LIT) return buildLiteralConst(initNode, type);
-    if (type.isFloat()) return Constant.floatConst(evalGlobalConstFloat(initNode));
-    return Constant.intConst(evalGlobalConstInt(initNode));
+    LiteralValue value = constEvaluator.evaluateRequired(initNode);
+    if (type.isFloat()) return Constant.floatConst(value.asFloat());
+    return Constant.intConst(value.asInt());
   }
 
   /**
@@ -227,59 +230,12 @@ public class AST2IR {
   private boolean isAllZeroInit(Node initList) {
     for (Node child : initList.kids) {
       if (child.tag == INIT_LIST) { if (!isAllZeroInit(child)) return false; }
-      else if (child.tag == LIT) { if (!child.literal.isZero()) return false; }
-      else return false;
+      else {
+        var value = constEvaluator.evaluate(child);
+        if (value.isEmpty() || !value.get().isZero()) return false;
+      }
     }
     return true;
-  }
-
-  private Constant buildLiteralConst(Node literal, Type type) {
-    if (type.isFloat()) return Constant.floatConst(literal.literal.asFloat());
-    return Constant.intConst(literal.literal.asInt());
-  }
-
-  /** Small constant-folder used only while building global integer initializers. */
-  private int evalGlobalConstInt(Node n) {
-    if (n.tag == LIT) return n.literal.asInt();
-    if (n.tag == Node.Tag.UNARY) {
-      int v = evalGlobalConstInt(n.kids.get(0));
-      switch (n.op) {
-        case NEG: case SUB: return -v;
-        case POS: case ADD: return v;
-        case NOT: return v == 0 ? 1 : 0;
-        default:  return v;
-      }
-    }
-    if (n.tag == Node.Tag.BIN) {
-      int l = evalGlobalConstInt(n.kids.get(0)), r = evalGlobalConstInt(n.kids.get(1));
-      switch (n.op) {
-        case ADD: return l + r; case SUB: return l - r;
-        case MUL: return l * r; case DIV: return r == 0 ? 0 : l / r;
-        case MOD: return r == 0 ? 0 : l % r; default: return 0;
-      }
-    }
-    if (n.tag == Node.Tag.CAST) return evalGlobalConstInt(n.kids.get(0));
-    return 0;
-  }
-
-  /** Float counterpart of {@link #evalGlobalConstInt(Node)}. */
-  private float evalGlobalConstFloat(Node n) {
-    if (n.tag == LIT) return n.literal.asFloat();
-    if (n.tag == Node.Tag.UNARY) {
-      float v = evalGlobalConstFloat(n.kids.get(0));
-      if (n.op == Op.NEG || n.op == Op.SUB) return -v;
-      return v;
-    }
-    if (n.tag == Node.Tag.BIN) {
-      float l = evalGlobalConstFloat(n.kids.get(0)), r = evalGlobalConstFloat(n.kids.get(1));
-      switch (n.op) {
-        case ADD: return l + r; case SUB: return l - r;
-        case MUL: return l * r; case DIV: return r == 0 ? 0 : l / r;
-        default: return 0;
-      }
-    }
-    if (n.tag == Node.Tag.CAST) return evalGlobalConstFloat(n.kids.get(0));
-    return 0.0f;
   }
 
   /**
