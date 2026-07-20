@@ -336,11 +336,19 @@ public final class RISCVAsmEmitter {
   }
 
   private void emitMemzero(MachineInstr instr, AllocationResult allocation, List<String> lines) {
-    materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
     int size = (int) ((ImmOperand) instr.getOperands().get(1)).getValue();
-    for (int offset = 0; offset < size; offset += 4) {
-      frameLowering.emitStoreToBase(lines, "zero", "t0", offset, "t3", MachineType.I32);
+    if (target.shouldUseMemzeroHelper(size)) {
+      materializeInto(lines, instr.getOperands().get(0), "a0", MachineType.PTR, allocation);
+      lines.add("  li a1, " + size);
+      lines.add("  call __accela_memzero");
+      return;
     }
+    materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
+    int offset = 0;
+    for (; offset + 8 <= size; offset += 8)
+      frameLowering.emitStoreToBase(lines, "zero", "t0", offset, "t3", MachineType.I64);
+    if (offset < size)
+      frameLowering.emitStoreToBase(lines, "zero", "t0", offset, "t3", MachineType.I32);
   }
 
   private void emitCall(MachineInstr instr, AllocationResult allocation, List<String> lines) {

@@ -317,11 +317,13 @@ public final class IRToMachineLowering {
       Map<BasicBlock, MachineBasicBlock> blocks) {
     Value value = inst.getOperand(0);
     if (value instanceof Constant.Zero && value.getType().isArray()) {
+      int size = target.sizeOfIrType(value.getType());
       MachineInstr memzero = new MachineInstr(MachineOpcode.MEMZERO, null);
       memzero.addOperand(lowerValue(inst.getOperand(1), valueToVReg, blocks));
-      memzero.addOperand(new ImmOperand(target.sizeOfIrType(value.getType())));
+      memzero.addOperand(new ImmOperand(size));
       memzero.setType(MachineType.PTR);
       block.addInstruction(memzero);
+      if (target.shouldUseMemzeroHelper(size)) function.getFrameInfo().markHasCall();
       return;
     }
 

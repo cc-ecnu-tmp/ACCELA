@@ -1,9 +1,11 @@
 package accela.backend.target;
 
+import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineModule;
+import accela.backend.machine.MachineOpcode;
 import accela.backend.regalloc.AllocationResult;
 import accela.backend.regalloc.RegisterLocation;
 import accela.backend.regalloc.StackLocation;
@@ -36,7 +38,56 @@ public final class RISCVAsmPrinter {
       frameLowering.finalizeFrame(function);
       emitFunction(function, allocations.get(function), lines);
     }
+    if (needsMemzeroHelper(module)) emitMemzeroHelper(lines);
     return String.join("\n", lines) + "\n";
+  }
+
+  private boolean needsMemzeroHelper(MachineModule module) {
+    return module.getFunctions().stream()
+        .flatMap(function -> function.getBlocks().stream())
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(
+            instruction ->
+                instruction.getOpcode() == MachineOpcode.MEMZERO
+                    && target.shouldUseMemzeroHelper(
+                        (int) ((ImmOperand) instruction.getOperands().get(1)).getValue()));
+  }
+
+  private void emitMemzeroHelper(List<String> lines) {
+    lines.add("");
+    lines.add(".type __accela_memzero, @function");
+    lines.add(".p2align 2");
+    lines.add("__accela_memzero:");
+    lines.add("  andi t0, a0, 7");
+    lines.add("  beqz t0, .L_accela_memzero_aligned");
+    lines.add("  sw zero, 0(a0)");
+    lines.add("  addi a0, a0, 4");
+    lines.add("  addi a1, a1, -4");
+    lines.add(".L_accela_memzero_aligned:");
+    lines.add("  li t0, 32");
+    lines.add("  blt a1, t0, .L_accela_memzero_words");
+    lines.add(".L_accela_memzero_loop32:");
+    lines.add("  sd zero, 0(a0)");
+    lines.add("  sd zero, 8(a0)");
+    lines.add("  sd zero, 16(a0)");
+    lines.add("  sd zero, 24(a0)");
+    lines.add("  addi a0, a0, 32");
+    lines.add("  addi a1, a1, -32");
+    lines.add("  bge a1, t0, .L_accela_memzero_loop32");
+    lines.add(".L_accela_memzero_words:");
+    lines.add("  li t0, 8");
+    lines.add("  blt a1, t0, .L_accela_memzero_tail");
+    lines.add(".L_accela_memzero_loop8:");
+    lines.add("  sd zero, 0(a0)");
+    lines.add("  addi a0, a0, 8");
+    lines.add("  addi a1, a1, -8");
+    lines.add("  bge a1, t0, .L_accela_memzero_loop8");
+    lines.add(".L_accela_memzero_tail:");
+    lines.add("  beqz a1, .L_accela_memzero_done");
+    lines.add("  sw zero, 0(a0)");
+    lines.add(".L_accela_memzero_done:");
+    lines.add("  ret");
+    lines.add(".size __accela_memzero, .-__accela_memzero");
   }
 
   private void emitGlobals(accela.ir.Module module, List<String> lines) {
