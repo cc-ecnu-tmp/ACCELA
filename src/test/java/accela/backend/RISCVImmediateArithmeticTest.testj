@@ -31,9 +31,10 @@ final class RISCVImmediateArithmeticTest {
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
-    assertTrue(assembly.contains("  addi t2, t0, 7"));
-    assertTrue(assembly.contains("  addi t2, t0, -7"));
+    assertTrue(assembly.contains("  addiw t2, t0, 7"));
+    assertTrue(assembly.contains("  addiw t2, t0, -7"));
     assertTrue(assembly.contains("  xori t2, t0, 7"));
+    assertTrue(assembly.contains("  sext.w t2, t2"));
     assertFalse(assembly.contains("  li t1, 7"));
     assertFalse(assembly.contains("  add t2, t0, t1"));
     assertFalse(assembly.contains("  sub t2, t0, t1"));

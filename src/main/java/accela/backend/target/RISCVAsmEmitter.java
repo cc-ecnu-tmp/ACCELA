@@ -149,6 +149,7 @@ public final class RISCVAsmEmitter {
   private void emitBinaryArithmetic(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     ensureIntType(instr.getType());
     MachineOpcode opcode = instr.getOpcode();
+    boolean wordResult = instr.getType() == MachineType.I32;
     MachineOperand lhs = instr.getOperands().get(0);
     MachineOperand rhs = instr.getOperands().get(1);
     if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.XOR)
@@ -161,29 +162,37 @@ public final class RISCVAsmEmitter {
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
       String immediateOpcode = switch (opcode) {
-        case ADD -> fitsSigned12(value) ? "addi" : null;
-        case SUB -> value != Long.MIN_VALUE && fitsSigned12(-value) ? "addi" : null;
+        case ADD -> fitsSigned12(value) ? wordResult ? "addiw" : "addi" : null;
+        case SUB -> value != Long.MIN_VALUE && fitsSigned12(-value)
+            ? wordResult ? "addiw" : "addi"
+            : null;
         case XOR -> fitsSigned12(value) ? "xori" : null;
         default -> null;
       };
       if (immediateOpcode != null) {
         long encodedValue = opcode == MachineOpcode.SUB ? -value : value;
         lines.add("  " + immediateOpcode + " t2, t0, " + encodedValue);
+        if (wordResult && opcode == MachineOpcode.XOR) {
+          lines.add("  sext.w t2, t2");
+        }
         writeDest(lines, instr.getDest(), "t2", allocation, instr.getType());
         return;
       }
     }
     materializeInto(lines, rhs, "t1", inferOperandType(rhs), allocation);
     String op = switch (opcode) {
-      case ADD -> "add";
-      case SUB -> "sub";
-      case MUL -> "mul";
-      case DIV -> "div";
-      case REM -> "rem";
+      case ADD -> wordResult ? "addw" : "add";
+      case SUB -> wordResult ? "subw" : "sub";
+      case MUL -> wordResult ? "mulw" : "mul";
+      case DIV -> wordResult ? "divw" : "div";
+      case REM -> wordResult ? "remw" : "rem";
       case XOR -> "xor";
       default -> throw new IllegalStateException("Unsupported arithmetic opcode: " + opcode);
     };
     lines.add("  " + op + " t2, t0, t1");
+    if (wordResult && opcode == MachineOpcode.XOR) {
+      lines.add("  sext.w t2, t2");
+    }
     writeDest(lines, instr.getDest(), "t2", allocation, instr.getType());
   }
 
