@@ -1,0 +1,78 @@
+package accela.parse;
+
+import static accela.ast.Node.Tag.BIN;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ast.Node;
+import accela.ast.Node.Op;
+import accela.ast.Ty;
+import org.junit.jupiter.api.Test;
+
+final class ConstEvaluatorTest {
+  private final ConstEvaluator evaluator = new ConstEvaluator();
+
+  @Test
+  void evaluatesTypedArithmeticAndComparisons() {
+    Node sum = binary(Op.ADD, Node.intLiteral(2), Node.floatLiteral(0.5f));
+    Node comparison = binary(Op.LT, sum, Node.floatLiteral(3.0f));
+
+    assertEquals(2.5f, evaluator.evaluateRequired(sum).asFloat());
+    assertEquals(1, evaluator.evaluateRequired(comparison).asInt());
+  }
+
+  @Test
+  void resolvesConstReferencesAndCasts() {
+    Node declaration = new Node(Node.Tag.VAR, "answer", Ty.INT);
+    declaration.flag = true;
+    declaration.kids.add(Node.intLiteral(42));
+    Node reference = new Node(Node.Tag.REF, "answer");
+    reference.decl = declaration;
+    Node cast = new Node(Node.Tag.CAST);
+    cast.ty = Ty.FLOAT;
+    cast.kids.add(reference);
+
+    assertEquals(42.0f, evaluator.evaluateRequired(cast).asFloat());
+  }
+
+  @Test
+  void distinguishesNonConstantsWithoutExceptionControlFlow() {
+    Node variable = new Node(Node.Tag.REF, "runtimeValue");
+    Node divideByZero = binary(Op.DIV, Node.intLiteral(1), Node.intLiteral(0));
+    Node shortCircuit = binary(Op.AND, Node.intLiteral(0), divideByZero);
+
+    assertTrue(evaluator.evaluate(variable).isEmpty());
+    assertEquals(0, evaluator.evaluateRequired(shortCircuit).asInt());
+  }
+
+  @Test
+  void semaReusesEvaluationForConstArraysAndDimensions() {
+    String source =
+        "const int values[2] = {3, 4}; const int size = values[1] + 2; int data[size];";
+    Node unit = new Parser(new Lexer(source, "const-evaluator.sy").tokenize()).parse();
+
+    new Sema().analyze(unit);
+
+    assertEquals(6, unit.kids.get(1).kids.get(0).literal.asInt());
+    assertArrayEquals(new int[] {6}, unit.kids.get(2).ty.dims);
+  }
+
+  @Test
+  void evaluatesElementsOfSparseZeroInitializers() {
+    String source = "const int zeros[8] = {}; const int value = zeros[7];";
+    Node unit = new Parser(new Lexer(source, "sparse-zero.sy").tokenize()).parse();
+
+    new Sema().analyze(unit);
+
+    assertEquals(0, unit.kids.get(1).kids.get(0).literal.asInt());
+  }
+
+  private static Node binary(Op op, Node lhs, Node rhs) {
+    Node node = new Node(BIN);
+    node.op = op;
+    node.kids.add(lhs);
+    node.kids.add(rhs);
+    return node;
+  }
+}

@@ -31,6 +31,7 @@ import java.util.List;
  */
 public class Sema {
   private SymbolTable scope = new SymbolTable(null);
+  private final ConstEvaluator constEvaluator = new ConstEvaluator();
 
   /** Seeds the outermost scope with builtin runtime function declarations. */
   public Sema() {
@@ -390,66 +391,7 @@ public class Sema {
    * constant expressions through references to {@code x}.
    */
   int evalConst(Node node) {
-    if (node.tag == LIT) {
-      return node.literal.asInt();
-    }
-    if (node.tag == BIN) {
-      int l = evalConst(node.kids.get(0)), r = evalConst(node.kids.get(1));
-      switch (node.op) {
-        case ADD:
-          return l + r;
-        case SUB:
-          return l - r;
-        case MUL:
-          return l * r;
-        case DIV:
-          return l / r;
-        case MOD:
-          return l % r;
-        case EQ:
-          return l == r ? 1 : 0;
-        case NE:
-          return l != r ? 1 : 0;
-        case LT:
-          return l < r ? 1 : 0;
-        case GT:
-          return l > r ? 1 : 0;
-        case LE:
-          return l <= r ? 1 : 0;
-        case GE:
-          return l >= r ? 1 : 0;
-        case AND:
-          return (l != 0 && r != 0) ? 1 : 0;
-        case OR:
-          return (l != 0 || r != 0) ? 1 : 0;
-        default:
-          break;
-      }
-    }
-    if (node.tag == UNARY) {
-      int r = evalConst(node.kids.get(0));
-      if (node.op == Op.NEG) return -r;
-      if (node.op == Op.POS) return r;
-      if (node.op == Op.NOT) return r == 0 ? 1 : 0;
-    }
-    if (node.tag == REF) {
-      // Follow decl binding to resolve const values
-      if (node.decl != null && node.decl.flag && !node.decl.kids.isEmpty())
-        return evalConst(node.decl.kids.get(0));
-    }
-    if (node.tag == CAST) return evalConst(node.kids.get(0));
-    if (node.tag == SUB) {
-      Node ref = node.kids.get(0);
-      if (ref.tag == REF
-          && ref.decl != null
-          && ref.decl.flag
-          && !ref.decl.kids.isEmpty()
-          && ref.decl.kids.get(0).tag == INIT_LIST) {
-        Node leaf = constSubscript(ref.decl.kids.get(0), node.kids, 1);
-        if (leaf != null) return evalConst(leaf);
-      }
-    }
-    throw new RuntimeException("Constant expected: " + node.tag);
+    return constEvaluator.evaluateRequired(node).asInt();
   }
 
   /**
@@ -459,63 +401,13 @@ public class Sema {
    * them through integer semantics.
    */
   private float evalConstFloat(Node node) {
-    if (node.tag == LIT) {
-      return node.literal.asFloat();
-    }
-    if (node.tag == BIN) {
-      float l = evalConstFloat(node.kids.get(0)), r = evalConstFloat(node.kids.get(1));
-      switch (node.op) {
-        case ADD:
-          return l + r;
-        case SUB:
-          return l - r;
-        case MUL:
-          return l * r;
-        case DIV:
-          return l / r;
-        default:
-          break;
-      }
-    }
-    if (node.tag == UNARY) {
-      float r = evalConstFloat(node.kids.get(0));
-      if (node.op == Op.NEG) return -r;
-      if (node.op == Op.POS) return r;
-      if (node.op == Op.NOT) return r == 0.0f ? 1.0f : 0.0f;
-    }
-    if (node.tag == REF) {
-      if (node.decl != null && node.decl.flag && !node.decl.kids.isEmpty()) {
-        return node.decl.ty != null && node.decl.ty.isFloat()
-            ? evalConstFloat(node.decl.kids.get(0))
-            : (float) evalConst(node.decl.kids.get(0));
-      }
-    }
-    if (node.tag == CAST) {
-      if (node.ty != null && node.ty.isFloat()) return evalConstFloat(node.kids.get(0));
-      return (float) evalConst(node.kids.get(0));
-    }
-    if (node.tag == SUB) {
-      Node ref = node.kids.get(0);
-      if (ref.tag == REF
-          && ref.decl != null
-          && ref.decl.flag
-          && !ref.decl.kids.isEmpty()
-          && ref.decl.kids.get(0).tag == INIT_LIST) {
-        Node leaf = constSubscript(ref.decl.kids.get(0), node.kids, 1);
-        if (leaf != null) return evalConstFloat(leaf);
-      }
-    }
-    throw new RuntimeException("Float constant expected: " + node.tag);
+    return constEvaluator.evaluateRequired(node).asFloat();
   }
 
   /** Check if all index kids are compile-time constants. */
   private boolean allConst(List<Node> kids, int startIdx) {
     for (int i = startIdx; i < kids.size(); i++) {
-      try {
-        evalConst(kids.get(i));
-      } catch (RuntimeException e) {
-        return false;
-      }
+      if (constEvaluator.evaluate(kids.get(i)).isEmpty()) return false;
     }
     return true;
   }
