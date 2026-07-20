@@ -178,7 +178,9 @@ public final class IRToMachineLowering {
             lowerValue(inst.getOperand(1), valueToVReg, blocks));
         return;
       case ICMP:
-        lowerICmp(inst, block, valueToVReg, blocks);
+        if (!canFuseCompareBranch(inst)) {
+          lowerICmp(inst, block, valueToVReg, blocks);
+        }
         return;
       case FCMP:
         lowerFCmp(inst, block, valueToVReg, blocks);
@@ -221,11 +223,7 @@ public final class IRToMachineLowering {
         block.addInstruction(br);
         return;
       case CONDBR:
-        MachineInstr condBr = new MachineInstr(MachineOpcode.CONDBR, null);
-        condBr.addOperand(lowerValue(inst.getOperand(0), valueToVReg, blocks));
-        condBr.addOperand(new BlockOperand(blocks.get((BasicBlock) inst.getOperand(1))));
-        condBr.addOperand(new BlockOperand(blocks.get((BasicBlock) inst.getOperand(2))));
-        block.addInstruction(condBr);
+        lowerCondBr(inst, block, valueToVReg, blocks);
         return;
       case RET:
         MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
@@ -345,6 +343,36 @@ public final class IRToMachineLowering {
     cmp.setType(MachineType.I1);
     cmp.setPredicate(inst.getPredicate());
     block.addInstruction(cmp);
+  }
+
+  private void lowerCondBr(
+      Instruction inst,
+      MachineBasicBlock block,
+      Map<Value, VirtualRegister> valueToVReg,
+      Map<BasicBlock, MachineBasicBlock> blocks) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.CONDBR, null);
+    Value condition = inst.getOperand(0);
+    if (condition instanceof Instruction compare && canFuseCompareBranch(compare)) {
+      branch.setPredicate(compare.getPredicate());
+      branch.addOperand(lowerValue(compare.getOperand(0), valueToVReg, blocks));
+      branch.addOperand(lowerValue(compare.getOperand(1), valueToVReg, blocks));
+    } else {
+      branch.addOperand(lowerValue(condition, valueToVReg, blocks));
+    }
+    branch.addOperand(new BlockOperand(blocks.get((BasicBlock) inst.getOperand(1))));
+    branch.addOperand(new BlockOperand(blocks.get((BasicBlock) inst.getOperand(2))));
+    block.addInstruction(branch);
+  }
+
+  private static boolean canFuseCompareBranch(Instruction compare) {
+    if (compare.getOpcode() != Instruction.Opcode.ICMP || compare.getNumUses() != 1) return false;
+    Instruction branch = compare.getUses().getFirst().getUser();
+    var instructions = compare.getParent().getInstructions();
+    return instructions.size() >= 2
+        && branch.getOpcode() == Instruction.Opcode.CONDBR
+        && branch.getOperand(0) == compare
+        && instructions.get(instructions.size() - 2) == compare
+        && instructions.getLast() == branch;
   }
 
   private void lowerFCmp(

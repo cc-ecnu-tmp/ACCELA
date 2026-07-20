@@ -111,6 +111,10 @@ public final class RISCVAsmEmitter {
         lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(0)).getBlock()));
         return;
       case CONDBR:
+        if (instr.getPredicate() != null) {
+          emitCompareBranch(function, instr, allocation, lines);
+          return;
+        }
         materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
         lines.add("  bnez t0, " + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
         lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(2)).getBlock()));
@@ -127,6 +131,38 @@ public final class RISCVAsmEmitter {
       default:
         throw new UnsupportedOperationException("Unsupported machine opcode: " + instr.getOpcode());
     }
+  }
+
+  private void emitCompareBranch(
+      MachineFunction function,
+      MachineInstr branch,
+      AllocationResult allocation,
+      List<String> lines) {
+    materializeInto(lines, branch.getOperands().get(0), "t0", MachineType.I32, allocation);
+    MachineOperand rightOperand = branch.getOperands().get(1);
+    String right = "t1";
+    if (rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0) {
+      right = "zero";
+    } else {
+      materializeInto(lines, rightOperand, right, MachineType.I32, allocation);
+    }
+
+    String comparison = switch (branch.getPredicate()) {
+      case "eq" -> "beq t0, " + right;
+      case "ne" -> "bne t0, " + right;
+      case "slt" -> "blt t0, " + right;
+      case "sge" -> "bge t0, " + right;
+      case "sgt" -> "blt " + right + ", t0";
+      case "sle" -> "bge " + right + ", t0";
+      default -> throw new UnsupportedOperationException(
+          "Unsupported integer branch predicate: " + branch.getPredicate());
+    };
+    String trueLabel =
+        labelFor(function, ((BlockOperand) branch.getOperands().get(2)).getBlock());
+    String falseLabel =
+        labelFor(function, ((BlockOperand) branch.getOperands().get(3)).getBlock());
+    lines.add("  " + comparison + ", " + trueLabel);
+    lines.add("  j " + falseLabel);
   }
 
   private void emitArgIn(MachineInstr instr, AllocationResult allocation, List<String> lines) {
