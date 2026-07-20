@@ -148,35 +148,47 @@ public final class RISCVAsmEmitter {
 
   private void emitBinaryArithmetic(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     ensureIntType(instr.getType());
-    MachineType lhsType = inferOperandType(instr.getOperands().get(0));
-    MachineType rhsType = inferOperandType(instr.getOperands().get(1));
-    materializeInto(lines, instr.getOperands().get(0), "t0", lhsType, allocation);
-    materializeInto(lines, instr.getOperands().get(1), "t1", rhsType, allocation);
-    String op;
-    switch (instr.getOpcode()) {
-      case ADD:
-        op = "add";
-        break;
-      case SUB:
-        op = "sub";
-        break;
-      case MUL:
-        op = "mul";
-        break;
-      case DIV:
-        op = "div";
-        break;
-      case REM:
-        op = "rem";
-        break;
-      case XOR:
-        op = "xor";
-        break;
-      default:
-        throw new IllegalStateException();
+    MachineOpcode opcode = instr.getOpcode();
+    MachineOperand lhs = instr.getOperands().get(0);
+    MachineOperand rhs = instr.getOperands().get(1);
+    if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.XOR)
+        && lhs instanceof ImmOperand && !(rhs instanceof ImmOperand)) {
+      MachineOperand temporary = lhs;
+      lhs = rhs;
+      rhs = temporary;
     }
+    materializeInto(lines, lhs, "t0", inferOperandType(lhs), allocation);
+    if (rhs instanceof ImmOperand immediate) {
+      long value = immediate.getValue();
+      String immediateOpcode = switch (opcode) {
+        case ADD -> fitsSigned12(value) ? "addi" : null;
+        case SUB -> value != Long.MIN_VALUE && fitsSigned12(-value) ? "addi" : null;
+        case XOR -> fitsSigned12(value) ? "xori" : null;
+        default -> null;
+      };
+      if (immediateOpcode != null) {
+        long encodedValue = opcode == MachineOpcode.SUB ? -value : value;
+        lines.add("  " + immediateOpcode + " t2, t0, " + encodedValue);
+        writeDest(lines, instr.getDest(), "t2", allocation, instr.getType());
+        return;
+      }
+    }
+    materializeInto(lines, rhs, "t1", inferOperandType(rhs), allocation);
+    String op = switch (opcode) {
+      case ADD -> "add";
+      case SUB -> "sub";
+      case MUL -> "mul";
+      case DIV -> "div";
+      case REM -> "rem";
+      case XOR -> "xor";
+      default -> throw new IllegalStateException("Unsupported arithmetic opcode: " + opcode);
+    };
     lines.add("  " + op + " t2, t0, t1");
     writeDest(lines, instr.getDest(), "t2", allocation, instr.getType());
+  }
+
+  private static boolean fitsSigned12(long value) {
+    return value >= -2048 && value <= 2047;
   }
 
   private void emitCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
