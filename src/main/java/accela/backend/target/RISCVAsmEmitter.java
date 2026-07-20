@@ -209,6 +209,12 @@ public final class RISCVAsmEmitter {
     MachineOperand rightOperand = instr.getOperands().get(1);
     boolean comparesWithZero =
         rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0;
+    if (!comparesWithZero
+        && rightOperand instanceof ImmOperand immediate
+        && emitImmediateCompare(instr.getPredicate(), immediate.getValue(), lines)) {
+      writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+      return;
+    }
     String right = comparesWithZero ? "zero" : "t1";
     if (!comparesWithZero) {
       materializeInto(lines, rightOperand, right, MachineType.I32, allocation);
@@ -238,6 +244,38 @@ public final class RISCVAsmEmitter {
           "Unsupported integer compare predicate: " + predicate);
     }
     writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
+  }
+
+  private static boolean emitImmediateCompare(String predicate, long value, List<String> lines) {
+    switch (predicate) {
+      case "eq", "ne" -> {
+        // Compare the difference with zero without materializing the RHS.
+        // x == 7 -> addi t2, t0, -7; seqz t2, t2
+        if (value == Long.MIN_VALUE || !fitsSigned12(-value)) return false;
+        lines.add("  addi t2, t0, " + -value);
+        lines.add("  " + (predicate.equals("eq") ? "seqz" : "snez") + " t2, t2");
+        return true;
+      }
+      case "slt", "sge" -> {
+        // slti directly implements x < C, invert its i1 result for x >= C.
+        // x >= 7 -> slti t2, t0, 7; xori t2, t2, 1
+        if (!fitsSigned12(value)) return false;
+        lines.add("  slti t2, t0, " + value);
+        if (predicate.equals("sge")) lines.add("  xori t2, t2, 1");
+        return true;
+      }
+      case "sle", "sgt" -> {
+        // Rewrite x <= C as x < C + 1
+        // x > 7 -> slti t2, t0, 8; xori t2, t2, 1
+        if (value == Long.MAX_VALUE || !fitsSigned12(value + 1)) return false;
+        lines.add("  slti t2, t0, " + (value + 1));
+        if (predicate.equals("sgt")) lines.add("  xori t2, t2, 1");
+        return true;
+      }
+      default -> {
+        return false;
+      }
+    }
   }
 
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {

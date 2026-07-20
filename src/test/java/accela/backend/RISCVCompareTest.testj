@@ -36,4 +36,28 @@ final class RISCVCompareTest {
     assertFalse(assembly.contains("  li t1, 0"));
     assertFalse(assembly.contains("  sub t2, t0, t1"));
   }
+
+  @Test
+  void selectsSignedTwelveBitCompareImmediates() {
+    Module module = new Module();
+    Function function = new Function("compare", Type.I1);
+    module.addFunction(function);
+    Value argument = function.addArgument(Type.INT, "argument");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value result = null;
+    for (String predicate : new String[] {"eq", "ne", "slt", "sgt", "sle", "sge"}) {
+      result = builder.createICmp(predicate, argument, Constant.intConst(7));
+    }
+    builder.createRet(result);
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.contains("  addi t2, t0, -7"));
+    assertTrue(assembly.contains("  slti t2, t0, 7"));
+    assertTrue(assembly.contains("  slti t2, t0, 8"));
+    assertFalse(assembly.contains("  li t1, 7"));
+    assertFalse(assembly.contains("  sub t2, t0, t1"));
+    assertFalse(assembly.contains("  slt t2, t0, t1"));
+  }
 }
