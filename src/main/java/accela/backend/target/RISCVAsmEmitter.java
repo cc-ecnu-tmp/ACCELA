@@ -181,32 +181,40 @@ public final class RISCVAsmEmitter {
 
   private void emitCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     materializeInto(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
-    materializeInto(lines, instr.getOperands().get(1), "t1", MachineType.I32, allocation);
-    switch (instr.getPredicate()) {
-      case "eq":
-        lines.add("  sub t2, t0, t1");
-        lines.add("  seqz t2, t2");
-        break;
-      case "ne":
-        lines.add("  sub t2, t0, t1");
-        lines.add("  snez t2, t2");
-        break;
-      case "slt":
-        lines.add("  slt t2, t0, t1");
-        break;
-      case "sgt":
-        lines.add("  slt t2, t1, t0");
-        break;
-      case "sle":
-        lines.add("  slt t2, t1, t0");
+    // RISC-V's zero register avoids materializing the constant.
+    //   icmp eq  x, 0 -> seqz t2, t0
+    //   icmp slt x, 0 -> slt  t2, t0, zero
+    //   icmp sle x, 0 -> slt  t2, zero, t0; xori t2, t2, 1
+    MachineOperand rightOperand = instr.getOperands().get(1);
+    boolean comparesWithZero =
+        rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0;
+    String right = comparesWithZero ? "zero" : "t1";
+    if (!comparesWithZero) {
+      materializeInto(lines, rightOperand, right, MachineType.I32, allocation);
+    }
+
+    String predicate = instr.getPredicate();
+    switch (predicate) {
+      case "eq", "ne" -> {
+        String source = "t0";
+        if (!comparesWithZero) {
+          lines.add("  sub t2, t0, " + right);
+          source = "t2";
+        }
+        lines.add("  " + (predicate.equals("eq") ? "seqz" : "snez") + " t2, " + source);
+      }
+      case "slt" -> lines.add("  slt t2, t0, " + right);
+      case "sgt" -> lines.add("  slt t2, " + right + ", t0");
+      case "sle" -> {
+        lines.add("  slt t2, " + right + ", t0");
         lines.add("  xori t2, t2, 1");
-        break;
-      case "sge":
-        lines.add("  slt t2, t0, t1");
+      }
+      case "sge" -> {
+        lines.add("  slt t2, t0, " + right);
         lines.add("  xori t2, t2, 1");
-        break;
-      default:
-        throw new UnsupportedOperationException("Unsupported integer compare predicate: " + instr.getPredicate());
+      }
+      default -> throw new UnsupportedOperationException(
+          "Unsupported integer compare predicate: " + predicate);
     }
     writeDest(lines, instr.getDest(), "t2", allocation, MachineType.I1);
   }
