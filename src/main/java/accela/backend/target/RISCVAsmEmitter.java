@@ -22,11 +22,11 @@ import accela.backend.regalloc.StackLocation;
 import accela.backend.regalloc.ValueLocation;
 import java.util.List;
 
-public final class RISCVAllocationRewriter {
+public final class RISCVAsmEmitter {
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
 
-  public RISCVAllocationRewriter(RISCVTarget target, RISCVFrameLowering frameLowering) {
+  public RISCVAsmEmitter(RISCVTarget target, RISCVFrameLowering frameLowering) {
     this.target = target;
     this.frameLowering = frameLowering;
   }

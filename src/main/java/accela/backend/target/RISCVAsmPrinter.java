@@ -18,12 +18,13 @@ import java.util.Map;
 public final class RISCVAsmPrinter {
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
-  private final RISCVAllocationRewriter allocationRewriter;
+  private final RISCVAsmEmitter asmEmitter;
 
-  public RISCVAsmPrinter(RISCVTarget target, RISCVFrameLowering frameLowering, RISCVAllocationRewriter allocationRewriter) {
+  public RISCVAsmPrinter(
+      RISCVTarget target, RISCVFrameLowering frameLowering, RISCVAsmEmitter asmEmitter) {
     this.target = target;
     this.frameLowering = frameLowering;
-    this.allocationRewriter = allocationRewriter;
+    this.asmEmitter = asmEmitter;
   }
 
   public String print(MachineModule module, Map<MachineFunction, AllocationResult> allocations) {
@@ -86,7 +87,7 @@ public final class RISCVAsmPrinter {
     for (MachineBasicBlock block : function.getBlocks()) {
       lines.add(labelFor(function, block) + ":");
       for (MachineInstr instr : block.getInstructions()) {
-        allocationRewriter.emitInstruction(function, instr, allocation, lines);
+        asmEmitter.emitInstruction(function, instr, allocation, lines);
       }
     }
   }

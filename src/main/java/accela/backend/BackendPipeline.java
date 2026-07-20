@@ -7,7 +7,7 @@ import accela.backend.machine.MachineModule;
 import accela.backend.regalloc.AllSpillRegisterAllocator;
 import accela.backend.regalloc.AllocationResult;
 import accela.backend.regalloc.RegisterAllocator;
-import accela.backend.target.RISCVAllocationRewriter;
+import accela.backend.target.RISCVAsmEmitter;
 import accela.backend.target.RISCVAsmPrinter;
 import accela.backend.target.RISCVFrameLowering;
 import accela.backend.target.RISCVTarget;
@@ -21,8 +21,8 @@ final class BackendPipeline {
   private final PhiElimination phiElimination = new PhiElimination();
   private final RegisterAllocator allocator = new AllSpillRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
-  private final RISCVAllocationRewriter allocationRewriter = new RISCVAllocationRewriter(target, frameLowering);
-  private final RISCVAsmPrinter asmPrinter = new RISCVAsmPrinter(target, frameLowering, allocationRewriter);
+  private final RISCVAsmEmitter asmEmitter = new RISCVAsmEmitter(target, frameLowering);
+  private final RISCVAsmPrinter asmPrinter = new RISCVAsmPrinter(target, frameLowering, asmEmitter);
 
   String compileToAssembly(accela.ir.Module module) {
     MachineModule machineModule = lowering.lower(module);
