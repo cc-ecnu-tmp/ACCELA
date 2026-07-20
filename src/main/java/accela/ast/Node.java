@@ -8,7 +8,7 @@ import java.util.List;
  *
  * <p>This is a compact representation: instead of one Java class per syntax form, the
  * tree is distinguished by {@link Tag}, and node-specific payload lives in a small shared set of
- * fields such as {@link #s}, {@link #ty}, {@link #op}, and {@link #kids}.
+ * fields such as {@link #s}, {@link #literal}, {@link #ty}, {@link #op}, and {@link #kids}.
  *
  * <p>Because this object flows through multiple stages, some fields are parser-owned while others
  * are filled in later by semantic analysis. The comments below document those cross-stage
@@ -112,13 +112,12 @@ public class Node {
   /**
    * Small string payload whose meaning depends on {@link #tag}.
    *
-   * <p>Typical examples:
-   *
-   * <p>- identifier name for `FUNC` / `PARM` / `VAR` / `REF`
-   *
-   * <p>- literal spelling for `LIT`
+   * <p>This is an identifier name for `FUNC` / `PARM` / `VAR` / `REF`. Numeric source spellings
+   * are converted to {@link #literal} at the parser boundary.
    */
   public String s;
+  /** Typed numeric payload for {@link Tag#LIT}; absent for every other node kind. */
+  public LiteralValue literal;
   /**
    * The semantic type of the node when known.
    *
@@ -181,6 +180,25 @@ public class Node {
     this.ty = ty;
   }
 
+  public static Node literalFromToken(String spelling) {
+    return literal(LiteralValue.parse(spelling));
+  }
+
+  public static Node intLiteral(int value) {
+    return literal(LiteralValue.ofInt(value));
+  }
+
+  public static Node floatLiteral(float value) {
+    return literal(LiteralValue.ofFloat(value));
+  }
+
+  private static Node literal(LiteralValue value) {
+    Node node = new Node(Tag.LIT);
+    node.literal = value;
+    node.ty = value.isFloat() ? Ty.FLOAT : Ty.INT;
+    return node;
+  }
+
   /**
    * Returns the best available type information for this node.
    *
@@ -189,17 +207,8 @@ public class Node {
    */
   public Ty type() {
     if (ty != null) return ty;
-    if (tag == Tag.LIT) return isFloatLit(s) ? Ty.FLOAT : Ty.INT;
+    if (tag == Tag.LIT && literal != null) return literal.isFloat() ? Ty.FLOAT : Ty.INT;
     if (tag == Tag.UNARY && !kids.isEmpty()) return kids.get(0).type();
     return null;
-  }
-
-  /** Best-effort classification used before the sema assigns a full type. */
-  static boolean isFloatLit(String v) {
-    return v.contains(".")
-        || v.contains("e")
-        || v.contains("E")
-        || v.contains("p")
-        || v.contains("P");
   }
 }

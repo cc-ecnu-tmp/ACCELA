@@ -251,7 +251,7 @@ public class Interpreter {
     if (n == null) return null;
     switch (n.tag) {
       case LIT:
-        return evalLiteral(n.s);
+        return n.literal.asNumber();
       case REF:
         return getVariable(n.s);
       case BIN:
@@ -269,18 +269,6 @@ public class Interpreter {
       default:
         exec(n);
         return 0;
-    }
-  }
-
-  private Object evalLiteral(String s) {
-    String v = s.toLowerCase();
-    if (v.contains(".") || v.contains("e") || v.contains("p")) return Float.parseFloat(v);
-    try {
-      if (v.startsWith("0x")) return (int) Long.parseLong(v.substring(2), 16);
-      if (v.startsWith("0") && v.length() > 1) return (int) Long.parseLong(v.substring(1), 8);
-      return Integer.parseInt(v);
-    } catch (Exception e) {
-      return (int) Long.parseLong(v);
     }
   }
 

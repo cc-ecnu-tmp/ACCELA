@@ -95,27 +95,6 @@ public final class Ty {
     return kind.name().toLowerCase();
   }
 
-  /**
-   * Parses a frontend type spelling into a {@link Ty}.
-   *
-   * <p>This helper ignores qualifiers such as {@code const}; those are tracked separately on AST
-   * declaration nodes.
-   */
-  public static Ty fromString(String s) {
-    String clean = s.startsWith("const ") ? s.substring(6) : s;
-    Kind base =
-        clean.startsWith("float") ? Kind.FLOAT : clean.startsWith("void") ? Kind.VOID : Kind.INT;
-    if (!clean.contains("[")) return base == Kind.INT ? INT : base == Kind.FLOAT ? FLOAT : VOID;
-    java.util.List<Integer> dimList = new java.util.ArrayList<>();
-    java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\[(\\d*)\\]").matcher(clean);
-    while (m.find()) {
-      String d = m.group(1);
-      dimList.add(d.isEmpty() ? 0 : Integer.parseInt(d));
-    }
-    int[] dims = dimList.stream().mapToInt(Integer::intValue).toArray();
-    return array(base == Kind.FLOAT ? FLOAT : INT, dims);
-  }
-
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;

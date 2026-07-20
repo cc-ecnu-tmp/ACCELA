@@ -34,24 +34,22 @@ public class Sema {
 
   /** Seeds the outermost scope with builtin runtime function declarations. */
   public Sema() {
-    for (String[] b :
-        new String[][] {
-          {"getint", "int"},
-          {"getch", "int"},
-          {"getfloat", "float"},
-          {"getarray", "int"},
-          {"getfarray", "int"},
-          {"putint", "void"},
-          {"putch", "void"},
-          {"putfloat", "void"},
-          {"putarray", "void"},
-          {"putfarray", "void"},
-          {"starttime", "void"},
-          {"stoptime", "void"}
-        }) {
-      Ty ty = b[1].equals("int") ? Ty.INT : b[1].equals("float") ? Ty.FLOAT : Ty.VOID;
-      scope.put(b[0], new Node(Tag.FUNC, b[0], ty));
-    }
+    registerBuiltin("getint", Ty.INT);
+    registerBuiltin("getch", Ty.INT);
+    registerBuiltin("getfloat", Ty.FLOAT);
+    registerBuiltin("getarray", Ty.INT);
+    registerBuiltin("getfarray", Ty.INT);
+    registerBuiltin("putint", Ty.VOID);
+    registerBuiltin("putch", Ty.VOID);
+    registerBuiltin("putfloat", Ty.VOID);
+    registerBuiltin("putarray", Ty.VOID);
+    registerBuiltin("putfarray", Ty.VOID);
+    registerBuiltin("starttime", Ty.VOID);
+    registerBuiltin("stoptime", Ty.VOID);
+  }
+
+  private void registerBuiltin(String name, Ty returnType) {
+    scope.put(name, new Node(Tag.FUNC, name, returnType));
   }
 
   /** Analyzes the whole translation unit in source order. */
@@ -149,9 +147,9 @@ public class Sema {
     if (v.flag && !v.ty.isArray() && !v.kids.isEmpty() && v.kids.get(0).tag != LIT) {
       Node lit;
       if (v.ty.isFloat()) {
-        lit = new Node(LIT, Float.toString(evalConstFloat(v.kids.get(0))));
+        lit = Node.floatLiteral(evalConstFloat(v.kids.get(0)));
       } else {
-        lit = new Node(LIT, Integer.toString(evalConst(v.kids.get(0))));
+        lit = Node.intLiteral(evalConst(v.kids.get(0)));
       }
       lit.ty = v.ty;
       v.kids.set(0, lit);
@@ -178,7 +176,7 @@ public class Sema {
     int total = ty.flatSize();
     int[] dims = ty.dims;
     List<Node> flat = new ArrayList<>(total);
-    for (int i = 0; i < total; i++) flat.add(new Node(LIT, "0"));
+    for (int i = 0; i < total; i++) flat.add(Node.intLiteral(0));
     fillRec(raw, flat, dims, 0, 0);
     for (int i = 0; i < flat.size(); i++) flat.set(i, analyzeExpr(flat.get(i)));
     return rebuildInit(flat, ty.elem, dims, 0, 0);
@@ -393,15 +391,7 @@ public class Sema {
    */
   int evalConst(Node node) {
     if (node.tag == LIT) {
-      String v = node.s;
-      if (v.contains(".")
-          || v.contains("e")
-          || v.contains("E")
-          || v.contains("p")
-          || v.contains("P")) return (int) Double.parseDouble(v);
-      if (v.startsWith("0x") || v.startsWith("0X")) return Integer.parseInt(v.substring(2), 16);
-      if (v.startsWith("0") && v.length() > 1) return Integer.parseInt(v.substring(1), 8);
-      return Integer.parseInt(v);
+      return node.literal.asInt();
     }
     if (node.tag == BIN) {
       int l = evalConst(node.kids.get(0)), r = evalConst(node.kids.get(1));
@@ -470,8 +460,7 @@ public class Sema {
    */
   private float evalConstFloat(Node node) {
     if (node.tag == LIT) {
-      if (node.type() != null && node.type().isFloat()) return parseFloat(node.s);
-      return (float) evalConst(node);
+      return node.literal.asFloat();
     }
     if (node.tag == BIN) {
       float l = evalConstFloat(node.kids.get(0)), r = evalConstFloat(node.kids.get(1));
@@ -540,19 +529,6 @@ public class Sema {
       cur = cur.kids.get(idx);
     }
     return cur;
-  }
-
-  /** Parses a float literal spelling accepted by the frontend. */
-  private static float parseFloat(String s) {
-    String v = s.toLowerCase();
-    if (v.endsWith("f") || v.endsWith("l") || v.endsWith("u")) v = v.substring(0, v.length() - 1);
-    try {
-      if (v.startsWith("0x") && (v.contains("p") || v.contains("."))) return Float.parseFloat(v);
-      if (v.startsWith("0x")) return Float.intBitsToFloat((int) Long.parseLong(v.substring(2), 16));
-      return Float.parseFloat(v);
-    } catch (NumberFormatException e) {
-      return 0.0f;
-    }
   }
 
   /** Pushes a fresh nested scope. */
