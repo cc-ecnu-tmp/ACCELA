@@ -3,8 +3,10 @@ package accela.pass.ir.transform;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
+import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Instruction.Opcode;
+import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
@@ -39,7 +41,8 @@ public final class SimplifyCFG {
     boolean changed = false;
     while (true) {
       boolean iter =
-          foldSingleEntryPhis(function)
+          foldBooleanPhis(function)
+              | foldSingleEntryPhis(function)
               | removeUnreachableBlocks(function)
               | mergeBlockIntoPredecessor(function)
               | eliminateEmptyUnconditionalBranch(function);
@@ -50,6 +53,77 @@ public final class SimplifyCFG {
     }
     return changed;
   }
+
+  /** Replaces a two-way 0/1 PHI diamond with the branch condition or its inverse. */
+  private static boolean foldBooleanPhis(Function function) {
+    boolean changed = false;
+    for (BasicBlock merge : new ArrayList<>(function.getBlocks())) {
+      for (Instruction phi : new ArrayList<>(merge.getInstructions())) {
+        if (phi.getOpcode() != Opcode.PHI) break;
+        Value replacement = booleanPhiValue(phi, merge);
+        if (replacement == null) continue;
+        phi.replaceAllUsesWith(replacement);
+        phi.eraseFromParent();
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  private static Value booleanPhiValue(Instruction phi, BasicBlock merge) {
+    BooleanDiamond diamond = matchBooleanDiamond(phi, merge);
+    if (diamond == null) return null;
+
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(diamond.branch());
+    Value condition = diamond.branch().getOperand(0);
+    if (diamond.negated()) {
+      condition = builder.createXor(condition, Constant.boolConst(true));
+    }
+    return builder.createZExt(condition, Type.INT);
+  }
+
+  private static BooleanDiamond matchBooleanDiamond(Instruction phi, BasicBlock merge) {
+    if (phi.getType() != Type.INT || phi.getNumOperands() != 4) return null;
+    List<BasicBlock> predecessors = merge.getPredecessors();
+    if (predecessors.size() != 2) return null;
+
+    for (BasicBlock direct : predecessors) {
+      Instruction branch = direct.getTerminator();
+      if (branch == null || branch.getOpcode() != Opcode.CONDBR) continue;
+      boolean mergeOnTrue = branch.getOperand(1) == merge;
+      if (!mergeOnTrue && branch.getOperand(2) != merge) continue;
+      BasicBlock forwarder = (BasicBlock) branch.getOperand(mergeOnTrue ? 2 : 1);
+      if (!isEmptyForwarderFrom(forwarder, direct, merge)) continue;
+
+      Boolean directValue = incomingBoolean(phi, direct);
+      Boolean forwardedValue = incomingBoolean(phi, forwarder);
+      if (directValue == null || forwardedValue == null) continue;
+      if (directValue.equals(forwardedValue)) continue;
+      boolean trueValue = mergeOnTrue ? directValue : forwardedValue;
+      return new BooleanDiamond(branch, !trueValue);
+    }
+    return null;
+  }
+
+  private static boolean isEmptyForwarderFrom(
+      BasicBlock block, BasicBlock predecessor, BasicBlock target) {
+    Instruction term = block.getTerminator();
+    return block.getInstructions().size() == 1
+        && term != null
+        && term.getOpcode() == Opcode.BR
+        && term.getOperand(0) == target
+        && block.getPredecessors().equals(List.of(predecessor));
+  }
+
+  private static Boolean incomingBoolean(Instruction phi, BasicBlock predecessor) {
+    int index = findIncomingPairIndex(phi, predecessor);
+    if (index < 0 || !(phi.getOperand(index) instanceof Constant.Int value)) return null;
+    if (value.value == 0) return false;
+    return value.value == 1 ? true : null;
+  }
+
+  private record BooleanDiamond(Instruction branch, boolean negated) {}
 
   private static boolean foldSingleEntryPhis(Function function) {
     boolean changed = false;
