@@ -9,6 +9,7 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.ADCE;
+import accela.pass.ir.transform.GlobalConstantPropagation;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
@@ -149,6 +150,7 @@ public final class PassBuilder {
     }
 
     ModulePassManager mpm = new ModulePassManager(instrumentation);
+    mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
     return mpm;
   }
