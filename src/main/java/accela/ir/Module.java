@@ -28,10 +28,30 @@ public class Module {
     globals.add(gv);
   }
 
+  public void removeGlobal(GlobalVariable global) {
+    if (!globals.remove(global)) {
+      throw new IllegalArgumentException("global does not belong to this module");
+    }
+  }
+
   /** Adds a full function definition and records the owning module on the function. */
   public void addFunction(Function func) {
     func.setParent(this);
     functions.add(func);
+  }
+
+  public void removeFunction(Function function) {
+    if (!functions.contains(function)) {
+      throw new IllegalArgumentException("function does not belong to this module");
+    }
+    for (BasicBlock block : List.copyOf(function.getBlocks())) {
+      for (Instruction instruction : List.copyOf(block.getInstructions())) {
+        instruction.eraseFromParent();
+      }
+      function.removeBlock(block);
+    }
+    functions.remove(function);
+    function.setParent(null);
   }
 
   /** Adds an external function declaration without a body. */
