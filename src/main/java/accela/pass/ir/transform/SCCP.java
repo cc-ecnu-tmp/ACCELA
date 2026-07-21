@@ -125,12 +125,31 @@ public final class SCCP {
     }
   };
 
+  static final class Analysis {
+    final ForwardDataflowSolver.Result<SCCPFact> result;
+    final SCCPTransfer transfer;
+
+    Analysis(ForwardDataflowSolver.Result<SCCPFact> result, SCCPTransfer transfer) {
+      this.result = result;
+      this.transfer = transfer;
+    }
+  }
+
   static final class SCCPTransfer implements ForwardTransfer<SCCPFact> {
 
+    interface CallResolver {
+      ConstVal resolve(Instruction call, SCCPFact fact);
+    }
+
     private Set<ForwardDataflowSolver.Edge> executableEdges = new LinkedHashSet<>();
+    private CallResolver callResolver = (call, fact) -> ConstVal.TOP;
 
     void setExecutableEdges(Set<ForwardDataflowSolver.Edge> edges) {
       this.executableEdges = edges;
+    }
+
+    void setCallResolver(CallResolver resolver) {
+      this.callResolver = resolver;
     }
 
     @Override
@@ -173,6 +192,7 @@ public final class SCCP {
         BasicBlock trueTarget = (BasicBlock) term.getOperand(1);
         BasicBlock falseTarget = (BasicBlock) term.getOperand(2);
 
+        if (cond.kind == ValKind.BOT) return result;
         if (cond.isConst()) {
           if (cond.intVal != 0) {
             result.put(trueTarget, refineFact(in, term.getOperand(0), true));
@@ -241,8 +261,8 @@ public final class SCCP {
           if (op.isConst()) return ConstVal.ofInt((long)(int) op.floatVal, inst.getType());
           return ConstVal.TOP;
         }
-        case CALL: case LOAD:
-          return ConstVal.TOP;
+        case CALL: return callResolver.resolve(inst, in);
+        case LOAD: return ConstVal.TOP;
         case STORE: case ALLOCA: case GEP: case BR: case CONDBR: case RET:
           return null;
         default:
@@ -294,19 +314,42 @@ public final class SCCP {
       entryFact = entryFact.with(arg, ConstVal.TOP);
     }
 
-    SCCPTransfer transfer = new SCCPTransfer();
-    ForwardDataflowSolver<SCCPFact> solver = new ForwardDataflowSolver<>();
-
-    Set<ForwardDataflowSolver.Edge> liveEdges = new LinkedHashSet<>();
-    transfer.setExecutableEdges(liveEdges);
-
-    ForwardDataflowSolver.Result<SCCPFact> solveResult =
-        solver.solve(function, LATTICE, transfer, entryFact, liveEdges);
-
-    return applyTransformations(function, solveResult, transfer);
+    Analysis analysis = analyze(function, entryFact, null);
+    return applyTransformations(function, analysis.result, analysis.transfer);
   }
 
-  private static boolean applyTransformations(
+  static Analysis analyze(
+      Function function, SCCPFact entryFact, SCCPTransfer.CallResolver resolver) {
+    SCCPTransfer transfer = new SCCPTransfer();
+    if (resolver != null) transfer.setCallResolver(resolver);
+    Set<ForwardDataflowSolver.Edge> liveEdges = new LinkedHashSet<>();
+    transfer.setExecutableEdges(liveEdges);
+    ForwardDataflowSolver.Result<SCCPFact> result =
+        new ForwardDataflowSolver<SCCPFact>()
+            .solve(function, LATTICE, transfer, entryFact, liveEdges);
+    return new Analysis(result, transfer);
+  }
+
+  static ConstVal returnedValue(Analysis analysis) {
+    ConstVal returned = ConstVal.BOT;
+    for (BasicBlock block : analysis.result.reachableBlocks) {
+      SCCPFact fact = analysis.result.blockFacts.getOrDefault(block, LATTICE.bot());
+      for (Instruction instruction : block.getInstructions()) {
+        if (instruction.getOpcode() == Opcode.RET) {
+          if (instruction.getNumOperands() != 0) {
+            returned = ConstVal.join(returned, fact.get(instruction.getOperand(0)));
+          }
+          break;
+        }
+        if (!instruction.isTerminator()) {
+          fact = analysis.transfer.transferInstruction(instruction, fact);
+        }
+      }
+    }
+    return returned;
+  }
+
+  static boolean applyTransformations(
       Function function,
       ForwardDataflowSolver.Result<SCCPFact> solveResult,
       SCCPTransfer transfer) {
@@ -361,7 +404,7 @@ public final class SCCP {
         ConstVal cv = running.get(inst);
         if (cv.isConst() && inst.hasResult()) {
           inst.replaceAllUsesWith(makeConstant(cv));
-          inst.eraseFromParent();
+          if (inst.getOpcode() != Opcode.CALL) inst.eraseFromParent();
           changed = true;
         }
       }
