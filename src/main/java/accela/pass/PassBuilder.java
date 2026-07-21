@@ -129,6 +129,18 @@ public final class PassBuilder {
     if (isInstSimplifyEnabled()) {
       fpm.addPass(new InstSimplify.Pass());
     }
+    if (enableSroa) {
+      fpm.addPass(new SROA.Pass());
+    }
+    if (isSccpEnabled()) {
+      fpm.addPass(new SCCP.Pass());
+    }
+    if (isEarlyCseEnabled()) {
+      fpm.addPass(new EarlyCSE.Pass());
+    }
+    if (isInstSimplifyEnabled()) {
+      fpm.addPass(new InstSimplify.Pass());
+    }
     if (enableAdce) {
       fpm.addPass(new ADCE.Pass());
       if (enableSimplifyCfg) {
