@@ -1,0 +1,594 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+final class IRCAllocatorStateTest {
+  private final TargetRegisterInfo registers = new TargetRegisterInfo();
+
+  @Test
+  void initializesDegreesAndMoveLists() {
+    MachineFunction function = new MachineFunction("state", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(a, b);
+    graph.addNode(c);
+
+    InterferenceGraphBuilder.Move move = move(c, a);
+    AllocatorState state = state(graph, Set.of(move));
+
+    assertEquals(Set.of(a, b, c), state.initial);
+    assertEquals(1, state.degree(a));
+    assertEquals(1, state.degree(b));
+    assertEquals(0, state.degree(c));
+    assertEquals(Set.of(move), state.nodeMoves(a));
+    assertEquals(Set.of(move), state.nodeMoves(c));
+    assertTrue(state.nodeMoves(b).isEmpty());
+  }
+
+  @Test
+  void nodeMovesIgnoresUnrelatedActiveMoves() {
+    MachineFunction function = new MachineFunction("active_moves", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+    VirtualRegister d = function.createVirtualRegister(MachineType.I32, "d");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+    graph.addNode(c);
+    graph.addNode(d);
+    InterferenceGraphBuilder.Move ab = move(b, a);
+    InterferenceGraphBuilder.Move cd = move(d, c);
+
+    AllocatorState state = state(graph, Set.of(ab, cd));
+    state.worklistMoves.remove(cd);
+    state.activeMoves.add(cd);
+
+    assertEquals(Set.of(ab), state.nodeMoves(a));
+    assertFalse(state.moveRelated(a) && state.nodeMoves(a).contains(cd));
+  }
+
+  @Test
+  void putsLowDegreeNonMoveRelatedNodesInSimplifyWorklist() {
+    MachineFunction function = new MachineFunction("simplify", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+
+    AllocatorState state = state(graph, Set.of());
+    state.makeWorklist();
+
+    assertTrue(state.initial.isEmpty());
+    assertEquals(Set.of(a), state.simplifyWorklist);
+    assertTrue(state.freezeWorklist.isEmpty());
+    assertTrue(state.spillWorklist.isEmpty());
+  }
+
+  @Test
+  void putsLowDegreeMoveRelatedNodesInFreezeWorklist() {
+    MachineFunction function = new MachineFunction("freeze", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+
+    AllocatorState state = state(graph, Set.of(move(b, a)));
+    state.makeWorklist();
+
+    assertTrue(state.initial.isEmpty());
+    assertTrue(state.simplifyWorklist.isEmpty());
+    assertEquals(Set.of(a, b), state.freezeWorklist);
+    assertTrue(state.spillWorklist.isEmpty());
+  }
+
+  @Test
+  void putsHighDegreeNodesInSpillWorklistEvenWhenMoveRelated() {
+    MachineFunction function = new MachineFunction("spill", MachineType.I32);
+    VirtualRegister hot = function.createVirtualRegister(MachineType.I32, "hot");
+    VirtualRegister moveSource = function.createVirtualRegister(MachineType.I32, "move.src");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(hot);
+    graph.addNode(moveSource);
+
+    for (int i = 0; i < registers.registerCount(MachineType.I32); i++) {
+      VirtualRegister neighbor = function.createVirtualRegister(MachineType.I32, "n" + i);
+      graph.addEdge(hot, neighbor);
+    }
+
+    AllocatorState state = state(graph, Set.of(move(hot, moveSource)));
+    state.makeWorklist();
+
+    assertTrue(state.spillWorklist.contains(hot));
+    assertTrue(state.freezeWorklist.contains(moveSource));
+  }
+
+  @Test
+  void usesCalleeSavedRegisterCountForValuesLiveAcrossCalls() {
+    MachineFunction function = new MachineFunction("call_degree", MachineType.I32);
+    VirtualRegister liveAcrossCall = function.createVirtualRegister(MachineType.I32, "live");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(liveAcrossCall);
+
+    int calleeSavedCount = registers.calleeSavedRegisters(MachineType.I32).size();
+    for (int i = 0; i < calleeSavedCount; i++) {
+      VirtualRegister neighbor = function.createVirtualRegister(MachineType.I32, "n" + i);
+      graph.addEdge(liveAcrossCall, neighbor);
+    }
+
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of()),
+            new TargetRegisterInfo(),
+            register -> 1.0,
+            Set.of(liveAcrossCall));
+    state.makeWorklist();
+
+    assertTrue(state.spillWorklist.contains(liveAcrossCall));
+  }
+
+  @Test
+  void simplifyPushesNodeAndDecrementsAdjacentDegrees() {
+    MachineFunction function = new MachineFunction("simplify_step", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(a, b);
+
+    AllocatorState state = state(graph, Set.of());
+    state.simplifyWorklist.add(a);
+    state.simplify();
+
+    assertTrue(state.simplifyWorklist.isEmpty());
+    assertEquals(a, state.selectStack.peek());
+    assertEquals(0, state.degree(b));
+  }
+
+  @Test
+  void simplifyIgnoresAlreadySelectedAndCoalescedNeighbors() {
+    MachineFunction function = new MachineFunction("adjacent", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister selected = function.createVirtualRegister(MachineType.I32, "selected");
+    VirtualRegister coalesced = function.createVirtualRegister(MachineType.I32, "coalesced");
+    VirtualRegister live = function.createVirtualRegister(MachineType.I32, "live");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(a, selected);
+    graph.addEdge(a, coalesced);
+    graph.addEdge(a, live);
+
+    AllocatorState state = state(graph, Set.of());
+    state.selectStack.push(selected);
+    state.coalescedNodes.add(coalesced);
+    state.simplifyWorklist.add(a);
+    state.simplify();
+
+    assertEquals(1, state.degree(selected));
+    assertEquals(1, state.degree(coalesced));
+    assertEquals(0, state.degree(live));
+  }
+
+  @Test
+  void decrementDegreeMovesNodeFromSpillToSimplifyWhenItBecomesLowDegree() {
+    MachineFunction function = new MachineFunction("degree_boundary", MachineType.I32);
+    VirtualRegister hot = function.createVirtualRegister(MachineType.I32, "hot");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(hot);
+
+    AllocatorState state = state(graph, Set.of());
+    state.degree.put(hot, registers.registerCount(MachineType.I32));
+    state.spillWorklist.add(hot);
+    state.decrementDegree(hot);
+
+    assertEquals(registers.registerCount(MachineType.I32) - 1, state.degree(hot));
+    assertTrue(state.spillWorklist.isEmpty());
+    assertEquals(Set.of(hot), state.simplifyWorklist);
+  }
+
+  @Test
+  void decrementDegreeMovesMoveRelatedNodeFromSpillToFreeze() {
+    MachineFunction function = new MachineFunction("degree_boundary_move", MachineType.I32);
+    VirtualRegister hot = function.createVirtualRegister(MachineType.I32, "hot");
+    VirtualRegister src = function.createVirtualRegister(MachineType.I32, "src");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(hot);
+    graph.addNode(src);
+    InterferenceGraphBuilder.Move move = move(hot, src);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.degree.put(hot, registers.registerCount(MachineType.I32));
+    state.spillWorklist.add(hot);
+    state.decrementDegree(hot);
+
+    assertTrue(state.spillWorklist.isEmpty());
+    assertEquals(Set.of(hot), state.freezeWorklist);
+    assertTrue(state.simplifyWorklist.isEmpty());
+  }
+
+  @Test
+  void decrementDegreeEnablesActiveMovesNearBoundaryNode() {
+    MachineFunction function = new MachineFunction("enable_moves", MachineType.I32);
+    VirtualRegister hot = function.createVirtualRegister(MachineType.I32, "hot");
+    VirtualRegister src = function.createVirtualRegister(MachineType.I32, "src");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(hot);
+    graph.addNode(src);
+    InterferenceGraphBuilder.Move move = move(hot, src);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.worklistMoves.remove(move);
+    state.activeMoves.add(move);
+    state.degree.put(hot, registers.registerCount(MachineType.I32));
+    state.decrementDegree(hot);
+
+    assertTrue(state.activeMoves.isEmpty());
+    assertEquals(Set.of(move), state.worklistMoves);
+  }
+
+  @Test
+  void coalesceMarksMoveCoalescedWhenAliasesAlreadyMatch() {
+    MachineFunction function = new MachineFunction("coalesce_same", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+    InterferenceGraphBuilder.Move move = move(b, a);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.coalescedNodes.add(b);
+    state.alias.put(b, a);
+    state.coalesce();
+
+    assertTrue(state.worklistMoves.isEmpty());
+    assertEquals(Set.of(move), state.coalescedMoves);
+  }
+
+  @Test
+  void coalesceConstrainsMoveWhenEndpointsInterfere() {
+    MachineFunction function = new MachineFunction("coalesce_interfere", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(a, b);
+    InterferenceGraphBuilder.Move move = move(b, a);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.coalesce();
+
+    assertTrue(state.worklistMoves.isEmpty());
+    assertEquals(Set.of(move), state.constrainedMoves);
+    assertTrue(state.coalescedNodes.isEmpty());
+  }
+
+  @Test
+  void coalesceCombinesConservativeNonInterferingEndpoints() {
+    MachineFunction function = new MachineFunction("coalesce_ok", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister x = function.createVirtualRegister(MachineType.I32, "x");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addEdge(b, x);
+    InterferenceGraphBuilder.Move move = move(b, a);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.coalesce();
+
+    assertTrue(state.worklistMoves.isEmpty());
+    assertEquals(Set.of(move), state.coalescedMoves);
+    assertEquals(Set.of(b), state.coalescedNodes);
+    assertEquals(a, state.alias.get(b));
+    assertEquals(a, state.getAlias(b));
+    assertTrue(graph.interferes(a, x));
+  }
+
+  @Test
+  void coalescePreservesLiveAcrossCallRequirementOnRepresentative() {
+    MachineFunction function = new MachineFunction("coalesce_call", MachineType.I32);
+    VirtualRegister src = function.createVirtualRegister(MachineType.I32, "src");
+    VirtualRegister dst = function.createVirtualRegister(MachineType.I32, "dst");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(src);
+    graph.addNode(dst);
+    InterferenceGraphBuilder.Move move = move(dst, src);
+
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of(move)),
+            new TargetRegisterInfo(),
+            register -> 1.0,
+            Set.of(dst));
+    state.coalesce();
+    state.selectStack.push(src);
+    state.assignColors();
+
+    assertTrue(state.color.get(src).getName().startsWith("s"));
+    assertEquals(state.color.get(src).getName(), state.color.get(dst).getName());
+  }
+
+  @Test
+  void coalesceDefersMoveWhenConservativeCheckFails() {
+    MachineFunction function = new MachineFunction("coalesce_defer", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+
+    Set<VirtualRegister> highDegreeNeighbors = new java.util.HashSet<>();
+    for (int i = 0; i < registers.registerCount(MachineType.I32); i++) {
+      VirtualRegister neighbor = function.createVirtualRegister(MachineType.I32, "n" + i);
+      graph.addEdge(a, neighbor);
+      highDegreeNeighbors.add(neighbor);
+    }
+
+    InterferenceGraphBuilder.Move move = move(b, a);
+    AllocatorState state = state(graph, Set.of(move));
+    for (VirtualRegister neighbor : highDegreeNeighbors) {
+      state.degree.put(neighbor, registers.registerCount(MachineType.I32));
+    }
+    state.coalesce();
+
+    assertTrue(state.worklistMoves.isEmpty());
+    assertEquals(Set.of(move), state.activeMoves);
+    assertTrue(state.coalescedMoves.isEmpty());
+    assertTrue(state.coalescedNodes.isEmpty());
+  }
+
+  @Test
+  void coalesceRejectsMovesBetweenDifferentRegisterClasses() {
+    MachineFunction function = new MachineFunction("coalesce_type", MachineType.I32);
+    VirtualRegister intReg = function.createVirtualRegister(MachineType.I32, "i");
+    VirtualRegister floatReg = function.createVirtualRegister(MachineType.F32, "f");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(intReg);
+    graph.addNode(floatReg);
+    InterferenceGraphBuilder.Move move = move(floatReg, intReg);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.coalesce();
+
+    assertEquals(Set.of(move), state.constrainedMoves);
+    assertTrue(state.coalescedNodes.isEmpty());
+  }
+
+  @Test
+  void freezeMovesNodeFromFreezeToSimplifyAndFreezesWorklistMove() {
+    MachineFunction function = new MachineFunction("freeze_worklist", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+    InterferenceGraphBuilder.Move move = move(b, a);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.freezeWorklist.add(a);
+    state.freeze();
+
+    assertTrue(state.freezeWorklist.isEmpty());
+    assertEquals(Set.of(a, b), state.simplifyWorklist);
+    assertTrue(state.worklistMoves.isEmpty());
+    assertEquals(Set.of(move), state.frozenMoves);
+  }
+
+  @Test
+  void freezeMovesActiveMoveToFrozenMoves() {
+    MachineFunction function = new MachineFunction("freeze_active", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+    InterferenceGraphBuilder.Move move = move(b, a);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.worklistMoves.remove(move);
+    state.activeMoves.add(move);
+    state.freezeWorklist.add(a);
+    state.freeze();
+
+    assertTrue(state.activeMoves.isEmpty());
+    assertEquals(Set.of(move), state.frozenMoves);
+  }
+
+  @Test
+  void freezeKeepsOtherEndpointFrozenWhenItStillHasAnotherMove() {
+    MachineFunction function = new MachineFunction("freeze_partial", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+    graph.addNode(c);
+    InterferenceGraphBuilder.Move ab = move(b, a);
+    InterferenceGraphBuilder.Move bc = move(c, b);
+
+    AllocatorState state = state(graph, Set.of(ab, bc));
+    state.freezeWorklist.add(a);
+    state.freezeWorklist.add(b);
+    state.freeze();
+
+    assertEquals(Set.of(ab), state.frozenMoves);
+    assertTrue(state.freezeWorklist.contains(b));
+    assertTrue(state.simplifyWorklist.contains(a));
+  }
+
+  @Test
+  void selectSpillChoosesLowestCostCandidate() {
+    MachineFunction function = new MachineFunction("select_spill", MachineType.I32);
+    VirtualRegister expensive = function.createVirtualRegister(MachineType.I32, "expensive");
+    VirtualRegister cheap = function.createVirtualRegister(MachineType.I32, "cheap");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(expensive);
+    graph.addNode(cheap);
+
+    AllocatorState state =
+        state(
+            graph,
+            Set.of(),
+            register -> register.equals(cheap) ? 1.0 : 10.0);
+    state.spillWorklist.add(expensive);
+    state.spillWorklist.add(cheap);
+    state.selectSpill();
+
+    assertEquals(Set.of(cheap), state.simplifyWorklist);
+    assertEquals(Set.of(expensive), state.spillWorklist);
+    assertTrue(state.spilledNodes.isEmpty());
+  }
+
+  @Test
+  void selectSpillFreezesSelectedNodeMoves() {
+    MachineFunction function = new MachineFunction("select_spill_freeze", MachineType.I32);
+    VirtualRegister selected = function.createVirtualRegister(MachineType.I32, "selected");
+    VirtualRegister other = function.createVirtualRegister(MachineType.I32, "other");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(selected);
+    graph.addNode(other);
+    InterferenceGraphBuilder.Move move = move(selected, other);
+
+    AllocatorState state = state(graph, Set.of(move), register -> 1.0);
+    state.spillWorklist.add(selected);
+    state.freezeWorklist.add(other);
+    state.selectSpill();
+
+    assertEquals(Set.of(selected, other), state.simplifyWorklist);
+    assertTrue(state.worklistMoves.isEmpty());
+    assertEquals(Set.of(move), state.frozenMoves);
+  }
+
+  @Test
+  void assignColorsGivesInterferingNodesDifferentColors() {
+    MachineFunction function = new MachineFunction("color_edge", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(a, b);
+
+    AllocatorState state = state(graph, Set.of());
+    state.selectStack.push(a);
+    state.selectStack.push(b);
+    state.assignColors();
+
+    assertTrue(state.spilledNodes.isEmpty());
+    assertTrue(state.coloredNodes.contains(a));
+    assertTrue(state.coloredNodes.contains(b));
+    assertTrue(!state.color.get(a).getName().equals(state.color.get(b).getName()));
+  }
+
+  @Test
+  void assignColorsAllowsNonInterferingNodesToReuseAColor() {
+    MachineFunction function = new MachineFunction("color_reuse", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(a);
+    graph.addNode(b);
+
+    AllocatorState state = state(graph, Set.of());
+    state.selectStack.push(a);
+    state.selectStack.push(b);
+    state.assignColors();
+
+    assertEquals(state.color.get(a).getName(), state.color.get(b).getName());
+  }
+
+  @Test
+  void assignColorsSpillsNodeWhenAllColorsAreUnavailable() {
+    MachineFunction function = new MachineFunction("color_spill", MachineType.I32);
+    VirtualRegister candidate = function.createVirtualRegister(MachineType.I32, "candidate");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(candidate);
+
+    AllocatorState state = state(graph, Set.of());
+    List<PhysicalRegister> colors = registers.allocatableRegisters(MachineType.I32);
+    for (int i = 0; i < colors.size(); i++) {
+      VirtualRegister neighbor = function.createVirtualRegister(MachineType.I32, "n" + i);
+      graph.addEdge(candidate, neighbor);
+      state.coloredNodes.add(neighbor);
+      state.color.put(neighbor, colors.get(i));
+    }
+
+    state.selectStack.push(candidate);
+    state.assignColors();
+
+    assertEquals(Set.of(candidate), state.spilledNodes);
+    assertTrue(!state.color.containsKey(candidate));
+  }
+
+  @Test
+  void assignColorsCopiesRepresentativeColorToCoalescedNodes() {
+    MachineFunction function = new MachineFunction("color_coalesced", MachineType.I32);
+    VirtualRegister representative = function.createVirtualRegister(MachineType.I32, "rep");
+    VirtualRegister merged = function.createVirtualRegister(MachineType.I32, "merged");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(representative);
+    graph.addNode(merged);
+
+    AllocatorState state = state(graph, Set.of());
+    state.coalescedNodes.add(merged);
+    state.alias.put(merged, representative);
+    state.selectStack.push(representative);
+    state.assignColors();
+
+    assertEquals(state.color.get(representative).getName(), state.color.get(merged).getName());
+  }
+
+  @Test
+  void assignColorsUsesOnlyCalleeSavedRegistersForValuesLiveAcrossCalls() {
+    MachineFunction function = new MachineFunction("color_call", MachineType.I32);
+    VirtualRegister liveAcrossCall = function.createVirtualRegister(MachineType.I32, "live");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(liveAcrossCall);
+
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of()),
+            new TargetRegisterInfo(),
+            register -> 1.0,
+            Set.of(liveAcrossCall));
+    state.selectStack.push(liveAcrossCall);
+    state.assignColors();
+
+    assertTrue(state.color.get(liveAcrossCall).getName().startsWith("s"));
+  }
+
+  private static AllocatorState state(
+      InterferenceGraph graph, Set<InterferenceGraphBuilder.Move> moves) {
+    return new AllocatorState(
+        new InterferenceGraphBuilder.Result(graph, moves), new TargetRegisterInfo());
+  }
+
+  private static AllocatorState state(
+      InterferenceGraph graph,
+      Set<InterferenceGraphBuilder.Move> moves,
+      SpillCostModel spillCostModel) {
+    return new AllocatorState(
+        new InterferenceGraphBuilder.Result(graph, moves),
+        new TargetRegisterInfo(),
+        spillCostModel);
+  }
+
+  private static InterferenceGraphBuilder.Move move(VirtualRegister dst, VirtualRegister src) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dst);
+    instr.addOperand(new VRegOperand(src));
+    instr.setType(dst.getType());
+    return new InterferenceGraphBuilder.Move(dst, src, instr);
+  }
+}

@@ -1,0 +1,43 @@
+package accela.backend.target;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class RISCVFrameLoweringTest {
+  private final RISCVTarget target = new RISCVTarget();
+  private final RISCVFrameLowering lowering = new RISCVFrameLowering(target);
+
+  @Test
+  void savesAndRestoresUsedIntegerCalleeSavedRegisters() {
+    MachineFunction function = new MachineFunction("callee_saved_int", MachineType.I32);
+    function.getFrameInfo().addCalleeSavedRegister(new PhysicalRegister("s1", MachineType.I32));
+    lowering.finalizeFrame(function);
+
+    List<String> lines = new ArrayList<>();
+    lowering.emitPrologue(function, lines);
+    lowering.emitEpilogue(function, lines);
+
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  sd s1, [0-9]+\\(sp\\)")));
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  ld s1, [0-9]+\\(sp\\)")));
+  }
+
+  @Test
+  void savesAndRestoresUsedFloatCalleeSavedRegisters() {
+    MachineFunction function = new MachineFunction("callee_saved_float", MachineType.F32);
+    function.getFrameInfo().addCalleeSavedRegister(new PhysicalRegister("fs1", MachineType.F32));
+    lowering.finalizeFrame(function);
+
+    List<String> lines = new ArrayList<>();
+    lowering.emitPrologue(function, lines);
+    lowering.emitEpilogue(function, lines);
+
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  fsw fs1, [0-9]+\\(sp\\)")));
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  flw fs1, [0-9]+\\(sp\\)")));
+  }
+}

@@ -3,6 +3,7 @@ package accela.backend.target;
 import accela.backend.frame.MachineFrameInfo;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
 import java.util.List;
 
 public final class RISCVFrameLowering {
@@ -25,6 +26,10 @@ public final class RISCVFrameLowering {
     if (function.getFrameInfo().hasCalls()) {
       emitStoreToBase(lines, "ra", "sp", function.getFrameInfo().getSaveRaOffset(), "t3", MachineType.PTR);
     }
+    for (MachineFrameInfo.CalleeSavedRegisterSave save : function.getFrameInfo().getCalleeSavedRegisterSaves()) {
+      PhysicalRegister register = save.getRegister();
+      emitStoreToBase(lines, register.getName(), "sp", save.getOffset(), "t3", saveType(register));
+    }
     if (frameSize > 0) {
       emitAddImmediate(lines, "s0", "sp", frameSize, "t3");
     } else {
@@ -36,6 +41,10 @@ public final class RISCVFrameLowering {
     emitLoadFromBase(lines, "s0", "sp", function.getFrameInfo().getSaveS0Offset(), "t3", MachineType.PTR);
     if (function.getFrameInfo().hasCalls()) {
       emitLoadFromBase(lines, "ra", "sp", function.getFrameInfo().getSaveRaOffset(), "t3", MachineType.PTR);
+    }
+    for (MachineFrameInfo.CalleeSavedRegisterSave save : function.getFrameInfo().getCalleeSavedRegisterSaves()) {
+      PhysicalRegister register = save.getRegister();
+      emitLoadFromBase(lines, register.getName(), "sp", save.getOffset(), "t3", saveType(register));
     }
     int frameSize = function.getFrameInfo().getFrameSize();
     if (frameSize > 0) {
@@ -94,5 +103,9 @@ public final class RISCVFrameLowering {
 
   private boolean fitsImm12(int value) {
     return value >= -2048 && value <= 2047;
+  }
+
+  private MachineType saveType(PhysicalRegister register) {
+    return register.getType().isFloat() ? MachineType.F32 : MachineType.PTR;
   }
 }

@@ -1,0 +1,111 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class TargetRegisterInfoTest {
+  private final TargetRegisterInfo info = new TargetRegisterInfo();
+
+  @Test
+  void returnsIntegerRegistersForIntegerLikeTypes() {
+    assertNames(
+        info.allocatableRegisters(MachineType.I32),
+        "t4", "t5", "t6",
+        "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11");
+
+    assertEquals(
+        names(info.allocatableRegisters(MachineType.I32)),
+        names(info.allocatableRegisters(MachineType.I1)));
+    assertEquals(
+        names(info.allocatableRegisters(MachineType.I32)),
+        names(info.allocatableRegisters(MachineType.I64)));
+    assertEquals(
+        names(info.allocatableRegisters(MachineType.I32)),
+        names(info.allocatableRegisters(MachineType.PTR)));
+  }
+
+  @Test
+  void returnsFloatRegistersForFloatTypes() {
+    assertNames(
+        info.allocatableRegisters(MachineType.F32),
+        "ft4", "ft5", "ft6", "ft7", "ft8", "ft9", "ft10", "ft11",
+        "fs0", "fs1", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7", "fs8", "fs9", "fs10", "fs11");
+  }
+
+  @Test
+  void returnsNoRegistersForVoid() {
+    assertTrue(info.allocatableRegisters(MachineType.VOID).isEmpty());
+    assertEquals(0, info.registerCount(MachineType.VOID));
+  }
+
+  @Test
+  void registerCountMatchesAllocatableListSize() {
+    assertEquals(info.allocatableRegisters(MachineType.I32).size(), info.registerCount(MachineType.I32));
+    assertEquals(info.allocatableRegisters(MachineType.F32).size(), info.registerCount(MachineType.F32));
+  }
+
+  @Test
+  void registerListsAreImmutable() {
+    assertThrows(
+        UnsupportedOperationException.class,
+        () -> info.allocatableRegisters(MachineType.I32).add(new PhysicalRegister("x", MachineType.I32)));
+  }
+
+  @Test
+  void classifiesReservedRegisters() {
+    assertTrue(info.isReserved(new PhysicalRegister("zero", MachineType.I32)));
+    assertTrue(info.isReserved(new PhysicalRegister("sp", MachineType.PTR)));
+    assertTrue(info.isReserved(new PhysicalRegister("ra", MachineType.PTR)));
+    assertTrue(info.isReserved(new PhysicalRegister("s0", MachineType.PTR)));
+    assertTrue(info.isReserved(new PhysicalRegister("fp", MachineType.PTR)));
+    assertFalse(info.isReserved(new PhysicalRegister("t0", MachineType.I32)));
+    assertFalse(info.isReserved(new PhysicalRegister("s1", MachineType.I32)));
+  }
+
+  @Test
+  void classifiesAllocatorReservedRegisters() {
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("zero", MachineType.I32)));
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("t0", MachineType.I32)));
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("t3", MachineType.I32)));
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("ft0", MachineType.F32)));
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("ft3", MachineType.F32)));
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("a0", MachineType.I32)));
+    assertTrue(info.isAllocatorReserved(new PhysicalRegister("fa7", MachineType.F32)));
+
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("t4", MachineType.I32)));
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("s1", MachineType.I32)));
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("ft4", MachineType.F32)));
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("fs0", MachineType.F32)));
+  }
+
+  @Test
+  void classifiesCallerAndCalleeSavedRegisters() {
+    assertTrue(info.isCallerSaved(new PhysicalRegister("t0", MachineType.I32)));
+    assertTrue(info.isCallerSaved(new PhysicalRegister("a7", MachineType.I32)));
+    assertTrue(info.isCallerSaved(new PhysicalRegister("ft11", MachineType.F32)));
+    assertTrue(info.isCallerSaved(new PhysicalRegister("fa0", MachineType.F32)));
+
+    assertTrue(info.isCalleeSaved(new PhysicalRegister("s1", MachineType.I32)));
+    assertTrue(info.isCalleeSaved(new PhysicalRegister("s11", MachineType.I32)));
+    assertTrue(info.isCalleeSaved(new PhysicalRegister("fs0", MachineType.F32)));
+    assertTrue(info.isCalleeSaved(new PhysicalRegister("fs11", MachineType.F32)));
+
+    assertFalse(info.isCallerSaved(new PhysicalRegister("s1", MachineType.I32)));
+    assertFalse(info.isCalleeSaved(new PhysicalRegister("t0", MachineType.I32)));
+  }
+
+  private static void assertNames(List<PhysicalRegister> registers, String... expected) {
+    assertEquals(List.of(expected), names(registers));
+  }
+
+  private static List<String> names(List<PhysicalRegister> registers) {
+    return registers.stream().map(PhysicalRegister::getName).toList();
+  }
+}

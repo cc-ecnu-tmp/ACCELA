@@ -1,0 +1,113 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.frame.StackSlotKind;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.target.RISCVTarget;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+final class LocalSpillRewriterTest {
+  private final LocalSpillRewriter rewriter = new LocalSpillRewriter();
+  private final RISCVTarget target = new RISCVTarget();
+
+  @Test
+  void rewritesSpilledUsesWithStackAddressAndLoad() {
+    MachineFunction function = new MachineFunction("spill_use", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister spilled = function.createVirtualRegister(MachineType.I32, "spilled");
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+
+    entry.addInstruction(add(result, spilled, spilled));
+    entry.addInstruction(ret(result));
+
+    rewriter.rewrite(function, Set.of(spilled), target);
+
+    assertOpcodes(entry, MachineOpcode.STACK_ADDR, MachineOpcode.LOAD, MachineOpcode.ADD, MachineOpcode.RET);
+    MachineInstr load = entry.getInstructions().get(1);
+    MachineInstr add = entry.getInstructions().get(2);
+    VirtualRegister reload = load.getDest();
+    assertEquals(reload, ((VRegOperand) add.getOperands().get(0)).getRegister());
+    assertEquals(reload, ((VRegOperand) add.getOperands().get(1)).getRegister());
+    assertEquals(1, function.getFrameInfo().getSlots().size());
+    assertEquals(StackSlotKind.SPILL, function.getFrameInfo().getSlots().get(0).getKind());
+  }
+
+  @Test
+  void rewritesSpilledDefinitionsWithTemporaryDefinitionAndStore() {
+    MachineFunction function = new MachineFunction("spill_def", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister spilled = function.createVirtualRegister(MachineType.I32, "spilled");
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+
+    entry.addInstruction(moveImm(spilled, 42));
+    entry.addInstruction(addImm(result, spilled, 1));
+    entry.addInstruction(ret(result));
+
+    rewriter.rewrite(function, Set.of(spilled), target);
+
+    assertOpcodes(
+        entry,
+        MachineOpcode.MOVE,
+        MachineOpcode.STACK_ADDR,
+        MachineOpcode.STORE,
+        MachineOpcode.STACK_ADDR,
+        MachineOpcode.LOAD,
+        MachineOpcode.ADD,
+        MachineOpcode.RET);
+    MachineInstr rewrittenDef = entry.getInstructions().get(0);
+    MachineInstr store = entry.getInstructions().get(2);
+    MachineInstr load = entry.getInstructions().get(4);
+    MachineInstr add = entry.getInstructions().get(5);
+
+    assertTrue(!rewrittenDef.getDest().equals(spilled));
+    assertEquals(rewrittenDef.getDest(), ((VRegOperand) store.getOperands().get(0)).getRegister());
+    assertEquals(load.getDest(), ((VRegOperand) add.getOperands().get(0)).getRegister());
+  }
+
+  private static MachineInstr moveImm(VirtualRegister dest, int value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new ImmOperand(value));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr add(VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
+    instr.addOperand(new VRegOperand(left));
+    instr.addOperand(new VRegOperand(right));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr addImm(VirtualRegister dest, VirtualRegister left, int right) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
+    instr.addOperand(new VRegOperand(left));
+    instr.addOperand(new ImmOperand(right));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr ret(VirtualRegister value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.RET, null);
+    instr.addOperand(new VRegOperand(value));
+    instr.setType(value.getType());
+    return instr;
+  }
+
+  private static void assertOpcodes(MachineBasicBlock block, MachineOpcode... expected) {
+    assertEquals(expected.length, block.getInstructions().size());
+    for (int i = 0; i < expected.length; i++) {
+      assertEquals(expected[i], block.getInstructions().get(i).getOpcode());
+    }
+  }
+}

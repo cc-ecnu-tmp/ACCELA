@@ -1,10 +1,13 @@
 package accela.backend.frame;
 
 import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
 import accela.backend.target.RISCVTarget;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class MachineFrameInfo {
   private final List<StackSlot> slots = new ArrayList<>();
@@ -13,6 +16,7 @@ public final class MachineFrameInfo {
   private boolean hasCalls = false;
   private int saveS0Offset = -1;
   private int saveRaOffset = -1;
+  private final Map<String, CalleeSavedRegisterSave> calleeSavedRegisterSaves = new LinkedHashMap<>();
   private int frameSize = 0;
 
   public StackSlot createLocalSlot(MachineType type, int size, int align) {
@@ -59,6 +63,15 @@ public final class MachineFrameInfo {
     return frameSize;
   }
 
+  public void addCalleeSavedRegister(PhysicalRegister register) {
+    calleeSavedRegisterSaves.computeIfAbsent(
+        register.getName(), ignored -> new CalleeSavedRegisterSave(register));
+  }
+
+  public List<CalleeSavedRegisterSave> getCalleeSavedRegisterSaves() {
+    return Collections.unmodifiableList(new ArrayList<>(calleeSavedRegisterSaves.values()));
+  }
+
   public void finalizeLayout(RISCVTarget target) {
     int offset = outgoingArgBytes;
     for (StackSlot slot : slots) {
@@ -74,6 +87,33 @@ public final class MachineFrameInfo {
       saveRaOffset = offset;
       offset += target.stackSizeOf(MachineType.PTR);
     }
+    for (CalleeSavedRegisterSave save : calleeSavedRegisterSaves.values()) {
+      MachineType saveType = save.getRegister().getType().isFloat() ? MachineType.F32 : MachineType.PTR;
+      offset = target.alignTo(offset, target.stackAlignOf(saveType));
+      save.setOffset(offset);
+      offset += target.stackSizeOf(saveType);
+    }
     frameSize = target.alignTo(offset, 16);
+  }
+
+  public static final class CalleeSavedRegisterSave {
+    private final PhysicalRegister register;
+    private int offset = -1;
+
+    private CalleeSavedRegisterSave(PhysicalRegister register) {
+      this.register = register;
+    }
+
+    public PhysicalRegister getRegister() {
+      return register;
+    }
+
+    public int getOffset() {
+      return offset;
+    }
+
+    private void setOffset(int offset) {
+      this.offset = offset;
+    }
   }
 }

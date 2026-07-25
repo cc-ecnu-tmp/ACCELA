@@ -35,8 +35,12 @@ public final class RISCVAsmPrinter {
     emitGlobals(module.getSourceModule(), lines);
     lines.add(".text");
     for (MachineFunction function : module.getFunctions()) {
+      AllocationResult allocation = allocations.get(function);
+      for (accela.backend.machine.PhysicalRegister register : allocation.getUsedCalleeSavedRegisters()) {
+        function.getFrameInfo().addCalleeSavedRegister(register);
+      }
       frameLowering.finalizeFrame(function);
-      emitFunction(function, allocations.get(function), lines);
+      emitFunction(function, allocation, lines);
     }
     if (needsMemzeroHelper(module)) emitMemzeroHelper(lines);
     return String.join("\n", lines) + "\n";
