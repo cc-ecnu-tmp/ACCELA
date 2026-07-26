@@ -32,6 +32,7 @@ final class RISCVGEPTest {
     String assembly = new BackendCompiler().compileToAssembly(module);
 
     assertFalse(assembly.contains("  mul "));
-    assertTrue(assembly.matches("(?s).*\\baddi [^\\n]+, [^\\n]+, 76\\b.*"));
+    assertFalse(assembly.matches("(?s).*\\baddi [^\\n]+, [^\\n]+, 76\\b.*"));
+    assertTrue(assembly.matches("(?s).*\\blw [^\\n]+, 76\\([^\\n]+\\).*"));
   }
 }

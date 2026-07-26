@@ -391,6 +391,8 @@ public final class RISCVAsmEmitter {
   }
 
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+    long offset =
+        instr.getOperands().size() > 1 ? ((ImmOperand) instr.getOperands().get(1)).getValue() : 0;
     String address =
         operandRegisterOrScratch(
             lines,
@@ -399,10 +401,12 @@ public final class RISCVAsmEmitter {
             MachineType.PTR,
             allocation);
     String dst = destReg(instr, allocation);
-    lines.add("  " + loadMnemonic(instr.getType()) + " " + dst + ", 0(" + address + ")");
+    lines.add("  " + loadMnemonic(instr.getType()) + " " + dst + ", " + offset + "(" + address + ")");
   }
 
   private void emitStore(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+    long offset =
+        instr.getOperands().size() > 2 ? ((ImmOperand) instr.getOperands().get(2)).getValue() : 0;
     String value =
         operandRegisterOrScratch(
             lines,
@@ -417,7 +421,8 @@ public final class RISCVAsmEmitter {
             INT_SCRATCH_1,
             MachineType.PTR,
             allocation);
-    lines.add("  " + storeMnemonic(instr.getType()) + " " + value + ", 0(" + address + ")");
+    lines.add(
+        "  " + storeMnemonic(instr.getType()) + " " + value + ", " + offset + "(" + address + ")");
   }
 
   private void emitMemzero(MachineInstr instr, AllocationResult allocation, List<String> lines) {
