@@ -39,6 +39,7 @@ public final class RISCVAsmEmitter {
 
   void emitInstruction(
       MachineFunction function,
+      MachineBasicBlock fallthrough,
       MachineInstr instr,
       AllocationResult allocation,
       List<String> lines) {
@@ -122,15 +123,20 @@ public final class RISCVAsmEmitter {
         emitMemzero(instr, allocation, lines);
         return;
       case BR:
-        lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(0)).getBlock()));
+        MachineBasicBlock branchTarget = ((BlockOperand) instr.getOperands().get(0)).getBlock();
+        if (branchTarget != fallthrough) lines.add("  j " + labelFor(function, branchTarget));
         return;
       case CONDBR:
         if (instr.getPredicate() != null) {
-          emitCompareBranch(function, instr, allocation, lines);
+          emitCompareBranch(function, fallthrough, instr, allocation, lines);
           return;
         }
+        MachineBasicBlock ifTrue = ((BlockOperand) instr.getOperands().get(1)).getBlock();
+        MachineBasicBlock ifFalse = ((BlockOperand) instr.getOperands().get(2)).getBlock();
+        boolean invert = ifTrue == fallthrough;
         lines.add(
-            "  bnez "
+            "  "
+                + (invert ? "beqz " : "bnez ")
                 + operandRegisterOrScratch(
                     lines,
                     instr.getOperands().get(0),
@@ -138,8 +144,10 @@ public final class RISCVAsmEmitter {
                     MachineType.I32,
                     allocation)
                 + ", "
-                + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
-        lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(2)).getBlock()));
+                + labelFor(function, invert ? ifFalse : ifTrue));
+        if (ifTrue != fallthrough && ifFalse != fallthrough) {
+          lines.add("  j " + labelFor(function, ifFalse));
+        }
         return;
       case CALL:
         emitCall(instr, allocation, lines);
@@ -162,9 +170,14 @@ public final class RISCVAsmEmitter {
 
   private void emitCompareBranch(
       MachineFunction function,
+      MachineBasicBlock fallthrough,
       MachineInstr branch,
       AllocationResult allocation,
       List<String> lines) {
+    MachineBasicBlock ifTrue = ((BlockOperand) branch.getOperands().get(2)).getBlock();
+    MachineBasicBlock ifFalse = ((BlockOperand) branch.getOperands().get(3)).getBlock();
+    boolean invert = ifTrue == fallthrough;
+    String predicate = invert ? invertPredicate(branch.getPredicate()) : branch.getPredicate();
     String left =
         operandRegisterOrScratch(
             lines,
@@ -182,7 +195,7 @@ public final class RISCVAsmEmitter {
               lines, rightOperand, INT_SCRATCH_1, MachineType.I32, allocation);
     }
 
-    String comparison = switch (branch.getPredicate()) {
+    String comparison = switch (predicate) {
       case "eq" -> "beq " + left + ", " + right;
       case "ne" -> "bne " + left + ", " + right;
       case "slt" -> "blt " + left + ", " + right;
@@ -190,14 +203,25 @@ public final class RISCVAsmEmitter {
       case "sgt" -> "blt " + right + ", " + left;
       case "sle" -> "bge " + right + ", " + left;
       default -> throw new UnsupportedOperationException(
-          "Unsupported integer branch predicate: " + branch.getPredicate());
+          "Unsupported integer branch predicate: " + predicate);
     };
-    String trueLabel =
-        labelFor(function, ((BlockOperand) branch.getOperands().get(2)).getBlock());
-    String falseLabel =
-        labelFor(function, ((BlockOperand) branch.getOperands().get(3)).getBlock());
-    lines.add("  " + comparison + ", " + trueLabel);
-    lines.add("  j " + falseLabel);
+    lines.add("  " + comparison + ", " + labelFor(function, invert ? ifFalse : ifTrue));
+    if (ifTrue != fallthrough && ifFalse != fallthrough) {
+      lines.add("  j " + labelFor(function, ifFalse));
+    }
+  }
+
+  private static String invertPredicate(String predicate) {
+    return switch (predicate) {
+      case "eq" -> "ne";
+      case "ne" -> "eq";
+      case "slt" -> "sge";
+      case "sge" -> "slt";
+      case "sgt" -> "sle";
+      case "sle" -> "sgt";
+      default -> throw new UnsupportedOperationException(
+          "Unsupported integer branch predicate: " + predicate);
+    };
   }
 
   private void emitArgIn(MachineInstr instr, AllocationResult allocation, List<String> lines) {

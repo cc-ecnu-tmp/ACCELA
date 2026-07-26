@@ -169,14 +169,14 @@ final class RISCVAsmEmitterScratchTest {
 
     assertThrows(
         UnsupportedOperationException.class,
-        () -> emitter.emitInstruction(function, call, new AllocationResult(), lines));
+        () -> emitter.emitInstruction(function, null, call, new AllocationResult(), lines));
     assertTrue(lines.isEmpty());
   }
 
   private List<String> emit(
       MachineFunction function, MachineInstr instruction, AllocationResult allocation) {
     List<String> lines = new ArrayList<>();
-    emitter.emitInstruction(function, instruction, allocation, lines);
+    emitter.emitInstruction(function, null, instruction, allocation, lines);
     return lines;
   }
 
