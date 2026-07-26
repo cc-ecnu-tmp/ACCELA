@@ -1,7 +1,6 @@
 package accela.backend.lowering;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,6 +12,10 @@ import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineType;
 import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
+import accela.backend.regalloc.IteratedRegisterAllocator;
+import accela.backend.regalloc.RegisterLocation;
+import accela.backend.regalloc.TargetRegisterInfo;
+import accela.backend.target.RISCVTarget;
 import org.junit.jupiter.api.Test;
 
 final class GlobalAddressMaterializationTest {
@@ -46,18 +49,46 @@ final class GlobalAddressMaterializationTest {
   }
 
   @Test
-  void skipsAddressesThatWouldSpanCalls() {
+  void hoistsSingleLoopReference() {
+    MachineFunction function = new MachineFunction("loop", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock body = function.addBlock("body");
+    connect(entry, body);
+    addUse(body, "hot");
+    connect(body, body);
+
+    assertTrue(new GlobalAddressMaterialization().run(function));
+    assertEquals(0, symbolUseCount(body, "hot"));
+  }
+
+  @Test
+  void allocatesAddressesSpanningCallsToCalleeSavedRegisters() {
     MachineFunction function = new MachineFunction("calls", MachineType.VOID);
     MachineBasicBlock entry = function.addBlock("entry");
     MachineBasicBlock body = function.addBlock("body");
     connect(entry, body);
     addUse(body, "hot");
     addUse(body, "hot");
-    addUse(body, "hot");
     body.addInstruction(new MachineInstr(MachineOpcode.CALL, null));
+    addUse(body, "hot");
     body.addInstruction(new MachineInstr(MachineOpcode.RET, null));
 
-    assertFalse(new GlobalAddressMaterialization().run(function));
+    assertTrue(new GlobalAddressMaterialization().run(function));
+    MachineInstr materialize = entry.getInstructions().getFirst();
+    RegisterLocation location = assertInstanceOf(
+        RegisterLocation.class,
+        new IteratedRegisterAllocator()
+            .allocate(function, new RISCVTarget())
+            .locationOf(materialize.getDest()));
+    assertTrue(new TargetRegisterInfo().isCalleeSaved(location.getRegister()));
+  }
+
+  private static long symbolUseCount(MachineBasicBlock block, String name) {
+    return block.getInstructions().stream()
+        .flatMap(instruction -> instruction.getOperands().stream())
+        .filter(SymbolOperand.class::isInstance)
+        .map(SymbolOperand.class::cast)
+        .filter(symbol -> symbol.getSymbol().equals(name)).count();
   }
 
   private static long symbolUseCount(MachineFunction function, String name) {

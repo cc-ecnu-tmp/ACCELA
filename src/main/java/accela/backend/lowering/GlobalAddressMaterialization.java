@@ -1,5 +1,6 @@
 package accela.backend.lowering;
 
+import accela.backend.machine.BlockOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
@@ -10,37 +11,40 @@ import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.LivenessAnalysis;
 import accela.backend.regalloc.TargetRegisterInfo;
+import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Reuses frequently referenced global addresses when caller-saved pressure permits. */
+/** Hoists frequently referenced global addresses into allocator-managed registers. */
 public final class GlobalAddressMaterialization {
   private static final int MIN_USES = 3;
   private final TargetRegisterInfo registers = new TargetRegisterInfo();
 
   public boolean run(MachineFunction function) {
     MachineBasicBlock entry = function.getEntryBlock();
-    if (entry == null || hasCallsOutsideEntry(function, entry)) return false;
+    if (entry == null) return false;
 
     Map<String, Integer> counts = new LinkedHashMap<>();
     Set<String> entryUses = new LinkedHashSet<>();
+    Set<MachineBasicBlock> loopBlocks = findLoopBlocks(function);
     for (MachineBasicBlock block : function.getBlocks()) {
       for (MachineInstr instruction : block.getInstructions()) {
         for (var operand : instruction.getOperands()) {
           if (!(operand instanceof SymbolOperand symbol)) continue;
-          counts.merge(symbol.getSymbol(), 1, Integer::sum);
+          // A single reference in a loop is more profitable than several cold references:
+          // hoisting `la` removes it from every dynamic iteration.
+          counts.merge(
+              symbol.getSymbol(), loopBlocks.contains(block) ? MIN_USES : 1, Integer::sum);
           if (block == entry) entryUses.add(symbol.getSymbol());
         }
       }
     }
 
-    // Keep these long-lived addresses within the allocator's real caller-saved pool,
-    // avoiding both spills and new callee-save traffic.
-    int available =
-        registers.callerSavedRegisters(MachineType.PTR).size() - peakIntegerLiveness(function);
+    int available = availableRegisters(function);
     Map<String, VirtualRegister> addresses = new LinkedHashMap<>();
     counts.entrySet().stream()
         .filter(symbol -> symbol.getValue() >= MIN_USES)
@@ -69,9 +73,10 @@ public final class GlobalAddressMaterialization {
     return true;
   }
 
-  private static int peakIntegerLiveness(MachineFunction function) {
+  private int availableRegisters(MachineFunction function) {
     LivenessAnalysis.Result liveness = LivenessAnalysis.analyze(function);
     int peak = 0;
+    int acrossCalls = 0;
     for (MachineBasicBlock block : function.getBlocks()) {
       for (MachineInstr instruction : block.getInstructions()) {
         int before = (int) liveness.liveBefore(instruction).stream()
@@ -79,16 +84,47 @@ public final class GlobalAddressMaterialization {
         int after = (int) liveness.liveAfter(instruction).stream()
             .filter(register -> !register.getType().isFloat()).count();
         peak = Math.max(peak, Math.max(before, after));
+        if (instruction.getOpcode() == MachineOpcode.CALL) {
+          acrossCalls = Math.max(
+              acrossCalls,
+              (int) liveness.liveBefore(instruction).stream()
+                  .filter(liveness.liveAfter(instruction)::contains)
+                  .filter(register -> !register.getType().isFloat()).count());
+        }
       }
     }
-    return peak;
+    int available = registers.registerCount(MachineType.PTR) - peak;
+    if (acrossCalls > 0) {
+      available = Math.min(
+          available,
+          registers.calleeSavedRegisters(MachineType.PTR).size() - acrossCalls);
+    }
+    return Math.max(0, available);
   }
 
-  private static boolean hasCallsOutsideEntry(
-      MachineFunction function, MachineBasicBlock entry) {
-    return function.getBlocks().stream()
-        .filter(block -> block != entry)
-        .flatMap(block -> block.getInstructions().stream())
-        .anyMatch(instruction -> instruction.getOpcode() == MachineOpcode.CALL);
+  private static Set<MachineBasicBlock> findLoopBlocks(MachineFunction function) {
+    Set<MachineBasicBlock> loops = new HashSet<>();
+    for (MachineBasicBlock start : function.getBlocks()) {
+      Set<MachineBasicBlock> visited = new HashSet<>();
+      ArrayDeque<MachineBasicBlock> worklist = new ArrayDeque<>(successors(start));
+      while (!worklist.isEmpty() && !loops.contains(start)) {
+        MachineBasicBlock block = worklist.removeFirst();
+        if (block == start) {
+          loops.add(start);
+        } else if (visited.add(block)) {
+          worklist.addAll(successors(block));
+        }
+      }
+    }
+    return loops;
+  }
+
+  private static Set<MachineBasicBlock> successors(MachineBasicBlock block) {
+    if (block.getInstructions().isEmpty()) return Set.of();
+    Set<MachineBasicBlock> successors = new LinkedHashSet<>();
+    for (var operand : block.getInstructions().getLast().getOperands()) {
+      if (operand instanceof BlockOperand target) successors.add(target.getBlock());
+    }
+    return successors;
   }
 }
