@@ -1,0 +1,66 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import org.junit.jupiter.api.Test;
+
+final class MachineConstantCSETest {
+  @Test
+  void sharesLargeImmediateAtThreeUses() {
+    MachineFunction function = new MachineFunction("large", MachineType.PTR);
+    MachineBasicBlock block = function.addBlock("loop");
+    VirtualRegister source = function.createVirtualRegister(MachineType.PTR, "source");
+    MachineInstr first = largeAdd(function, source, 4096);
+    MachineInstr second = largeAdd(function, source, 4096);
+    MachineInstr third = largeAdd(function, source, 4096);
+    block.addInstruction(largeAdd(function, source, 1));
+    block.addInstruction(first);
+    block.addInstruction(second);
+    block.addInstruction(third);
+
+    assertTrue(new MachineConstantCSE().run(function));
+    assertEquals(MachineOpcode.ADD, block.getInstructions().getFirst().getOpcode());
+    assertEquals(MachineOpcode.CONST_INT, block.getInstructions().get(1).getOpcode());
+    VirtualRegister shared = operandRegister(first);
+    assertSame(shared, operandRegister(second));
+    assertSame(shared, operandRegister(third));
+  }
+
+  @Test
+  void leavesTwoUsesAndSmallImmediatesAlone() {
+    MachineFunction function = new MachineFunction("small", MachineType.PTR);
+    MachineBasicBlock block = function.addBlock("loop");
+    VirtualRegister source = function.createVirtualRegister(MachineType.PTR, "source");
+    block.addInstruction(largeAdd(function, source, 4096));
+    block.addInstruction(largeAdd(function, source, 4096));
+    block.addInstruction(largeAdd(function, source, 2047));
+
+    assertFalse(new MachineConstantCSE().run(function));
+    assertTrue(block.getInstructions().stream()
+        .allMatch(instruction -> instruction.getOpcode() == MachineOpcode.ADD));
+  }
+
+  private static VirtualRegister operandRegister(MachineInstr instruction) {
+    return ((VRegOperand) instruction.getOperands().get(1)).getRegister();
+  }
+
+  private static MachineInstr largeAdd(
+      MachineFunction function, VirtualRegister source, long immediate) {
+    MachineInstr instruction = new MachineInstr(
+        MachineOpcode.ADD, function.createVirtualRegister(MachineType.PTR, "next"));
+    instruction.setType(MachineType.PTR);
+    instruction.addOperand(new VRegOperand(source)).addOperand(new ImmOperand(immediate));
+    return instruction;
+  }
+}

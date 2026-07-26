@@ -1,6 +1,7 @@
 package accela.backend;
 
 import accela.backend.lowering.IRToMachineLowering;
+import accela.backend.lowering.MachineConstantCSE;
 import accela.backend.lowering.MemoryAddressFolding;
 import accela.backend.lowering.PhiElimination;
 import accela.backend.machine.MachineFunction;
@@ -21,6 +22,7 @@ final class BackendPipeline {
   private final IRToMachineLowering lowering = new IRToMachineLowering(target);
   private final PhiElimination phiElimination = new PhiElimination();
   private final MemoryAddressFolding memoryAddressFolding = new MemoryAddressFolding();
+  private final MachineConstantCSE constantCse = new MachineConstantCSE();
   private final RegisterAllocator allocator = new IteratedRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
   private final RISCVAsmEmitter asmEmitter = new RISCVAsmEmitter(target, frameLowering);
@@ -33,6 +35,7 @@ final class BackendPipeline {
     for (MachineFunction function : machineModule.getFunctions()) {
       phiElimination.run(function);
       memoryAddressFolding.run(function);
+      constantCse.run(function);
       allocations.put(function, allocator.allocate(function, target));
     }
 
