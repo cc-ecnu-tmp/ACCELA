@@ -27,13 +27,6 @@ public final class RISCVFrameLowering {
     if (frameSize > 0) {
       emitAddImmediate(lines, "sp", "sp", -frameSize, ABI_BOUNDARY_SCRATCH);
     }
-    emitStoreToBase(
-        lines,
-        "s0",
-        "sp",
-        function.getFrameInfo().getSaveS0Offset(),
-        ABI_BOUNDARY_SCRATCH,
-        MachineType.PTR);
     if (function.getFrameInfo().hasCalls()) {
       emitStoreToBase(
           lines,
@@ -53,21 +46,9 @@ public final class RISCVFrameLowering {
           ABI_BOUNDARY_SCRATCH,
           register.getType().isFloat() ? "fsd" : "sd");
     }
-    if (frameSize > 0) {
-      emitAddImmediate(lines, "s0", "sp", frameSize, ABI_BOUNDARY_SCRATCH);
-    } else {
-      lines.add("  mv s0, sp");
-    }
   }
 
   void emitEpilogue(MachineFunction function, List<String> lines) {
-    emitLoadFromBase(
-        lines,
-        "s0",
-        "sp",
-        function.getFrameInfo().getSaveS0Offset(),
-        ABI_BOUNDARY_SCRATCH,
-        MachineType.PTR);
     if (function.getFrameInfo().hasCalls()) {
       emitLoadFromBase(
           lines,

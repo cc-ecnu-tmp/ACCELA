@@ -15,17 +15,30 @@ final class RISCVFrameLoweringTest {
   private final RISCVFrameLowering lowering = new RISCVFrameLowering(target);
 
   @Test
-  void savesAndRestoresUsedIntegerCalleeSavedRegisters() {
-    MachineFunction function = new MachineFunction("callee_saved_int", MachineType.I32);
-    function.getFrameInfo().addCalleeSavedRegister(new PhysicalRegister("s1", MachineType.I32));
+  void omitsTheFrameForAnEmptyLeaf() {
+    MachineFunction function = new MachineFunction("leaf", MachineType.I32);
     lowering.finalizeFrame(function);
 
     List<String> lines = new ArrayList<>();
     lowering.emitPrologue(function, lines);
     lowering.emitEpilogue(function, lines);
 
-    assertTrue(lines.stream().anyMatch(line -> line.matches("  sd s1, [0-9]+\\(sp\\)")));
-    assertTrue(lines.stream().anyMatch(line -> line.matches("  ld s1, [0-9]+\\(sp\\)")));
+    assertEquals(0, function.getFrameInfo().getFrameSize());
+    assertEquals(List.of("  ret"), lines);
+  }
+
+  @Test
+  void savesAndRestoresUsedIntegerCalleeSavedRegisters() {
+    MachineFunction function = new MachineFunction("callee_saved_int", MachineType.I32);
+    function.getFrameInfo().addCalleeSavedRegister(new PhysicalRegister("s0", MachineType.I32));
+    lowering.finalizeFrame(function);
+
+    List<String> lines = new ArrayList<>();
+    lowering.emitPrologue(function, lines);
+    lowering.emitEpilogue(function, lines);
+
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  sd s0, [0-9]+\\(sp\\)")));
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  ld s0, [0-9]+\\(sp\\)")));
   }
 
   @Test

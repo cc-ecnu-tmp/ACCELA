@@ -47,7 +47,7 @@ public final class RISCVAsmEmitter {
       List<String> lines) {
     switch (instr.getOpcode()) {
       case ARG_IN:
-        emitArgIn(instr, allocation, lines);
+        emitArgIn(function, instr, allocation, lines);
         return;
       case CONST_INT:
       case MOVE:
@@ -230,7 +230,11 @@ public final class RISCVAsmEmitter {
     };
   }
 
-  private void emitArgIn(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+  private void emitArgIn(
+      MachineFunction function,
+      MachineInstr instr,
+      AllocationResult allocation,
+      List<String> lines) {
     MachineOperand source = instr.getOperands().get(0);
     String dst = destReg(instr, allocation);
     if (source instanceof PhysicalRegOperand) {
@@ -243,9 +247,11 @@ public final class RISCVAsmEmitter {
       return;
     }
 
-    int stackOffset = (int) ((ImmOperand) source).getValue();
+    // The prologue moves sp down by frameSize; ABI stack offsets start at the caller's sp.
+    int incomingOffset =
+        function.getFrameInfo().getFrameSize() + (int) ((ImmOperand) source).getValue();
     frameLowering.emitLoadFromBase(
-        lines, dst, "s0", stackOffset, ADDRESS_SCRATCH, instr.getType());
+        lines, dst, "sp", incomingOffset, ADDRESS_SCRATCH, instr.getType());
   }
 
   private void emitMove(MachineInstr instr, AllocationResult allocation, List<String> lines) {

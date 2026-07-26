@@ -10,7 +10,6 @@ public final class RISCVTarget {
   private static final int MEMZERO_HELPER_THRESHOLD = 128;
   static final PhysicalRegister ZERO = new PhysicalRegister("zero", MachineType.I32);
   static final PhysicalRegister SP = new PhysicalRegister("sp", MachineType.PTR);
-  static final PhysicalRegister S0 = new PhysicalRegister("s0", MachineType.PTR);
   static final PhysicalRegister RA = new PhysicalRegister("ra", MachineType.PTR);
 
   private final List<PhysicalRegister> intScratch =

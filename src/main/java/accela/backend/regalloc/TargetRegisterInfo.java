@@ -24,6 +24,7 @@ public final class TargetRegisterInfo {
           reg("a5", MachineType.I32),
           reg("a6", MachineType.I32),
           reg("a7", MachineType.I32),
+          reg("s0", MachineType.I32),
           reg("s1", MachineType.I32),
           reg("s2", MachineType.I32),
           reg("s3", MachineType.I32),
@@ -72,7 +73,7 @@ public final class TargetRegisterInfo {
           reg("fs11", MachineType.F32));
 
   private static final Set<String> RESERVED =
-      Set.of("zero", "sp", "gp", "tp", "ra", "s0", "fp");
+      Set.of("zero", "sp", "gp", "tp", "ra", "fp");
 
   private static final Set<String> CALL_ARGUMENT_REGISTERS =
       Set.of(
@@ -85,7 +86,7 @@ public final class TargetRegisterInfo {
           "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7");
 
   private static final Set<String> INT_CALLEE_SAVED =
-      Set.of("s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11");
+      Set.of("s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11");
 
   private static final Set<String> FLOAT_CALLER_SAVED =
       Set.of(

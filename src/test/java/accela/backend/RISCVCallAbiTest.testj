@@ -13,6 +13,24 @@ import org.junit.jupiter.api.Test;
 
 final class RISCVCallAbiTest {
   @Test
+  void readsStackArgumentsAboveTheCalleeFrame() {
+    Module module = new Module();
+    Function function = new Function("ninth", Type.INT);
+    module.addFunction(function);
+    Value ninth = null;
+    for (int i = 0; i < 9; i++) {
+      ninth = function.addArgument(Type.INT, "argument." + i);
+    }
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    builder.createAlloca(Type.INT);
+    builder.createRet(ninth);
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.matches("(?s).*ninth:.*  lw [a-z0-9]+, 16\\(sp\\).*"));
+  }
+
+  @Test
   void passesNinthFloatArgumentThroughFirstIntegerArgumentRegister() {
     Module module = new Module();
     Function callee = new Function("float_nine", Type.FLOAT);
@@ -68,6 +86,6 @@ final class RISCVCallAbiTest {
 
     assertTrue(assembly.contains("  li a6, 1234605616436508552"));
     assertTrue(assembly.contains("  sd a6, 0(sp)"));
-    assertTrue(assembly.matches("(?s).*wide_nine:.*  ld [a-z0-9]+, 0\\(s0\\).*"));
+    assertTrue(assembly.matches("(?s).*wide_nine:.*  ld [a-z0-9]+, 0\\(sp\\).*"));
   }
 }
