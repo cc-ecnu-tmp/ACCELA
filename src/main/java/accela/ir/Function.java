@@ -41,6 +41,14 @@ public class Function extends Value {
     return bb;
   }
 
+  /** Creates a new entry block before all existing blocks. */
+  public BasicBlock prependBlock(String label) {
+    BasicBlock bb = new BasicBlock(label);
+    bb.setParent(this);
+    blocks.add(0, bb);
+    return bb;
+  }
+
   public List<BasicBlock> getBlocks() {
     return Collections.unmodifiableList(blocks);
   }

@@ -12,6 +12,7 @@ import accela.pass.ir.transform.ADCE;
 import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.transform.GlobalConstantPropagation;
 import accela.pass.ir.transform.GlobalDCE;
+import accela.pass.ir.transform.GlobalScalarLocalization;
 import accela.pass.ir.transform.IPSCCP;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
@@ -157,6 +158,8 @@ public final class PassBuilder {
     postIpsccpFpm.addPass(new StrengthReduction.Pass());
     mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
+    mpm.addPass(new GlobalDCE.Pass());
+    mpm.addPass(new GlobalScalarLocalization.Pass());
     mpm.addPass(new IPSCCP.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(postIpsccpFpm));
     mpm.addPass(new GlobalDCE.Pass());
