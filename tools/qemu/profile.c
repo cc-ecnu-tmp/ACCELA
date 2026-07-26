@@ -13,6 +13,8 @@ static qemu_plugin_u64 instruction_count;
 static qemu_plugin_u64 load_count;
 static qemu_plugin_u64 store_count;
 static struct counters result;
+static bool ended;
+static bool saw_explicit_region;
 
 static void begin_region(unsigned int cpu, void *data) {
   (void) data;
@@ -21,11 +23,21 @@ static void begin_region(unsigned int cpu, void *data) {
   qemu_plugin_u64_set(store_count, cpu, 0);
 }
 
+static void begin_explicit_region(unsigned int cpu, void *data) {
+  saw_explicit_region = true;
+  begin_region(cpu, data);
+}
+
 static void end_region(unsigned int cpu, void *data) {
   (void) data;
   result.instructions += qemu_plugin_u64_get(instruction_count, cpu);
   result.loads += qemu_plugin_u64_get(load_count, cpu);
   result.stores += qemu_plugin_u64_get(store_count, cpu);
+  ended = true;
+}
+
+static void end_main(unsigned int cpu, void *data) {
+  if (!saw_explicit_region) end_region(cpu, data);
 }
 
 static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
@@ -37,10 +49,15 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
     struct qemu_plugin_insn *instruction = qemu_plugin_tb_get_insn(tb, index);
     uint32_t encoding = 0;
     qemu_plugin_insn_data(instruction, &encoding, sizeof(encoding));
-    if (encoding == 0x12300013 || encoding == 0x12400013) {
+    if (encoding == 0x12300013 || encoding == 0x12400013
+        || encoding == 0x12500013 || encoding == 0x12600013) {
+      qemu_plugin_vcpu_udata_cb_t callback =
+          encoding == 0x12300013 ? begin_explicit_region
+          : encoding == 0x12400013 ? end_region
+          : encoding == 0x12500013 ? begin_region
+          : end_main;
       qemu_plugin_register_vcpu_insn_exec_cb(
-          instruction, encoding == 0x12300013 ? begin_region : end_region,
-          QEMU_PLUGIN_CB_NO_REGS, NULL);
+          instruction, callback, QEMU_PLUGIN_CB_NO_REGS, NULL);
       return;
     }
     qemu_plugin_register_vcpu_mem_inline_per_vcpu(
@@ -57,6 +74,11 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 static void report(qemu_plugin_id_t id, void *data) {
   (void) id;
   (void) data;
+  if (!ended) {
+    result.instructions = qemu_plugin_u64_get(instruction_count, 0);
+    result.loads = qemu_plugin_u64_get(load_count, 0);
+    result.stores = qemu_plugin_u64_get(store_count, 0);
+  }
   g_autofree char *output = g_strdup_printf(
       "instructions=%" PRIu64 " loads=%" PRIu64 " stores=%" PRIu64 "\n",
       result.instructions, result.loads, result.stores);

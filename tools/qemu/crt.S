@@ -11,7 +11,9 @@ _start:
   addi t0, t0, 8
   j .Lzero_bss
 .Lrun_main:
+  .word 0x12500013
   call main
+  .word 0x12600013
   call qemu_exit
 .Lhalt:
   wfi

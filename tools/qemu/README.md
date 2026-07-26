@@ -17,7 +17,8 @@
 JAVA_HOME=/path/to/jdk21/ bash gradlew classes --no-daemon
 ```
 
-每个测试点必须包含位于同一目录的 `NAME.sy`、`NAME.in` 和 `NAME.out`。
+每个测试点必须包含位于同一目录的 `NAME.sy` 和 `NAME.out`；没有输入时可省略
+`NAME.in`。
 
 ## 运行测试点
 
@@ -69,9 +70,10 @@ Default is for macOS.
 
 ## 测量边界与限制
 
-运行时将 `_sysy_starttime` 和 `_sysy_stoptime` 转换为保留的标记指令。
-plugin 不统计标记范围外的启动、输入、输出和退出过程。指令计数器会累加
-所有已完成的计时区间；热点块和 cache 报告对应最近一次计时区间。
+裸机启动代码用保留标记包住 `main`，所以没有显式计时调用时，plugin 统计
+完整的 `main`，不包含启动和退出过程。若程序调用 `_sysy_starttime` 和
+`_sysy_stoptime`，对应的显式计时区间优先；指令计数器会累加所有已完成的
+显式区间，热点块和 cache 报告对应最近一次区间。
 
 cache plugin 模拟容量为 32 KiB、8 路组相联、cache line 为 64 字节并采用
 LRU 替换的 L1D，不模拟延迟、预取、更高层缓存或 DRAM。TCG 指令数和 cache

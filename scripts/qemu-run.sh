@@ -48,7 +48,7 @@ if [[ "$profile_mode" != 0 ]]; then
   qemu+=(-plugin "$profile" -d plugin -D "$profile_log")
 fi
 timeout "${QEMU_TIMEOUT:-120}" "${qemu[@]}" \
-  < <(cat "$input"; printf '\n') > "$actual"
+  < <([ ! -f "$input" ] || cat "$input"; printf '\n') > "$actual"
 
 diff -u "$expected" "$actual"
 if [[ "$profile_mode" != 0 ]]; then cat "$profile_log"; fi

@@ -12,6 +12,7 @@ struct block {
 
 static GPtrArray *blocks;
 static bool ended;
+static bool saw_explicit_region;
 
 static void snapshot(unsigned int cpu) {
   for (size_t index = 0; index < blocks->len; index++) {
@@ -28,10 +29,19 @@ static void begin_region(unsigned int cpu, void *data) {
   }
 }
 
+static void begin_explicit_region(unsigned int cpu, void *data) {
+  saw_explicit_region = true;
+  begin_region(cpu, data);
+}
+
 static void end_region(unsigned int cpu, void *data) {
   (void) data;
   snapshot(cpu);
   ended = true;
+}
+
+static void end_main(unsigned int cpu, void *data) {
+  if (!saw_explicit_region) end_region(cpu, data);
 }
 
 static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
@@ -43,10 +53,15 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
     struct qemu_plugin_insn *instruction = qemu_plugin_tb_get_insn(tb, index);
     uint32_t encoding = 0;
     qemu_plugin_insn_data(instruction, &encoding, sizeof(encoding));
-    if (encoding == 0x12300013 || encoding == 0x12400013) {
+    if (encoding == 0x12300013 || encoding == 0x12400013
+        || encoding == 0x12500013 || encoding == 0x12600013) {
+      qemu_plugin_vcpu_udata_cb_t callback =
+          encoding == 0x12300013 ? begin_explicit_region
+          : encoding == 0x12400013 ? end_region
+          : encoding == 0x12500013 ? begin_region
+          : end_main;
       qemu_plugin_register_vcpu_insn_exec_cb(
-          instruction, encoding == 0x12300013 ? begin_region : end_region,
-          QEMU_PLUGIN_CB_NO_REGS, NULL);
+          instruction, callback, QEMU_PLUGIN_CB_NO_REGS, NULL);
       return;
     }
   }
