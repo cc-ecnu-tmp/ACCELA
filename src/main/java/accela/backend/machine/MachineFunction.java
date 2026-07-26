@@ -58,6 +58,16 @@ public final class MachineFunction {
     return Collections.unmodifiableList(blocks);
   }
 
+  public void reorderBlocks(List<MachineBasicBlock> order) {
+    if (order.size() != blocks.size()
+        || !order.containsAll(blocks)
+        || !blocks.containsAll(order)) {
+      throw new IllegalArgumentException("block order must contain every function block once");
+    }
+    blocks.clear();
+    blocks.addAll(order);
+  }
+
   public MachineBasicBlock getEntryBlock() {
     return blocks.isEmpty() ? null : blocks.get(0);
   }

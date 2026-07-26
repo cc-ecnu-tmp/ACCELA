@@ -1,0 +1,48 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import org.junit.jupiter.api.Test;
+
+final class LoopConditionDuplicationTest {
+  @Test
+  void duplicatesTheHeaderConditionOnlyOntoTheBackedge() {
+    MachineFunction function = new MachineFunction("loop", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock header = function.addBlock("header");
+    MachineBasicBlock body = function.addBlock("body");
+    MachineBasicBlock exit = function.addBlock("exit");
+    VirtualRegister condition = function.createVirtualRegister(MachineType.I1, "condition");
+    addBranch(entry, header);
+    MachineInstr conditional = new MachineInstr(MachineOpcode.CONDBR, null);
+    conditional.addOperand(new VRegOperand(condition));
+    conditional.addOperand(new BlockOperand(body));
+    conditional.addOperand(new BlockOperand(exit));
+    header.addInstruction(conditional);
+    addBranch(body, header);
+    exit.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertTrue(new LoopConditionDuplication().run(function));
+
+    assertEquals(MachineOpcode.BR, entry.getInstructions().getLast().getOpcode());
+    MachineInstr latch = body.getInstructions().getLast();
+    assertEquals(MachineOpcode.CONDBR, latch.getOpcode());
+    assertSame(condition, ((VRegOperand) latch.getOperands().getFirst()).getRegister());
+  }
+
+  private static void addBranch(MachineBasicBlock from, MachineBasicBlock to) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(to));
+    from.addInstruction(branch);
+  }
+}
