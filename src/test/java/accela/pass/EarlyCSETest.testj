@@ -8,8 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
+import accela.ir.GlobalVariable;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
+import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.ir.transform.EarlyCSE;
@@ -55,20 +57,48 @@ final class EarlyCSETest {
   }
 
   @Test
-  void storeInvalidatesAvailableLoads() {
+  void unrelatedStorePreservesAvailableLoads() {
     Function function = new Function("f", Type.INT);
     BasicBlock entry = function.addBlock("entry");
     IRBuilder builder = new IRBuilder(entry);
     Value firstPointer = builder.createAlloca(Type.INT);
     Value secondPointer = builder.createAlloca(Type.INT);
-    builder.createLoad(Type.INT, firstPointer);
+    Instruction firstLoad = builder.createLoad(Type.INT, firstPointer);
     builder.createStore(Constant.intConst(1), secondPointer);
     Instruction secondLoad = builder.createLoad(Type.INT, firstPointer);
     Instruction ret = builder.createRet(secondLoad);
 
-    assertFalse(EarlyCSE.runOnFunction(function));
-    assertEquals(2, count(entry, Instruction.Opcode.LOAD));
-    assertSame(secondLoad, ret.getOperand(0));
+    assertTrue(EarlyCSE.runOnFunction(function));
+    assertEquals(1, count(entry, Instruction.Opcode.LOAD));
+    assertTrue(secondLoad.getParent() == null);
+    assertSame(firstLoad, ret.getOperand(0));
+  }
+
+  @Test
+  void readonlyCallPreservesAnUnrelatedGlobalLoad() {
+    Module module = new Module();
+    GlobalVariable limit =
+        new GlobalVariable("limit", Type.INT, Constant.intConst(0), false);
+    GlobalVariable state =
+        new GlobalVariable("state", Type.INT, Constant.intConst(0), false);
+    module.addGlobal(limit);
+    module.addGlobal(state);
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    readerBuilder.createRet(readerBuilder.createLoad(Type.INT, state));
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    BasicBlock entry = main.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction firstLoad = builder.createLoad(Type.INT, limit);
+    builder.createCall(reader, Type.INT);
+    Instruction secondLoad = builder.createLoad(Type.INT, limit);
+    Instruction ret = builder.createRet(secondLoad);
+
+    assertTrue(EarlyCSE.runOnFunction(main));
+    assertSame(firstLoad, ret.getOperand(0));
+    assertTrue(secondLoad.getParent() == null);
   }
 
   @Test

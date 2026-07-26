@@ -1,0 +1,71 @@
+package accela.pass.ir.analysis.alias;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import org.junit.jupiter.api.Test;
+
+final class GlobalModRefAnalysisTest {
+  @Test
+  void mapsTransitiveAndArgumentWritesToTheirGlobalRoots() {
+    Module module = new Module();
+    GlobalVariable state = scalar(module, "state");
+    GlobalVariable limit = scalar(module, "limit");
+    Type arrayType = Type.array(Type.INT, 4);
+    GlobalVariable left =
+        new GlobalVariable("left", arrayType, Constant.zero(arrayType), false);
+    GlobalVariable right =
+        new GlobalVariable("right", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(left);
+    module.addGlobal(right);
+
+    Function writer = new Function("writer", Type.VOID);
+    module.addFunction(writer);
+    IRBuilder writerBuilder = new IRBuilder(writer.addBlock("entry"));
+    writerBuilder.createStore(Constant.intConst(1), state);
+    writerBuilder.createRetVoid();
+
+    Function wrapper = new Function("wrapper", Type.VOID);
+    module.addFunction(wrapper);
+    IRBuilder wrapperBuilder = new IRBuilder(wrapper.addBlock("entry"));
+    wrapperBuilder.createCall(writer, Type.VOID);
+    wrapperBuilder.createRetVoid();
+
+    Function writePointer = new Function("write_pointer", Type.VOID);
+    Value pointer = writePointer.addArgument(Type.PTR, "pointer");
+    module.addFunction(writePointer);
+    IRBuilder pointerBuilder = new IRBuilder(writePointer.addBlock("entry"));
+    pointerBuilder.createStore(Constant.intConst(2), pointer);
+    pointerBuilder.createRetVoid();
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mainBuilder = new IRBuilder(main.addBlock("entry"));
+    Instruction wrapperCall = mainBuilder.createCall(wrapper, Type.VOID);
+    Value leftElement = mainBuilder.createGEP(
+        arrayType, left, new Value[] {Constant.int64Const(0), Constant.int64Const(0)}, true);
+    Instruction pointerCall = mainBuilder.createCall(writePointer, Type.VOID, leftElement);
+    mainBuilder.createRet(Constant.intConst(0));
+
+    GlobalModRefAnalysis.Result result = GlobalModRefAnalysis.analyze(module);
+    assertTrue(result.mayWrite(wrapperCall, state));
+    assertFalse(result.mayWrite(wrapperCall, limit));
+    assertTrue(result.mayWrite(pointerCall, left));
+    assertFalse(result.mayWrite(pointerCall, right));
+  }
+
+  private static GlobalVariable scalar(Module module, String name) {
+    GlobalVariable global =
+        new GlobalVariable(name, Type.INT, Constant.intConst(0), false);
+    module.addGlobal(global);
+    return global;
+  }
+}

@@ -9,6 +9,8 @@ import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
+import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
+import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -28,33 +30,53 @@ public final class EarlyCSE {
   private EarlyCSE() {}
 
   public static final class Pass implements FunctionPass {
+    private accela.ir.Module cachedModule;
+    private GlobalModRefAnalysis.Result modRef;
+
     @Override
     public PreservedAnalyses run(Function function, FunctionAnalysisManager fam) {
-      return runOnFunction(function) ? PreservedAnalyses.none() : PreservedAnalyses.all();
+      if (function.getModule() != cachedModule) {
+        cachedModule = function.getModule();
+        modRef = cachedModule == null ? null : GlobalModRefAnalysis.analyze(cachedModule);
+      }
+      return runOnFunction(function, modRef)
+          ? PreservedAnalyses.none() : PreservedAnalyses.all();
     }
   }
 
   public static boolean runOnFunction(Function function) {
+    accela.ir.Module module = function.getModule();
+    return runOnFunction(
+        function, module == null ? null : GlobalModRefAnalysis.analyze(module));
+  }
+
+  private static boolean runOnFunction(
+      Function function, GlobalModRefAnalysis.Result modRef) {
     boolean changed = false;
     for (BasicBlock block : function.getBlocks()) {
-      changed |= runOnBlock(block);
+      changed |= runOnBlock(block, modRef);
     }
     return changed;
   }
 
-  private static boolean runOnBlock(BasicBlock block) {
+  private static boolean runOnBlock(
+      BasicBlock block, GlobalModRefAnalysis.Result modRef) {
     Map<Expression, Value> available = new HashMap<>();
     Map<Value, Value> availableLoads = new IdentityHashMap<>();
     boolean changed = false;
     for (Instruction instruction : new ArrayList<>(block.getInstructions())) {
       Value replacement = switch (instruction.getOpcode()) {
         case STORE -> {
-          availableLoads.clear();
+          Value pointer = instruction.getOperand(1);
+          availableLoads.keySet().removeIf(
+              loadedPointer -> PointerProvenance.mayAlias(loadedPointer, pointer));
           availableLoads.put(instruction.getOperand(1), instruction.getOperand(0));
           yield null;
         }
         case CALL -> {
-          availableLoads.clear();
+          if (modRef == null) availableLoads.clear();
+          else availableLoads.keySet().removeIf(
+              pointer -> modRef.mayWrite(instruction, pointer));
           yield null;
         }
         case LOAD -> availableLoads.putIfAbsent(instruction.getOperand(0), instruction);
@@ -73,7 +95,7 @@ public final class EarlyCSE {
 
   private static boolean isSimple(Instruction instruction) {
     return switch (instruction.getOpcode()) {
-      case ADD, SUB, MUL, SMULH, SDIV, SREM, ASHR, FADD, FSUB, FMUL, FDIV, FNEG,
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, FADD, FSUB, FMUL, FDIV, FNEG,
           ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, XOR -> true;
       default -> false;
     };
