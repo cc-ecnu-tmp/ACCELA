@@ -80,11 +80,11 @@ final class LocalSpillRewriter {
         }
 
         if (integerArguments.size()
-            > registerInfo.registerCount(MachineType.I32)) {
+            > registerInfo.nonArgumentRegisters(MachineType.I32).size()) {
           result.addAll(stackIntegerArguments);
         }
         if (floatArguments.size()
-            > registerInfo.registerCount(MachineType.F32)) {
+            > registerInfo.nonArgumentRegisters(MachineType.F32).size()) {
           result.addAll(stackFloatArguments);
         }
       }

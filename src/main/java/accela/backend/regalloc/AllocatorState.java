@@ -16,6 +16,7 @@ final class AllocatorState {
   private final TargetRegisterInfo registers;
   private final SpillCostModel spillCostModel;
   private final Set<VirtualRegister> liveAcrossCall;
+  private final Set<VirtualRegister> argumentRegisterHazards;
 
   final Set<VirtualRegister> initial = new HashSet<>();
   final Set<VirtualRegister> simplifyWorklist = new HashSet<>();
@@ -40,14 +41,14 @@ final class AllocatorState {
   final Map<VirtualRegister, PhysicalRegister> color = new HashMap<>();
 
   AllocatorState(InterferenceGraphBuilder.Result built, TargetRegisterInfo registers) {
-    this(built, registers, ignored -> 1.0, Collections.emptySet());
+    this(built, registers, ignored -> 1.0, Collections.emptySet(), Collections.emptySet());
   }
 
   AllocatorState(
       InterferenceGraphBuilder.Result built,
       TargetRegisterInfo registers,
       SpillCostModel spillCostModel) {
-    this(built, registers, spillCostModel, Collections.emptySet());
+    this(built, registers, spillCostModel, Collections.emptySet(), Collections.emptySet());
   }
 
   AllocatorState(
@@ -55,10 +56,20 @@ final class AllocatorState {
       TargetRegisterInfo registers,
       SpillCostModel spillCostModel,
       Set<VirtualRegister> liveAcrossCall) {
+    this(built, registers, spillCostModel, liveAcrossCall, Collections.emptySet());
+  }
+
+  AllocatorState(
+      InterferenceGraphBuilder.Result built,
+      TargetRegisterInfo registers,
+      SpillCostModel spillCostModel,
+      Set<VirtualRegister> liveAcrossCall,
+      Set<VirtualRegister> argumentRegisterHazards) {
     this.graph = built.graph();
     this.registers = registers;
     this.spillCostModel = spillCostModel;
     this.liveAcrossCall = new HashSet<>(liveAcrossCall);
+    this.argumentRegisterHazards = new HashSet<>(argumentRegisterHazards);
 
     initial.addAll(graph.nodes());
     worklistMoves.addAll(built.moves());
@@ -111,6 +122,10 @@ final class AllocatorState {
       VirtualRegister representative, VirtualRegister merged) {
     if (liveAcrossCall.contains(representative) || liveAcrossCall.contains(merged)) {
       return registers.calleeSavedRegisters(representative.getType()).size();
+    }
+    if (argumentRegisterHazards.contains(representative)
+        || argumentRegisterHazards.contains(merged)) {
+      return registers.nonArgumentRegisters(representative.getType()).size();
     }
     return registers.allocatableRegisters(representative.getType()).size();
   }
@@ -289,6 +304,9 @@ final class AllocatorState {
     if (liveAcrossCall.contains(getAlias(register))) {
       return registers.calleeSavedRegisters(register.getType());
     }
+    if (argumentRegisterHazards.contains(getAlias(register))) {
+      return registers.nonArgumentRegisters(register.getType());
+    }
     return registers.allocatableRegisters(register.getType());
   }
 
@@ -324,6 +342,9 @@ final class AllocatorState {
     spillCostModel.combine(representative, merged);
     if (liveAcrossCall.contains(merged)) {
       liveAcrossCall.add(representative);
+    }
+    if (argumentRegisterHazards.contains(merged)) {
+      argumentRegisterHazards.add(representative);
     }
 
     moveList

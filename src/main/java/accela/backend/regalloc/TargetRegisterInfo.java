@@ -80,6 +80,9 @@ public final class TargetRegisterInfo {
           "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
           "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7");
 
+  private static final Set<String> EMITTER_SCRATCH_REGISTERS =
+      Set.of("a4", "a5", "a6", "a7", "fa4", "fa5", "fa6", "fa7");
+
   private static final Set<String> INT_CALLER_SAVED =
       Set.of(
           "t0", "t1", "t2", "t3", "t4", "t5", "t6",
@@ -102,6 +105,12 @@ public final class TargetRegisterInfo {
   private static final List<PhysicalRegister> FLOAT_REGISTERS =
       ALL_FLOAT_REGISTERS.stream().filter(register -> !isAllocatorReservedName(register.getName())).toList();
 
+  private static final List<PhysicalRegister> INT_NON_ARGUMENT_REGISTERS =
+      INT_REGISTERS.stream().filter(register -> !isArgumentRegisterName(register.getName())).toList();
+
+  private static final List<PhysicalRegister> FLOAT_NON_ARGUMENT_REGISTERS =
+      FLOAT_REGISTERS.stream().filter(register -> !isArgumentRegisterName(register.getName())).toList();
+
   private static final List<PhysicalRegister> INT_CALLEE_SAVED_REGISTERS =
       INT_REGISTERS.stream().filter(TargetRegisterInfo::isCalleeSavedName).toList();
 
@@ -120,6 +129,12 @@ public final class TargetRegisterInfo {
 
   public int registerCount(MachineType type) {
     return allocatableRegisters(type).size();
+  }
+
+  public List<PhysicalRegister> nonArgumentRegisters(MachineType type) {
+    if (type.isFloat()) return FLOAT_NON_ARGUMENT_REGISTERS;
+    if (type.isIntegerLike()) return INT_NON_ARGUMENT_REGISTERS;
+    return Collections.emptyList();
   }
 
   public List<PhysicalRegister> callerSavedRegisters(MachineType type) {
@@ -165,6 +180,10 @@ public final class TargetRegisterInfo {
 
   private static boolean isAllocatorReservedName(String name) {
     return RESERVED.contains(name)
-        || CALL_ARGUMENT_REGISTERS.contains(name);
+        || EMITTER_SCRATCH_REGISTERS.contains(name);
+  }
+
+  private static boolean isArgumentRegisterName(String name) {
+    return CALL_ARGUMENT_REGISTERS.contains(name);
   }
 }
