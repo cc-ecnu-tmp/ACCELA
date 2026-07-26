@@ -1,0 +1,76 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class DeadStoreEliminationTest {
+  @Test
+  void removesOverwrittenStoresButPreservesStoresObservedByCalls() {
+    Module module = new Module();
+    GlobalVariable state =
+        new GlobalVariable("state", Type.INT, Constant.intConst(0), false);
+    module.addGlobal(state);
+
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    readerBuilder.createRet(readerBuilder.createLoad(Type.INT, state));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction dead = builder.createStore(Constant.intConst(1), state);
+    Instruction live = builder.createStore(Constant.intConst(2), state);
+    builder.createCall(reader, Type.INT);
+    Instruction observed = builder.createStore(Constant.intConst(3), state);
+    builder.createCall(reader, Type.INT);
+    builder.createRet(Constant.intConst(0));
+
+    assertTrue(DeadStoreElimination.runOnModule(module));
+    assertNull(dead.getParent());
+    assertTrue(live.getParent() != null);
+    assertTrue(observed.getParent() != null);
+    assertEquals(2, main.getEntryBlock().getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.STORE)
+        .count());
+  }
+
+  @Test
+  void removesStoresToNeverReadArrayElements() {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 2);
+    GlobalVariable array =
+        new GlobalVariable("array", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(array);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction unusedAddress = builder.createGEP(
+        arrayType,
+        array,
+        new accela.ir.Value[] {Constant.int64Const(0), Constant.int64Const(0)},
+        true);
+    Instruction usedAddress = builder.createGEP(
+        arrayType,
+        array,
+        new accela.ir.Value[] {Constant.int64Const(0), Constant.int64Const(1)},
+        true);
+    Instruction dead = builder.createStore(Constant.intConst(4), unusedAddress);
+    Instruction live = builder.createStore(Constant.intConst(5), usedAddress);
+    builder.createRet(builder.createLoad(Type.INT, usedAddress));
+
+    assertTrue(DeadStoreElimination.runOnModule(module));
+    assertNull(dead.getParent());
+    assertTrue(live.getParent() != null);
+  }
+}
