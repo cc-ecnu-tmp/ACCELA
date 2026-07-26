@@ -1,0 +1,51 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.Random;
+import org.junit.jupiter.api.Test;
+
+final class SignedDivisionMagicTest {
+  @Test
+  void implementsTruncatingSignedDivision() {
+    int[] divisors = {
+        -2147483647, -1000000007, -65535, -10, -7, -5, -3,
+        3, 5, 7, 10, 65535, 1000000007, 2147483647
+    };
+    int[] edgeNumerators = {
+        Integer.MIN_VALUE, Integer.MIN_VALUE + 1, -1000000007, -17, -1,
+        0, 1, 17, 1000000007, Integer.MAX_VALUE
+    };
+    Random random = new Random(0xacc31a);
+
+    for (int divisor : divisors) {
+      for (int numerator : edgeNumerators) check(numerator, divisor);
+      for (int index = 0; index < 1000; index++) check(random.nextInt(), divisor);
+    }
+    for (int index = 0; index < 1000; index++) {
+      int divisor;
+      do {
+        divisor = random.nextInt();
+      } while (Math.abs((long) divisor) < 2
+          || Long.bitCount(Math.abs((long) divisor)) == 1);
+      for (int numerator : edgeNumerators) check(numerator, divisor);
+      for (int sample = 0; sample < 20; sample++) check(random.nextInt(), divisor);
+    }
+  }
+
+  private static void check(int numerator, int divisor) {
+    assertEquals(numerator / divisor, divideUsingMagic(numerator, divisor),
+        () -> numerator + " / " + divisor);
+  }
+
+  private static int divideUsingMagic(int numerator, int divisor) {
+    SignedDivisionMagic.Magic magic = SignedDivisionMagic.choose(divisor);
+    long multiplier = magic.multiplier();
+    int signedMultiplier = (int) multiplier;
+    int quotient = (int) (((long) numerator * signedMultiplier) >> Integer.SIZE);
+    if (multiplier >= (1L << (Integer.SIZE - 1))) quotient += numerator;
+    quotient >>= magic.shift();
+    quotient -= numerator >> (Integer.SIZE - 1);
+    return divisor < 0 ? -quotient : quotient;
+  }
+}

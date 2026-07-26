@@ -10,11 +10,12 @@ import accela.ir.IRBuilder;
 import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
+import accela.pass.ir.transform.StrengthReduction;
 import org.junit.jupiter.api.Test;
 
 final class RISCVImmediateArithmeticTest {
   @Test
-  void selectsSignedTwelveBitArithmeticImmediates() {
+  void selectsShortIntegerArithmeticSequences() {
     Module module = new Module();
     Function function = new Function("arithmetic", Type.INT);
     module.addFunction(function);
@@ -25,9 +26,17 @@ final class RISCVImmediateArithmeticTest {
     builder.createAdd(argument, seven);
     builder.createAdd(seven, argument);
     builder.createSub(argument, seven);
+    builder.createMul(argument, Constant.intConst(32));
+    builder.createMul(Constant.intConst(5), argument);
+    builder.createSDiv(argument, Constant.intConst(8));
+    builder.createSRem(argument, Constant.intConst(8));
+    builder.createSDiv(argument, Constant.intConst(3));
+    builder.createSDiv(argument, Constant.intConst(7));
+    builder.createSRem(argument, Constant.intConst(10));
     builder.createXor(argument, seven);
     Value result = builder.createXor(seven, argument);
     builder.createRet(result);
+    StrengthReduction.runOnFunction(function);
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
@@ -35,9 +44,14 @@ final class RISCVImmediateArithmeticTest {
     assertTrue(assembly.matches("(?s).*  addiw [a-z0-9]+, [a-z0-9]+, -7.*"));
     assertTrue(assembly.matches("(?s).*  xori [a-z0-9]+, [a-z0-9]+, 7.*"));
     assertTrue(assembly.matches("(?s).*  sext\\.w [a-z0-9]+, [a-z0-9]+.*"));
+    assertTrue(assembly.matches("(?s).*  slliw [a-z0-9]+, [a-z0-9]+, 5.*"));
+    assertTrue(assembly.matches("(?s).*  slliw [a-z0-9]+, [a-z0-9]+, 2.*"));
+    assertTrue(assembly.matches("(?s).*  sraiw [a-z0-9]+, [a-z0-9]+, 31.*"));
+    assertTrue(assembly.matches("(?s).*  srliw [a-z0-9]+, [a-z0-9]+, 29.*"));
+    assertTrue(assembly.matches("(?s).*  mul a5, [a-z0-9]+, [a-z0-9]+.*"));
+    assertTrue(assembly.matches("(?s).*  srai [a-z0-9]+, a5, 32.*"));
     assertFalse(assembly.matches("(?s).*  li [a-z0-9]+, 7.*"));
-    assertFalse(assembly.matches("(?s).*  addw? [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
-    assertFalse(assembly.matches("(?s).*  subw? [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
+    assertFalse(assembly.matches("(?s).*  (mulw|divw|remw) .*"));
     assertFalse(assembly.matches("(?s).*  xor [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
   }
 }

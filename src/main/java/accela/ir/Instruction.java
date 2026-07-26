@@ -18,8 +18,8 @@ public class Instruction extends Value {
   /** Supported opcodes in the project IR. */
   public enum Opcode {
     // Arithmetic
-    ADD, SUB, MUL, SDIV, SREM,
-    // Arithmetic
+    ADD, SUB, MUL, SMULH, SDIV, SREM, ASHR,
+    // Floating-point arithmetic
     FADD, FSUB, FMUL, FDIV, FNEG,
     // Comparison
     ICMP, FCMP,

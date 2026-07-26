@@ -107,8 +107,10 @@ public class IRPrinter {
       case ADD:  return printBinOp(inst, "add");
       case SUB:  return printBinOp(inst, "sub");
       case MUL:  return printBinOp(inst, "mul");
+      case SMULH: return printSMulH(inst);
       case SDIV: return printBinOp(inst, "sdiv");
       case SREM: return printBinOp(inst, "srem");
+      case ASHR: return printBinOp(inst, "ashr");
 
       case FADD: return printBinOp(inst, "fadd");
       case FSUB: return printBinOp(inst, "fsub");
@@ -145,6 +147,20 @@ public class IRPrinter {
     String lhs = val(inst.getOperand(0));
     String rhs = val(inst.getOperand(1));
     return name(inst) + " = " + op + " " + inst.getType() + " " + lhs + ", " + rhs;
+  }
+
+  /** Expands the internal i32 smulh primitive into valid LLVM IR for debug execution. */
+  private String printSMulH(Instruction inst) {
+    String result = name(inst);
+    String left = result + ".lhs";
+    String right = result + ".rhs";
+    String product = result + ".product";
+    String high = result + ".high";
+    return left + " = sext i32 " + val(inst.getOperand(0)) + " to i64\n  "
+        + right + " = sext i32 " + val(inst.getOperand(1)) + " to i64\n  "
+        + product + " = mul i64 " + left + ", " + right + "\n  "
+        + high + " = ashr i64 " + product + ", 32\n  "
+        + result + " = trunc i64 " + high + " to i32";
   }
 
   // %v0 = fneg float %v1

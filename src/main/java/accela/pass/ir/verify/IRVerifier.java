@@ -82,6 +82,14 @@ public final class IRVerifier {
     }
 
     switch (inst.getOpcode()) {
+      case SMULH, ASHR:
+        if (inst.getType() != Type.INT
+            || inst.getNumOperands() != 2
+            || inst.getOperand(0).getType() != Type.INT
+            || inst.getOperand(1).getType() != Type.INT) {
+          fail(function, inst.getOpcode() + " requires i32 operands and result");
+        }
+        break;
       case ALLOCA:
         if (inst.getType() != Type.PTR || inst.getAllocatedType() == null || inst.getNumOperands() != 0) {
           fail(function, "invalid alloca");

@@ -31,6 +31,8 @@ public final class RISCVAsmEmitter {
 
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
+  private final RISCVStrengthReduction strengthReduction =
+      new RISCVStrengthReduction(ADDRESS_SCRATCH, INT_SCRATCH_1);
 
   public RISCVAsmEmitter(RISCVTarget target, RISCVFrameLowering frameLowering) {
     this.target = target;
@@ -52,6 +54,9 @@ public final class RISCVAsmEmitter {
       case ZEXT:
       case SEXT:
         emitMove(instr, allocation, lines);
+        return;
+      case SMULH:
+        emitSMulH(instr, allocation, lines);
         return;
       case STACK_ADDR:
         emitStackAddress(instr, allocation, lines);
@@ -86,6 +91,7 @@ public final class RISCVAsmEmitter {
       case MUL:
       case DIV:
       case REM:
+      case ASHR:
       case XOR:
         emitBinaryArithmetic(instr, allocation, lines);
         return;
@@ -263,7 +269,7 @@ public final class RISCVAsmEmitter {
     boolean wordResult = instr.getType() == MachineType.I32;
     MachineOperand lhs = instr.getOperands().get(0);
     MachineOperand rhs = instr.getOperands().get(1);
-    if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.XOR)
+    if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.MUL || opcode == MachineOpcode.XOR)
         && lhs instanceof ImmOperand && !(rhs instanceof ImmOperand)) {
       MachineOperand temporary = lhs;
       lhs = rhs;
@@ -272,19 +278,23 @@ public final class RISCVAsmEmitter {
     String lhsReg =
         operandRegisterOrScratch(
             lines, lhs, INT_SCRATCH_0, inferOperandType(lhs), allocation);
+    String dst = destReg(instr, allocation);
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
+      if (strengthReduction.emit(opcode, value, lhsReg, dst, wordResult, lines)) return;
       String immediateOpcode = switch (opcode) {
         case ADD -> fitsSigned12(value) ? wordResult ? "addiw" : "addi" : null;
         case SUB -> value != Long.MIN_VALUE && fitsSigned12(-value)
             ? wordResult ? "addiw" : "addi"
             : null;
         case XOR -> fitsSigned12(value) ? "xori" : null;
+        case ASHR -> value >= 0 && value < (wordResult ? Integer.SIZE : Long.SIZE)
+            ? wordResult ? "sraiw" : "srai"
+            : null;
         default -> null;
       };
       if (immediateOpcode != null) {
         long encodedValue = opcode == MachineOpcode.SUB ? -value : value;
-        String dst = destReg(instr, allocation);
         lines.add("  " + immediateOpcode + " " + dst + ", " + lhsReg + ", " + encodedValue);
         if (wordResult && opcode == MachineOpcode.XOR) {
           lines.add("  sext.w " + dst + ", " + dst);
@@ -301,14 +311,25 @@ public final class RISCVAsmEmitter {
       case MUL -> wordResult ? "mulw" : "mul";
       case DIV -> wordResult ? "divw" : "div";
       case REM -> wordResult ? "remw" : "rem";
+      case ASHR -> wordResult ? "sraw" : "sra";
       case XOR -> "xor";
       default -> throw new IllegalStateException("Unsupported arithmetic opcode: " + opcode);
     };
-    String dst = destReg(instr, allocation);
     lines.add("  " + op + " " + dst + ", " + lhsReg + ", " + rhsReg);
     if (wordResult && opcode == MachineOpcode.XOR) {
       lines.add("  sext.w " + dst + ", " + dst);
     }
+  }
+
+  private void emitSMulH(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    String lhs = operandRegisterOrScratch(
+        lines, instruction.getOperands().get(0), INT_SCRATCH_0, MachineType.I32, allocation);
+    String rhs = operandRegisterOrScratch(
+        lines, instruction.getOperands().get(1), INT_SCRATCH_1, MachineType.I32, allocation);
+    String dst = destReg(instruction, allocation);
+    lines.add("  mul " + ADDRESS_SCRATCH + ", " + lhs + ", " + rhs);
+    lines.add("  srai " + dst + ", " + ADDRESS_SCRATCH + ", " + Integer.SIZE);
   }
 
   private static boolean fitsSigned12(long value) {

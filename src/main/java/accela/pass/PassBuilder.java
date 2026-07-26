@@ -9,6 +9,7 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.ADCE;
+import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.transform.GlobalConstantPropagation;
 import accela.pass.ir.transform.GlobalDCE;
 import accela.pass.ir.transform.IPSCCP;
@@ -17,7 +18,7 @@ import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
-import accela.pass.ir.transform.EarlyCSE;
+import accela.pass.ir.transform.StrengthReduction;
 
 /**
  * Builds the project's default pass pipelines.
@@ -152,9 +153,12 @@ public final class PassBuilder {
     }
 
     ModulePassManager mpm = new ModulePassManager(instrumentation);
+    FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
+    postIpsccpFpm.addPass(new StrengthReduction.Pass());
     mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
     mpm.addPass(new IPSCCP.Pass());
+    mpm.addPass(new ModuleToFunctionPassAdaptor(postIpsccpFpm));
     mpm.addPass(new GlobalDCE.Pass());
     return mpm;
   }

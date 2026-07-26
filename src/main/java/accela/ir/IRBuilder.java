@@ -68,12 +68,21 @@ public class IRBuilder {
     return insert(new Instruction(Opcode.MUL, Type.INT, lhs, rhs));
   }
 
+  /** Returns the high 32 bits of the signed i32-by-i32 product. */
+  public Instruction createSMulH(Value lhs, Value rhs) {
+    return insert(new Instruction(Opcode.SMULH, Type.INT, lhs, rhs));
+  }
+
   public Instruction createSDiv(Value lhs, Value rhs) {
     return insert(new Instruction(Opcode.SDIV, Type.INT, lhs, rhs));
   }
 
   public Instruction createSRem(Value lhs, Value rhs) {
     return insert(new Instruction(Opcode.SREM, Type.INT, lhs, rhs));
+  }
+
+  public Instruction createAShr(Value lhs, Value rhs) {
+    return insert(new Instruction(Opcode.ASHR, Type.INT, lhs, rhs));
   }
 
   public Instruction createFAdd(Value lhs, Value rhs) {

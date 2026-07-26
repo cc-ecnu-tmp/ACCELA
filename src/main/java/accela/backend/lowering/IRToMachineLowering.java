@@ -123,59 +123,8 @@ public final class IRToMachineLowering {
       case GEP:
         lowerGep(inst, block, function, valueToVReg, blocks);
         return;
-      case ADD:
-        emitBinary(
-            block,
-            MachineOpcode.ADD,
-            valueToVReg.get(inst),
-            MachineType.I32,
-            lowerValue(inst.getOperand(0), valueToVReg, blocks),
-            lowerValue(inst.getOperand(1), valueToVReg, blocks));
-        return;
-      case SUB:
-        emitBinary(
-            block,
-            MachineOpcode.SUB,
-            valueToVReg.get(inst),
-            MachineType.I32,
-            lowerValue(inst.getOperand(0), valueToVReg, blocks),
-            lowerValue(inst.getOperand(1), valueToVReg, blocks));
-        return;
-      case MUL:
-        emitBinary(
-            block,
-            MachineOpcode.MUL,
-            valueToVReg.get(inst),
-            MachineType.I32,
-            lowerValue(inst.getOperand(0), valueToVReg, blocks),
-            lowerValue(inst.getOperand(1), valueToVReg, blocks));
-        return;
-      case SDIV:
-        emitBinary(
-            block,
-            MachineOpcode.DIV,
-            valueToVReg.get(inst),
-            MachineType.I32,
-            lowerValue(inst.getOperand(0), valueToVReg, blocks),
-            lowerValue(inst.getOperand(1), valueToVReg, blocks));
-        return;
-      case SREM:
-        emitBinary(
-            block,
-            MachineOpcode.REM,
-            valueToVReg.get(inst),
-            MachineType.I32,
-            lowerValue(inst.getOperand(0), valueToVReg, blocks),
-            lowerValue(inst.getOperand(1), valueToVReg, blocks));
-        return;
-      case XOR:
-        emitBinary(
-            block,
-            MachineOpcode.XOR,
-            valueToVReg.get(inst),
-            MachineType.fromIr(inst.getType()),
-            lowerValue(inst.getOperand(0), valueToVReg, blocks),
-            lowerValue(inst.getOperand(1), valueToVReg, blocks));
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, ASHR, XOR:
+        lowerIntegerBinary(inst, block, valueToVReg, blocks);
         return;
       case ICMP:
         if (!canFuseCompareBranch(inst)) {
@@ -473,6 +422,32 @@ public final class IRToMachineLowering {
     }
 
     emitBinary(block, MachineOpcode.ADD, dest, MachineType.PTR, base, accumulated);
+  }
+
+  private void lowerIntegerBinary(
+      Instruction instruction,
+      MachineBasicBlock block,
+      Map<Value, VirtualRegister> valueToVReg,
+      Map<BasicBlock, MachineBasicBlock> blocks) {
+    MachineOpcode opcode = switch (instruction.getOpcode()) {
+      case ADD -> MachineOpcode.ADD;
+      case SUB -> MachineOpcode.SUB;
+      case MUL -> MachineOpcode.MUL;
+      case SMULH -> MachineOpcode.SMULH;
+      case SDIV -> MachineOpcode.DIV;
+      case SREM -> MachineOpcode.REM;
+      case ASHR -> MachineOpcode.ASHR;
+      case XOR -> MachineOpcode.XOR;
+      default -> throw new IllegalStateException(
+          "Not an integer binary instruction: " + instruction.getOpcode());
+    };
+    emitBinary(
+        block,
+        opcode,
+        valueToVReg.get(instruction),
+        MachineType.fromIr(instruction.getType()),
+        lowerValue(instruction.getOperand(0), valueToVReg, blocks),
+        lowerValue(instruction.getOperand(1), valueToVReg, blocks));
   }
 
   private void emitSimple(
