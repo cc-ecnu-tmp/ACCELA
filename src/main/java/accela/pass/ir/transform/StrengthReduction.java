@@ -10,11 +10,13 @@ import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
+import java.math.BigInteger;
 import java.util.ArrayList;
 
 /** Lowers signed i32 division and remainder by constants to multiplication. */
 public final class StrengthReduction {
   private static final long SIGN_BIT = 1L << (Integer.SIZE - 1);
+  private static final int DIVISION_PRECISION = Integer.SIZE - 1;
 
   private StrengthReduction() {}
 
@@ -70,7 +72,7 @@ public final class StrengthReduction {
   }
 
   private static Value buildQuotient(IRBuilder builder, Value dividend, int divisor) {
-    SignedDivisionMagic.Magic magic = SignedDivisionMagic.choose(divisor);
+    Magic magic = chooseSignedDivisionMagic(divisor);
     boolean addDividend = magic.multiplier() >= SIGN_BIT;
 
     // The paper's unsigned 32-bit multiplier is consumed as the same i32 bit pattern.
@@ -88,4 +90,27 @@ public final class StrengthReduction {
   private static boolean isPowerOfTwo(long value) {
     return value > 0 && (value & (value - 1)) == 0;
   }
+
+  /** Selects the multiplier and shift from Granlund and Montgomery, Figure 6.2. */
+  static Magic chooseSignedDivisionMagic(int divisor) {
+    long absolute = Math.abs((long) divisor);
+    if (absolute < 2) throw new IllegalArgumentException("trivial divisor: " + divisor);
+
+    int shift = Long.SIZE - Long.numberOfLeadingZeros(absolute - 1);
+    BigInteger d = BigInteger.valueOf(absolute);
+    BigInteger numerator = BigInteger.ONE.shiftLeft(Integer.SIZE + shift);
+    BigInteger low = numerator.divide(d);
+    BigInteger high = numerator
+        .add(BigInteger.ONE.shiftLeft(Integer.SIZE + shift - DIVISION_PRECISION))
+        .divide(d);
+
+    while (shift > 0 && low.shiftRight(1).compareTo(high.shiftRight(1)) < 0) {
+      low = low.shiftRight(1);
+      high = high.shiftRight(1);
+      shift--;
+    }
+    return new Magic(high.longValueExact(), shift);
+  }
+
+  record Magic(long multiplier, int shift) {}
 }

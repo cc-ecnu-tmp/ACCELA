@@ -18,11 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Utility implementation of mem2reg's SSA-promotion algorithm.
- *
- * <p>Keeping the core algorithm in the transform layer makes the structure easier to read:
- * analysis results live under {@code analysis}, pass wrappers live next to the algorithms they
- * invoke, and pass-manager infrastructure stays in the parent package.
+ * Implementation of mem2reg's SSA-promotion algorithm.
  */
 public final class PromoteMemoryToRegister {
   private PromoteMemoryToRegister() {}
@@ -54,7 +50,7 @@ public final class PromoteMemoryToRegister {
 
     Type allocType = inst.getAllocatedType();
     if (allocType == null) return false;
-    if (allocType.isArray() || allocType.isPointer()) return false;
+    if (allocType.isArray()) return false;
 
     for (Use use : inst.getUses()) {
       Instruction user = use.getUser();

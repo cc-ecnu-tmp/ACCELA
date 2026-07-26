@@ -10,8 +10,7 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 /**
  * Mem2Reg Promotion
  *
- * <p>The actual SSA-promotion algorithm lives in {@link PromoteMemoryToRegister}; this class only
- * adapts that logic to the pass-manager API and requests the analyses it depends on.
+ * <p>The pass facade and its SSA-promotion implementation share this directory.
  */
 public class Mem2Reg {
   public static final class Pass implements FunctionPass {

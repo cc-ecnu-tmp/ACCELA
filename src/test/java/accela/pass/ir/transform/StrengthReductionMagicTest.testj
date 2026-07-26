@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
-final class SignedDivisionMagicTest {
+final class StrengthReductionMagicTest {
   @Test
   void implementsTruncatingSignedDivision() {
     int[] divisors = {
@@ -39,7 +39,7 @@ final class SignedDivisionMagicTest {
   }
 
   private static int divideUsingMagic(int numerator, int divisor) {
-    SignedDivisionMagic.Magic magic = SignedDivisionMagic.choose(divisor);
+    StrengthReduction.Magic magic = StrengthReduction.chooseSignedDivisionMagic(divisor);
     long multiplier = magic.multiplier();
     int signedMultiplier = (int) multiplier;
     int quotient = (int) (((long) numerator * signedMultiplier) >> Integer.SIZE);
