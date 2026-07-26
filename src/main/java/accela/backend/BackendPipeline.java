@@ -1,5 +1,6 @@
 package accela.backend;
 
+import accela.backend.lowering.GlobalAddressMaterialization;
 import accela.backend.lowering.IRToMachineLowering;
 import accela.backend.lowering.MachineConstantCSE;
 import accela.backend.lowering.MemoryAddressFolding;
@@ -23,6 +24,7 @@ final class BackendPipeline {
   private final PhiElimination phiElimination = new PhiElimination();
   private final MemoryAddressFolding memoryAddressFolding = new MemoryAddressFolding();
   private final MachineConstantCSE constantCse = new MachineConstantCSE();
+  private final GlobalAddressMaterialization globalAddresses = new GlobalAddressMaterialization();
   private final RegisterAllocator allocator = new IteratedRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
   private final RISCVAsmEmitter asmEmitter = new RISCVAsmEmitter(target, frameLowering);
@@ -36,6 +38,7 @@ final class BackendPipeline {
       phiElimination.run(function);
       memoryAddressFolding.run(function);
       constantCse.run(function);
+      globalAddresses.run(function);
       allocations.put(function, allocator.allocate(function, target));
     }
 

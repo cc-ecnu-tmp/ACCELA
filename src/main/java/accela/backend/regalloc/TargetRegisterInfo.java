@@ -121,6 +121,10 @@ public final class TargetRegisterInfo {
     return allocatableRegisters(type).size();
   }
 
+  public List<PhysicalRegister> callerSavedRegisters(MachineType type) {
+    return allocatableRegisters(type).stream().filter(this::isCallerSaved).toList();
+  }
+
   public List<PhysicalRegister> calleeSavedRegisters(MachineType type) {
     if (type.isFloat()) {
       return FLOAT_CALLEE_SAVED_REGISTERS;

@@ -1,0 +1,81 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.SymbolOperand;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.regalloc.TargetRegisterInfo;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class GlobalAddressPressureTest {
+  @Test
+  void usesTheRemainingCallerSavedColorForAnEligibleAddress() {
+    MachineFunction function = new MachineFunction("pressure", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock body = function.addBlock("body");
+    int pressure = new TargetRegisterInfo().callerSavedRegisters(MachineType.I32).size() - 1;
+    List<VirtualRegister> live = addLiveValues(function, entry, pressure);
+    for (int index = 0; index < 4; index++) addUse(entry, "entry_only");
+    connect(entry, body);
+    for (int index = 0; index < 3; index++) addUse(body, "hot");
+    for (VirtualRegister register : live) addConsume(function, body, register);
+    body.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertTrue(new GlobalAddressMaterialization().run(function));
+    assertEquals(1, entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == MachineOpcode.MOVE)
+        .filter(instruction -> instruction.getOperands().getFirst() instanceof SymbolOperand)
+        .count());
+    assertEquals(3, body.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == MachineOpcode.LOAD)
+        .flatMap(instruction -> instruction.getOperands().stream())
+        .filter(VRegOperand.class::isInstance).count());
+  }
+
+  private static List<VirtualRegister> addLiveValues(
+      MachineFunction function, MachineBasicBlock block, int count) {
+    List<VirtualRegister> registers = new ArrayList<>();
+    for (int index = 0; index < count; index++) {
+      VirtualRegister register = function.createVirtualRegister(MachineType.I32, "live");
+      MachineInstr constant = new MachineInstr(MachineOpcode.CONST_INT, register);
+      constant.setType(MachineType.I32);
+      constant.addOperand(new ImmOperand(index));
+      block.addInstruction(constant);
+      registers.add(register);
+    }
+    return registers;
+  }
+
+  private static void addConsume(
+      MachineFunction function, MachineBasicBlock block, VirtualRegister source) {
+    MachineInstr move =
+        new MachineInstr(MachineOpcode.MOVE, function.createVirtualRegister(MachineType.I32, "use"));
+    move.setType(MachineType.I32);
+    move.addOperand(new VRegOperand(source));
+    block.addInstruction(move);
+  }
+
+  private static void connect(MachineBasicBlock source, MachineBasicBlock target) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(target));
+    source.addInstruction(branch);
+  }
+
+  private static void addUse(MachineBasicBlock block, String symbol) {
+    MachineInstr load = new MachineInstr(MachineOpcode.LOAD, null);
+    load.setType(MachineType.I32);
+    load.addOperand(new SymbolOperand(symbol));
+    block.addInstruction(load);
+  }
+}

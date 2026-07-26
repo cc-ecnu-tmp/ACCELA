@@ -54,6 +54,17 @@ final class TargetRegisterInfoTest {
   }
 
   @Test
+  void returnsAllocatableCallerSavedRegisters() {
+    assertNames(
+        info.callerSavedRegisters(MachineType.I32),
+        "t0", "t1", "t2", "t3", "t4", "t5", "t6");
+    assertNames(
+        info.callerSavedRegisters(MachineType.F32),
+        "ft0", "ft1", "ft2", "ft3", "ft4", "ft5",
+        "ft6", "ft7", "ft8", "ft9", "ft10", "ft11");
+  }
+
+  @Test
   void registerListsAreImmutable() {
     assertThrows(
         UnsupportedOperationException.class,
