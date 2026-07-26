@@ -15,16 +15,16 @@ public final class RISCVTarget {
 
   private final List<PhysicalRegister> intScratch =
       List.of(
-          new PhysicalRegister("t0", MachineType.I32),
-          new PhysicalRegister("t1", MachineType.I32),
-          new PhysicalRegister("t2", MachineType.I32),
-          new PhysicalRegister("t3", MachineType.I32));
+          new PhysicalRegister("a4", MachineType.I32),
+          new PhysicalRegister("a5", MachineType.I32),
+          new PhysicalRegister("a6", MachineType.I32),
+          new PhysicalRegister("a7", MachineType.I32));
   private final List<PhysicalRegister> floatScratch =
       List.of(
-          new PhysicalRegister("ft0", MachineType.F32),
-          new PhysicalRegister("ft1", MachineType.F32),
-          new PhysicalRegister("ft2", MachineType.F32),
-          new PhysicalRegister("ft3", MachineType.F32));
+          new PhysicalRegister("fa4", MachineType.F32),
+          new PhysicalRegister("fa5", MachineType.F32),
+          new PhysicalRegister("fa6", MachineType.F32),
+          new PhysicalRegister("fa7", MachineType.F32));
 
   public List<PhysicalRegister> getIntScratch() {
     return intScratch;
@@ -116,10 +116,13 @@ public final class RISCVTarget {
       if (cursor.nextFloatArg < 8) {
         return CallArgAssignment.inRegister(getArgRegister(cursor.nextFloatArg++, type));
       }
-    } else {
-      if (cursor.nextIntArg < 8) {
-        return CallArgAssignment.inRegister(getArgRegister(cursor.nextIntArg++, type));
-      }
+    }
+
+    // A floating-point value falls back to the integer calling convention once
+    // fa0-fa7 are exhausted.
+    if (cursor.nextIntArg < 8) {
+      MachineType registerType = type.isFloat() ? MachineType.I32 : type;
+      return CallArgAssignment.inRegister(getArgRegister(cursor.nextIntArg++, registerType));
     }
 
     int stackOffset = cursor.nextStackOffset;

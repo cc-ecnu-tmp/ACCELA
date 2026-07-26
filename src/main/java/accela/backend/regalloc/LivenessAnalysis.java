@@ -25,23 +25,29 @@ public final class LivenessAnalysis {
     private final Map<MachineInstr,Set<VirtualRegister>> liveAfter = new IdentityHashMap<>();
 
     public Set<VirtualRegister> liveIn(MachineBasicBlock block) {
-      return liveIn.getOrDefault(block, Collections.emptySet());
+      return Collections.unmodifiableSet(
+          liveIn.getOrDefault(block, Collections.emptySet()));
     }
 
     public Set<VirtualRegister> liveOut(MachineBasicBlock block) {
-      return liveOut.getOrDefault(block, Collections.emptySet());
+      return Collections.unmodifiableSet(
+          liveOut.getOrDefault(block, Collections.emptySet()));
     }
 
     public Set<VirtualRegister> liveBefore(MachineInstr instr) {
-      return liveBefore.getOrDefault(instr, Collections.emptySet());
+      return Collections.unmodifiableSet(
+          liveBefore.getOrDefault(instr, Collections.emptySet()));
     }
 
     public Set<VirtualRegister> liveAfter(MachineInstr instr) {
-      return liveAfter.getOrDefault(instr, Collections.emptySet());
+      return Collections.unmodifiableSet(
+          liveAfter.getOrDefault(instr, Collections.emptySet()));
     }
   }
 
   public static Result analyze (MachineFunction it) {
+    requirePhiEliminated(it);
+
     Map<MachineBasicBlock, BlockUseDef> useDef = new IdentityHashMap<>();
     Map<MachineBasicBlock, List<MachineBasicBlock>> successors = new IdentityHashMap<>();
 
@@ -92,6 +98,17 @@ public final class LivenessAnalysis {
     
     return res;
 
+  }
+
+  private static void requirePhiEliminated(MachineFunction function) {
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instr : block.getInstructions()) {
+        if (instr.getOpcode() == MachineOpcode.PHI) {
+          throw new IllegalStateException(
+              "liveness analysis requires PHI elimination in block: " + block.getLabel());
+        }
+      }
+    }
   }
   
   //liveAfter(last) = liveOut(block)

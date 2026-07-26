@@ -1,5 +1,6 @@
 package accela.backend.regalloc;
 
+import accela.backend.frame.StackSlot;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
@@ -8,6 +9,7 @@ import accela.backend.machine.PhysicalRegister;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -19,11 +21,16 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
 
   @Override
   public AllocationResult allocate(MachineFunction function, RISCVTarget target) {
+    Map<VirtualRegister, StackSlot> spilledLocations = new LinkedHashMap<>();
     for (int round = 0; round < MAX_REWRITE_ROUNDS; round++) {
       LivenessAnalysis.Result liveness = LivenessAnalysis.analyze(function);
       InterferenceGraphBuilder.Result built = InterferenceGraphBuilder.build(function, liveness);
       AllocatorState state =
-          new AllocatorState(built, registers, ignored -> 1.0, liveAcrossCall(function, liveness));
+          new AllocatorState(
+              built,
+              registers,
+              SpillCostAnalysis.analyze(function, built.graph()),
+              liveAcrossCall(function, liveness));
       state.makeWorklist();
 
       while (hasWork(state)) {
@@ -41,10 +48,11 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
       state.assignColors();
 
       if (state.spilledNodes.isEmpty()) {
-        return toAllocationResult(state, registers);
+        return toAllocationResult(state, registers, spilledLocations);
       }
 
-      spillRewriter.rewrite(function, state.spilledNodes, target);
+      spilledLocations.putAll(
+          spillRewriter.rewrite(function, state.spilledNodes, target));
     }
 
     throw new IllegalStateException("register allocation did not converge after spill rewriting");
@@ -57,8 +65,14 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
         || !state.spillWorklist.isEmpty();
   }
 
-  private static AllocationResult toAllocationResult(AllocatorState state, TargetRegisterInfo registers) {
+  private static AllocationResult toAllocationResult(
+      AllocatorState state,
+      TargetRegisterInfo registers,
+      Map<VirtualRegister, StackSlot> spilledLocations) {
     AllocationResult result = new AllocationResult();
+    for (Map.Entry<VirtualRegister, StackSlot> entry : spilledLocations.entrySet()) {
+      result.put(entry.getKey(), new StackLocation(entry.getValue()));
+    }
     for (Map.Entry<VirtualRegister, PhysicalRegister> entry : state.color.entrySet()) {
       result.put(entry.getKey(), new RegisterLocation(entry.getValue()));
       if (registers.isCalleeSaved(entry.getValue())) {
@@ -74,7 +88,11 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
     for (MachineBasicBlock block : function.getBlocks()) {
       for (MachineInstr instr : block.getInstructions()) {
         if (instr.getOpcode() == MachineOpcode.CALL) {
-          result.addAll(liveness.liveAfter(instr));
+          for (VirtualRegister register : liveness.liveAfter(instr)) {
+            if (liveness.liveBefore(instr).contains(register)) {
+              result.add(register);
+            }
+          }
         }
       }
     }

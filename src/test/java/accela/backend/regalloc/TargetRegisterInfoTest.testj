@@ -17,7 +17,7 @@ final class TargetRegisterInfoTest {
   void returnsIntegerRegistersForIntegerLikeTypes() {
     assertNames(
         info.allocatableRegisters(MachineType.I32),
-        "t4", "t5", "t6",
+        "t0", "t1", "t2", "t3", "t4", "t5", "t6",
         "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11");
 
     assertEquals(
@@ -35,7 +35,7 @@ final class TargetRegisterInfoTest {
   void returnsFloatRegistersForFloatTypes() {
     assertNames(
         info.allocatableRegisters(MachineType.F32),
-        "ft4", "ft5", "ft6", "ft7", "ft8", "ft9", "ft10", "ft11",
+        "ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7", "ft8", "ft9", "ft10", "ft11",
         "fs0", "fs1", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7", "fs8", "fs9", "fs10", "fs11");
   }
 
@@ -47,6 +47,8 @@ final class TargetRegisterInfoTest {
 
   @Test
   void registerCountMatchesAllocatableListSize() {
+    assertEquals(18, info.registerCount(MachineType.I32));
+    assertEquals(24, info.registerCount(MachineType.F32));
     assertEquals(info.allocatableRegisters(MachineType.I32).size(), info.registerCount(MachineType.I32));
     assertEquals(info.allocatableRegisters(MachineType.F32).size(), info.registerCount(MachineType.F32));
   }
@@ -72,15 +74,15 @@ final class TargetRegisterInfoTest {
   @Test
   void classifiesAllocatorReservedRegisters() {
     assertTrue(info.isAllocatorReserved(new PhysicalRegister("zero", MachineType.I32)));
-    assertTrue(info.isAllocatorReserved(new PhysicalRegister("t0", MachineType.I32)));
-    assertTrue(info.isAllocatorReserved(new PhysicalRegister("t3", MachineType.I32)));
-    assertTrue(info.isAllocatorReserved(new PhysicalRegister("ft0", MachineType.F32)));
-    assertTrue(info.isAllocatorReserved(new PhysicalRegister("ft3", MachineType.F32)));
     assertTrue(info.isAllocatorReserved(new PhysicalRegister("a0", MachineType.I32)));
     assertTrue(info.isAllocatorReserved(new PhysicalRegister("fa7", MachineType.F32)));
 
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("t0", MachineType.I32)));
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("t3", MachineType.I32)));
     assertFalse(info.isAllocatorReserved(new PhysicalRegister("t4", MachineType.I32)));
     assertFalse(info.isAllocatorReserved(new PhysicalRegister("s1", MachineType.I32)));
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("ft0", MachineType.F32)));
+    assertFalse(info.isAllocatorReserved(new PhysicalRegister("ft3", MachineType.F32)));
     assertFalse(info.isAllocatorReserved(new PhysicalRegister("ft4", MachineType.F32)));
     assertFalse(info.isAllocatorReserved(new PhysicalRegister("fs0", MachineType.F32)));
   }

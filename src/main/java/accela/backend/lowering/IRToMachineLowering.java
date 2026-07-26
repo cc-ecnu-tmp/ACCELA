@@ -403,8 +403,9 @@ public final class IRToMachineLowering {
     RISCVTarget.CallArgCursor argCursor = target.newCallArgCursor();
     for (int i = 0; i < inst.getNumOperands(); i++) {
       MachineOperand operand = lowerValue(inst.getOperand(i), valueToVReg, blocks);
-      call.addOperand(operand);
-      target.assignCallArg(argCursor, inferCallOperandType(operand));
+      MachineType argumentType = MachineType.fromIr(inst.getOperand(i).getType());
+      call.addOperand(operand, argumentType);
+      target.assignCallArg(argCursor, argumentType);
     }
     block.addInstruction(call);
     function.getFrameInfo().markHasCall();
@@ -527,13 +528,4 @@ public final class IRToMachineLowering {
     throw new UnsupportedOperationException("Unsupported value in backend lowering: " + value.getClass().getName());
   }
 
-  private MachineType inferCallOperandType(MachineOperand operand) {
-    if (operand instanceof VRegOperand) return ((VRegOperand) operand).getRegister().getType();
-    if (operand instanceof FloatImmOperand) return MachineType.F32;
-    if (operand instanceof SymbolOperand) return MachineType.PTR;
-    if (operand instanceof StackSlotOperand) return ((StackSlotOperand) operand).getSlot().getType();
-    if (operand instanceof PhysicalRegOperand) return ((PhysicalRegOperand) operand).getRegister().getType();
-    if (operand instanceof ImmOperand) return MachineType.I32;
-    return MachineType.I32;
-  }
 }

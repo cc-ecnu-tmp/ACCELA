@@ -295,6 +295,26 @@ final class IRCAllocatorStateTest {
     assertEquals(a, state.alias.get(b));
     assertEquals(a, state.getAlias(b));
     assertTrue(graph.interferes(a, x));
+    assertEquals(1, state.degree(a));
+    assertEquals(1, state.degree(x));
+  }
+
+  @Test
+  void coalesceDecrementsDegreeForAlreadySharedNeighbor() {
+    MachineFunction function = new MachineFunction("coalesce_shared_neighbor", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister x = function.createVirtualRegister(MachineType.I32, "x");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addEdge(a, x);
+    graph.addEdge(b, x);
+    InterferenceGraphBuilder.Move move = move(b, a);
+
+    AllocatorState state = state(graph, Set.of(move));
+    state.coalesce();
+
+    assertEquals(1, state.degree(a));
+    assertEquals(1, state.degree(x));
   }
 
   @Test
@@ -319,6 +339,41 @@ final class IRCAllocatorStateTest {
 
     assertTrue(state.color.get(src).getName().startsWith("s"));
     assertEquals(state.color.get(src).getName(), state.color.get(dst).getName());
+  }
+
+  @Test
+  void coalesceUsesLiveAcrossCallRegisterCountForCombinedNode() {
+    MachineFunction function = new MachineFunction("coalesce_call_conservative", MachineType.I32);
+    VirtualRegister src = function.createVirtualRegister(MachineType.I32, "src");
+    VirtualRegister dst = function.createVirtualRegister(MachineType.I32, "dst");
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(src);
+    graph.addNode(dst);
+
+    int calleeSavedCount = registers.calleeSavedRegisters(MachineType.I32).size();
+    Set<VirtualRegister> highDegreeNeighbors = new java.util.HashSet<>();
+    for (int i = 0; i < calleeSavedCount; i++) {
+      VirtualRegister neighbor = function.createVirtualRegister(MachineType.I32, "n" + i);
+      graph.addEdge(src, neighbor);
+      highDegreeNeighbors.add(neighbor);
+    }
+
+    InterferenceGraphBuilder.Move move = move(dst, src);
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of(move)),
+            new TargetRegisterInfo(),
+            register -> 1.0,
+            Set.of(dst));
+    for (VirtualRegister neighbor : highDegreeNeighbors) {
+      state.degree.put(neighbor, calleeSavedCount);
+    }
+
+    state.coalesce();
+
+    assertEquals(Set.of(move), state.activeMoves);
+    assertTrue(state.coalescedMoves.isEmpty());
+    assertTrue(state.coalescedNodes.isEmpty());
   }
 
   @Test

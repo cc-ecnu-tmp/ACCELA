@@ -25,6 +25,9 @@ final class LargeMemzeroTest {
     assertFalse(assembly.contains("  call memset"));
     assertTrue(assembly.contains("  sd ra,"));
     assertTrue(assembly.contains("  ld ra,"));
+    String helper = assembly.substring(assembly.indexOf("__accela_memzero:"));
+    assertTrue(helper.contains("  andi a2, a0, 7"));
+    assertFalse(helper.matches("(?s).*\\bt[0-6]\\b.*"));
   }
 
   @Test

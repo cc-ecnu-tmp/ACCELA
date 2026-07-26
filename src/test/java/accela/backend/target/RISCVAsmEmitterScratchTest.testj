@@ -1,0 +1,191 @@
+package accela.backend.target;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.frame.StackSlot;
+import accela.backend.frame.StackSlotKind;
+import accela.backend.machine.FloatImmOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegOperand;
+import accela.backend.machine.PhysicalRegister;
+import accela.backend.machine.StackSlotOperand;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.regalloc.AllocationResult;
+import accela.backend.regalloc.RegisterLocation;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class RISCVAsmEmitterScratchTest {
+  private final RISCVTarget target = new RISCVTarget();
+  private final RISCVAsmEmitter emitter =
+      new RISCVAsmEmitter(target, new RISCVFrameLowering(target));
+
+  @Test
+  void materializesIntegerOperandsWithoutClobberingAllocatedTemporaries() {
+    MachineFunction function = new MachineFunction("integer_scratch", MachineType.I32);
+    VirtualRegister destination =
+        function.createVirtualRegister(MachineType.I32, "destination");
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, destination);
+    add.addOperand(new ImmOperand(4096));
+    add.addOperand(new ImmOperand(8192));
+    add.setType(MachineType.I32);
+
+    AllocationResult allocation = allocation(destination, "t2", MachineType.I32);
+    List<String> lines = emit(function, add, allocation);
+
+    assertEquals(
+        List.of(
+            "  li a6, 4096",
+            "  li a7, 8192",
+            "  addw t2, a6, a7"),
+        lines);
+  }
+
+  @Test
+  void materializesFloatOperandWithoutOverwritingFtSource() {
+    MachineFunction function = new MachineFunction("float_scratch", MachineType.F32);
+    VirtualRegister source = function.createVirtualRegister(MachineType.F32, "source");
+    VirtualRegister destination =
+        function.createVirtualRegister(MachineType.F32, "destination");
+    MachineInstr add = new MachineInstr(MachineOpcode.FADD, destination);
+    add.addOperand(new FloatImmOperand(1.5f));
+    add.addOperand(new VRegOperand(source));
+    add.setType(MachineType.F32);
+
+    AllocationResult allocation = allocation(source, "ft0", MachineType.F32);
+    allocation.put(
+        destination,
+        new RegisterLocation(new PhysicalRegister("ft1", MachineType.F32)));
+    List<String> lines = emit(function, add, allocation);
+
+    assertEquals(
+        List.of(
+            "  li a7, " + Float.floatToRawIntBits(1.5f),
+            "  fmv.w.x fa6, a7",
+            "  fadd.s ft1, fa6, ft0"),
+        lines);
+  }
+
+  @Test
+  void usesReservedAddressScratchWhenDestinationIsT3() {
+    MachineFunction function = new MachineFunction("address_scratch", MachineType.PTR);
+    VirtualRegister destination =
+        function.createVirtualRegister(MachineType.PTR, "destination");
+    StackSlot slot =
+        new StackSlot(0, StackSlotKind.LOCAL, MachineType.I32, 4, 4);
+    slot.setOffset(4096);
+    MachineInstr address = new MachineInstr(MachineOpcode.STACK_ADDR, destination);
+    address.addOperand(new StackSlotOperand(slot));
+    address.setType(MachineType.PTR);
+
+    AllocationResult allocation = allocation(destination, "t3", MachineType.PTR);
+    List<String> lines = emit(function, address, allocation);
+
+    assertEquals(
+        List.of(
+            "  li a5, 4096",
+            "  add t3, sp, a5"),
+        lines);
+  }
+
+  @Test
+  void commitsStackAndFloatArgumentsBeforeIntegerArgumentRegisters() {
+    MachineFunction function = new MachineFunction("call_scratch", MachineType.VOID);
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    for (int i = 1; i <= 9; i++) {
+      call.addOperand(new ImmOperand(i), MachineType.I32);
+    }
+    call.addOperand(new FloatImmOperand(1.5f), MachineType.F32);
+
+    List<String> lines = emit(function, call, new AllocationResult());
+
+    int stackStore = lines.indexOf("  sw a6, 0(sp)");
+    int floatMaterialization =
+        lines.indexOf("  li a7, " + Float.floatToRawIntBits(1.5f));
+    int finalA6 = lines.indexOf("  li a6, 7");
+    int finalA7 = lines.indexOf("  li a7, 8");
+    int callIndex = lines.indexOf("  call callee");
+    assertTrue(stackStore >= 0);
+    assertTrue(floatMaterialization > stackStore);
+    assertTrue(finalA6 > floatMaterialization);
+    assertTrue(finalA7 > finalA6);
+    assertTrue(callIndex > finalA7);
+  }
+
+  @Test
+  void emitsSpilledFloatStackArgumentBeforeItsRegisterArguments() {
+    MachineFunction function = new MachineFunction("float_stack_argument", MachineType.VOID);
+    VirtualRegister first = function.createVirtualRegister(MachineType.F32, "first");
+    StackSlot spilled =
+        new StackSlot(0, StackSlotKind.SPILL, MachineType.F32, 4, 4);
+    spilled.setOffset(4096);
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    call.addOperand(new VRegOperand(first), MachineType.F32);
+    for (int i = 1; i < 16; i++) {
+      call.addOperand(new FloatImmOperand(i + 0.5f), MachineType.F32);
+    }
+    call.addOperand(new StackSlotOperand(spilled), MachineType.F32);
+
+    AllocationResult allocation = allocation(first, "ft0", MachineType.F32);
+    List<String> lines = emit(function, call, allocation);
+
+    assertEquals(
+        List.of(
+            "  li a5, 4096",
+            "  add a5, sp, a5",
+            "  flw fa6, 0(a5)",
+            "  fsw fa6, 0(sp)"),
+        lines.subList(0, 4));
+    int registerCopy = lines.indexOf("  fsgnj.s fa0, ft0, ft0");
+    int firstIntegerFallback =
+        lines.indexOf("  li a0, " + Float.floatToRawIntBits(8.5f));
+    assertTrue(registerCopy >= 4);
+    assertTrue(firstIntegerFallback > registerCopy);
+    assertTrue(lines.indexOf("  call callee") > firstIntegerFallback);
+  }
+
+  @Test
+  void rejectsFixedArgumentRegistersAsCallSourcesBeforeEmittingAnything() {
+    MachineFunction function = new MachineFunction("physical_call_source", MachineType.VOID);
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    call.addOperand(
+        new PhysicalRegOperand(new PhysicalRegister("a6", MachineType.I32)),
+        MachineType.I32);
+    List<String> lines = new ArrayList<>();
+
+    assertThrows(
+        UnsupportedOperationException.class,
+        () -> emitter.emitInstruction(function, call, new AllocationResult(), lines));
+    assertTrue(lines.isEmpty());
+  }
+
+  private List<String> emit(
+      MachineFunction function, MachineInstr instruction, AllocationResult allocation) {
+    List<String> lines = new ArrayList<>();
+    emitter.emitInstruction(function, instruction, allocation, lines);
+    return lines;
+  }
+
+  private AllocationResult allocation(
+      VirtualRegister virtualRegister, String physicalName, MachineType type) {
+    AllocationResult allocation = new AllocationResult();
+    allocation.put(
+        virtualRegister,
+        new RegisterLocation(new PhysicalRegister(physicalName, type)));
+    return allocation;
+  }
+}

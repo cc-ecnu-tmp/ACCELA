@@ -1,0 +1,319 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+final class SpillCostAnalysisTest {
+  @Test
+  void weightsUsesAndDefinitionsByNaturalLoopNestingDepth() {
+    Fixture fixture = nestedLoopFixture();
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(fixture.cold);
+    graph.addNode(fixture.warm);
+    graph.addNode(fixture.hot);
+
+    SpillCostModel costs = SpillCostAnalysis.analyze(fixture.function, graph);
+
+    assertEquals(2.0, costs.cost(fixture.cold));
+    assertEquals(20.0, costs.cost(fixture.warm));
+    assertEquals(200.0, costs.cost(fixture.hot));
+  }
+
+  @Test
+  void normalizesWeightedReferencesByInterferenceDegree() {
+    MachineFunction function = new MachineFunction("degree", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister lowDegree =
+        function.createVirtualRegister(MachineType.I32, "low.degree");
+    VirtualRegister highDegree =
+        function.createVirtualRegister(MachineType.I32, "high.degree");
+    entry.addInstruction(moveImm(lowDegree, 1));
+    entry.addInstruction(moveImm(highDegree, 2));
+    entry.addInstruction(ret());
+
+    InterferenceGraph graph = new InterferenceGraph();
+    VirtualRegister neighbor0 =
+        function.createVirtualRegister(MachineType.I32, "neighbor.0");
+    VirtualRegister neighbor1 =
+        function.createVirtualRegister(MachineType.I32, "neighbor.1");
+    graph.addEdge(lowDegree, neighbor0);
+    graph.addEdge(highDegree, neighbor0);
+    graph.addEdge(highDegree, neighbor1);
+
+    SpillCostModel costs = SpillCostAnalysis.analyze(function, graph);
+
+    assertEquals(1.0, costs.cost(lowDegree));
+    assertEquals(0.5, costs.cost(highDegree));
+  }
+
+  @Test
+  void normalizesUsingCurrentLogicalDegreeAfterGraphMutation() {
+    MachineFunction function = new MachineFunction("current_degree", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister value =
+        function.createVirtualRegister(MachineType.I32, "value");
+    entry.addInstruction(moveImm(value, 1));
+    entry.addInstruction(ret());
+
+    InterferenceGraph graph = new InterferenceGraph();
+    VirtualRegister firstNeighbor =
+        function.createVirtualRegister(MachineType.I32, "neighbor.0");
+    VirtualRegister secondNeighbor =
+        function.createVirtualRegister(MachineType.I32, "neighbor.1");
+    graph.addEdge(value, firstNeighbor);
+    SpillCostModel costs = SpillCostAnalysis.analyze(function, graph);
+
+    graph.addEdge(value, secondNeighbor);
+
+    assertEquals(1.0, costs.cost(value, 1));
+    assertEquals(0.5, costs.cost(value, 2));
+  }
+
+  @Test
+  void selectSpillUsesAllocatorCurrentDegree() {
+    MachineFunction function = new MachineFunction("select_current_degree", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister highCurrentDegree =
+        function.createVirtualRegister(MachineType.I32, "high.current.degree");
+    VirtualRegister lowCurrentDegree =
+        function.createVirtualRegister(MachineType.I32, "low.current.degree");
+    entry.addInstruction(moveImm(highCurrentDegree, 1));
+    entry.addInstruction(use(function, highCurrentDegree, "extra.reference"));
+    entry.addInstruction(moveImm(lowCurrentDegree, 2));
+    entry.addInstruction(ret());
+
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(highCurrentDegree);
+    graph.addNode(lowCurrentDegree);
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of()),
+            new TargetRegisterInfo(),
+            SpillCostAnalysis.analyze(function, graph));
+    state.spillWorklist.add(highCurrentDegree);
+    state.spillWorklist.add(lowCurrentDegree);
+    state.degree.put(highCurrentDegree, 3);
+    state.degree.put(lowCurrentDegree, 1);
+
+    state.selectSpill();
+
+    assertTrue(state.simplifyWorklist.contains(highCurrentDegree));
+    assertTrue(state.spillWorklist.contains(lowCurrentDegree));
+  }
+
+  @Test
+  void coalescingAddsMergedReferencesToRepresentativeCost() {
+    MachineFunction function = new MachineFunction("coalesced_cost", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister representative =
+        function.createVirtualRegister(MachineType.I32, "representative");
+    VirtualRegister merged =
+        function.createVirtualRegister(MachineType.I32, "merged");
+    entry.addInstruction(moveImm(representative, 1));
+    entry.addInstruction(moveImm(merged, 2));
+    entry.addInstruction(use(function, merged, "merged.use"));
+    entry.addInstruction(ret());
+
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(representative);
+    graph.addNode(merged);
+    SpillCostModel costs = SpillCostAnalysis.analyze(function, graph);
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of()),
+            new TargetRegisterInfo(),
+            costs);
+
+    state.combine(representative, merged);
+
+    assertEquals(3.0, costs.cost(representative, state.degree(representative)));
+  }
+
+  @Test
+  void ignoresReferencesInUnreachableBlocks() {
+    MachineFunction function = new MachineFunction("unreachable_refs", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock unreachable = function.addBlock("unreachable");
+    VirtualRegister live =
+        function.createVirtualRegister(MachineType.I32, "live");
+    VirtualRegister dead =
+        function.createVirtualRegister(MachineType.I32, "dead");
+    entry.addInstruction(moveImm(live, 1));
+    entry.addInstruction(ret());
+    unreachable.addInstruction(moveImm(dead, 2));
+    unreachable.addInstruction(use(function, dead, "dead.use"));
+    unreachable.addInstruction(ret());
+
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(live);
+    graph.addNode(dead);
+    SpillCostModel costs = SpillCostAnalysis.analyze(function, graph);
+
+    assertEquals(1.0, costs.cost(live));
+    assertEquals(0.0, costs.cost(dead));
+  }
+
+  @Test
+  void keepsCostsFiniteForVeryDeepLoopNesting() {
+    int loopCount = 310;
+    MachineFunction function = new MachineFunction("deep_loop_nesting", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock[] headers = new MachineBasicBlock[loopCount];
+    MachineBasicBlock[] latches = new MachineBasicBlock[loopCount];
+    for (int i = 0; i < loopCount; i++) {
+      headers[i] = function.addBlock("header." + i);
+    }
+    for (int i = loopCount - 1; i >= 0; i--) {
+      latches[i] = function.addBlock("latch." + i);
+    }
+    MachineBasicBlock exit = function.addBlock("exit");
+    VirtualRegister hot =
+        function.createVirtualRegister(MachineType.I32, "hot");
+
+    entry.addInstruction(branch(headers[0]));
+    for (int i = 0; i < loopCount - 1; i++) {
+      headers[i].addInstruction(branch(headers[i + 1]));
+    }
+    headers[loopCount - 1].addInstruction(moveImm(hot, 1));
+    headers[loopCount - 1].addInstruction(use(function, hot, "hot.use"));
+    headers[loopCount - 1].addInstruction(branch(latches[loopCount - 1]));
+    for (int i = loopCount - 1; i >= 0; i--) {
+      MachineBasicBlock exitTarget = i == 0 ? exit : latches[i - 1];
+      latches[i].addInstruction(condBranch(headers[i], exitTarget));
+    }
+    exit.addInstruction(ret());
+
+    InterferenceGraph graph = new InterferenceGraph();
+    graph.addNode(hot);
+
+    double cost = SpillCostAnalysis.analyze(function, graph).cost(hot);
+
+    assertTrue(Double.isFinite(cost));
+  }
+
+  @Test
+  void selectsColdValueBeforeEquallyConstrainedLoopValue() {
+    Fixture fixture = nestedLoopFixture();
+    InterferenceGraph graph = new InterferenceGraph();
+    int registerCount = new TargetRegisterInfo().registerCount(MachineType.I32);
+    addInterferenceNeighbors(fixture.function, graph, fixture.cold, registerCount, "cold");
+    addInterferenceNeighbors(fixture.function, graph, fixture.hot, registerCount, "hot");
+    AllocatorState state =
+        new AllocatorState(
+            new InterferenceGraphBuilder.Result(graph, Set.of()),
+            new TargetRegisterInfo(),
+            SpillCostAnalysis.analyze(fixture.function, graph));
+    state.makeWorklist();
+
+    state.selectSpill();
+
+    assertTrue(state.simplifyWorklist.contains(fixture.cold));
+    assertTrue(state.spillWorklist.contains(fixture.hot));
+  }
+
+  private static Fixture nestedLoopFixture() {
+    MachineFunction function = new MachineFunction("nested_loops", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock outerHeader = function.addBlock("outer.header");
+    MachineBasicBlock outerBody = function.addBlock("outer.body");
+    MachineBasicBlock innerHeader = function.addBlock("inner.header");
+    MachineBasicBlock innerBody = function.addBlock("inner.body");
+    MachineBasicBlock outerLatch = function.addBlock("outer.latch");
+    MachineBasicBlock exit = function.addBlock("exit");
+
+    VirtualRegister cold = function.createVirtualRegister(MachineType.I32, "cold");
+    VirtualRegister warm = function.createVirtualRegister(MachineType.I32, "warm");
+    VirtualRegister hot = function.createVirtualRegister(MachineType.I32, "hot");
+
+    entry.addInstruction(moveImm(cold, 1));
+    entry.addInstruction(use(function, cold, "cold.use"));
+    entry.addInstruction(branch(outerHeader));
+
+    outerHeader.addInstruction(moveImm(warm, 2));
+    outerHeader.addInstruction(use(function, warm, "warm.use"));
+    outerHeader.addInstruction(condBranch(outerBody, exit));
+
+    outerBody.addInstruction(branch(innerHeader));
+
+    innerHeader.addInstruction(moveImm(hot, 3));
+    innerHeader.addInstruction(use(function, hot, "hot.use"));
+    innerHeader.addInstruction(condBranch(innerBody, outerLatch));
+
+    innerBody.addInstruction(branch(innerHeader));
+    outerLatch.addInstruction(branch(outerHeader));
+    exit.addInstruction(ret());
+
+    return new Fixture(function, cold, warm, hot);
+  }
+
+  private static void addInterferenceNeighbors(
+      MachineFunction function,
+      InterferenceGraph graph,
+      VirtualRegister register,
+      int count,
+      String hint) {
+    graph.addNode(register);
+    for (int i = 0; i < count; i++) {
+      VirtualRegister neighbor =
+          function.createVirtualRegister(MachineType.I32, hint + ".neighbor." + i);
+      graph.addEdge(register, neighbor);
+    }
+  }
+
+  private static MachineInstr moveImm(VirtualRegister dest, int value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new ImmOperand(value));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr use(
+      MachineFunction function, VirtualRegister source, String hint) {
+    VirtualRegister dest = function.createVirtualRegister(source.getType(), hint);
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new VRegOperand(source));
+    instr.setType(source.getType());
+    return instr;
+  }
+
+  private static MachineInstr branch(MachineBasicBlock target) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.BR, null);
+    instr.addOperand(new BlockOperand(target));
+    instr.setType(MachineType.VOID);
+    return instr;
+  }
+
+  private static MachineInstr condBranch(
+      MachineBasicBlock trueTarget, MachineBasicBlock falseTarget) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.CONDBR, null);
+    instr.addOperand(new ImmOperand(1));
+    instr.addOperand(new BlockOperand(trueTarget));
+    instr.addOperand(new BlockOperand(falseTarget));
+    instr.setType(MachineType.I1);
+    return instr;
+  }
+
+  private static MachineInstr ret() {
+    MachineInstr instr = new MachineInstr(MachineOpcode.RET, null);
+    instr.setType(MachineType.VOID);
+    return instr;
+  }
+
+  private record Fixture(
+      MachineFunction function,
+      VirtualRegister cold,
+      VirtualRegister warm,
+      VirtualRegister hot) {}
+}

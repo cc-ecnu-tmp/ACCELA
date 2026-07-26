@@ -1,0 +1,67 @@
+package accela.backend.target;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineType;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class RISCVTargetTest {
+  private final RISCVTarget target = new RISCVTarget();
+
+  @Test
+  void exposesOnlyAllocatorReservedArgumentRegistersAsEmitterScratch() {
+    assertEquals(
+        List.of("a4", "a5", "a6", "a7"),
+        target.getIntScratch().stream().map(register -> register.getName()).toList());
+    assertEquals(
+        List.of("fa4", "fa5", "fa6", "fa7"),
+        target.getFloatScratch().stream().map(register -> register.getName()).toList());
+  }
+
+  @Test
+  void fallsBackToIntegerRegistersAfterFloatArgumentRegistersAreExhausted() {
+    RISCVTarget.CallArgCursor cursor = target.newCallArgCursor();
+
+    for (int i = 0; i < 8; i++) {
+      RISCVTarget.CallArgAssignment assignment =
+          target.assignCallArg(cursor, MachineType.F32);
+      assertTrue(assignment.isInRegister());
+      assertEquals("fa" + i, assignment.getRegister().getName());
+    }
+
+    for (int i = 0; i < 8; i++) {
+      RISCVTarget.CallArgAssignment assignment =
+          target.assignCallArg(cursor, MachineType.F32);
+      assertTrue(assignment.isInRegister());
+      assertEquals("a" + i, assignment.getRegister().getName());
+    }
+
+    RISCVTarget.CallArgAssignment stack =
+        target.assignCallArg(cursor, MachineType.F32);
+    assertFalse(stack.isInRegister());
+    assertEquals(0, stack.getStackOffset());
+    assertEquals(8, cursor.getStackBytes());
+  }
+
+  @Test
+  void sendsFallbackFloatToStackWhenIntegerRegistersAreAlreadyUsed() {
+    RISCVTarget.CallArgCursor cursor = target.newCallArgCursor();
+    for (int i = 0; i < 8; i++) {
+      target.assignCallArg(cursor, MachineType.I32);
+    }
+    for (int i = 0; i < 8; i++) {
+      RISCVTarget.CallArgAssignment assignment =
+          target.assignCallArg(cursor, MachineType.F32);
+      assertEquals("fa" + i, assignment.getRegister().getName());
+    }
+
+    RISCVTarget.CallArgAssignment stack =
+        target.assignCallArg(cursor, MachineType.F32);
+
+    assertFalse(stack.isInRegister());
+    assertEquals(0, stack.getStackOffset());
+  }
+}

@@ -88,7 +88,7 @@ public final class MachineFrameInfo {
       offset += target.stackSizeOf(MachineType.PTR);
     }
     for (CalleeSavedRegisterSave save : calleeSavedRegisterSaves.values()) {
-      MachineType saveType = save.getRegister().getType().isFloat() ? MachineType.F32 : MachineType.PTR;
+      MachineType saveType = save.getRegister().getType().isFloat() ? MachineType.I64 : MachineType.PTR;
       offset = target.alignTo(offset, target.stackAlignOf(saveType));
       save.setOffset(offset);
       offset += target.stackSizeOf(saveType);

@@ -21,6 +21,7 @@ public final class InterferenceGraphBuilder {
         InterferenceGraph graph = new InterferenceGraph();
 
         for (MachineBasicBlock blc : function.getBlocks()){
+            addSimultaneouslyLiveEdges(graph, res.liveIn(blc));
             for(MachineInstr instr : blc.getInstructions()){
 
                 for(VirtualRegister register : getInstrUse(instr)){
@@ -38,7 +39,7 @@ public final class InterferenceGraphBuilder {
                 }
 
                 for (VirtualRegister register : res.liveAfter(instr)) {
-                    if (register.equals(moveSrc)) {
+                    if (register.equals(moveSrc) || !sharesRegisterClass(def, register)) {
                         continue;
                     }
                     graph.addEdge(def, register);
@@ -48,6 +49,19 @@ public final class InterferenceGraphBuilder {
         }
 
         return new Result(graph, moves);
+    }
+
+    private static void addSimultaneouslyLiveEdges(
+            InterferenceGraph graph, Set<VirtualRegister> liveRegisters) {
+        VirtualRegister[] registers = liveRegisters.toArray(VirtualRegister[]::new);
+        for (int i = 0; i < registers.length; i++) {
+            graph.addNode(registers[i]);
+            for (int j = i + 1; j < registers.length; j++) {
+                if (sharesRegisterClass(registers[i], registers[j])) {
+                    graph.addEdge(registers[i], registers[j]);
+                }
+            }
+        }
     }
 
     private static VirtualRegister getRegisterMoveSource(MachineInstr instr) {
@@ -65,6 +79,16 @@ public final class InterferenceGraphBuilder {
         }
 
         return ((VRegOperand) operand).getRegister();
+    }
+
+    private static boolean sharesRegisterClass(VirtualRegister left, VirtualRegister right) {
+        if (left.getType().isFloat()) {
+            return right.getType().isFloat();
+        }
+        if (left.getType().isIntegerLike()) {
+            return right.getType().isIntegerLike();
+        }
+        return false;
     }
 
     private static Set<VirtualRegister> getInstrUse(MachineInstr instr) {

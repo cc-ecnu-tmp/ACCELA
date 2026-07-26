@@ -107,6 +107,14 @@ final class AllocatorState {
     return candidateRegisters(register).size();
   }
 
+  private int registerCountAfterCoalescing(
+      VirtualRegister representative, VirtualRegister merged) {
+    if (liveAcrossCall.contains(representative) || liveAcrossCall.contains(merged)) {
+      return registers.calleeSavedRegisters(representative.getType()).size();
+    }
+    return registers.allocatableRegisters(representative.getType()).size();
+  }
+
   private void addMove(VirtualRegister register, InterferenceGraphBuilder.Move move) {
     moveList.computeIfAbsent(register, ignored -> new HashSet<>()).add(move);
   }
@@ -188,7 +196,7 @@ final class AllocatorState {
 
     Set<VirtualRegister> combinedAdjacent = getAdjacent(src);
     combinedAdjacent.addAll(getAdjacent(dst));
-    if (conservative(combinedAdjacent, registerCount(src))) {
+    if (conservative(combinedAdjacent, registerCountAfterCoalescing(src, dst))) {
       coalescedMoves.add(move);
       combine(src, dst);
       addWorkList(src);
@@ -225,7 +233,8 @@ final class AllocatorState {
 
     for (VirtualRegister register : spillWorklist) {
       if (selected == null
-          || spillCostModel.cost(register) < spillCostModel.cost(selected)) {
+          || spillCostModel.cost(register, degree(register))
+              < spillCostModel.cost(selected, degree(selected))) {
         selected = register;
       }
     }
@@ -312,6 +321,7 @@ final class AllocatorState {
     spillWorklist.remove(merged);
     coalescedNodes.add(merged);
     alias.put(merged, representative);
+    spillCostModel.combine(representative, merged);
     if (liveAcrossCall.contains(merged)) {
       liveAcrossCall.add(representative);
     }
@@ -323,8 +333,13 @@ final class AllocatorState {
     enableMoves(Set.of(merged));
 
     for (VirtualRegister neighbor : getAdjacent(merged)) {
+      boolean alreadyInterferes = graph.interferes(neighbor, representative);
       graph.addEdge(neighbor, representative);
-      decrementDegree(neighbor);
+      if (alreadyInterferes) {
+        decrementDegree(neighbor);
+      } else {
+        degree.put(representative, degree(representative) + 1);
+      }
     }
 
     if (degree(representative) >= registerCount(representative)

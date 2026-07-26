@@ -11,6 +11,7 @@ import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineOperand;
 import accela.backend.machine.MachineType;
 import accela.backend.machine.PhysicalRegOperand;
+import accela.backend.machine.PhysicalRegister;
 import accela.backend.machine.StackSlotOperand;
 import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
@@ -18,9 +19,16 @@ import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.AllocationResult;
 import accela.backend.regalloc.RegisterLocation;
 import accela.backend.regalloc.ValueLocation;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class RISCVAsmEmitter {
+  private static final String INT_SCRATCH_0 = "a6";
+  private static final String INT_SCRATCH_1 = "a7";
+  private static final String ADDRESS_SCRATCH = "a5";
+  private static final String FLOAT_SCRATCH_0 = "fa6";
+  private static final String FLOAT_SCRATCH_1 = "fa7";
+
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
 
@@ -53,7 +61,11 @@ public final class RISCVAsmEmitter {
                 + destReg(instr, allocation)
                 + ", "
                 + operandRegisterOrScratch(
-                    lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation));
+                    lines,
+                    instr.getOperands().get(0),
+                    INT_SCRATCH_0,
+                    MachineType.I32,
+                    allocation));
         return;
       case FPTOSI:
         lines.add(
@@ -61,7 +73,11 @@ public final class RISCVAsmEmitter {
                 + destReg(instr, allocation)
                 + ", "
                 + operandRegisterOrScratch(
-                    lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation)
+                    lines,
+                    instr.getOperands().get(0),
+                    FLOAT_SCRATCH_0,
+                    MachineType.F32,
+                    allocation)
                 + ", rtz");
         return;
       case ADD:
@@ -90,7 +106,11 @@ public final class RISCVAsmEmitter {
                 + destReg(instr, allocation)
                 + ", "
                 + operandRegisterOrScratch(
-                    lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation));
+                    lines,
+                    instr.getOperands().get(0),
+                    FLOAT_SCRATCH_0,
+                    MachineType.F32,
+                    allocation));
         return;
       case LOAD:
         emitLoad(instr, allocation, lines);
@@ -112,7 +132,11 @@ public final class RISCVAsmEmitter {
         lines.add(
             "  bnez "
                 + operandRegisterOrScratch(
-                    lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation)
+                    lines,
+                    instr.getOperands().get(0),
+                    INT_SCRATCH_0,
+                    MachineType.I32,
+                    allocation)
                 + ", "
                 + labelFor(function, ((BlockOperand) instr.getOperands().get(1)).getBlock()));
         lines.add("  j " + labelFor(function, ((BlockOperand) instr.getOperands().get(2)).getBlock()));
@@ -141,13 +165,21 @@ public final class RISCVAsmEmitter {
       MachineInstr branch,
       AllocationResult allocation,
       List<String> lines) {
-    String left = operandRegisterOrScratch(lines, branch.getOperands().get(0), "t0", MachineType.I32, allocation);
+    String left =
+        operandRegisterOrScratch(
+            lines,
+            branch.getOperands().get(0),
+            INT_SCRATCH_0,
+            MachineType.I32,
+            allocation);
     MachineOperand rightOperand = branch.getOperands().get(1);
     String right;
     if (rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0) {
       right = "zero";
     } else {
-      right = operandRegisterOrScratch(lines, rightOperand, "t1", MachineType.I32, allocation);
+      right =
+          operandRegisterOrScratch(
+              lines, rightOperand, INT_SCRATCH_1, MachineType.I32, allocation);
     }
 
     String comparison = switch (branch.getPredicate()) {
@@ -172,12 +204,18 @@ public final class RISCVAsmEmitter {
     MachineOperand source = instr.getOperands().get(0);
     String dst = destReg(instr, allocation);
     if (source instanceof PhysicalRegOperand) {
-      emitRegisterMove(lines, dst, ((PhysicalRegOperand) source).getRegister().getName(), instr.getType());
+      PhysicalRegister sourceRegister = ((PhysicalRegOperand) source).getRegister();
+      if (instr.getType().isFloat() && !sourceRegister.getType().isFloat()) {
+        lines.add("  fmv.w.x " + dst + ", " + sourceRegister.getName());
+      } else {
+        emitRegisterMove(lines, dst, sourceRegister.getName(), instr.getType());
+      }
       return;
     }
 
     int stackOffset = (int) ((ImmOperand) source).getValue();
-    frameLowering.emitLoadFromBase(lines, dst, "s0", stackOffset, "t3", instr.getType());
+    frameLowering.emitLoadFromBase(
+        lines, dst, "s0", stackOffset, ADDRESS_SCRATCH, instr.getType());
   }
 
   private void emitMove(MachineInstr instr, AllocationResult allocation, List<String> lines) {
@@ -191,7 +229,8 @@ public final class RISCVAsmEmitter {
 
   private void emitStackAddress(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     StackSlot slot = ((StackSlotOperand) instr.getOperands().get(0)).getSlot();
-    frameLowering.emitAddImmediate(lines, destReg(instr, allocation), "sp", slot.getOffset(), "t3");
+    frameLowering.emitAddImmediate(
+        lines, destReg(instr, allocation), "sp", slot.getOffset(), ADDRESS_SCRATCH);
   }
 
   private void emitBinaryArithmetic(MachineInstr instr, AllocationResult allocation, List<String> lines) {
@@ -206,7 +245,9 @@ public final class RISCVAsmEmitter {
       lhs = rhs;
       rhs = temporary;
     }
-    String lhsReg = operandRegisterOrScratch(lines, lhs, "t0", inferOperandType(lhs), allocation);
+    String lhsReg =
+        operandRegisterOrScratch(
+            lines, lhs, INT_SCRATCH_0, inferOperandType(lhs), allocation);
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
       String immediateOpcode = switch (opcode) {
@@ -227,7 +268,9 @@ public final class RISCVAsmEmitter {
         return;
       }
     }
-    String rhsReg = operandRegisterOrScratch(lines, rhs, "t1", inferOperandType(rhs), allocation);
+    String rhsReg =
+        operandRegisterOrScratch(
+            lines, rhs, INT_SCRATCH_1, inferOperandType(rhs), allocation);
     String op = switch (opcode) {
       case ADD -> wordResult ? "addw" : "add";
       case SUB -> wordResult ? "subw" : "sub";
@@ -250,7 +293,13 @@ public final class RISCVAsmEmitter {
 
   private void emitCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     String dst = destReg(instr, allocation);
-    String lhs = operandRegisterOrScratch(lines, instr.getOperands().get(0), "t0", MachineType.I32, allocation);
+    String lhs =
+        operandRegisterOrScratch(
+            lines,
+            instr.getOperands().get(0),
+            INT_SCRATCH_0,
+            MachineType.I32,
+            allocation);
     MachineOperand rightOperand = instr.getOperands().get(1);
     boolean comparesWithZero =
         rightOperand instanceof ImmOperand immediate && immediate.getValue() == 0;
@@ -262,7 +311,8 @@ public final class RISCVAsmEmitter {
     String right =
         comparesWithZero
             ? "zero"
-            : operandRegisterOrScratch(lines, rightOperand, "t1", MachineType.I32, allocation);
+            : operandRegisterOrScratch(
+                lines, rightOperand, INT_SCRATCH_1, MachineType.I32, allocation);
 
     String predicate = instr.getPredicate();
     switch (predicate) {
@@ -317,7 +367,13 @@ public final class RISCVAsmEmitter {
   }
 
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {
-    String address = operandRegisterOrScratch(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
+    String address =
+        operandRegisterOrScratch(
+            lines,
+            instr.getOperands().get(0),
+            INT_SCRATCH_0,
+            MachineType.PTR,
+            allocation);
     String dst = destReg(instr, allocation);
     lines.add("  " + loadMnemonic(instr.getType()) + " " + dst + ", 0(" + address + ")");
   }
@@ -327,16 +383,28 @@ public final class RISCVAsmEmitter {
         operandRegisterOrScratch(
             lines,
             instr.getOperands().get(0),
-            instr.getType().isFloat() ? "ft0" : "t0",
+            instr.getType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
             instr.getType(),
             allocation);
-    String address = operandRegisterOrScratch(lines, instr.getOperands().get(1), "t1", MachineType.PTR, allocation);
+    String address =
+        operandRegisterOrScratch(
+            lines,
+            instr.getOperands().get(1),
+            INT_SCRATCH_1,
+            MachineType.PTR,
+            allocation);
     lines.add("  " + storeMnemonic(instr.getType()) + " " + value + ", 0(" + address + ")");
   }
 
   private void emitMemzero(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     int size = (int) ((ImmOperand) instr.getOperands().get(1)).getValue();
-    String address = operandRegisterOrScratch(lines, instr.getOperands().get(0), "t0", MachineType.PTR, allocation);
+    String address =
+        operandRegisterOrScratch(
+            lines,
+            instr.getOperands().get(0),
+            INT_SCRATCH_0,
+            MachineType.PTR,
+            allocation);
     if (target.shouldUseMemzeroHelper(size)) {
       emitRegisterMove(lines, "a0", address, MachineType.PTR);
       lines.add("  li a1, " + size);
@@ -345,26 +413,48 @@ public final class RISCVAsmEmitter {
     }
     int offset = 0;
     for (; offset + 8 <= size; offset += 8)
-      frameLowering.emitStoreToBase(lines, "zero", address, offset, "t3", MachineType.I64);
+      frameLowering.emitStoreToBase(
+          lines, "zero", address, offset, ADDRESS_SCRATCH, MachineType.I64);
     if (offset < size)
-      frameLowering.emitStoreToBase(lines, "zero", address, offset, "t3", MachineType.I32);
+      frameLowering.emitStoreToBase(
+          lines, "zero", address, offset, ADDRESS_SCRATCH, MachineType.I32);
   }
 
   private void emitCall(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     RISCVTarget.CallArgCursor argCursor = target.newCallArgCursor();
-    for (MachineOperand operand : instr.getOperands()) {
-      MachineType argType = inferOperandType(operand);
+    List<CallArgument> arguments = new ArrayList<>();
+    for (int i = 0; i < instr.getOperands().size(); i++) {
+      MachineOperand operand = instr.getOperands().get(i);
+      rejectFixedArgumentRegisterSource(operand);
+      MachineType argType = callOperandType(instr, i, operand);
       RISCVTarget.CallArgAssignment assignment = target.assignCallArg(argCursor, argType);
-      if (assignment.isInRegister()) {
-        emitMoveToRegister(lines, operand, assignment.getRegister().getName(), argType, allocation);
-      } else if (argType.isFloat()) {
-        emitMoveToRegister(lines, operand, "ft0", argType, allocation);
-        frameLowering.emitStoreToBase(lines, "ft0", "sp", assignment.getStackOffset(), "t3", MachineType.F32);
-      } else {
-        emitMoveToRegister(lines, operand, "t0", argType, allocation);
-        frameLowering.emitStoreToBase(lines, "t0", "sp", assignment.getStackOffset(), "t3", argType);
+      arguments.add(new CallArgument(operand, argType, assignment));
+    }
+
+    // Stack arguments may need the reserved argument registers as materialization
+    // scratch, so write them before committing any register arguments.
+    for (CallArgument argument : arguments) {
+      if (!argument.assignment.isInRegister()) {
+        emitCallArgumentToStack(argument, allocation, lines);
       }
     }
+
+    // Floating-point materialization can use an integer scratch register. Commit
+    // fa0-fa7 before a0-a7 so those temporary integer writes cannot destroy a
+    // finalized integer argument.
+    for (CallArgument argument : arguments) {
+      if (argument.assignment.isInRegister()
+          && argument.assignment.getRegister().getType().isFloat()) {
+        emitFloatCallArgumentToRegister(argument, allocation, lines);
+      }
+    }
+    for (CallArgument argument : arguments) {
+      if (argument.assignment.isInRegister()
+          && !argument.assignment.getRegister().getType().isFloat()) {
+        emitIntegerCallArgumentToRegister(argument, allocation, lines);
+      }
+    }
+
     lines.add("  call " + instr.getCallee());
     if (instr.getDest() != null) {
       emitRegisterMove(
@@ -375,6 +465,134 @@ public final class RISCVAsmEmitter {
     }
   }
 
+  private void rejectFixedArgumentRegisterSource(MachineOperand operand) {
+    if (!(operand instanceof PhysicalRegOperand physical)) {
+      return;
+    }
+    String name = physical.getRegister().getName();
+    String index =
+        name.startsWith("fa")
+            ? name.substring(2)
+            : name.startsWith("a") ? name.substring(1) : "";
+    if (index.length() == 1 && index.charAt(0) >= '0' && index.charAt(0) <= '7') {
+      throw new UnsupportedOperationException(
+          "CALL source in fixed argument register must be copied to a virtual register: "
+              + name);
+    }
+  }
+
+  private void emitCallArgumentToStack(
+      CallArgument argument, AllocationResult allocation, List<String> lines) {
+    String source = callStackArgumentSource(argument, allocation, lines);
+    frameLowering.emitStoreToBase(
+        lines,
+        source,
+        "sp",
+        argument.assignment.getStackOffset(),
+        source.equals(ADDRESS_SCRATCH) ? "a4" : ADDRESS_SCRATCH,
+        argument.type);
+  }
+
+  private String callStackArgumentSource(
+      CallArgument argument, AllocationResult allocation, List<String> lines) {
+    MachineOperand operand = argument.operand;
+    if (operand instanceof VRegOperand) {
+      return sourceReg(operand, allocation);
+    }
+    if (operand instanceof PhysicalRegOperand physical) {
+      if (argument.type.isFloat() && !physical.getRegister().getType().isFloat()) {
+        lines.add(
+            "  fmv.w.x "
+                + FLOAT_SCRATCH_0
+                + ", "
+                + physical.getRegister().getName());
+        return FLOAT_SCRATCH_0;
+      }
+      return physical.getRegister().getName();
+    }
+
+    String scratch = argument.type.isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0;
+    emitMoveToRegister(lines, operand, scratch, argument.type, allocation);
+    return scratch;
+  }
+
+  private void emitFloatCallArgumentToRegister(
+      CallArgument argument, AllocationResult allocation, List<String> lines) {
+    String destination = argument.assignment.getRegister().getName();
+    if (argument.operand instanceof PhysicalRegOperand physical
+        && !physical.getRegister().getType().isFloat()) {
+      lines.add("  fmv.w.x " + destination + ", " + physical.getRegister().getName());
+      return;
+    }
+    emitMoveToRegister(lines, argument.operand, destination, argument.type, allocation);
+  }
+
+  private void emitIntegerCallArgumentToRegister(
+      CallArgument argument, AllocationResult allocation, List<String> lines) {
+    String destination = argument.assignment.getRegister().getName();
+    if (argument.type.isFloat()) {
+      emitFloatCallArgumentToIntegerRegister(
+          argument.operand, destination, allocation, lines);
+      return;
+    }
+    if (argument.operand instanceof StackSlotOperand stackSlot) {
+      frameLowering.emitLoadFromBase(
+          lines,
+          destination,
+          "sp",
+          stackSlot.getSlot().getOffset(),
+          destination,
+          argument.type);
+      return;
+    }
+    emitMoveToRegister(lines, argument.operand, destination, argument.type, allocation);
+  }
+
+  private void emitFloatCallArgumentToIntegerRegister(
+      MachineOperand operand,
+      String destination,
+      AllocationResult allocation,
+      List<String> lines) {
+    if (operand instanceof VRegOperand) {
+      lines.add("  fmv.x.w " + destination + ", " + sourceReg(operand, allocation));
+      return;
+    }
+    if (operand instanceof PhysicalRegOperand physical) {
+      if (physical.getRegister().getType().isFloat()) {
+        lines.add("  fmv.x.w " + destination + ", " + physical.getRegister().getName());
+      } else {
+        emitRegisterMove(
+            lines, destination, physical.getRegister().getName(), MachineType.I32);
+      }
+      return;
+    }
+    if (operand instanceof FloatImmOperand immediate) {
+      int bits = java.lang.Float.floatToRawIntBits(immediate.getValue());
+      lines.add("  li " + destination + ", " + bits);
+      return;
+    }
+    if (operand instanceof ImmOperand immediate) {
+      lines.add("  li " + destination + ", " + immediate.getValue());
+      return;
+    }
+    if (operand instanceof StackSlotOperand stackSlot) {
+      frameLowering.emitLoadFromBase(
+          lines,
+          destination,
+          "sp",
+          stackSlot.getSlot().getOffset(),
+          destination,
+          MachineType.I32);
+      return;
+    }
+    if (operand instanceof SymbolOperand symbol) {
+      lines.add("  la " + destination + ", " + symbol.getSymbol());
+      return;
+    }
+    throw new UnsupportedOperationException(
+        "unsupported floating-point call argument: " + operand.getKind());
+  }
+
   private void emitFloatBinary(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     lines.add(
         "  "
@@ -382,15 +600,37 @@ public final class RISCVAsmEmitter {
             + " "
             + destReg(instr, allocation)
             + ", "
-            + operandRegisterOrScratch(lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation)
+            + operandRegisterOrScratch(
+                lines,
+                instr.getOperands().get(0),
+                FLOAT_SCRATCH_0,
+                MachineType.F32,
+                allocation)
             + ", "
-            + operandRegisterOrScratch(lines, instr.getOperands().get(1), "ft1", MachineType.F32, allocation));
+            + operandRegisterOrScratch(
+                lines,
+                instr.getOperands().get(1),
+                FLOAT_SCRATCH_1,
+                MachineType.F32,
+                allocation));
   }
 
   private void emitFloatCompare(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     String dst = destReg(instr, allocation);
-    String lhs = operandRegisterOrScratch(lines, instr.getOperands().get(0), "ft0", MachineType.F32, allocation);
-    String rhs = operandRegisterOrScratch(lines, instr.getOperands().get(1), "ft1", MachineType.F32, allocation);
+    String lhs =
+        operandRegisterOrScratch(
+            lines,
+            instr.getOperands().get(0),
+            FLOAT_SCRATCH_0,
+            MachineType.F32,
+            allocation);
+    String rhs =
+        operandRegisterOrScratch(
+            lines,
+            instr.getOperands().get(1),
+            FLOAT_SCRATCH_1,
+            MachineType.F32,
+            allocation);
     switch (instr.getPredicate()) {
       case "oeq":
         lines.add("  feq.s " + dst + ", " + lhs + ", " + rhs);
@@ -425,8 +665,8 @@ public final class RISCVAsmEmitter {
       AllocationResult allocation) {
     if (operand instanceof ImmOperand) {
       if (type.isFloat()) {
-        lines.add("  li t3, " + ((ImmOperand) operand).getValue());
-        lines.add("  fmv.w.x " + dstReg + ", t3");
+        lines.add("  li " + INT_SCRATCH_1 + ", " + ((ImmOperand) operand).getValue());
+        lines.add("  fmv.w.x " + dstReg + ", " + INT_SCRATCH_1);
       } else {
         lines.add("  li " + dstReg + ", " + ((ImmOperand) operand).getValue());
       }
@@ -434,12 +674,18 @@ public final class RISCVAsmEmitter {
     }
     if (operand instanceof FloatImmOperand) {
       int bits = java.lang.Float.floatToRawIntBits(((FloatImmOperand) operand).getValue());
-      lines.add("  li t3, " + bits);
-      lines.add("  fmv.w.x " + dstReg + ", t3");
+      lines.add("  li " + INT_SCRATCH_1 + ", " + bits);
+      lines.add("  fmv.w.x " + dstReg + ", " + INT_SCRATCH_1);
       return;
     }
     if (operand instanceof SymbolOperand) {
       lines.add("  la " + dstReg + ", " + ((SymbolOperand) operand).getSymbol());
+      return;
+    }
+    if (operand instanceof StackSlotOperand) {
+      StackSlot slot = ((StackSlotOperand) operand).getSlot();
+      frameLowering.emitLoadFromBase(
+          lines, dstReg, "sp", slot.getOffset(), ADDRESS_SCRATCH, type);
       return;
     }
 
@@ -559,6 +805,27 @@ public final class RISCVAsmEmitter {
     if (operand instanceof PhysicalRegOperand) return ((PhysicalRegOperand) operand).getRegister().getType();
     if (operand instanceof ImmOperand) return MachineType.I32;
     return MachineType.I32;
+  }
+
+  private MachineType callOperandType(
+      MachineInstr call, int operandIndex, MachineOperand operand) {
+    MachineType recorded = call.getOperandType(operandIndex);
+    return recorded != null ? recorded : inferOperandType(operand);
+  }
+
+  private static final class CallArgument {
+    private final MachineOperand operand;
+    private final MachineType type;
+    private final RISCVTarget.CallArgAssignment assignment;
+
+    private CallArgument(
+        MachineOperand operand,
+        MachineType type,
+        RISCVTarget.CallArgAssignment assignment) {
+      this.operand = operand;
+      this.type = type;
+      this.assignment = assignment;
+    }
   }
 
   private String labelFor(MachineFunction function, MachineBasicBlock block) {

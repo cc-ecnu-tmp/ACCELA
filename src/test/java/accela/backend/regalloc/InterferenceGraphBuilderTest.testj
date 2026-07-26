@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.BlockOperand;
+import accela.backend.machine.FloatImmOperand;
 import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
@@ -165,6 +166,70 @@ final class InterferenceGraphBuilderTest {
     assertTrue(graph.nodes().contains(b));
   }
 
+  @Test
+  void addsEdgesBetweenSimultaneouslyLiveUseOnlyRegisters() {
+    MachineFunction function =
+        new MachineFunction("use_only_interference", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister left =
+        function.createVirtualRegister(MachineType.I32, "left");
+    VirtualRegister right =
+        function.createVirtualRegister(MachineType.I32, "right");
+    VirtualRegister sum =
+        function.createVirtualRegister(MachineType.I32, "sum");
+
+    entry.addInstruction(add(sum, left, right));
+    entry.addInstruction(ret(sum));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.interferes(left, right));
+  }
+
+  @Test
+  void doesNotAddEdgesBetweenDifferentRegisterClasses() {
+    MachineFunction function = new MachineFunction("separate_classes", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister left = function.createVirtualRegister(MachineType.F32, "left");
+    VirtualRegister right = function.createVirtualRegister(MachineType.F32, "right");
+    VirtualRegister integer = function.createVirtualRegister(MachineType.I32, "integer");
+    VirtualRegister sum = function.createVirtualRegister(MachineType.F32, "sum");
+
+    entry.addInstruction(moveFloatImm(left, 1.0f));
+    entry.addInstruction(moveFloatImm(right, 2.0f));
+    entry.addInstruction(moveImm(integer, 3));
+    entry.addInstruction(floatAdd(sum, left, right));
+    entry.addInstruction(ret(integer));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.interferes(left, right));
+    assertFalse(graph.interferes(integer, left));
+    assertFalse(graph.interferes(integer, right));
+    assertFalse(graph.interferes(integer, sum));
+    assertEquals(0, graph.degree(integer));
+  }
+
+  @Test
+  void treatsIntegerLikeTypesAsOneRegisterClass() {
+    MachineFunction function = new MachineFunction("integer_class", MachineType.PTR);
+    MachineBasicBlock entry = function.addBlock("entry");
+
+    VirtualRegister pointer = function.createVirtualRegister(MachineType.PTR, "pointer");
+    VirtualRegister offset = function.createVirtualRegister(MachineType.I32, "offset");
+    VirtualRegister address = function.createVirtualRegister(MachineType.PTR, "address");
+
+    entry.addInstruction(moveImm(pointer, 4096));
+    entry.addInstruction(moveImm(offset, 4));
+    entry.addInstruction(add(address, pointer, offset));
+    entry.addInstruction(ret(address));
+
+    InterferenceGraph graph = buildGraph(function);
+
+    assertTrue(graph.interferes(pointer, offset));
+  }
+
   private static InterferenceGraphBuilder.Result build(MachineFunction function) {
     LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
     return InterferenceGraphBuilder.build(function, live);
@@ -181,6 +246,13 @@ final class InterferenceGraphBuilderTest {
     return instr;
   }
 
+  private static MachineInstr moveFloatImm(VirtualRegister dest, float value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new FloatImmOperand(value));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
   private static MachineInstr moveReg(VirtualRegister dest, VirtualRegister src) {
     MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
     instr.addOperand(new VRegOperand(src));
@@ -191,6 +263,15 @@ final class InterferenceGraphBuilderTest {
   private static MachineInstr add(
       VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
     MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
+    instr.addOperand(new VRegOperand(left));
+    instr.addOperand(new VRegOperand(right));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr floatAdd(
+      VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.FADD, dest);
     instr.addOperand(new VRegOperand(left));
     instr.addOperand(new VRegOperand(right));
     instr.setType(dest.getType());

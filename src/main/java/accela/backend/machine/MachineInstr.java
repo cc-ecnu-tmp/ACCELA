@@ -8,6 +8,7 @@ public final class MachineInstr {
   private final MachineOpcode opcode;
   private final VirtualRegister dest;
   private final List<MachineOperand> operands = new ArrayList<>();
+  private final List<MachineType> operandTypes = new ArrayList<>();
   private MachineType type = MachineType.VOID;
   private String predicate;
   private String callee;
@@ -30,12 +31,25 @@ public final class MachineInstr {
   }
 
   public MachineInstr addOperand(MachineOperand operand) {
+    return addOperand(operand, null);
+  }
+
+  public MachineInstr addOperand(MachineOperand operand, MachineType type) {
     operands.add(operand);
+    operandTypes.add(type);
     return this;
   }
 
   public void setOperand(int index, MachineOperand operand) {
     operands.set(index, operand);
+  }
+
+  public MachineType getOperandType(int index) {
+    return operandTypes.get(index);
+  }
+
+  public void setOperandType(int index, MachineType type) {
+    operandTypes.set(index, type);
   }
 
   public MachineType getType() {

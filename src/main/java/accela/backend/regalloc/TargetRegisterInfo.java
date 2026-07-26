@@ -74,9 +74,6 @@ public final class TargetRegisterInfo {
   private static final Set<String> RESERVED =
       Set.of("zero", "sp", "gp", "tp", "ra", "s0", "fp");
 
-  private static final Set<String> EMITTER_SCRATCH =
-      Set.of("t0", "t1", "t2", "t3", "ft0", "ft1", "ft2", "ft3");
-
   private static final Set<String> CALL_ARGUMENT_REGISTERS =
       Set.of(
           "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7",
@@ -163,7 +160,6 @@ public final class TargetRegisterInfo {
 
   private static boolean isAllocatorReservedName(String name) {
     return RESERVED.contains(name)
-        || EMITTER_SCRATCH.contains(name)
         || CALL_ARGUMENT_REGISTERS.contains(name);
   }
 }

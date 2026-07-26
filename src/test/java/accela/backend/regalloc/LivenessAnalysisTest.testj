@@ -1,6 +1,8 @@
 package accela.backend.regalloc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.BlockOperand;
 import accela.backend.machine.ImmOperand;
@@ -228,6 +230,64 @@ final class LivenessAnalysisTest {
     assertRegs(live.liveBefore(defineA));
     assertRegs(live.liveAfter(defineA), a);
     assertRegs(live.liveBefore(ret), a);
+  }
+
+  @Test
+  void returnsReadOnlyLivenessSets() {
+    MachineFunction function = new MachineFunction("read_only", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister value = function.createVirtualRegister(MachineType.I32, "value");
+
+    MachineInstr define = new MachineInstr(MachineOpcode.MOVE, value);
+    define.addOperand(new ImmOperand(1));
+    define.setType(MachineType.I32);
+    entry.addInstruction(define);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(value));
+    ret.setType(MachineType.I32);
+    entry.addInstruction(ret);
+
+    LivenessAnalysis.Result live = LivenessAnalysis.analyze(function);
+
+    assertThrows(UnsupportedOperationException.class, () -> live.liveIn(entry).add(value));
+    assertThrows(UnsupportedOperationException.class, () -> live.liveOut(entry).add(value));
+    assertThrows(UnsupportedOperationException.class, () -> live.liveBefore(ret).clear());
+    assertThrows(UnsupportedOperationException.class, () -> live.liveAfter(define).clear());
+  }
+
+  @Test
+  void rejectsFunctionsWithUneliminatedPhiInstructions() {
+    MachineFunction function = new MachineFunction("raw_phi", MachineType.I32);
+    MachineBasicBlock predecessor = function.addBlock("predecessor");
+    MachineBasicBlock join = function.addBlock("join");
+    VirtualRegister incoming = function.createVirtualRegister(MachineType.I32, "incoming");
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+
+    MachineInstr define = new MachineInstr(MachineOpcode.MOVE, incoming);
+    define.addOperand(new ImmOperand(1));
+    define.setType(MachineType.I32);
+    predecessor.addInstruction(define);
+
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(join));
+    predecessor.addInstruction(branch);
+
+    MachineInstr phi = new MachineInstr(MachineOpcode.PHI, result);
+    phi.addOperand(new VRegOperand(incoming));
+    phi.addOperand(new BlockOperand(predecessor));
+    phi.setType(MachineType.I32);
+    join.addInstruction(phi);
+
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(result));
+    ret.setType(MachineType.I32);
+    join.addInstruction(ret);
+
+    IllegalStateException error =
+        assertThrows(IllegalStateException.class, () -> LivenessAnalysis.analyze(function));
+
+    assertTrue(error.getMessage().contains("requires PHI elimination"));
   }
 
   private static void assertRegs(Set<VirtualRegister> actual, VirtualRegister... expected) {

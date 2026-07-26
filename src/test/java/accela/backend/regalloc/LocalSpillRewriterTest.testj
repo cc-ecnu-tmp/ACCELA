@@ -10,9 +10,11 @@ import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineType;
+import accela.backend.machine.StackSlotOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
+import java.util.HashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -74,6 +76,155 @@ final class LocalSpillRewriterTest {
     assertEquals(load.getDest(), ((VRegOperand) add.getOperands().get(0)).getRegister());
   }
 
+  @Test
+  void leavesStackPassedSpilledCallArgumentsInTheirSpillSlots() {
+    MachineFunction function = new MachineFunction("many_call_args", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    Set<VirtualRegister> spilled = new HashSet<>();
+
+    for (int i = 0; i < 15; i++) {
+      VirtualRegister argument =
+          function.createVirtualRegister(MachineType.I32, "argument." + i);
+      spilled.add(argument);
+      call.addOperand(new VRegOperand(argument), MachineType.I32);
+    }
+    entry.addInstruction(call);
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.setType(MachineType.VOID);
+    entry.addInstruction(ret);
+
+    rewriter.rewrite(function, spilled, target);
+
+    MachineInstr rewrittenCall =
+        entry.getInstructions().stream()
+            .filter(instruction -> instruction.getOpcode() == MachineOpcode.CALL)
+            .findFirst()
+            .orElseThrow();
+    assertEquals(
+        8,
+        rewrittenCall.getOperands().stream()
+            .filter(VRegOperand.class::isInstance)
+            .count());
+    assertEquals(
+        7,
+        rewrittenCall.getOperands().stream()
+            .filter(StackSlotOperand.class::isInstance)
+            .count());
+    assertEquals(MachineType.I32, rewrittenCall.getOperandType(14));
+  }
+
+  @Test
+  void rewritesTwentyFiveFloatCallArgumentsWithoutReloadingStackArguments() {
+    MachineFunction function = new MachineFunction("many_float_call_args", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+
+    VirtualRegister selectedSpill =
+        function.createVirtualRegister(MachineType.F32, "argument.0");
+    call.addOperand(new VRegOperand(selectedSpill), MachineType.F32);
+    for (int i = 1; i < 25; i++) {
+      VirtualRegister argument =
+          function.createVirtualRegister(MachineType.F32, "argument." + i);
+      call.addOperand(new VRegOperand(argument), MachineType.F32);
+    }
+    entry.addInstruction(call);
+    entry.addInstruction(retVoid());
+
+    rewriter.rewrite(function, Set.of(selectedSpill), target);
+
+    MachineInstr rewrittenCall =
+        entry.getInstructions().stream()
+            .filter(instruction -> instruction.getOpcode() == MachineOpcode.CALL)
+            .findFirst()
+            .orElseThrow();
+    assertEquals(25, rewrittenCall.getOperands().size());
+    for (int i = 0; i < 16; i++) {
+      assertTrue(rewrittenCall.getOperands().get(i) instanceof VRegOperand);
+      assertEquals(MachineType.F32, rewrittenCall.getOperandType(i));
+    }
+    for (int i = 16; i < 25; i++) {
+      assertTrue(
+          rewrittenCall.getOperands().get(i) instanceof StackSlotOperand,
+          "operand "
+              + i
+              + " was "
+              + rewrittenCall.getOperands().get(i).getClass().getSimpleName());
+      assertEquals(MachineType.F32, rewrittenCall.getOperandType(i));
+    }
+  }
+
+  @Test
+  void rewritesRepeatedFloatArgumentForBothRegisterAndStackPositions() {
+    MachineFunction function = new MachineFunction("repeated_float_call_arg", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+
+    VirtualRegister repeated =
+        function.createVirtualRegister(MachineType.F32, "repeated");
+    call.addOperand(new VRegOperand(repeated), MachineType.F32);
+    for (int i = 1; i < 16; i++) {
+      VirtualRegister argument =
+          function.createVirtualRegister(MachineType.F32, "argument." + i);
+      call.addOperand(new VRegOperand(argument), MachineType.F32);
+    }
+    call.addOperand(new VRegOperand(repeated), MachineType.F32);
+    entry.addInstruction(call);
+    entry.addInstruction(retVoid());
+
+    rewriter.rewrite(function, Set.of(repeated), target);
+
+    assertOpcodes(
+        entry,
+        MachineOpcode.STACK_ADDR,
+        MachineOpcode.LOAD,
+        MachineOpcode.CALL,
+        MachineOpcode.RET);
+    MachineInstr rewrittenCall = entry.getInstructions().get(2);
+    assertTrue(rewrittenCall.getOperands().get(0) instanceof VRegOperand);
+    assertTrue(
+        !((VRegOperand) rewrittenCall.getOperands().get(0))
+            .getRegister()
+            .equals(repeated));
+    assertTrue(rewrittenCall.getOperands().get(16) instanceof StackSlotOperand);
+    assertEquals(MachineType.F32, rewrittenCall.getOperandType(0));
+    assertEquals(MachineType.F32, rewrittenCall.getOperandType(16));
+  }
+
+  @Test
+  void preservesCallOperandTypesAcrossRepeatedSpillRewrites() {
+    MachineFunction function = new MachineFunction("repeated_spill_rewrite", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister first =
+        function.createVirtualRegister(MachineType.F32, "first");
+    VirtualRegister second =
+        function.createVirtualRegister(MachineType.F32, "second");
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    call.addOperand(new VRegOperand(first), MachineType.F32);
+    call.addOperand(new VRegOperand(second), MachineType.F32);
+    entry.addInstruction(call);
+    entry.addInstruction(retVoid());
+
+    rewriter.rewrite(function, Set.of(first), target);
+    rewriter.rewrite(function, Set.of(second), target);
+
+    MachineInstr rewrittenCall =
+        entry.getInstructions().stream()
+            .filter(instruction -> instruction.getOpcode() == MachineOpcode.CALL)
+            .findFirst()
+            .orElseThrow();
+    assertEquals(MachineType.F32, rewrittenCall.getOperandType(0));
+    assertEquals(MachineType.F32, rewrittenCall.getOperandType(1));
+  }
+
   private static MachineInstr moveImm(VirtualRegister dest, int value) {
     MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
     instr.addOperand(new ImmOperand(value));
@@ -101,6 +252,12 @@ final class LocalSpillRewriterTest {
     MachineInstr instr = new MachineInstr(MachineOpcode.RET, null);
     instr.addOperand(new VRegOperand(value));
     instr.setType(value.getType());
+    return instr;
+  }
+
+  private static MachineInstr retVoid() {
+    MachineInstr instr = new MachineInstr(MachineOpcode.RET, null);
+    instr.setType(MachineType.VOID);
     return instr;
   }
 

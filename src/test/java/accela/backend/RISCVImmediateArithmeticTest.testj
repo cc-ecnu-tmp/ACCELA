@@ -31,13 +31,13 @@ final class RISCVImmediateArithmeticTest {
 
     String assembly = new BackendCompiler().compileToAssembly(module);
 
-    assertTrue(assembly.contains("  addiw t2, t0, 7"));
-    assertTrue(assembly.contains("  addiw t2, t0, -7"));
-    assertTrue(assembly.contains("  xori t2, t0, 7"));
-    assertTrue(assembly.contains("  sext.w t2, t2"));
-    assertFalse(assembly.contains("  li t1, 7"));
-    assertFalse(assembly.contains("  add t2, t0, t1"));
-    assertFalse(assembly.contains("  sub t2, t0, t1"));
-    assertFalse(assembly.contains("  xor t2, t0, t1"));
+    assertTrue(assembly.matches("(?s).*  addiw [a-z0-9]+, [a-z0-9]+, 7.*"));
+    assertTrue(assembly.matches("(?s).*  addiw [a-z0-9]+, [a-z0-9]+, -7.*"));
+    assertTrue(assembly.matches("(?s).*  xori [a-z0-9]+, [a-z0-9]+, 7.*"));
+    assertTrue(assembly.matches("(?s).*  sext\\.w [a-z0-9]+, [a-z0-9]+.*"));
+    assertFalse(assembly.matches("(?s).*  li [a-z0-9]+, 7.*"));
+    assertFalse(assembly.matches("(?s).*  addw? [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
+    assertFalse(assembly.matches("(?s).*  subw? [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
+    assertFalse(assembly.matches("(?s).*  xor [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
   }
 }

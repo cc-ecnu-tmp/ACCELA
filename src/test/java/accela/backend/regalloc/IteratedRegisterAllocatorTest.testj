@@ -3,20 +3,25 @@ package accela.backend.regalloc;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import accela.backend.machine.FloatImmOperand;
 import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class IteratedRegisterAllocatorTest {
   private final IteratedRegisterAllocator allocator = new IteratedRegisterAllocator();
   private final RISCVTarget target = new RISCVTarget();
+  private final TargetRegisterInfo registerInfo = new TargetRegisterInfo();
 
   @Test
   void allocatesRegistersForSimpleFunctionWithoutSpills() {
@@ -84,17 +89,210 @@ final class IteratedRegisterAllocatorTest {
 
     AllocationResult result = allocator.allocate(function, target);
 
-    String registerName = ((RegisterLocation) result.locationOf(live)).getRegister().getName();
-    assertTrue(registerName.startsWith("s"));
+    PhysicalRegister allocated = allocatedRegister(result, live);
+    assertTrue(registerInfo.isCalleeSaved(allocated));
     assertTrue(
         result.getUsedCalleeSavedRegisters().stream()
-            .anyMatch(register -> register.getName().equals(registerName)));
+            .anyMatch(register -> register.getName().equals(allocated.getName())));
+  }
+
+  @Test
+  void allowsCallResultToUseCallerSavedRegister() {
+    MachineFunction function = new MachineFunction("call_result", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister callResult = function.createVirtualRegister(MachineType.I32, "call.result");
+
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, callResult);
+    call.setCallee("callee");
+    call.setType(MachineType.I32);
+    entry.addInstruction(call);
+    entry.addInstruction(ret(callResult));
+
+    AllocationResult result = allocator.allocate(function, target);
+
+    assertTrue(
+        registerInfo.isCallerSaved(allocatedRegister(result, callResult)));
+  }
+
+  @Test
+  void allowsFloatCallResultToUseCallerSavedRegister() {
+    MachineFunction function = new MachineFunction("float_call_result", MachineType.F32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister callResult =
+        function.createVirtualRegister(MachineType.F32, "call.result");
+
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, callResult);
+    call.setCallee("callee");
+    call.setType(MachineType.F32);
+    entry.addInstruction(call);
+    entry.addInstruction(ret(callResult));
+
+    AllocationResult result = allocator.allocate(function, target);
+
+    assertTrue(
+        registerInfo.isCallerSaved(allocatedRegister(result, callResult)));
+  }
+
+  @Test
+  void keepsIntegerAndFloatCallArgumentsLiveAfterCallInCalleeSavedRegisters() {
+    MachineFunction function = new MachineFunction("mixed_call_live", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister integerArgument =
+        function.createVirtualRegister(MachineType.I32, "integer.argument");
+    VirtualRegister floatArgument =
+        function.createVirtualRegister(MachineType.F32, "float.argument");
+    VirtualRegister integerUse =
+        function.createVirtualRegister(MachineType.I32, "integer.use");
+    VirtualRegister floatUse =
+        function.createVirtualRegister(MachineType.F32, "float.use");
+
+    entry.addInstruction(moveImm(integerArgument, 1));
+    entry.addInstruction(moveFloatImm(floatArgument, 2.0f));
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    call.addOperand(new VRegOperand(integerArgument), MachineType.I32);
+    call.addOperand(new VRegOperand(floatArgument), MachineType.F32);
+    entry.addInstruction(call);
+    entry.addInstruction(add(integerUse, integerArgument, integerArgument));
+    entry.addInstruction(fadd(floatUse, floatArgument, floatArgument));
+    entry.addInstruction(ret(integerUse));
+
+    AllocationResult result = allocator.allocate(function, target);
+
+    assertTrue(
+        registerInfo.isCalleeSaved(allocatedRegister(result, integerArgument)));
+    assertTrue(
+        registerInfo.isCalleeSaved(allocatedRegister(result, floatArgument)));
+  }
+
+  @Test
+  void spillsAndConvergesWhenLiveThroughPressureExceedsCalleeSavedRegisters() {
+    MachineFunction function =
+        new MachineFunction("call_live_pressure", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    List<VirtualRegister> liveThrough = new ArrayList<>();
+    int valueCount =
+        registerInfo.calleeSavedRegisters(MachineType.I32).size() + 1;
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+
+    for (int i = 0; i < valueCount; i++) {
+      VirtualRegister value =
+          function.createVirtualRegister(MachineType.I32, "live." + i);
+      liveThrough.add(value);
+      entry.addInstruction(moveImm(value, i));
+      call.addOperand(new VRegOperand(value), MachineType.I32);
+    }
+    entry.addInstruction(call);
+
+    VirtualRegister sum =
+        function.createVirtualRegister(MachineType.I32, "sum.1");
+    entry.addInstruction(add(sum, liveThrough.get(0), liveThrough.get(1)));
+    for (int i = 2; i < liveThrough.size(); i++) {
+      VirtualRegister next =
+          function.createVirtualRegister(MachineType.I32, "sum." + i);
+      entry.addInstruction(add(next, sum, liveThrough.get(i)));
+      sum = next;
+    }
+    entry.addInstruction(ret(sum));
+
+    AllocationResult result = allocator.allocate(function, target);
+
+    assertTrue(
+        liveThrough.stream().allMatch(value -> result.locationOf(value) != null));
+    assertTrue(
+        liveThrough.stream().anyMatch(value -> result.locationOf(value).isStack()));
+    for (VirtualRegister value : liveThrough) {
+      if (result.locationOf(value).isRegister()) {
+        assertTrue(registerInfo.isCalleeSaved(allocatedRegister(result, value)));
+      }
+    }
+  }
+
+  @Test
+  void convergesAndRetainsLocationsForMoreCallArgumentsThanRegisters() {
+    MachineFunction function =
+        new MachineFunction("many_call_arguments", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    List<VirtualRegister> arguments = new ArrayList<>();
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    int argumentCount =
+        new TargetRegisterInfo().registerCount(MachineType.I32) + 1;
+
+    for (int i = 0; i < argumentCount; i++) {
+      VirtualRegister argument =
+          function.createVirtualRegister(MachineType.I32, "argument." + i);
+      arguments.add(argument);
+      entry.addInstruction(moveImm(argument, i));
+      call.addOperand(new VRegOperand(argument), MachineType.I32);
+    }
+    entry.addInstruction(call);
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.setType(MachineType.VOID);
+    entry.addInstruction(ret);
+
+    AllocationResult result = allocator.allocate(function, target);
+
+    assertTrue(
+        arguments.stream().allMatch(argument -> result.locationOf(argument) != null));
+    assertTrue(
+        arguments.stream().anyMatch(argument -> result.locationOf(argument).isStack()));
+  }
+
+  @Test
+  void convergesForTwentyFiveFloatCallArgumentsAndRetainsOperandTypes() {
+    MachineFunction function =
+        new MachineFunction("many_float_call_arguments", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    List<VirtualRegister> arguments = new ArrayList<>();
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+
+    for (int i = 0; i < 25; i++) {
+      VirtualRegister argument =
+          function.createVirtualRegister(MachineType.F32, "argument." + i);
+      arguments.add(argument);
+      entry.addInstruction(moveFloatImm(argument, i));
+      call.addOperand(new VRegOperand(argument), MachineType.F32);
+    }
+    entry.addInstruction(call);
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.setType(MachineType.VOID);
+    entry.addInstruction(ret);
+
+    AllocationResult result = allocator.allocate(function, target);
+
+    assertTrue(
+        arguments.stream().allMatch(argument -> result.locationOf(argument) != null));
+    assertTrue(
+        arguments.stream().anyMatch(argument -> result.locationOf(argument).isStack()));
+    MachineInstr rewrittenCall =
+        entry.getInstructions().stream()
+            .filter(instruction -> instruction.getOpcode() == MachineOpcode.CALL)
+            .findFirst()
+            .orElseThrow();
+    assertEquals(25, rewrittenCall.getOperands().size());
+    for (int i = 0; i < rewrittenCall.getOperands().size(); i++) {
+      assertEquals(MachineType.F32, rewrittenCall.getOperandType(i));
+    }
   }
 
   private static MachineInstr moveImm(VirtualRegister dest, int value) {
     MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
     instr.addOperand(new ImmOperand(value));
     instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr moveFloatImm(VirtualRegister dest, float value) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dest);
+    instr.addOperand(new FloatImmOperand(value), MachineType.F32);
+    instr.setType(MachineType.F32);
     return instr;
   }
 
@@ -105,11 +303,21 @@ final class IteratedRegisterAllocatorTest {
     return instr;
   }
 
-  private static MachineInstr add(VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
+  private static MachineInstr add(
+      VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
     MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
     instr.addOperand(new VRegOperand(left));
     instr.addOperand(new VRegOperand(right));
     instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr fadd(
+      VirtualRegister dest, VirtualRegister left, VirtualRegister right) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.FADD, dest);
+    instr.addOperand(new VRegOperand(left));
+    instr.addOperand(new VRegOperand(right));
+    instr.setType(MachineType.F32);
     return instr;
   }
 
@@ -118,5 +326,10 @@ final class IteratedRegisterAllocatorTest {
     instr.addOperand(new VRegOperand(value));
     instr.setType(value.getType());
     return instr;
+  }
+
+  private static PhysicalRegister allocatedRegister(
+      AllocationResult result, VirtualRegister register) {
+    return ((RegisterLocation) result.locationOf(register)).getRegister();
   }
 }

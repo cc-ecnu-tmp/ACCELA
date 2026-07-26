@@ -1,5 +1,6 @@
 package accela.backend.target;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.MachineFunction;
@@ -31,13 +32,20 @@ final class RISCVFrameLoweringTest {
   void savesAndRestoresUsedFloatCalleeSavedRegisters() {
     MachineFunction function = new MachineFunction("callee_saved_float", MachineType.F32);
     function.getFrameInfo().addCalleeSavedRegister(new PhysicalRegister("fs1", MachineType.F32));
+    function.getFrameInfo().addCalleeSavedRegister(new PhysicalRegister("fs2", MachineType.F32));
     lowering.finalizeFrame(function);
 
     List<String> lines = new ArrayList<>();
     lowering.emitPrologue(function, lines);
     lowering.emitEpilogue(function, lines);
 
-    assertTrue(lines.stream().anyMatch(line -> line.matches("  fsw fs1, [0-9]+\\(sp\\)")));
-    assertTrue(lines.stream().anyMatch(line -> line.matches("  flw fs1, [0-9]+\\(sp\\)")));
+    assertEquals(
+        8,
+        function.getFrameInfo().getCalleeSavedRegisterSaves().get(1).getOffset()
+            - function.getFrameInfo().getCalleeSavedRegisterSaves().get(0).getOffset());
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  fsd fs1, [0-9]+\\(sp\\)")));
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  fld fs1, [0-9]+\\(sp\\)")));
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  fsd fs2, [0-9]+\\(sp\\)")));
+    assertTrue(lines.stream().anyMatch(line -> line.matches("  fld fs2, [0-9]+\\(sp\\)")));
   }
 }

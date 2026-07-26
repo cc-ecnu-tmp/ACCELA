@@ -1,0 +1,73 @@
+package accela.backend;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import org.junit.jupiter.api.Test;
+
+final class RISCVCallAbiTest {
+  @Test
+  void passesNinthFloatArgumentThroughFirstIntegerArgumentRegister() {
+    Module module = new Module();
+    Function callee = new Function("float_nine", Type.FLOAT);
+    module.addFunction(callee);
+    Value ninth = null;
+    for (int i = 0; i < 9; i++) {
+      ninth = callee.addArgument(Type.FLOAT, "argument." + i);
+    }
+    new IRBuilder(callee.addBlock("entry")).createRet(ninth);
+
+    Function caller = new Function("call_float_nine", Type.FLOAT);
+    module.addFunction(caller);
+    Value callerNinth = caller.addArgument(Type.FLOAT, "ninth");
+    BasicBlock entry = caller.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value[] arguments = new Value[9];
+    for (int i = 0; i < arguments.length - 1; i++) {
+      arguments[i] = Constant.floatConst(i + 0.5f);
+    }
+    arguments[8] = callerNinth;
+    Value result = builder.createCall(callee, Type.FLOAT, arguments);
+    builder.createRet(result);
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.contains("  fmv.x.w a0, "));
+    assertTrue(assembly.matches("(?s).*  fmv\\.w\\.x [a-z0-9]+, a0.*"));
+  }
+
+  @Test
+  void storesWideImmediateStackArgumentsWithTheirRecordedType() {
+    Module module = new Module();
+    Function callee = new Function("wide_nine", Type.I64);
+    module.addFunction(callee);
+    Value ninth = null;
+    for (int i = 0; i < 9; i++) {
+      ninth = callee.addArgument(Type.I64, "argument." + i);
+    }
+    new IRBuilder(callee.addBlock("entry")).createRet(ninth);
+
+    Function caller = new Function("call_wide_nine", Type.I64);
+    module.addFunction(caller);
+    IRBuilder builder = new IRBuilder(caller.addBlock("entry"));
+    Value[] arguments = new Value[9];
+    for (int i = 0; i < arguments.length - 1; i++) {
+      arguments[i] = Constant.int64Const(i + 1);
+    }
+    arguments[8] = Constant.int64Const(0x1122334455667788L);
+    Value result = builder.createCall(callee, Type.I64, arguments);
+    builder.createRet(result);
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.contains("  li a6, 1234605616436508552"));
+    assertTrue(assembly.contains("  sd a6, 0(sp)"));
+    assertTrue(assembly.matches("(?s).*wide_nine:.*  ld [a-z0-9]+, 0\\(s0\\).*"));
+  }
+}
