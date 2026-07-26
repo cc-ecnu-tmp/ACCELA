@@ -11,6 +11,7 @@ public enum MachineOpcode {
   SMULH,
   DIV,
   REM,
+  SHL,
   ASHR,
   XOR,
   ICMP,

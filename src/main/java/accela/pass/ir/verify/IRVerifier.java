@@ -82,7 +82,7 @@ public final class IRVerifier {
     }
 
     switch (inst.getOpcode()) {
-      case SMULH, ASHR:
+      case SMULH, SHL, ASHR:
         if (inst.getType() != Type.INT
             || inst.getNumOperands() != 2
             || inst.getOperand(0).getType() != Type.INT

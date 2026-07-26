@@ -91,6 +91,7 @@ public final class RISCVAsmEmitter {
       case MUL:
       case DIV:
       case REM:
+      case SHL:
       case ASHR:
       case XOR:
         emitBinaryArithmetic(instr, allocation, lines);
@@ -294,6 +295,9 @@ public final class RISCVAsmEmitter {
             ? wordResult ? "addiw" : "addi"
             : null;
         case XOR -> fitsSigned12(value) ? "xori" : null;
+        case SHL -> value >= 0 && value < (wordResult ? Integer.SIZE : Long.SIZE)
+            ? wordResult ? "slliw" : "slli"
+            : null;
         case ASHR -> value >= 0 && value < (wordResult ? Integer.SIZE : Long.SIZE)
             ? wordResult ? "sraiw" : "srai"
             : null;
@@ -317,6 +321,7 @@ public final class RISCVAsmEmitter {
       case MUL -> wordResult ? "mulw" : "mul";
       case DIV -> wordResult ? "divw" : "div";
       case REM -> wordResult ? "remw" : "rem";
+      case SHL -> wordResult ? "sllw" : "sll";
       case ASHR -> wordResult ? "sraw" : "sra";
       case XOR -> "xor";
       default -> throw new IllegalStateException("Unsupported arithmetic opcode: " + opcode);

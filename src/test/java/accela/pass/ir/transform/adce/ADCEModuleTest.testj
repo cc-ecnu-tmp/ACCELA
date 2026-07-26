@@ -14,7 +14,7 @@ import accela.ir.Type;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
-final class GlobalDCETest {
+final class ADCEModuleTest {
   @Test
   void removesFunctionsUnreachableFromMain() {
     Module module = new Module();
@@ -34,7 +34,7 @@ final class GlobalDCETest {
     builder.createCall(reachable, Type.INT);
     builder.createRet(Constant.intConst(0));
 
-    assertTrue(GlobalDCE.runOnModule(module));
+    assertTrue(ADCE.runOnModule(module));
     assertEquals(Set.of(reachable, main), Set.copyOf(module.getFunctions()));
     assertFalse(module.getFunctions().contains(dead));
     assertNull(dead.getModule());

@@ -2,28 +2,14 @@ package accela.pass.ir.transform;
 
 import accela.ir.Function;
 import accela.ir.Instruction;
-import accela.pass.PreservedAnalyses;
-import accela.pass.ir.FunctionAnalysisManager;
-import accela.pass.ir.ModuleAnalysisManager;
-import accela.pass.ir.ModulePass;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
 
 /** Removes functions unreachable from the SysY entry point. */
-public final class GlobalDCE {
+final class GlobalDCE {
   private GlobalDCE() {}
-
-  public static final class Pass implements ModulePass {
-    @Override
-    public PreservedAnalyses run(
-        accela.ir.Module module,
-        ModuleAnalysisManager mam,
-        FunctionAnalysisManager fam) {
-      return runOnModule(module) ? PreservedAnalyses.none() : PreservedAnalyses.all();
-    }
-  }
 
   static boolean runOnModule(accela.ir.Module module) {
     Function main = module.getFunctions().stream()

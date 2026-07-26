@@ -16,7 +16,7 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
-final class GlobalScalarLocalizationTest {
+final class GlobalOptLocalizationTest {
   @Test
   void promotesOnlyMainLocalScalarGlobals() {
     Module module = new Module();
@@ -41,7 +41,7 @@ final class GlobalScalarLocalizationTest {
 
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
-    new GlobalScalarLocalization.Pass().run(module, new ModuleAnalysisManager(), fam);
+    new GlobalOpt.Pass().run(module, new ModuleAnalysisManager(), fam);
     IRVerifier.verifyModule(module);
 
     assertFalse(local.hasUses());

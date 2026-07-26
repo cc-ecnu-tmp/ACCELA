@@ -110,6 +110,7 @@ public class IRPrinter {
       case SMULH: return printSMulH(inst);
       case SDIV: return printBinOp(inst, "sdiv");
       case SREM: return printBinOp(inst, "srem");
+      case SHL:  return printBinOp(inst, "shl");
       case ASHR: return printBinOp(inst, "ashr");
 
       case FADD: return printBinOp(inst, "fadd");

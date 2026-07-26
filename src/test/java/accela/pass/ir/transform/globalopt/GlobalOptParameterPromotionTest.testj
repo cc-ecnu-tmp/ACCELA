@@ -1,0 +1,61 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class GlobalOptParameterPromotionTest {
+  @Test
+  void threadsAWriteOnceGlobalThroughCallers() {
+    Module module = new Module();
+    GlobalVariable limit =
+        new GlobalVariable("limit", Type.INT, Constant.intConst(0), false);
+    module.addGlobal(limit);
+
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    Instruction load = readerBuilder.createLoad(Type.INT, limit);
+    readerBuilder.createRet(load);
+
+    Function wrapper = new Function("wrapper", Type.INT);
+    module.addFunction(wrapper);
+    IRBuilder wrapperBuilder = new IRBuilder(wrapper.addBlock("entry"));
+    Instruction nestedCall = wrapperBuilder.createCall(reader, Type.INT);
+    wrapperBuilder.createRet(nestedCall);
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mainBuilder = new IRBuilder(main.addBlock("entry"));
+    Constant value = Constant.intConst(37);
+    Instruction store = mainBuilder.createStore(value, limit);
+    Instruction call = mainBuilder.createCall(wrapper, Type.INT);
+    mainBuilder.createRet(call);
+
+    new GlobalOpt.Pass().run(
+        module, new ModuleAnalysisManager(), new FunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+
+    assertFalse(limit.hasUses());
+    assertNull(load.getParent());
+    assertNull(store.getParent());
+    assertEquals(1, reader.getNumArgs());
+    assertEquals(1, wrapper.getNumArgs());
+    assertEquals("%limit.ssa", reader.getArguments().get(0).getName());
+    assertSame(wrapper.getArguments().get(0), nestedCall.getOperand(0));
+    assertSame(value, call.getOperand(0));
+  }
+}

@@ -9,10 +9,9 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.ADCE;
+import accela.pass.ir.transform.DeadStoreElimination;
 import accela.pass.ir.transform.EarlyCSE;
-import accela.pass.ir.transform.GlobalConstantPropagation;
-import accela.pass.ir.transform.GlobalDCE;
-import accela.pass.ir.transform.GlobalScalarLocalization;
+import accela.pass.ir.transform.GlobalOpt;
 import accela.pass.ir.transform.IPSCCP;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
@@ -154,15 +153,19 @@ public final class PassBuilder {
     }
 
     ModulePassManager mpm = new ModulePassManager(instrumentation);
+    FunctionPassManager globalMemoryFpm = new FunctionPassManager(instrumentation);
+    globalMemoryFpm.addPass(new EarlyCSE.Pass());
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
     postIpsccpFpm.addPass(new StrengthReduction.Pass());
-    mpm.addPass(new GlobalConstantPropagation.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
-    mpm.addPass(new GlobalDCE.Pass());
-    mpm.addPass(new GlobalScalarLocalization.Pass());
+    mpm.addPass(new ModuleToFunctionPassAdaptor(globalMemoryFpm));
+    mpm.addPass(new DeadStoreElimination.Pass());
+    mpm.addPass(new ADCE.GlobalPass());
+    mpm.addPass(new GlobalOpt.Pass());
+    mpm.addPass(new SROA.GlobalPass());
     mpm.addPass(new IPSCCP.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(postIpsccpFpm));
-    mpm.addPass(new GlobalDCE.Pass());
+    mpm.addPass(new ADCE.GlobalPass());
     return mpm;
   }
 

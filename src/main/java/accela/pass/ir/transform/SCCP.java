@@ -238,6 +238,8 @@ public final class SCCP {
         case MUL: return evalIntBinop(inst, in, (a, b) -> a * b);
         case SDIV: return evalIntBinop(inst, in, (a, b) -> b == 0 ? null : a / b);
         case SREM: return evalIntBinop(inst, in, (a, b) -> b == 0 ? null : a % b);
+        case SHL: return evalIntBinop(
+            inst, in, (a, b) -> b >= 0 && b < Integer.SIZE ? (long) ((int) a << b) : null);
         case XOR: return evalIntBinop(inst, in, (a, b) -> a ^ b);
         case FADD: case FSUB: case FMUL: case FDIV: case FNEG:
           return ConstVal.TOP;

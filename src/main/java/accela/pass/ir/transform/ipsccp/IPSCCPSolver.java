@@ -10,7 +10,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
 
-/** Solves executable functions, arguments, and returns to a joint SCCP fixed point. */
+/** IPSCCP fixed-point solver for executable functions, arguments, and returns. */
 final class IPSCCPSolver {
   private static final class FunctionState {
     final ArrayList<ConstVal> arguments;

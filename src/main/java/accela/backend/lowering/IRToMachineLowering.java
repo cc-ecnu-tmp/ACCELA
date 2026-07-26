@@ -123,7 +123,7 @@ public final class IRToMachineLowering {
       case GEP:
         lowerGep(inst, block, function, valueToVReg, blocks);
         return;
-      case ADD, SUB, MUL, SMULH, SDIV, SREM, ASHR, XOR:
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, XOR:
         lowerIntegerBinary(inst, block, valueToVReg, blocks);
         return;
       case ICMP:
@@ -436,6 +436,7 @@ public final class IRToMachineLowering {
       case SMULH -> MachineOpcode.SMULH;
       case SDIV -> MachineOpcode.DIV;
       case SREM -> MachineOpcode.REM;
+      case SHL -> MachineOpcode.SHL;
       case ASHR -> MachineOpcode.ASHR;
       case XOR -> MachineOpcode.XOR;
       default -> throw new IllegalStateException(

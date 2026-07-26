@@ -1,0 +1,114 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class IPSCCPGlobalTest {
+  @Test
+  void foldsLoadsFromConstantAndEffectivelyConstantGlobals() {
+    Module module = new Module();
+    Constant initializer = Constant.intConst(998244353);
+    GlobalVariable constant = new GlobalVariable("mod", Type.INT, initializer, true);
+    GlobalVariable mutable = new GlobalVariable(
+        "state", Type.INT, Constant.intConst(1), false);
+    Constant readonlyInitializer = Constant.intConst(7);
+    GlobalVariable readonly = new GlobalVariable(
+        "readonly", Type.INT, readonlyInitializer, false);
+    module.addGlobal(constant);
+    module.addGlobal(mutable);
+    module.addGlobal(readonly);
+    Function function = new Function("read", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction constantLoad = builder.createLoad(Type.INT, constant);
+    builder.createStore(Constant.intConst(2), mutable);
+    Instruction mutableLoad = builder.createLoad(Type.INT, mutable);
+    Instruction readonlyLoad = builder.createLoad(Type.INT, readonly);
+    Instruction sum = builder.createAdd(constantLoad, mutableLoad);
+    Instruction total = builder.createAdd(sum, readonlyLoad);
+    builder.createRet(total);
+
+    assertTrue(IPSCCP.runOnModule(module));
+
+    assertSame(initializer, sum.getOperand(0));
+    assertSame(mutableLoad, sum.getOperand(1));
+    assertSame(readonlyInitializer, total.getOperand(1));
+    assertEquals(5, function.getEntryBlock().getInstructions().size());
+    assertTrue(constant.getUses().isEmpty());
+  }
+
+  @Test
+  void foldsConstantIndexedLoadsFromConstantArrays() {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 3);
+    GlobalVariable table = new GlobalVariable(
+        "table",
+        arrayType,
+        Constant.array(
+            arrayType,
+            java.util.List.of(
+                Constant.intConst(4), Constant.intConst(8), Constant.intConst(16))),
+        true);
+    module.addGlobal(table);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction address = builder.createGEP(
+        arrayType,
+        table,
+        new accela.ir.Value[] {Constant.int64Const(0), Constant.int64Const(2)},
+        true);
+    Instruction load = builder.createLoad(Type.INT, address);
+    Instruction ret = builder.createRet(load);
+
+    assertTrue(IPSCCP.runOnModule(module));
+    assertEquals(16, ((Constant.Int) ret.getOperand(0)).value);
+    assertTrue(load.getParent() == null);
+    assertTrue(address.getParent() == null);
+  }
+
+  @Test
+  void convertsPowerOfTwoTableLoadsToShifts() {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 4);
+    GlobalVariable table = new GlobalVariable(
+        "powers",
+        arrayType,
+        Constant.array(
+            arrayType,
+            java.util.List.of(
+                Constant.intConst(1), Constant.intConst(2),
+                Constant.intConst(4), Constant.intConst(8))),
+        true);
+    module.addGlobal(table);
+    Function function = new Function("lookup", Type.INT);
+    var index = function.addArgument(Type.INT, "index");
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction extended = builder.createSExt(index, Type.I64);
+    Instruction address = builder.createGEP(
+        arrayType,
+        table,
+        new accela.ir.Value[] {Constant.int64Const(0), extended},
+        true);
+    Instruction load = builder.createLoad(Type.INT, address);
+    Instruction ret = builder.createRet(load);
+
+    assertTrue(IPSCCP.runOnModule(module));
+    Instruction shift = (Instruction) ret.getOperand(0);
+    assertEquals(Instruction.Opcode.SHL, shift.getOpcode());
+    assertSame(index, shift.getOperand(1));
+    assertTrue(load.getParent() == null);
+    assertTrue(address.getParent() == null);
+  }
+}

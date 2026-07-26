@@ -6,15 +6,10 @@ import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Use;
 import accela.ir.Value;
-import accela.pass.PreservedAnalyses;
-import accela.pass.ir.FunctionAnalysisManager;
-import accela.pass.ir.ModuleAnalysisManager;
-import accela.pass.ir.ModulePass;
-import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import java.util.List;
 
 /** Promotes scalar globals used only by {@code main} to local SSA values. */
-public final class GlobalScalarLocalization {
+final class GlobalScalarLocalization {
   private GlobalScalarLocalization() {}
 
   static Function localize(accela.ir.Module module) {
@@ -57,19 +52,4 @@ public final class GlobalScalarLocalization {
     return true;
   }
 
-  public static final class Pass implements ModulePass {
-    @Override
-    public PreservedAnalyses run(
-        accela.ir.Module module,
-        ModuleAnalysisManager mam,
-        FunctionAnalysisManager fam) {
-      Function main = localize(module);
-      if (main == null) return PreservedAnalyses.all();
-
-      fam.invalidate(main, PreservedAnalyses.none());
-      var dominators = fam.getResult(DominatorTreeAnalysis.class, main);
-      PromoteMemoryToRegister.run(main, dominators);
-      return PreservedAnalyses.none();
-    }
-  }
 }

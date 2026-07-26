@@ -8,6 +8,8 @@ import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.ModulePass;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -38,6 +40,21 @@ public final class ADCE {
       }
       return PreservedAnalyses.none();
     }
+  }
+
+  /** Removes module objects that cannot affect the SysY entry point. */
+  public static final class GlobalPass implements ModulePass {
+    @Override
+    public PreservedAnalyses run(
+        accela.ir.Module module,
+        ModuleAnalysisManager mam,
+        FunctionAnalysisManager fam) {
+      return runOnModule(module) ? PreservedAnalyses.none() : PreservedAnalyses.all();
+    }
+  }
+
+  public static boolean runOnModule(accela.ir.Module module) {
+    return GlobalDCE.runOnModule(module);
   }
 
   public static boolean runOnFunction(Function function) {

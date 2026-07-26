@@ -81,6 +81,10 @@ public class IRBuilder {
     return insert(new Instruction(Opcode.SREM, Type.INT, lhs, rhs));
   }
 
+  public Instruction createShl(Value lhs, Value rhs) {
+    return insert(new Instruction(Opcode.SHL, Type.INT, lhs, rhs));
+  }
+
   public Instruction createAShr(Value lhs, Value rhs) {
     return insert(new Instruction(Opcode.ASHR, Type.INT, lhs, rhs));
   }
