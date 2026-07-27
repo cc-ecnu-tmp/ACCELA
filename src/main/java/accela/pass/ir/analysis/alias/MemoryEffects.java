@@ -17,6 +17,7 @@ final class MemoryEffects {
   final BitSet writtenArguments = new BitSet();
   boolean unknownRead;
   boolean unknownWrite;
+  boolean observable;
 
   boolean addAccess(Value pointer, Function owner, boolean write) {
     Value root = PointerProvenance.root(pointer);
@@ -38,6 +39,10 @@ final class MemoryEffects {
     boolean changed = reads.addAll(callee.reads) | writes.addAll(callee.writes);
     changed |= markUnknown(false, callee.unknownRead);
     changed |= markUnknown(true, callee.unknownWrite);
+    if (callee.observable && !observable) {
+      observable = true;
+      changed = true;
+    }
     for (int index = callee.readArguments.nextSetBit(0);
         index >= 0; index = callee.readArguments.nextSetBit(index + 1)) {
       if (index < call.getNumOperands()) {
@@ -51,6 +56,12 @@ final class MemoryEffects {
       }
     }
     return changed;
+  }
+
+  boolean isPure() {
+    return reads.isEmpty() && writes.isEmpty()
+        && readArguments.isEmpty() && writtenArguments.isEmpty()
+        && !unknownRead && !unknownWrite && !observable;
   }
 
   boolean mayAccess(Instruction call, Value pointer, boolean write) {

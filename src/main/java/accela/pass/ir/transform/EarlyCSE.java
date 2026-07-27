@@ -77,7 +77,8 @@ public final class EarlyCSE {
           if (modRef == null) availableLoads.clear();
           else availableLoads.keySet().removeIf(
               pointer -> modRef.mayWrite(instruction, pointer));
-          yield null;
+          yield modRef != null && modRef.isPure(instruction)
+              ? available.putIfAbsent(expressionFor(instruction), instruction) : null;
         }
         case LOAD -> availableLoads.putIfAbsent(instruction.getOperand(0), instruction);
         default -> {
@@ -108,6 +109,7 @@ public final class EarlyCSE {
     }
     String detail = switch (instruction.getOpcode()) {
       case ICMP, FCMP -> instruction.getPredicate();
+      case CALL -> instruction.getCallee().getName();
       case GEP -> instruction.getGepSourceType() + ":" + instruction.isGepInbounds();
       default -> "";
     };

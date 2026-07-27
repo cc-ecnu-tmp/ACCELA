@@ -20,6 +20,7 @@ import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.StrengthReduction;
 import accela.pass.ir.transform.TailRecursionElimination;
+import accela.pass.ir.transform.gvn.GVN;
 import accela.pass.ir.transform.inliner.Inliner;
 
 /**
@@ -170,6 +171,7 @@ public final class PassBuilder {
     FunctionPassManager globalMemoryFpm = new FunctionPassManager(instrumentation);
     globalMemoryFpm.addPass(new EarlyCSE.Pass());
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
+    postIpsccpFpm.addPass(new GVN.Pass());
     postIpsccpFpm.addPass(new StrengthReduction.Pass());
     FunctionPassManager preInlineFpm = new FunctionPassManager(instrumentation);
     preInlineFpm.addPass(new EarlyCSE.Pass());

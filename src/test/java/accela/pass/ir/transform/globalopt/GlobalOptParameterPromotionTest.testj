@@ -58,4 +58,62 @@ final class GlobalOptParameterPromotionTest {
     assertSame(wrapper.getArguments().get(0), nestedCall.getOperand(0));
     assertSame(value, call.getOperand(0));
   }
+
+  @Test
+  void ignoresRuntimeCallsBeforeTheUniqueStore() {
+    Module module = new Module();
+    GlobalVariable limit =
+        new GlobalVariable("limit", Type.INT, Constant.intConst(0), false);
+    module.addGlobal(limit);
+    Function getint = new Function("getint", Type.INT);
+    module.addFunction(getint);
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    Instruction load = readerBuilder.createLoad(Type.INT, limit);
+    readerBuilder.createRet(load);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction input = builder.createCall(getint, Type.INT);
+    Instruction store = builder.createStore(input, limit);
+    Instruction call = builder.createCall(reader, Type.INT);
+    builder.createRet(call);
+
+    new GlobalOpt.Pass().run(
+        module, new ModuleAnalysisManager(), new FunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+
+    assertFalse(limit.hasUses());
+    assertNull(store.getParent());
+    assertNull(load.getParent());
+    assertEquals(1, reader.getNumArgs());
+    assertSame(input, call.getOperand(0));
+  }
+
+  @Test
+  void keepsAStoreObservedByAnEarlierCall() {
+    Module module = new Module();
+    GlobalVariable limit =
+        new GlobalVariable("limit", Type.INT, Constant.intConst(0), false);
+    module.addGlobal(limit);
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    readerBuilder.createRet(readerBuilder.createLoad(Type.INT, limit));
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    builder.createCall(reader, Type.INT);
+    Instruction store = builder.createStore(Constant.intConst(37), limit);
+    Instruction load = builder.createLoad(Type.INT, limit);
+    builder.createRet(load);
+
+    new GlobalOpt.Pass().run(
+        module, new ModuleAnalysisManager(), new FunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+
+    assertSame(main.getEntryBlock(), store.getParent());
+    assertSame(main.getEntryBlock(), load.getParent());
+  }
 }

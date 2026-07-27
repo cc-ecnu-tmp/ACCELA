@@ -117,6 +117,52 @@ final class EarlyCSETest {
     assertSame(secondLoad, ret.getOperand(0));
   }
 
+  @Test
+  void eliminatesRepeatedCallsToPureFunctions() {
+    Module module = new Module();
+    Function square = new Function("square", Type.INT);
+    module.addFunction(square);
+    Value value = square.addArgument(Type.INT, "value");
+    IRBuilder squareBuilder = new IRBuilder(square.addBlock("entry"));
+    squareBuilder.createRet(squareBuilder.createMul(value, value));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    Value argument = main.addArgument(Type.INT, "argument");
+    BasicBlock entry = main.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction first = builder.createCall(square, Type.INT, argument);
+    builder.createCall(square, Type.INT, argument);
+    Instruction ret = builder.createRet(entry.getInstructions().get(1));
+
+    assertTrue(EarlyCSE.runOnFunction(main));
+    assertEquals(1, count(entry, Instruction.Opcode.CALL));
+    assertSame(first, ret.getOperand(0));
+  }
+
+  @Test
+  void preservesRepeatedObservableCalls() {
+    Module module = new Module();
+    Function putint = new Function("putint", Type.VOID);
+    putint.addArgument(Type.INT, "value");
+    module.addFunction(putint);
+    Function printOne = new Function("print_one", Type.VOID);
+    module.addFunction(printOne);
+    IRBuilder printBuilder = new IRBuilder(printOne.addBlock("entry"));
+    printBuilder.createCall(putint, Type.VOID, Constant.intConst(1));
+    printBuilder.createRetVoid();
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    BasicBlock entry = main.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCall(printOne, Type.VOID);
+    builder.createCall(printOne, Type.VOID);
+    builder.createRet(Constant.intConst(0));
+
+    assertFalse(EarlyCSE.runOnFunction(main));
+    assertEquals(2, count(entry, Instruction.Opcode.CALL));
+  }
+
   private static long count(BasicBlock block, Instruction.Opcode opcode) {
     return block.getInstructions().stream().filter(i -> i.getOpcode() == opcode).count();
   }

@@ -197,6 +197,16 @@ public class IRBuilder {
     return insert(new Instruction(Opcode.XOR, lhs.getType(), lhs, rhs));
   }
 
+  /** Clones a side-effect-free binary expression while preserving its result type. */
+  public Instruction createBinary(Opcode opcode, Value lhs, Value rhs) {
+    return switch (opcode) {
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, XOR,
+          FADD, FSUB, FMUL, FDIV ->
+          insert(new Instruction(opcode, lhs.getType(), lhs, rhs));
+      default -> throw new IllegalArgumentException("not a binary expression: " + opcode);
+    };
+  }
+
   /**
    * Create a function call.
    *

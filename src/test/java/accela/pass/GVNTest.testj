@@ -1,0 +1,129 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.transform.gvn.GVN;
+import org.junit.jupiter.api.Test;
+
+final class GVNTest {
+  @Test
+  void eliminatesExpressionsFromDominatingBlocks() {
+    Function function = new Function("f", Type.INT);
+    Value left = function.addArgument(Type.INT, "left");
+    Value right = function.addArgument(Type.INT, "right");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Instruction first = entryBuilder.createMul(left, right);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction duplicate = bodyBuilder.createMul(left, right);
+    Instruction secondDuplicate = bodyBuilder.createMul(left, right);
+    Instruction ret = bodyBuilder.createRet(secondDuplicate);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(first, ret.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+    assertTrue(secondDuplicate.getParent() == null);
+  }
+
+  @Test
+  void eliminatesLoadsAlongAUniqueDominatedPath() {
+    Function function = new Function("f", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Value pointer = entryBuilder.createAlloca(Type.INT);
+    Instruction first = entryBuilder.createLoad(Type.INT, pointer);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction duplicate = bodyBuilder.createLoad(Type.INT, pointer);
+    Instruction ret = bodyBuilder.createRet(duplicate);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(first, ret.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
+  @Test
+  void preservesLoadsAcrossLoopBackedgeStores() {
+    Function function = new Function("f", Type.INT);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Value pointer = entryBuilder.createAlloca(Type.INT);
+    entryBuilder.createLoad(Type.INT, pointer);
+    entryBuilder.createBr(header);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction reloaded = headerBuilder.createLoad(Type.INT, pointer);
+    headerBuilder.createCondBr(condition, body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    bodyBuilder.createStore(Constant.intConst(1), pointer);
+    bodyBuilder.createBr(header);
+    Instruction ret = new IRBuilder(exit).createRet(reloaded);
+
+    assertFalse(GVN.runOnFunction(function));
+    assertSame(reloaded, ret.getOperand(0));
+  }
+
+  @Test
+  void doesNotMergeExpressionsFromSiblingBlocks() {
+    Function function = new Function("f", Type.INT);
+    Value value = function.addArgument(Type.INT, "value");
+    Value condition = function.addArgument(Type.INT, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    Instruction leftValue =
+        new IRBuilder(left).createSub(value, Constant.intConst(1));
+    new IRBuilder(left).createRet(leftValue);
+    Instruction rightValue =
+        new IRBuilder(right).createSub(value, Constant.intConst(1));
+    new IRBuilder(right).createRet(rightValue);
+
+    assertFalse(GVN.runOnFunction(function));
+    assertSame(left, leftValue.getParent());
+    assertSame(right, rightValue.getParent());
+  }
+
+  @Test
+  void translatesEquivalentExpressionsThroughPhi() {
+    Function function = new Function("f", Type.INT);
+    Value value = function.addArgument(Type.INT, "value");
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    Instruction leftValue = new IRBuilder(left).createAdd(value, Constant.intConst(1));
+    new IRBuilder(left).createBr(merge);
+    Instruction rightValue = new IRBuilder(right).createAdd(value, Constant.intConst(1));
+    new IRBuilder(right).createBr(merge);
+    IRBuilder builder = new IRBuilder(merge);
+    Instruction phi = builder.createPhi(Type.INT);
+    phi.addOperand(leftValue);
+    phi.addOperand(left);
+    phi.addOperand(rightValue);
+    phi.addOperand(right);
+    Instruction ret = builder.createRet(phi);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(merge, ((Instruction) ret.getOperand(0)).getParent());
+    assertTrue(leftValue.getParent() == null);
+    assertTrue(rightValue.getParent() == null);
+  }
+}

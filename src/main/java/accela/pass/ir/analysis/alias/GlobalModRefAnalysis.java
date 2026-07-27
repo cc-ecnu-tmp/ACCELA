@@ -50,14 +50,20 @@ public final class GlobalModRefAnalysis {
       Map<Function, MemoryEffects> effects,
       Instruction call) {
     Function callee = call.getCallee();
-    if (callee != null && callee.getModule() == module) return effects.get(callee);
+    if (isDefinition(module, callee)) return effects.get(callee);
     MemoryEffects external = new MemoryEffects();
     String name = callee == null ? "" : callee.getName();
     switch (name) {
-      case "getarray", "getfarray" -> external.writtenArguments.set(0);
-      case "putarray", "putfarray" -> external.readArguments.set(1);
+      case "getarray", "getfarray" -> {
+        external.writtenArguments.set(0);
+        external.observable = true;
+      }
+      case "putarray", "putfarray" -> {
+        external.readArguments.set(1);
+        external.observable = true;
+      }
       case "getint", "getch", "getfloat", "putint", "putch", "putfloat",
-          "_sysy_starttime", "_sysy_stoptime" -> {}
+          "_sysy_starttime", "_sysy_stoptime" -> external.observable = true;
       default -> {
         external.unknownRead = true;
         external.unknownWrite = true;
@@ -84,8 +90,18 @@ public final class GlobalModRefAnalysis {
       return callEffects(call).mayAccess(call, pointer, true);
     }
 
+    /** True when a direct internal call is deterministic and has no observable effects. */
+    public boolean isPure(Instruction call) {
+      Function callee = call.getCallee();
+      return isDefinition(module, callee) && functionEffects.get(callee).isPure();
+    }
+
     private MemoryEffects callEffects(Instruction call) {
       return effectsForCall(module, functionEffects, call);
     }
+  }
+
+  private static boolean isDefinition(accela.ir.Module module, Function function) {
+    return function != null && function.getModule() == module && !function.getBlocks().isEmpty();
   }
 }

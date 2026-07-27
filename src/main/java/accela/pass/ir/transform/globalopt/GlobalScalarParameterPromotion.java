@@ -6,6 +6,7 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Use;
 import accela.ir.Value;
+import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -24,9 +25,10 @@ final class GlobalScalarParameterPromotion {
         .orElse(null);
     if (main == null || main.getEntryBlock() == null) return false;
 
+    GlobalModRefAnalysis.Result modRef = GlobalModRefAnalysis.analyze(module);
     boolean changed = false;
     for (GlobalVariable global : List.copyOf(module.getGlobals())) {
-      Plan plan = plan(module, main, global);
+      Plan plan = plan(module, main, global, modRef);
       if (plan == null) continue;
       apply(plan);
       changed = true;
@@ -35,7 +37,10 @@ final class GlobalScalarParameterPromotion {
   }
 
   private static Plan plan(
-      accela.ir.Module module, Function main, GlobalVariable global) {
+      accela.ir.Module module,
+      Function main,
+      GlobalVariable global,
+      GlobalModRefAnalysis.Result modRef) {
     Type type = global.getValueType();
     if (type.isArray() || type.isPointer()) return null;
 
@@ -58,7 +63,7 @@ final class GlobalScalarParameterPromotion {
     }
     if (store == null
         || store.getParent() != main.getEntryBlock()
-        || hasReadOrCallBefore(store, global)) return null;
+        || hasReadBefore(store, global, modRef)) return null;
 
     List<Instruction> calls = callsIn(module);
     boolean grew;
@@ -74,11 +79,14 @@ final class GlobalScalarParameterPromotion {
     return new Plan(main, global, store, loads, consumers, calls);
   }
 
-  private static boolean hasReadOrCallBefore(
-      Instruction store, GlobalVariable global) {
+  private static boolean hasReadBefore(
+      Instruction store,
+      GlobalVariable global,
+      GlobalModRefAnalysis.Result modRef) {
     for (Instruction instruction : store.getParent().getInstructions()) {
       if (instruction == store) return false;
-      if (instruction.getOpcode() == Instruction.Opcode.CALL
+      if ((instruction.getOpcode() == Instruction.Opcode.CALL
+              && modRef.mayRead(instruction, global))
           || (instruction.getOpcode() == Instruction.Opcode.LOAD
               && instruction.getOperand(0) == global)) return true;
     }
