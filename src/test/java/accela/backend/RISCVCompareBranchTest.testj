@@ -47,6 +47,7 @@ final class RISCVCompareBranchTest {
     BasicBlock ifFalse = function.addBlock("false");
     IRBuilder builder = new IRBuilder(entry);
     Value condition = builder.createICmp(predicate, argument, Constant.intConst(0));
+    builder.createAdd(argument, Constant.intConst(1));
     builder.createCondBr(condition, ifTrue, ifFalse);
     new IRBuilder(ifTrue).createRet(Constant.intConst(1));
     new IRBuilder(ifFalse).createRet(Constant.intConst(0));

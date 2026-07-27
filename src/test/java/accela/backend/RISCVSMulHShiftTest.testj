@@ -1,0 +1,31 @@
+package accela.backend;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Module;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class RISCVSMulHShiftTest {
+  @Test
+  void combinesHighMultiplyWithItsOnlyArithmeticShift() {
+    Module module = new Module();
+    Function function = new Function("quotient", Type.INT);
+    module.addFunction(function);
+    var input = function.addArgument(Type.INT, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var high = builder.createSMulH(input, Constant.intConst(123));
+    var shifted = builder.createAShr(high, Constant.intConst(5));
+    builder.createRet(shifted);
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.matches("(?s).*  mul [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
+    assertTrue(assembly.matches("(?s).*  srai [a-z0-9]+, [a-z0-9]+, 37.*"));
+    assertFalse(assembly.matches("(?s).*  sraiw [a-z0-9]+, [a-z0-9]+, 5.*"));
+  }
+}

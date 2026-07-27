@@ -97,6 +97,28 @@ final class RISCVAsmEmitterScratchTest {
   }
 
   @Test
+  void extractsTheRemainderByTwoBiasWithOneShift() {
+    MachineFunction function = new MachineFunction("remainder", MachineType.I32);
+    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister destination = function.createVirtualRegister(MachineType.I32, "destination");
+    MachineInstr remainder = new MachineInstr(MachineOpcode.REM, destination);
+    remainder.addOperand(new VRegOperand(source));
+    remainder.addOperand(new ImmOperand(2));
+    remainder.setType(MachineType.I32);
+
+    AllocationResult allocation = allocation(source, "t0", MachineType.I32);
+    allocation.put(destination, new RegisterLocation(new PhysicalRegister("t1", MachineType.I32)));
+
+    assertEquals(
+        List.of(
+            "  srliw a5, t0, 31",
+            "  addw t1, t0, a5",
+            "  andi t1, t1, 1",
+            "  subw t1, t1, a5"),
+        emit(function, remainder, allocation));
+  }
+
+  @Test
   void commitsStackAndFloatArgumentsBeforeIntegerArgumentRegisters() {
     MachineFunction function = new MachineFunction("call_scratch", MachineType.VOID);
     MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);

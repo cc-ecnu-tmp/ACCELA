@@ -48,6 +48,11 @@ final class RISCVStrengthReduction {
 
   /** Biases negative dividends by 2^shift - 1 so shifting rounds toward zero. */
   private void emitBias(String lhs, String dst, int shift, List<String> lines) {
+    if (shift == 1) {
+      lines.add("  srliw " + temporary + ", " + lhs + ", 31");
+      lines.add("  addw " + dst + ", " + lhs + ", " + temporary);
+      return;
+    }
     lines.add("  sraiw " + temporary + ", " + lhs + ", " + (Integer.SIZE - 1));
     lines.add("  srliw " + temporary + ", " + temporary + ", " + (Integer.SIZE - shift));
     lines.add("  addw " + dst + ", " + lhs + ", " + temporary);

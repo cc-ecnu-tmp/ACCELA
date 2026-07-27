@@ -343,8 +343,11 @@ public final class RISCVAsmEmitter {
     String rhs = operandRegisterOrScratch(
         lines, instruction.getOperands().get(1), INT_SCRATCH_1, MachineType.I32, allocation);
     String dst = destReg(instruction, allocation);
+    long extraShift = instruction.getOperands().size() == 3
+        ? ((ImmOperand) instruction.getOperands().get(2)).getValue()
+        : 0;
     lines.add("  mul " + ADDRESS_SCRATCH + ", " + lhs + ", " + rhs);
-    lines.add("  srai " + dst + ", " + ADDRESS_SCRATCH + ", " + Integer.SIZE);
+    lines.add("  srai " + dst + ", " + ADDRESS_SCRATCH + ", " + (Integer.SIZE + extraShift));
   }
 
   private static boolean fitsSigned12(long value) {

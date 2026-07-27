@@ -123,7 +123,20 @@ public final class IRToMachineLowering {
       case GEP:
         lowerGep(inst, block, function, valueToVReg, blocks);
         return;
-      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, XOR:
+      case SMULH:
+        if (!isFusedSMulH(inst)) {
+          lowerIntegerBinary(inst, block, valueToVReg, blocks);
+        }
+        return;
+      case ASHR:
+        Instruction multiplyHigh = fusedSMulH(inst);
+        if (multiplyHigh == null) {
+          lowerIntegerBinary(inst, block, valueToVReg, blocks);
+        } else {
+          lowerSMulHShift(inst, multiplyHigh, block, valueToVReg, blocks);
+        }
+        return;
+      case ADD, SUB, MUL, SDIV, SREM, SHL, AND, XOR:
         lowerIntegerBinary(inst, block, valueToVReg, blocks);
         return;
       case ICMP:
@@ -319,10 +332,9 @@ public final class IRToMachineLowering {
     if (compare.getOpcode() != Instruction.Opcode.ICMP || compare.getNumUses() != 1) return false;
     Instruction branch = compare.getUses().getFirst().getUser();
     var instructions = compare.getParent().getInstructions();
-    return instructions.size() >= 2
-        && branch.getOpcode() == Instruction.Opcode.CONDBR
+    return branch.getOpcode() == Instruction.Opcode.CONDBR
+        && branch.getParent() == compare.getParent()
         && branch.getOperand(0) == compare
-        && instructions.get(instructions.size() - 2) == compare
         && instructions.getLast() == branch;
   }
 
@@ -450,6 +462,37 @@ public final class IRToMachineLowering {
         MachineType.fromIr(instruction.getType()),
         lowerValue(instruction.getOperand(0), valueToVReg, blocks),
         lowerValue(instruction.getOperand(1), valueToVReg, blocks));
+  }
+
+  private void lowerSMulHShift(
+      Instruction shift,
+      Instruction multiplyHigh,
+      MachineBasicBlock block,
+      Map<Value, VirtualRegister> valueToVReg,
+      Map<BasicBlock, MachineBasicBlock> blocks) {
+    MachineInstr combined = new MachineInstr(MachineOpcode.SMULH, valueToVReg.get(shift));
+    combined.setType(MachineType.I32);
+    combined.addOperand(lowerValue(multiplyHigh.getOperand(0), valueToVReg, blocks));
+    combined.addOperand(lowerValue(multiplyHigh.getOperand(1), valueToVReg, blocks));
+    combined.addOperand(lowerValue(shift.getOperand(1), valueToVReg, blocks));
+    block.addInstruction(combined);
+  }
+
+  private static boolean isFusedSMulH(Instruction multiplyHigh) {
+    return multiplyHigh.getNumUses() == 1
+        && fusedSMulH(multiplyHigh.getUses().getFirst().getUser()) == multiplyHigh;
+  }
+
+  private static Instruction fusedSMulH(Instruction shift) {
+    if (shift.getOpcode() != Instruction.Opcode.ASHR
+        || !(shift.getOperand(0) instanceof Instruction multiplyHigh)
+        || multiplyHigh.getOpcode() != Instruction.Opcode.SMULH
+        || multiplyHigh.getParent() != shift.getParent()
+        || multiplyHigh.getNumUses() != 1
+        || !(shift.getOperand(1) instanceof Constant.Int amount)
+        || amount.value < 0
+        || amount.value >= Integer.SIZE) return null;
+    return multiplyHigh;
   }
 
   private void emitSimple(
