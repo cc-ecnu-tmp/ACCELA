@@ -26,6 +26,7 @@ final class RISCVImmediateArithmeticTest {
     builder.createAdd(argument, seven);
     builder.createAdd(seven, argument);
     builder.createSub(argument, seven);
+    builder.createSub(Constant.intConst(0), argument);
     builder.createMul(argument, Constant.intConst(32));
     builder.createMul(Constant.intConst(5), argument);
     builder.createSDiv(argument, Constant.intConst(8));
@@ -43,6 +44,7 @@ final class RISCVImmediateArithmeticTest {
 
     assertTrue(assembly.matches("(?s).*  addiw [a-z0-9]+, [a-z0-9]+, 7.*"));
     assertTrue(assembly.matches("(?s).*  addiw [a-z0-9]+, [a-z0-9]+, -7.*"));
+    assertTrue(assembly.matches("(?s).*  negw [a-z0-9]+, [a-z0-9]+.*"));
     assertTrue(assembly.matches("(?s).*  xori [a-z0-9]+, [a-z0-9]+, 7.*"));
     assertTrue(assembly.matches("(?s).*  andi [a-z0-9]+, [a-z0-9]+, 7.*"));
     assertTrue(assembly.matches("(?s).*  sext\\.w [a-z0-9]+, [a-z0-9]+.*"));

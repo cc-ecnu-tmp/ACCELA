@@ -277,6 +277,17 @@ public final class RISCVAsmEmitter {
     boolean wordResult = instr.getType() == MachineType.I32;
     MachineOperand lhs = instr.getOperands().get(0);
     MachineOperand rhs = instr.getOperands().get(1);
+    if (opcode == MachineOpcode.SUB
+        && lhs instanceof ImmOperand immediate
+        && immediate.getValue() == 0
+        && !(rhs instanceof ImmOperand)) {
+      String rhsReg =
+          operandRegisterOrScratch(
+              lines, rhs, INT_SCRATCH_0, inferOperandType(rhs), allocation);
+      lines.add("  " + (wordResult ? "negw" : "neg") + " "
+          + destReg(instr, allocation) + ", " + rhsReg);
+      return;
+    }
     if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.MUL
             || opcode == MachineOpcode.AND || opcode == MachineOpcode.XOR)
         && lhs instanceof ImmOperand && !(rhs instanceof ImmOperand)) {
