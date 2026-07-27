@@ -27,6 +27,7 @@ import accela.pass.ir.transform.TailRecursionElimination;
 import accela.pass.ir.transform.gvn.GVN;
 import accela.pass.ir.transform.indvars.IndVarSimplify;
 import accela.pass.ir.transform.inliner.Inliner;
+import accela.pass.ir.transform.loop.interchange.LoopInterchange;
 import accela.pass.ir.transform.loop.load.LoopLoadElimination;
 import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.rotate.LoopRotate;
@@ -98,6 +99,12 @@ public final class PassBuilder {
 
   private static boolean isLoopRotateEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_LOOP_ROTATE");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLoopInterchangeEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_INTERCHANGE");
     return disable == null || disable.isEmpty() || disable.equals("0")
         || disable.equalsIgnoreCase("false");
   }
@@ -220,6 +227,9 @@ public final class PassBuilder {
     FunctionPassManager globalMemoryFpm = new FunctionPassManager(instrumentation);
     globalMemoryFpm.addPass(new EarlyCSE.Pass());
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
+    if (isLoopInterchangeEnabled()) {
+      postIpsccpFpm.addPass(new LoopInterchange.Pass());
+    }
     if (isLoopRotateEnabled()) {
       postIpsccpFpm.addPass(new LoopRotate.Pass());
     }

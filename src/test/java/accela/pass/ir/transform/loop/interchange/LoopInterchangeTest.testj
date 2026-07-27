@@ -1,0 +1,161 @@
+package accela.pass.ir.transform.loop.interchange;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopInterchangeTest {
+  @Test
+  void makesTheUnitStrideDimensionInnermost() {
+    Fixture fixture = new Fixture(AccessPattern.COLUMN_MAJOR);
+
+    assertTrue(LoopInterchange.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    assertSame(fixture.innerStart, incomingValue(fixture.outer, fixture.entry));
+    assertSame(
+        fixture.outerStart,
+        incomingValue(fixture.inner, fixture.outerHeader));
+    assertSame(fixture.innerBound, fixture.outerCompare.getOperand(1));
+    assertSame(fixture.outerBound, fixture.innerCompare.getOperand(1));
+    assertEquals(2, ((Constant.Int) fixture.outerNext.getOperand(1)).value);
+    assertEquals(1, ((Constant.Int) fixture.innerNext.getOperand(1)).value);
+    assertSame(fixture.outer, fixture.firstAddress.getOperand(2));
+    assertSame(fixture.inner, fixture.firstAddress.getOperand(3));
+  }
+
+  @Test
+  void keepsAnAlreadyUnitStrideInnerLoop() {
+    Fixture fixture = new Fixture(AccessPattern.ROW_MAJOR);
+
+    assertFalse(LoopInterchange.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+  }
+
+  @Test
+  void rejectsAPermutationThatMakesADependenceNegative() {
+    Fixture fixture = new Fixture(AccessPattern.ILLEGAL_DEPENDENCE);
+
+    assertFalse(LoopInterchange.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(
+        InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+
+  private static Value incomingValue(Instruction phi, BasicBlock predecessor) {
+    for (int index = 0; index < phi.getNumOperands(); index += 2) {
+      if (phi.getOperand(index + 1) == predecessor) return phi.getOperand(index);
+    }
+    throw new AssertionError("missing PHI incoming value");
+  }
+
+  private enum AccessPattern {
+    COLUMN_MAJOR,
+    ROW_MAJOR,
+    ILLEGAL_DEPENDENCE
+  }
+
+  private static final class Fixture {
+    private static final Type MATRIX = Type.array(Type.array(Type.INT, 32), 32);
+
+    final accela.ir.Module module = new accela.ir.Module();
+    final GlobalVariable matrix =
+        new GlobalVariable("matrix", MATRIX, Constant.zero(MATRIX), false);
+    final Function function = new Function("kernel", Type.INT);
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock outerHeader = function.addBlock("outer.header");
+    final BasicBlock innerHeader = function.addBlock("inner.header");
+    final BasicBlock innerBody = function.addBlock("inner.body");
+    final BasicBlock outerLatch = function.addBlock("outer.latch");
+    final BasicBlock exit = function.addBlock("exit");
+    final Constant.Int outerStart = Constant.intConst(1);
+    final Constant.Int innerStart = Constant.intConst(2);
+    final Constant.Int outerBound = Constant.intConst(9);
+    final Constant.Int innerBound = Constant.intConst(14);
+    final Instruction outer = Instruction.createPhi(Type.INT);
+    final Instruction inner = Instruction.createPhi(Type.INT);
+    final Instruction outerCompare;
+    final Instruction innerCompare;
+    final Instruction firstAddress;
+    final Instruction innerNext;
+    final Instruction outerNext;
+
+    Fixture(AccessPattern pattern) {
+      module.addGlobal(matrix);
+      module.addFunction(function);
+      new IRBuilder(entry).createBr(outerHeader);
+
+      outerHeader.addInstruction(outer);
+      outer.addOperand(outerStart);
+      outer.addOperand(entry);
+      IRBuilder outerBuilder = new IRBuilder(outerHeader);
+      outerCompare = outerBuilder.createICmp("slt", outer, outerBound);
+      outerBuilder.createCondBr(outerCompare, innerHeader, exit);
+
+      innerHeader.addInstruction(inner);
+      inner.addOperand(innerStart);
+      inner.addOperand(outerHeader);
+      IRBuilder innerBuilder = new IRBuilder(innerHeader);
+      innerCompare = innerBuilder.createICmp("slt", inner, innerBound);
+      innerBuilder.createCondBr(innerCompare, innerBody, outerLatch);
+
+      IRBuilder bodyBuilder = new IRBuilder(innerBody);
+      Value row = pattern == AccessPattern.ROW_MAJOR ? outer : inner;
+      Value column = pattern == AccessPattern.ROW_MAJOR ? inner : outer;
+      firstAddress = address(bodyBuilder, row, column);
+      if (pattern == AccessPattern.ILLEGAL_DEPENDENCE) {
+        bodyBuilder.createStore(Constant.intConst(1), firstAddress);
+        Value nextRow = bodyBuilder.createAdd(inner, Constant.intConst(1));
+        Value previousColumn = bodyBuilder.createSub(outer, Constant.intConst(1));
+        bodyBuilder.createStore(
+            Constant.intConst(2), address(bodyBuilder, nextRow, previousColumn));
+      } else {
+        Value loaded = bodyBuilder.createLoad(Type.INT, firstAddress);
+        bodyBuilder.createStore(
+            bodyBuilder.createAdd(loaded, Constant.intConst(1)), firstAddress);
+      }
+      innerNext = bodyBuilder.createAdd(inner, Constant.intConst(2));
+      bodyBuilder.createBr(innerHeader);
+      inner.addOperand(innerNext);
+      inner.addOperand(innerBody);
+
+      IRBuilder latchBuilder = new IRBuilder(outerLatch);
+      outerNext = latchBuilder.createAdd(outer, Constant.intConst(1));
+      latchBuilder.createBr(outerHeader);
+      outer.addOperand(outerNext);
+      outer.addOperand(outerLatch);
+      new IRBuilder(exit).createRet(Constant.intConst(0));
+    }
+
+    private Instruction address(IRBuilder builder, Value row, Value column) {
+      return builder.createGEP(
+          MATRIX,
+          matrix,
+          new Value[] {Constant.int64Const(0), row, column},
+          true);
+    }
+  }
+}
