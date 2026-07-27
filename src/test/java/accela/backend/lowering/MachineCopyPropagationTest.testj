@@ -1,0 +1,68 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import org.junit.jupiter.api.Test;
+
+final class MachineCopyPropagationTest {
+  @Test
+  void propagatesARepresentationallyFreeSignExtension() {
+    MachineFunction function = new MachineFunction("copy", MachineType.I64);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source =
+        function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister extended =
+        function.createVirtualRegister(MachineType.I64, "extended");
+    VirtualRegister result =
+        function.createVirtualRegister(MachineType.I64, "result");
+    entry.addInstruction(unary(MachineOpcode.SEXT, extended, source));
+
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, result);
+    add.setType(MachineType.I64);
+    add.addOperand(new VRegOperand(extended));
+    add.addOperand(new VRegOperand(extended));
+    entry.addInstruction(add);
+
+    assertTrue(new MachineCopyPropagation().run(function));
+    assertSame(add, entry.getInstructions().getFirst());
+    assertSame(source, registerOperand(add, 0));
+    assertSame(source, registerOperand(add, 1));
+  }
+
+  @Test
+  void preservesCopiesConstrainedByLiveRangeSplitting() {
+    MachineFunction function = new MachineFunction("preserve", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister source =
+        function.createVirtualRegister(MachineType.I32, "source");
+    VirtualRegister preserved =
+        function.createVirtualRegister(MachineType.I32, "preserved");
+    MachineInstr copy = unary(MachineOpcode.MOVE, preserved, source);
+    copy.setCoalescable(false);
+    entry.addInstruction(copy);
+
+    assertFalse(new MachineCopyPropagation().run(function));
+    assertSame(copy, entry.getInstructions().getFirst());
+  }
+
+  private static MachineInstr unary(
+      MachineOpcode opcode, VirtualRegister destination, VirtualRegister source) {
+    MachineInstr instruction = new MachineInstr(opcode, destination);
+    instruction.setType(destination.getType());
+    instruction.addOperand(new VRegOperand(source));
+    return instruction;
+  }
+
+  private static VirtualRegister registerOperand(MachineInstr instruction, int index) {
+    return ((VRegOperand) instruction.getOperands().get(index)).getRegister();
+  }
+}
