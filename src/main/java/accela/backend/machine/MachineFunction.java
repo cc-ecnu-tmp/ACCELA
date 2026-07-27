@@ -68,6 +68,11 @@ public final class MachineFunction {
     blocks.addAll(order);
   }
 
+  public void removeBlock(MachineBasicBlock block) {
+    if (block == getEntryBlock()) throw new IllegalArgumentException("cannot remove entry block");
+    blocks.remove(block);
+  }
+
   public MachineBasicBlock getEntryBlock() {
     return blocks.isEmpty() ? null : blocks.get(0);
   }

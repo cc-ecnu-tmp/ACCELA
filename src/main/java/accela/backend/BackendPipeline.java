@@ -4,6 +4,7 @@ import accela.backend.lowering.GlobalAddressMaterialization;
 import accela.backend.lowering.IRToMachineLowering;
 import accela.backend.lowering.LoopConditionDuplication;
 import accela.backend.lowering.MachineBlockPlacement;
+import accela.backend.lowering.MachineBranchFolding;
 import accela.backend.lowering.MachineCSE;
 import accela.backend.lowering.MachineConstantCSE;
 import accela.backend.lowering.MachineCopyPropagation;
@@ -34,6 +35,7 @@ final class BackendPipeline {
   private final MachineConstantCSE constantCse = new MachineConstantCSE();
   private final GlobalAddressMaterialization globalAddresses = new GlobalAddressMaterialization();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
+  private final MachineBranchFolding branchFolding = new MachineBranchFolding();
   private final MachineCSE machineCse = new MachineCSE();
   private final MachineCopyPropagation copyPropagation = new MachineCopyPropagation();
   private final RegisterAllocator allocator = new IteratedRegisterAllocator();
@@ -57,7 +59,10 @@ final class BackendPipeline {
       constantCse.run(function);
       globalAddresses.run(function);
       blockPlacement.run(function);
-      allocations.put(function, allocator.allocate(function, target));
+      AllocationResult allocation = allocator.allocate(function, target);
+      branchFolding.run(function, allocation);
+      blockPlacement.run(function);
+      allocations.put(function, allocation);
     }
 
     return asmPrinter.print(machineModule, allocations);

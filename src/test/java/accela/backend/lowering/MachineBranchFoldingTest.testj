@@ -1,0 +1,51 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.PhysicalRegister;
+import accela.backend.machine.VRegOperand;
+import accela.backend.regalloc.AllocationResult;
+import accela.backend.regalloc.RegisterLocation;
+import org.junit.jupiter.api.Test;
+
+final class MachineBranchFoldingTest {
+  @Test
+  void bypassesAJumpBlockAfterItsPhiCopyCoalesces() {
+    MachineFunction function = new MachineFunction("test", MachineType.VOID);
+    var entry = function.addBlock("entry");
+    var edge = function.addBlock("edge");
+    var target = function.addBlock("target");
+    var source = function.createVirtualRegister(MachineType.I32, "source");
+    var destination = function.createVirtualRegister(MachineType.I32, "destination");
+    branch(entry, edge);
+    MachineInstr copy = new MachineInstr(MachineOpcode.MOVE, destination);
+    copy.addOperand(new VRegOperand(source));
+    edge.addInstruction(copy);
+    branch(edge, target);
+    target.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+    AllocationResult allocation = new AllocationResult();
+    PhysicalRegister register = new PhysicalRegister("t0", MachineType.I32);
+    allocation.put(source, new RegisterLocation(register));
+    allocation.put(destination, new RegisterLocation(register));
+
+    new MachineBranchFolding().run(function, allocation);
+
+    assertEquals(2, function.getBlocks().size());
+    assertSame(target, ((BlockOperand) entry.getInstructions().getLast()
+        .getOperands().getFirst()).getBlock());
+  }
+
+  private static void branch(
+      accela.backend.machine.MachineBasicBlock from,
+      accela.backend.machine.MachineBasicBlock to) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(to));
+    from.addInstruction(branch);
+  }
+}
