@@ -27,14 +27,15 @@ public final class LoopRotate {
       if (loop.blocks().stream().anyMatch(rotatedBlocks::contains)) continue;
       LoopRotationCandidate candidate = LoopRotationCandidate.match(loop);
       if (candidate == null || !candidate.exposesInvariantPureCall(loop, modRef)) {
-        var dominators = fam.getResult(DominatorTreeAnalysis.class, function);
         boolean enablesPointerExit =
             fam.getResult(InductionVariableAnalysis.class, function).inductions().stream()
                 .anyMatch(induction -> induction.loop() == loop
-                    && LoopStrengthReduce.canOptimizeLoopExit(induction, dominators));
-        if (!enablesPointerExit) continue;
+                    && LoopStrengthReduce.canOptimizeLoopExit(
+                        induction, fam.getResult(DominatorTreeAnalysis.class, function)));
         candidate = LoopRotationCandidate.matchForPointerExit(loop);
-        if (candidate == null) continue;
+        if (candidate == null
+            || (!enablesPointerExit
+                && !candidate.hasVariantDivisionOrRemainderHeaderWork(loop))) continue;
       }
       if (!LoopRotation.rotate(function, loop, candidate)) continue;
       rotatedBlocks.addAll(loop.blocks());

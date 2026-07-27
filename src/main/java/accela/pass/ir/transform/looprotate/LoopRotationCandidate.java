@@ -71,6 +71,29 @@ record LoopRotationCandidate(
     return branch.getOperand(1) == body;
   }
 
+  /** Whether the header computes loop-varying division or remainder. */
+  boolean hasVariantDivisionOrRemainderHeaderWork(LoopAnalysis.Loop loop) {
+    return tests.stream().anyMatch(instruction ->
+        isDivision(instruction)
+            && hasLoopVariantOperand(instruction, loop));
+  }
+
+  private static boolean hasLoopVariantOperand(
+      Instruction instruction, LoopAnalysis.Loop loop) {
+    for (int index = 0; index < instruction.getNumOperands(); index++) {
+      if (instruction.getOperand(index) instanceof Instruction definition
+          && loop.contains(definition.getParent())) return true;
+    }
+    return false;
+  }
+
+  private static boolean isDivision(Instruction instruction) {
+    return switch (instruction.getOpcode()) {
+      case SDIV, SREM, FDIV -> true;
+      default -> false;
+    };
+  }
+
   boolean exposesInvariantPureCall(
       LoopAnalysis.Loop loop, GlobalModRefAnalysis.Result modRef) {
     return body.getInstructions().stream().anyMatch(instruction ->

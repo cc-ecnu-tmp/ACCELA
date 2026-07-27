@@ -115,6 +115,39 @@ final class LoopRotateTest {
     assertSame(exit, ((Instruction) liveOut.getOperand(0)).getParent());
   }
 
+  @Test
+  void rotatesLoopVaryingRemainderCondition() {
+    Module module = new Module();
+    Function function = new Function("count", Type.INT);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    Value remainder = headerBuilder.createSRem(index, Constant.intConst(4));
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("ne", remainder, Constant.intConst(3)), body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    Instruction result = new IRBuilder(exit).createAdd(index, Constant.intConst(1));
+    new IRBuilder(exit).createRet(result);
+
+    assertTrue(LoopRotate.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(body, body.getSuccessors().getFirst());
+    assertSame(exit, ((Instruction) result.getOperand(0)).getParent());
+  }
+
   private static FunctionAnalysisManager analysisManager() {
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
