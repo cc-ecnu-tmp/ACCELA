@@ -1,0 +1,154 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class MachineLICMTest {
+  @Test
+  void hoistsBranchConstantsFromCountedCalleeLoops() {
+    Function source = new Function("source", Type.VOID);
+    BasicBlock sourceEntry = source.addBlock("entry");
+    BasicBlock sourceHeader = source.addBlock("header");
+    BasicBlock sourceBody = source.addBlock("body");
+    BasicBlock sourceExit = source.addBlock("exit");
+    new IRBuilder(sourceEntry).createBr(sourceHeader);
+    IRBuilder headerBuilder = new IRBuilder(sourceHeader);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(sourceEntry);
+    var condition = headerBuilder.createICmp("slt", index, Constant.intConst(64));
+    headerBuilder.createCondBr(condition, sourceBody, sourceExit);
+    IRBuilder bodyBuilder = new IRBuilder(sourceBody);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(sourceHeader);
+    index.addOperand(next);
+    index.addOperand(sourceBody);
+    new IRBuilder(sourceExit).createRetVoid();
+
+    MachineFunction function = new MachineFunction("helper", MachineType.VOID);
+    MachineBasicBlock entry = block(function, source, sourceEntry);
+    MachineBasicBlock header = block(function, source, sourceHeader);
+    MachineBasicBlock body = block(function, source, sourceBody);
+    MachineBasicBlock exit = block(function, source, sourceExit);
+    branch(entry, header);
+    conditional(function, header, body, exit);
+    var input = function.createVirtualRegister(MachineType.I32, "input");
+    MachineInstr compareBranch = new MachineInstr(MachineOpcode.CONDBR, null);
+    compareBranch.setPredicate("slt");
+    compareBranch
+        .addOperand(new VRegOperand(input))
+        .addOperand(new ImmOperand(16))
+        .addOperand(new BlockOperand(header))
+        .addOperand(new BlockOperand(exit));
+    body.addInstruction(compareBranch);
+    exit.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertTrue(new MachineLICM().run(function));
+    assertInstanceOf(VRegOperand.class, compareBranch.getOperands().get(1));
+  }
+
+  @Test
+  void hoistsPointerStrideIntoPhiSplitPreheader() {
+    Function source = new Function("source", Type.VOID);
+    var condition = source.addArgument(Type.I1, "condition");
+    BasicBlock sourceEntry = source.addBlock("entry");
+    BasicBlock sourceHeader = source.addBlock("header");
+    BasicBlock sourceBody = source.addBlock("body");
+    BasicBlock sourceExit = source.addBlock("exit");
+    new IRBuilder(sourceEntry).createCondBr(condition, sourceHeader, sourceExit);
+    new IRBuilder(sourceHeader).createCondBr(condition, sourceBody, sourceExit);
+    new IRBuilder(sourceBody).createBr(sourceHeader);
+    new IRBuilder(sourceExit).createRetVoid();
+
+    MachineFunction function = new MachineFunction("main", MachineType.VOID);
+    MachineBasicBlock entry = block(function, source, sourceEntry);
+    MachineBasicBlock preheader = function.addBlock("preheader");
+    MachineBasicBlock header = block(function, source, sourceHeader);
+    MachineBasicBlock body = block(function, source, sourceBody);
+    MachineBasicBlock exit = block(function, source, sourceExit);
+    conditional(function, entry, preheader, exit);
+    branch(preheader, header);
+    conditional(function, header, body, exit);
+
+    var input = function.createVirtualRegister(MachineType.I32, "input");
+    var result = function.createVirtualRegister(MachineType.I32, "result");
+    MachineInstr multiplyHigh = new MachineInstr(MachineOpcode.SMULH, result);
+    multiplyHigh.setType(MachineType.I32);
+    multiplyHigh
+        .addOperand(new VRegOperand(input))
+        .addOperand(new ImmOperand(-2147450879));
+    body.addInstruction(multiplyHigh);
+    var address = function.createVirtualRegister(MachineType.PTR, "address");
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, address);
+    add.setType(MachineType.PTR);
+    add.addOperand(new VRegOperand(input)).addOperand(new ImmOperand(4096));
+    body.addInstruction(add);
+    MachineInstr compareBranch = new MachineInstr(MachineOpcode.CONDBR, null);
+    compareBranch.setPredicate("eq");
+    compareBranch
+        .addOperand(new VRegOperand(input))
+        .addOperand(new ImmOperand(1))
+        .addOperand(new BlockOperand(header))
+        .addOperand(new BlockOperand(exit));
+    body.addInstruction(compareBranch);
+    exit.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertTrue(new MachineLICM().run(function));
+    MachineInstr constant = preheader.getInstructions().getFirst();
+    assertEquals(MachineOpcode.CONST_INT, constant.getOpcode());
+    assertEquals(
+        4096,
+        assertInstanceOf(ImmOperand.class, constant.getOperands().getFirst()).getValue());
+    assertInstanceOf(ImmOperand.class, multiplyHigh.getOperands().get(1));
+    assertInstanceOf(VRegOperand.class, add.getOperands().get(1));
+    assertSame(
+        constant.getDest(),
+        assertInstanceOf(VRegOperand.class, add.getOperands().get(1)).getRegister());
+    assertInstanceOf(ImmOperand.class, compareBranch.getOperands().get(1));
+  }
+
+  private static MachineBasicBlock block(
+      MachineFunction machine, Function sourceFunction, BasicBlock sourceBlock) {
+    MachineBasicBlock block = machine.addBlock(sourceBlock.getLabel());
+    block.setSourceFunction(sourceFunction);
+    block.setSourceBlock(sourceBlock);
+    return block;
+  }
+
+  private static void branch(MachineBasicBlock from, MachineBasicBlock to) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(to));
+    from.addInstruction(branch);
+  }
+
+  private static void conditional(
+      MachineFunction function,
+      MachineBasicBlock from,
+      MachineBasicBlock ifTrue,
+      MachineBasicBlock ifFalse) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.CONDBR, null);
+    branch.addOperand(new VRegOperand(
+        function.createVirtualRegister(MachineType.I1, "condition")));
+    branch.addOperand(new BlockOperand(ifTrue));
+    branch.addOperand(new BlockOperand(ifFalse));
+    from.addInstruction(branch);
+  }
+}
