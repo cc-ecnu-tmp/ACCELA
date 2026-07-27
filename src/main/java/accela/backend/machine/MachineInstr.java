@@ -12,6 +12,7 @@ public final class MachineInstr {
   private MachineType type = MachineType.VOID;
   private String predicate;
   private String callee;
+  private boolean coalescable = true;
 
   public MachineInstr(MachineOpcode opcode, VirtualRegister dest) {
     this.opcode = opcode;
@@ -74,6 +75,14 @@ public final class MachineInstr {
 
   public void setCallee(String callee) {
     this.callee = callee;
+  }
+
+  public boolean isCoalescable() {
+    return coalescable;
+  }
+
+  public void setCoalescable(boolean coalescable) {
+    this.coalescable = coalescable;
   }
 
   public boolean isTerminator() {

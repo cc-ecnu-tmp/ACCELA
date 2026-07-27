@@ -1,0 +1,62 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.target.RISCVTarget;
+import org.junit.jupiter.api.Test;
+
+final class LiveRangeSplittingTest {
+  @Test
+  void preservesCallArgumentForSameBlockUsesAfterTheCall() {
+    MachineFunction function = new MachineFunction("split", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister argument =
+        function.createVirtualRegister(MachineType.I32, "argument");
+    VirtualRegister result =
+        function.createVirtualRegister(MachineType.I32, "result");
+
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("callee");
+    call.setType(MachineType.VOID);
+    call.addOperand(new VRegOperand(argument), MachineType.I32);
+    entry.addInstruction(call);
+
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, result);
+    add.setType(MachineType.I32);
+    add.addOperand(new VRegOperand(argument));
+    add.addOperand(new VRegOperand(argument));
+    entry.addInstruction(add);
+    entry.addInstruction(ret(result));
+
+    assertTrue(LiveRangeSplitting.run(function, new RISCVTarget()));
+
+    MachineInstr copy = entry.getInstructions().getFirst();
+    VirtualRegister preserved = copy.getDest();
+    assertSame(MachineOpcode.MOVE, copy.getOpcode());
+    assertFalse(copy.isCoalescable());
+    assertSame(argument, registerOperand(copy, 0));
+    assertSame(argument, registerOperand(call, 0));
+    assertSame(preserved, registerOperand(add, 0));
+    assertSame(preserved, registerOperand(add, 1));
+  }
+
+  private static VirtualRegister registerOperand(MachineInstr instruction, int index) {
+    return ((VRegOperand) instruction.getOperands().get(index)).getRegister();
+  }
+
+  private static MachineInstr ret(VirtualRegister value) {
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(value));
+    ret.setType(value.getType());
+    return ret;
+  }
+}

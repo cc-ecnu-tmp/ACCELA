@@ -5,11 +5,15 @@ import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOperand;
 import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
 import accela.backend.machine.PhysicalRegister;
+import accela.backend.machine.PhysicalRegOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -23,17 +27,20 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
 
   @Override
   public AllocationResult allocate(MachineFunction function, RISCVTarget target) {
+    LiveRangeSplitting.run(function, target);
     Map<VirtualRegister, StackSlot> spilledLocations = new LinkedHashMap<>();
     for (int round = 0; round < MAX_REWRITE_ROUNDS; round++) {
       LivenessAnalysis.Result liveness = LivenessAnalysis.analyze(function);
       InterferenceGraphBuilder.Result built = InterferenceGraphBuilder.build(function, liveness);
+      FixedRegisterConstraints fixed = fixedRegisterConstraints(function, target);
       AllocatorState state =
           new AllocatorState(
               built,
               registers,
               SpillCostAnalysis.analyze(function, built.graph()),
               liveAcrossCall(function, liveness, target),
-              argumentRegisterHazards(function));
+              fixed.hazards(),
+              fixed.affinities());
       state.makeWorklist();
 
       while (hasWork(state)) {
@@ -109,16 +116,78 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
             (int) ((ImmOperand) instr.getOperands().get(1)).getValue());
   }
 
-  private static Set<VirtualRegister> argumentRegisterHazards(MachineFunction function) {
-    Set<VirtualRegister> result = new HashSet<>(function.getArguments());
+  private FixedRegisterConstraints fixedRegisterConstraints(
+      MachineFunction function, RISCVTarget target) {
+    Set<VirtualRegister> hazards = new HashSet<>();
+    Map<VirtualRegister, String> affinities = new HashMap<>();
     for (MachineBasicBlock block : function.getBlocks()) {
       for (MachineInstr instr : block.getInstructions()) {
-        if (instr.getOpcode() != MachineOpcode.CALL) continue;
-        for (var operand : instr.getOperands()) {
-          if (operand instanceof VRegOperand register) result.add(register.getRegister());
+        if (instr.getOpcode() == MachineOpcode.ARG_IN) {
+          PhysicalRegister source =
+              instr.getOperands().getFirst() instanceof PhysicalRegOperand physical
+                  ? physical.getRegister()
+                  : null;
+          addAffinity(instr.getDest(), source, hazards, affinities);
+        } else if (instr.getOpcode() == MachineOpcode.CALL) {
+          RISCVTarget.CallArgCursor cursor = target.newCallArgCursor();
+          for (int i = 0; i < instr.getOperands().size(); i++) {
+            MachineOperand operand = instr.getOperands().get(i);
+            MachineType type = instr.getOperandType(i);
+            if (type == null && operand instanceof VRegOperand register) {
+              type = register.getRegister().getType();
+            }
+            RISCVTarget.CallArgAssignment assignment = target.assignCallArg(cursor, type);
+            if (operand instanceof VRegOperand register && assignment.isInRegister()) {
+              addAffinity(
+                  register.getRegister(),
+                  assignment.getRegister(),
+                  hazards,
+                  affinities);
+            }
+          }
+          if (instr.getDest() != null) {
+            addAffinity(
+                instr.getDest(),
+                target.getReturnRegister(instr.getType()),
+                hazards,
+                affinities);
+          }
+        } else if (instr.getOpcode() == MachineOpcode.RET
+            && !instr.getOperands().isEmpty()
+            && instr.getOperands().getFirst() instanceof VRegOperand value) {
+          addAffinity(
+              value.getRegister(),
+              target.getReturnRegister(instr.getType()),
+              hazards,
+              affinities);
         }
       }
     }
-    return result;
+    return new FixedRegisterConstraints(hazards, affinities);
   }
+
+  private void addAffinity(
+      VirtualRegister register,
+      PhysicalRegister fixed,
+      Set<VirtualRegister> hazards,
+      Map<VirtualRegister, String> affinities) {
+    if (hazards.contains(register)) return;
+    if (fixed == null
+        || fixed.getType().isFloat() != register.getType().isFloat()
+        || registers.isAllocatorReserved(fixed)) {
+      hazards.add(register);
+      affinities.remove(register);
+      return;
+    }
+    // Restrict an SSA value to its exact ABI register or a non-argument register.
+    // This removes copies without introducing argument-register copy cycles.
+    String previous = affinities.putIfAbsent(register, fixed.getName());
+    if (previous != null && !previous.equals(fixed.getName())) {
+      hazards.add(register);
+      affinities.remove(register);
+    }
+  }
+
+  private record FixedRegisterConstraints(
+      Set<VirtualRegister> hazards, Map<VirtualRegister, String> affinities) {}
 }

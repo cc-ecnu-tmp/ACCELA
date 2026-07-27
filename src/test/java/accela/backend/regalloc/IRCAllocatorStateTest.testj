@@ -259,6 +259,55 @@ final class IRCAllocatorStateTest {
   }
 
   @Test
+  void coalescesHotterMoveFirst() {
+    MachineFunction function = new MachineFunction("hot_coalesce", MachineType.I32);
+    VirtualRegister coldSource =
+        function.createVirtualRegister(MachineType.I32, "cold.source");
+    VirtualRegister coldDest =
+        function.createVirtualRegister(MachineType.I32, "cold.dest");
+    VirtualRegister hotSource =
+        function.createVirtualRegister(MachineType.I32, "hot.source");
+    VirtualRegister hotDest =
+        function.createVirtualRegister(MachineType.I32, "hot.dest");
+    InterferenceGraph graph = new InterferenceGraph();
+    for (VirtualRegister register :
+        List.of(coldSource, coldDest, hotSource, hotDest)) {
+      graph.addNode(register);
+    }
+    InterferenceGraphBuilder.Move cold = move(coldDest, coldSource, 0);
+    InterferenceGraphBuilder.Move hot = move(hotDest, hotSource, 1);
+    AllocatorState state =
+        state(
+            graph,
+            Set.of(cold, hot),
+            register -> register == hotSource || register == hotDest ? 10.0 : 1.0);
+
+    state.coalesce();
+
+    assertTrue(state.coalescedMoves.contains(hot));
+    assertTrue(state.worklistMoves.contains(cold));
+  }
+
+  @Test
+  void breaksEqualMoveWeightsByProgramOrder() {
+    MachineFunction function = new MachineFunction("stable_coalesce", MachineType.I32);
+    VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
+    VirtualRegister b = function.createVirtualRegister(MachineType.I32, "b");
+    VirtualRegister c = function.createVirtualRegister(MachineType.I32, "c");
+    VirtualRegister d = function.createVirtualRegister(MachineType.I32, "d");
+    InterferenceGraph graph = new InterferenceGraph();
+    for (VirtualRegister register : List.of(a, b, c, d)) graph.addNode(register);
+    InterferenceGraphBuilder.Move later = move(b, a, 1);
+    InterferenceGraphBuilder.Move earlier = move(d, c, 0);
+    AllocatorState state = state(graph, Set.of(later, earlier));
+
+    state.coalesce();
+
+    assertTrue(state.coalescedMoves.contains(earlier));
+    assertTrue(state.worklistMoves.contains(later));
+  }
+
+  @Test
   void coalesceConstrainsMoveWhenEndpointsInterfere() {
     MachineFunction function = new MachineFunction("coalesce_interfere", MachineType.I32);
     VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
@@ -641,9 +690,14 @@ final class IRCAllocatorStateTest {
   }
 
   private static InterferenceGraphBuilder.Move move(VirtualRegister dst, VirtualRegister src) {
+    return move(dst, src, 0);
+  }
+
+  private static InterferenceGraphBuilder.Move move(
+      VirtualRegister dst, VirtualRegister src, int order) {
     MachineInstr instr = new MachineInstr(MachineOpcode.MOVE, dst);
     instr.addOperand(new VRegOperand(src));
     instr.setType(dst.getType());
-    return new InterferenceGraphBuilder.Move(dst, src, instr);
+    return new InterferenceGraphBuilder.Move(dst, src, instr, order);
   }
 }

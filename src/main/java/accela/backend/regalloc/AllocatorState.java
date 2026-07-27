@@ -3,6 +3,7 @@ package accela.backend.regalloc;
 import accela.backend.machine.PhysicalRegister;
 import accela.backend.machine.VirtualRegister;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -16,7 +17,8 @@ final class AllocatorState {
   private final TargetRegisterInfo registers;
   private final SpillCostModel spillCostModel;
   private final Set<VirtualRegister> liveAcrossCall;
-  private final Set<VirtualRegister> argumentRegisterHazards;
+  private final Set<VirtualRegister> fixedRegisterHazards;
+  private final Map<VirtualRegister, String> fixedRegisterAffinities;
 
   final Set<VirtualRegister> initial = new HashSet<>();
   final Set<VirtualRegister> simplifyWorklist = new HashSet<>();
@@ -64,12 +66,29 @@ final class AllocatorState {
       TargetRegisterInfo registers,
       SpillCostModel spillCostModel,
       Set<VirtualRegister> liveAcrossCall,
-      Set<VirtualRegister> argumentRegisterHazards) {
+      Set<VirtualRegister> fixedRegisterHazards) {
+    this(
+        built,
+        registers,
+        spillCostModel,
+        liveAcrossCall,
+        fixedRegisterHazards,
+        Collections.emptyMap());
+  }
+
+  AllocatorState(
+      InterferenceGraphBuilder.Result built,
+      TargetRegisterInfo registers,
+      SpillCostModel spillCostModel,
+      Set<VirtualRegister> liveAcrossCall,
+      Set<VirtualRegister> fixedRegisterHazards,
+      Map<VirtualRegister, String> fixedRegisterAffinities) {
     this.graph = built.graph();
     this.registers = registers;
     this.spillCostModel = spillCostModel;
     this.liveAcrossCall = new HashSet<>(liveAcrossCall);
-    this.argumentRegisterHazards = new HashSet<>(argumentRegisterHazards);
+    this.fixedRegisterHazards = new HashSet<>(fixedRegisterHazards);
+    this.fixedRegisterAffinities = new HashMap<>(fixedRegisterAffinities);
 
     initial.addAll(graph.nodes());
     worklistMoves.addAll(built.moves());
@@ -123,9 +142,17 @@ final class AllocatorState {
     if (liveAcrossCall.contains(representative) || liveAcrossCall.contains(merged)) {
       return registers.calleeSavedRegisters(representative.getType()).size();
     }
-    if (argumentRegisterHazards.contains(representative)
-        || argumentRegisterHazards.contains(merged)) {
+    if (fixedRegisterHazards.contains(representative)
+        || fixedRegisterHazards.contains(merged)) {
       return registers.nonArgumentRegisters(representative.getType()).size();
+    }
+    String left = fixedRegisterAffinities.get(representative);
+    String right = fixedRegisterAffinities.get(merged);
+    if (left != null && right != null && !left.equals(right)) {
+      return registers.nonArgumentRegisters(representative.getType()).size();
+    }
+    if (left != null || right != null) {
+      return registers.nonArgumentRegisters(representative.getType()).size() + 1;
     }
     return registers.allocatableRegisters(representative.getType()).size();
   }
@@ -185,7 +212,7 @@ final class AllocatorState {
   }
 
   void coalesce() {
-    InterferenceGraphBuilder.Move move = getAndRemoveOneMove(worklistMoves);
+    InterferenceGraphBuilder.Move move = removeBestMove(worklistMoves);
     VirtualRegister src = getAlias(move.src());
     VirtualRegister dst = getAlias(move.dst());
 
@@ -304,8 +331,18 @@ final class AllocatorState {
     if (liveAcrossCall.contains(getAlias(register))) {
       return registers.calleeSavedRegisters(register.getType());
     }
-    if (argumentRegisterHazards.contains(getAlias(register))) {
+    if (fixedRegisterHazards.contains(getAlias(register))) {
       return registers.nonArgumentRegisters(register.getType());
+    }
+    String preferred = fixedRegisterAffinities.get(getAlias(register));
+    if (preferred != null) {
+      List<PhysicalRegister> candidates = new ArrayList<>();
+      registers.allocatableRegisters(register.getType()).stream()
+          .filter(candidate -> candidate.getName().equals(preferred))
+          .findFirst()
+          .ifPresent(candidates::add);
+      candidates.addAll(registers.nonArgumentRegisters(register.getType()));
+      return candidates;
     }
     return registers.allocatableRegisters(register.getType());
   }
@@ -343,8 +380,19 @@ final class AllocatorState {
     if (liveAcrossCall.contains(merged)) {
       liveAcrossCall.add(representative);
     }
-    if (argumentRegisterHazards.contains(merged)) {
-      argumentRegisterHazards.add(representative);
+    if (fixedRegisterHazards.contains(merged)) {
+      fixedRegisterHazards.add(representative);
+    }
+    String representativeAffinity = fixedRegisterAffinities.get(representative);
+    String mergedAffinity = fixedRegisterAffinities.get(merged);
+    if (fixedRegisterHazards.contains(representative)
+        || (representativeAffinity != null
+            && mergedAffinity != null
+            && !representativeAffinity.equals(mergedAffinity))) {
+      fixedRegisterHazards.add(representative);
+      fixedRegisterAffinities.remove(representative);
+    } else if (representativeAffinity == null && mergedAffinity != null) {
+      fixedRegisterAffinities.put(representative, mergedAffinity);
     }
 
     moveList
@@ -369,9 +417,24 @@ final class AllocatorState {
     }
   }
 
-  private static InterferenceGraphBuilder.Move getAndRemoveOneMove(
+  private InterferenceGraphBuilder.Move removeBestMove(
       Set<InterferenceGraphBuilder.Move> moves) {
-    InterferenceGraphBuilder.Move move = moves.iterator().next();
+    InterferenceGraphBuilder.Move move = null;
+    double bestWeight = Double.NEGATIVE_INFINITY;
+    for (InterferenceGraphBuilder.Move candidate : moves) {
+      // Degree one exposes the weighted reference count before spill-pressure
+      // normalization. Coalescing the hottest copy webs first preserves their
+      // chance to share a color; program order makes equal priorities stable.
+      double weight =
+          spillCostModel.cost(candidate.src(), 1)
+              + spillCostModel.cost(candidate.dst(), 1);
+      if (move == null
+          || weight > bestWeight
+          || (weight == bestWeight && candidate.order() < move.order())) {
+        move = candidate;
+        bestWeight = weight;
+      }
+    }
     moves.remove(move);
     return move;
   }

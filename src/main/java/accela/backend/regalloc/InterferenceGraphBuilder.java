@@ -12,14 +12,15 @@ import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 
 public final class InterferenceGraphBuilder {
-    public record Move(VirtualRegister dst, VirtualRegister src, MachineInstr instr) {}
+    public record Move(
+        VirtualRegister dst, VirtualRegister src, MachineInstr instr, int order) {}
 
     public record Result(InterferenceGraph graph, Set<Move> moves) {}
  
     public static Result build(MachineFunction function, LivenessAnalysis.Result res){
         Set<Move> moves = new HashSet<>();
         InterferenceGraph graph = new InterferenceGraph();
-
+        int instructionOrder = 0;
         for (MachineBasicBlock blc : function.getBlocks()){
             addSimultaneouslyLiveEdges(graph, res.liveIn(blc));
             for(MachineInstr instr : blc.getInstructions()){
@@ -35,7 +36,7 @@ public final class InterferenceGraphBuilder {
                 
                 var moveSrc = getRegisterMoveSource(instr);
                 if (moveSrc != null) {
-                    moves.add(new Move(def, moveSrc, instr));
+                    moves.add(new Move(def, moveSrc, instr, instructionOrder));
                 }
 
                 for (VirtualRegister register : res.liveAfter(instr)) {
@@ -44,7 +45,7 @@ public final class InterferenceGraphBuilder {
                     }
                     graph.addEdge(def, register);
                 }
-                
+                instructionOrder++;
             }
         }
 
@@ -65,7 +66,7 @@ public final class InterferenceGraphBuilder {
     }
 
     private static VirtualRegister getRegisterMoveSource(MachineInstr instr) {
-        if (instr.getOpcode() != MachineOpcode.MOVE) {
+        if (instr.getOpcode() != MachineOpcode.MOVE || !instr.isCoalescable()) {
         return null;
         }
 
