@@ -1,0 +1,67 @@
+package accela.pass.ir.analysis;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import org.junit.jupiter.api.Test;
+
+final class ExactTripCountTest {
+  @Test
+  void recognizesTripsBeyondTheUnrollLimit() {
+    Function function = countedLoop(Constant.intConst(64));
+    var induction = analyze(function).allInductions().getFirst();
+
+    assertEquals(64, ExactTripCount.find(induction).count());
+  }
+
+  @Test
+  void rejectsRuntimeBounds() {
+    Function function = new Function("runtime", Type.VOID);
+    Value bound = function.addArgument(Type.INT, "bound");
+    buildLoop(function, bound);
+
+    assertNull(ExactTripCount.find(analyze(function).allInductions().getFirst()));
+  }
+
+  private static Function countedLoop(Value bound) {
+    Function function = new Function("counted", Type.VOID);
+    buildLoop(function, bound);
+    return function;
+  }
+
+  private static void buildLoop(Function function, Value bound) {
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    Value condition = headerBuilder.createICmp("slt", index, bound);
+    headerBuilder.createCondBr(condition, body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    new IRBuilder(exit).createRetVoid();
+  }
+
+  private static InductionVariableAnalysis.Result analyze(Function function) {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam.getResult(InductionVariableAnalysis.class, function);
+  }
+}

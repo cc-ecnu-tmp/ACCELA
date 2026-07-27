@@ -1,0 +1,44 @@
+package accela.pass.ir.analysis;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import org.junit.jupiter.api.Test;
+
+final class LoopAnalysisTest {
+  @Test
+  void mergesLatchesOfOneNaturalLoop() {
+    Function function = new Function("loop", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    new IRBuilder(header).createCondBr(condition, left, exit);
+    new IRBuilder(left).createCondBr(condition, header, right);
+    new IRBuilder(right).createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    LoopAnalysis.Result result = fam.getResult(LoopAnalysis.class, function);
+
+    assertEquals(1, result.loops().size());
+    LoopAnalysis.Loop loop = result.loops().getFirst();
+    assertSame(header, loop.header());
+    assertSame(entry, loop.preheader());
+    assertEquals(2, loop.latches().size());
+    assertTrue(loop.blocks().containsAll(java.util.List.of(header, left, right)));
+    assertSame(loop, result.getLoopFor(left));
+  }
+}

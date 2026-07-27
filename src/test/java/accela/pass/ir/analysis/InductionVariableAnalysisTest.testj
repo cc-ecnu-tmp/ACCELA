@@ -1,0 +1,100 @@
+package accela.pass.ir.analysis;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import org.junit.jupiter.api.Test;
+
+final class InductionVariableAnalysisTest {
+  @Test
+  void recognizesCanonicalAddRecurrence() {
+    Function function = new Function("loop", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    Instruction phi = Instruction.createPhi(Type.INT);
+    header.addInstructionToFront(phi);
+    phi.addOperand(Constant.intConst(3));
+    phi.addOperand(entry);
+    new IRBuilder(header).createCondBr(condition, body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createAdd(phi, Constant.intConst(2));
+    bodyBuilder.createBr(header);
+    phi.addOperand(next);
+    phi.addOperand(body);
+    new IRBuilder(exit).createRetVoid();
+
+    var induction = analyze(function).inductions().getFirst();
+
+    assertSame(entry, induction.predecessor());
+    assertSame(body, induction.latch());
+    assertSame(phi, induction.phi());
+    assertSame(next, induction.next());
+    assertEquals(3, ((Constant.Int) induction.start()).value);
+    assertEquals(2, induction.step());
+  }
+
+  @Test
+  void rejectsEntryPredecessorInsideAnUnrelatedLoop() {
+    Function function = new Function("sequential", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock firstHeader = function.addBlock("first.header");
+    BasicBlock firstBody = function.addBlock("first.body");
+    BasicBlock secondHeader = function.addBlock("second.header");
+    BasicBlock secondBody = function.addBlock("second.body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(firstHeader);
+
+    Instruction first = Instruction.createPhi(Type.INT);
+    firstHeader.addInstructionToFront(first);
+    first.addOperand(Constant.intConst(0));
+    first.addOperand(entry);
+    new IRBuilder(firstHeader).createCondBr(condition, firstBody, secondHeader);
+    Instruction firstNext =
+        new IRBuilder(firstBody).createAdd(first, Constant.intConst(1));
+    new IRBuilder(firstBody).createBr(firstHeader);
+    first.addOperand(firstNext);
+    first.addOperand(firstBody);
+
+    Instruction second = Instruction.createPhi(Type.INT);
+    secondHeader.addInstructionToFront(second);
+    second.addOperand(Constant.intConst(0));
+    second.addOperand(firstHeader);
+    new IRBuilder(secondHeader).createCondBr(condition, secondBody, exit);
+    Instruction secondNext =
+        new IRBuilder(secondBody).createAdd(second, Constant.intConst(1));
+    new IRBuilder(secondBody).createBr(secondHeader);
+    second.addOperand(secondNext);
+    second.addOperand(secondBody);
+    new IRBuilder(exit).createRetVoid();
+
+    var result = analyze(function);
+    var inductions = result.inductions();
+
+    assertEquals(1, inductions.size());
+    assertSame(first, inductions.getFirst().phi());
+    assertEquals(2, result.allInductions().size());
+    assertSame(second, result.allInductions().getLast().phi());
+  }
+
+  private static InductionVariableAnalysis.Result analyze(Function function) {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam.getResult(InductionVariableAnalysis.class, function);
+  }
+}
