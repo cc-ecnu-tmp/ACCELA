@@ -2,7 +2,7 @@ package accela.pass.ir.transform.loop.unroll;
 
 import accela.ir.Instruction;
 import accela.ir.Type;
-import accela.pass.ir.analysis.LoopNestDependenceAnalysis;
+import accela.pass.ir.analysis.dependence.DependenceAnalysis;
 import java.util.List;
 
 /** Chooses a small jam factor without exhausting the RISC-V integer or FP register files. */
@@ -17,6 +17,11 @@ final class UnrollAndJamCostModel {
 
   static int chooseFactor(LoopUnrollAndJamCandidate candidate) {
     Pressure pressure = estimatePressure(candidate);
+    var dependences = DependenceAnalysis.analyze(
+        List.of(
+            candidate.outerInduction().phi(),
+            candidate.innerInduction().phi()),
+        List.of(candidate.innerBody(), candidate.innerExit()));
     int bodySize = (int) candidate.innerBody().getInstructions().stream()
         .filter(instruction -> instruction.getOpcode() != Instruction.Opcode.PHI
             && !instruction.isTerminator())
@@ -25,12 +30,8 @@ final class UnrollAndJamCostModel {
       if (bodySize * factor <= MAX_CLONED_INSTRUCTIONS
           && pressure.integerShared + factor * pressure.integerPerLane <= INTEGER_BUDGET
           && pressure.floatShared + factor * pressure.floatPerLane <= FLOAT_BUDGET
-          && LoopNestDependenceAnalysis.isSafe(
-              candidate.outerInduction().phi(),
-              candidate.outerInduction().step(),
-              candidate.innerInduction().phi(),
-              List.of(candidate.innerBody(), candidate.innerExit()),
-              factor)) {
+          && dependences.isSafeToJam(
+              0, 1, candidate.outerInduction().step(), factor)) {
         return factor;
       }
     }

@@ -1,0 +1,92 @@
+package accela.pass.ir.analysis.dependence;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class DependenceAnalysisTest {
+  private static final Type MATRIX = Type.array(Type.array(Type.INT, 32), 32);
+
+  @Test
+  void rejectsAColumnSwapThatMakesTheDependenceNegative() {
+    Fixture fixture = new Fixture();
+    IRBuilder builder = fixture.builder;
+    Value outerMinusOne =
+        builder.createSub(fixture.outer, Constant.intConst(1));
+    Value innerPlusOne =
+        builder.createAdd(fixture.inner, Constant.intConst(1));
+    builder.createStore(
+        Constant.intConst(1), fixture.address(fixture.outer, fixture.inner));
+    builder.createStore(
+        Constant.intConst(2), fixture.address(outerMinusOne, innerPlusOne));
+
+    var result = fixture.analyze();
+    var ordered = result.dependences().stream()
+        .filter(dependence -> dependence.source() != dependence.sink())
+        .findFirst()
+        .orElseThrow();
+
+    assertEquals(
+        List.of(
+            DependenceAnalysis.Direction.LESS,
+            DependenceAnalysis.Direction.GREATER),
+        ordered.directions());
+    assertFalse(result.isLegalToInterchange(0, 1));
+  }
+
+  @Test
+  void provesDistinctOuterLanesForARegularMatrixStore() {
+    Fixture fixture = new Fixture();
+    fixture.builder.createStore(
+        Constant.intConst(1), fixture.address(fixture.outer, fixture.inner));
+
+    assertTrue(fixture.analyze().isSafeToJam(0, 1, 1, 4));
+  }
+
+  @Test
+  void rejectsJammingWhenTheAddressDoesNotDependOnTheOuterLoop() {
+    Fixture fixture = new Fixture();
+    fixture.builder.createStore(
+        Constant.intConst(1),
+        fixture.address(Constant.intConst(0), fixture.inner));
+
+    assertFalse(fixture.analyze().isSafeToJam(0, 1, 1, 4));
+  }
+
+  private static final class Fixture {
+    final GlobalVariable matrix =
+        new GlobalVariable("matrix", MATRIX, Constant.zero(MATRIX), false);
+    final BasicBlock block = new BasicBlock("body");
+    final IRBuilder builder = new IRBuilder(block);
+    final Instruction outer = Instruction.createPhi(Type.INT);
+    final Instruction inner = Instruction.createPhi(Type.INT);
+
+    Fixture() {
+      block.addInstruction(outer);
+      block.addInstruction(inner);
+    }
+
+    Value address(Value row, Value column) {
+      return builder.createGEP(
+          MATRIX,
+          matrix,
+          new Value[] {Constant.int64Const(0), row, column},
+          true);
+    }
+
+    DependenceAnalysis.Result analyze() {
+      return DependenceAnalysis.analyze(
+          List.of(outer, inner), List.of(block));
+    }
+  }
+}
