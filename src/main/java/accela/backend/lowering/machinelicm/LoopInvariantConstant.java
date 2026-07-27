@@ -65,6 +65,10 @@ record LoopInvariantConstant(MachineType type, long value, List<Use> uses) {
   private static boolean shouldHoist(MachineInstr instruction, long value) {
     // RISC-V branches cannot compare an immediate other than zero.
     if (instruction.getOpcode() == MachineOpcode.CONDBR) return value != 0;
+    // Keep powers of two available to the late shift-based strength reducer.
+    if (instruction.getOpcode() == MachineOpcode.MUL
+        && value > 0
+        && (value & (value - 1)) == 0) return false;
     if (instruction.getOpcode() == MachineOpcode.ADD
         && instruction.getType() == MachineType.PTR) {
       return value < -2048 || value > 2047;
@@ -73,7 +77,7 @@ record LoopInvariantConstant(MachineType type, long value, List<Use> uses) {
   }
 
   private static boolean isExpensive(long value) {
-    return (value < -2048 || value > 2047) && (value & 0xfff) != 0;
+    return value < -2048 || value > 2047;
   }
 
   private record Key(MachineType type, long value) {}

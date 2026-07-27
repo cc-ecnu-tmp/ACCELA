@@ -59,10 +59,22 @@ final class MachineLICMTest {
         .addOperand(new BlockOperand(header))
         .addOperand(new BlockOperand(exit));
     body.addInstruction(compareBranch);
+    var difference = function.createVirtualRegister(MachineType.I32, "difference");
+    MachineInstr subtract = new MachineInstr(MachineOpcode.SUB, difference);
+    subtract.setType(MachineType.I32);
+    subtract.addOperand(new VRegOperand(input)).addOperand(new ImmOperand(536870912));
+    body.insertBeforeTerminator(subtract);
+    var product = function.createVirtualRegister(MachineType.I32, "product");
+    MachineInstr multiply = new MachineInstr(MachineOpcode.MUL, product);
+    multiply.setType(MachineType.I32);
+    multiply.addOperand(new VRegOperand(input)).addOperand(new ImmOperand(4096));
+    body.insertBeforeTerminator(multiply);
     exit.addInstruction(new MachineInstr(MachineOpcode.RET, null));
 
     assertTrue(new MachineLICM().run(function));
     assertInstanceOf(VRegOperand.class, compareBranch.getOperands().get(1));
+    assertInstanceOf(VRegOperand.class, subtract.getOperands().get(1));
+    assertInstanceOf(ImmOperand.class, multiply.getOperands().get(1));
   }
 
   @Test
@@ -123,6 +135,52 @@ final class MachineLICMTest {
         constant.getDest(),
         assertInstanceOf(VRegOperand.class, add.getOperands().get(1)).getRegister());
     assertInstanceOf(ImmOperand.class, compareBranch.getOperands().get(1));
+  }
+
+  @Test
+  void hoistsExpensiveConstantsAcrossCalls() {
+    Function source = new Function("source", Type.VOID);
+    BasicBlock sourceEntry = source.addBlock("entry");
+    BasicBlock sourceHeader = source.addBlock("header");
+    BasicBlock sourceBody = source.addBlock("body");
+    BasicBlock sourceExit = source.addBlock("exit");
+    new IRBuilder(sourceEntry).createBr(sourceHeader);
+    IRBuilder headerBuilder = new IRBuilder(sourceHeader);
+    var condition = source.addArgument(Type.I1, "condition");
+    headerBuilder.createCondBr(condition, sourceBody, sourceExit);
+    new IRBuilder(sourceBody).createBr(sourceHeader);
+    new IRBuilder(sourceExit).createRetVoid();
+
+    MachineFunction function = new MachineFunction("main", MachineType.VOID);
+    MachineBasicBlock entry = block(function, source, sourceEntry);
+    MachineBasicBlock header = block(function, source, sourceHeader);
+    MachineBasicBlock body = block(function, source, sourceBody);
+    MachineBasicBlock exit = block(function, source, sourceExit);
+    branch(entry, header);
+    conditional(function, header, body, exit);
+    var input = function.createVirtualRegister(MachineType.I32, "input");
+    var result = function.createVirtualRegister(MachineType.I32, "result");
+    MachineInstr multiply = new MachineInstr(MachineOpcode.MUL, result);
+    multiply.setType(MachineType.I32);
+    multiply.addOperand(new VRegOperand(input)).addOperand(new ImmOperand(19980130));
+    body.addInstruction(multiply);
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee("putint");
+    body.addInstruction(call);
+    MachineInstr compareBranch = new MachineInstr(MachineOpcode.CONDBR, null);
+    compareBranch.setPredicate("slt");
+    compareBranch
+        .addOperand(new VRegOperand(input))
+        .addOperand(new ImmOperand(16))
+        .addOperand(new BlockOperand(header))
+        .addOperand(new BlockOperand(exit));
+    body.addInstruction(compareBranch);
+    exit.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertTrue(new MachineLICM().run(function));
+    assertInstanceOf(VRegOperand.class, multiply.getOperands().get(1));
+    assertInstanceOf(ImmOperand.class, compareBranch.getOperands().get(1));
+    assertEquals(MachineOpcode.CONST_INT, entry.getInstructions().getFirst().getOpcode());
   }
 
   private static MachineBasicBlock block(
