@@ -17,6 +17,7 @@ import accela.pass.ir.transform.GlobalOpt;
 import accela.pass.ir.transform.IPSCCP;
 import accela.pass.ir.transform.InstCombine;
 import accela.pass.ir.transform.InstSimplify;
+import accela.pass.ir.transform.LICM;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
@@ -24,7 +25,12 @@ import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.StrengthReduction;
 import accela.pass.ir.transform.TailRecursionElimination;
 import accela.pass.ir.transform.gvn.GVN;
+import accela.pass.ir.transform.indvars.IndVarSimplify;
 import accela.pass.ir.transform.inliner.Inliner;
+import accela.pass.ir.transform.looploadelimination.LoopLoadElimination;
+import accela.pass.ir.transform.loopstrengthreduce.LoopStrengthReduce;
+import accela.pass.ir.transform.looprotate.LoopRotate;
+import accela.pass.ir.transform.loopunroll.LoopUnroll;
 
 /**
  * Builds the project's default pass pipelines.
@@ -79,6 +85,36 @@ public final class PassBuilder {
 
   private static boolean isTailCallElimEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_TAILCALLELIM");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLicmEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LICM");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLoopRotateEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_ROTATE");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLoopStrengthReduceEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_STRENGTH_REDUCE");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLoopUnrollEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_UNROLL");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isIndVarSimplifyEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_INDVAR_SIMPLIFY");
     return disable == null || disable.isEmpty() || disable.equals("0")
         || disable.equalsIgnoreCase("false");
   }
@@ -177,8 +213,42 @@ public final class PassBuilder {
     FunctionPassManager globalMemoryFpm = new FunctionPassManager(instrumentation);
     globalMemoryFpm.addPass(new EarlyCSE.Pass());
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
+    if (isLoopRotateEnabled()) {
+      postIpsccpFpm.addPass(new LoopRotate.Pass());
+    }
+    if (isLicmEnabled()) {
+      postIpsccpFpm.addPass(new LICM.Pass());
+      if (isEarlyCseEnabled()) {
+        postIpsccpFpm.addPass(new EarlyCSE.Pass());
+      }
+    }
+    if (isLoopUnrollEnabled()) {
+      postIpsccpFpm.addPass(new LoopUnroll.Pass());
+      postIpsccpFpm.addPass(new LoopUnroll.Pass());
+    }
+    if (isIndVarSimplifyEnabled()) {
+      postIpsccpFpm.addPass(new IndVarSimplify.Pass());
+      postIpsccpFpm.addPass(new InstSimplify.Pass());
+      postIpsccpFpm.addPass(new SimplifyCFG.Pass());
+    }
     postIpsccpFpm.addPass(new GVN.Pass());
+    if (isLoopStrengthReduceEnabled()) {
+      postIpsccpFpm.addPass(new LoopStrengthReduce.Pass());
+      if (isLoopRotateEnabled()) {
+        postIpsccpFpm.addPass(new LoopRotate.LoadEliminationPass());
+        postIpsccpFpm.addPass(new LoopLoadElimination.Pass());
+        if (isIndVarSimplifyEnabled()) {
+          postIpsccpFpm.addPass(new IndVarSimplify.LFTRPass());
+        }
+      }
+      if (isLicmEnabled()) {
+        postIpsccpFpm.addPass(new LICM.Pass());
+      }
+    }
     postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    if (isLoopStrengthReduceEnabled() && enableAdce) {
+      postIpsccpFpm.addPass(new ADCE.Pass());
+    }
     FunctionPassManager preInlineFpm = new FunctionPassManager(instrumentation);
     preInlineFpm.addPass(new EarlyCSE.Pass());
     if (isTailCallElimEnabled()) {

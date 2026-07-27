@@ -7,6 +7,7 @@ import accela.backend.lowering.MachineBlockPlacement;
 import accela.backend.lowering.MachineCSE;
 import accela.backend.lowering.MachineConstantCSE;
 import accela.backend.lowering.MachineCopyPropagation;
+import accela.backend.lowering.MachineLICM;
 import accela.backend.lowering.MemoryAddressFolding;
 import accela.backend.lowering.PhiElimination;
 import accela.backend.lowering.globalmerge.GlobalMerge;
@@ -29,6 +30,7 @@ final class BackendPipeline {
   private final PhiElimination phiElimination = new PhiElimination();
   private final LoopConditionDuplication loopConditionDuplication = new LoopConditionDuplication();
   private final MemoryAddressFolding memoryAddressFolding = new MemoryAddressFolding();
+  private final MachineLICM machineLicm = new MachineLICM();
   private final MachineConstantCSE constantCse = new MachineConstantCSE();
   private final GlobalAddressMaterialization globalAddresses = new GlobalAddressMaterialization();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
@@ -50,6 +52,7 @@ final class BackendPipeline {
       memoryAddressFolding.run(function);
       machineCse.run(function);
       globalMerge.run(function);
+      machineLicm.run(function);
       loopConditionDuplication.run(function);
       constantCse.run(function);
       globalAddresses.run(function);
