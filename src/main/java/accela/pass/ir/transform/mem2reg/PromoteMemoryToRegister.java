@@ -44,6 +44,21 @@ public final class PromoteMemoryToRegister {
     return true;
   }
 
+  /**
+   * Promotes one temporary stack slot introduced by another transform.
+   *
+   * <p>The caller must preserve the CFG, so the supplied dominator tree remains valid.
+   */
+  public static void promoteAlloca(
+      Function function, Instruction alloca, DominatorTreeAnalysis.Result domTree) {
+    if (!isPromotableAlloca(alloca)) {
+      throw new IllegalArgumentException("alloca is not promotable");
+    }
+    if (!promoteSingleBlockAlloca(alloca)) {
+      promoteMultiBlockAlloca(function, alloca, domTree);
+    }
+  }
+
   /** Returns whether an alloca is simple enough for this pass to promote. */
   private static boolean isPromotableAlloca(Instruction inst) {
     if (inst.getOpcode() != Instruction.Opcode.ALLOCA) return false;

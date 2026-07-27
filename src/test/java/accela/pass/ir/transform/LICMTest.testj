@@ -1,0 +1,252 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LICMTest {
+  @Test
+  void hoistsScalarLoadPastUnrelatedGlobalStore() {
+    Module module = new Module();
+    GlobalVariable limit = scalar(module, "limit");
+    GlobalVariable output = scalar(module, "output");
+    Function function = loopFunction(module, "read_limit");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction load = headerBuilder.createLoad(Type.INT, limit);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    Instruction invariant = bodyBuilder.createAdd(load, Constant.intConst(1));
+    bodyBuilder.createStore(invariant, output);
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(entry, load.getParent());
+    assertSame(entry, invariant.getParent());
+  }
+
+  @Test
+  void hoistsGuaranteedArrayElementLoad() {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 4);
+    GlobalVariable input =
+        new GlobalVariable("input", arrayType, Constant.zero(arrayType), false);
+    GlobalVariable output =
+        new GlobalVariable("output", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(input);
+    module.addGlobal(output);
+    Function function = loopFunction(module, "read_array");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction address = headerBuilder.createGEP(
+        arrayType,
+        input,
+        new Value[] {Constant.int64Const(0), Constant.int64Const(1)},
+        true);
+    Instruction load = headerBuilder.createLoad(Type.INT, address);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    Instruction destination = bodyBuilder.createGEP(
+        arrayType,
+        output,
+        new Value[] {Constant.int64Const(0), Constant.int64Const(1)},
+        true);
+    bodyBuilder.createStore(load, destination);
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(entry, address.getParent());
+    assertSame(entry, load.getParent());
+  }
+
+  @Test
+  void promotesLoopLocalScalarLoadsAndStores() {
+    Module module = new Module();
+    GlobalVariable state = scalar(module, "state");
+    Function function = loopFunction(module, "mutate");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction load = headerBuilder.createLoad(Type.INT, state);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    bodyBuilder.createStore(load, state);
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertTrue(hasAccess(entry, state, Instruction.Opcode.LOAD));
+    assertTrue(hasAccess(function.getBlocks().get(3), state, Instruction.Opcode.STORE));
+    assertFalse(hasAccess(header, state, Instruction.Opcode.LOAD));
+    assertFalse(hasAccess(body, state, Instruction.Opcode.STORE));
+  }
+
+  @Test
+  void usesTransitiveModRefToRejectUnsafeLoads() {
+    Module module = new Module();
+    GlobalVariable state = scalar(module, "state");
+    Function writer = new Function("writer", Type.VOID);
+    module.addFunction(writer);
+    IRBuilder writerBuilder = new IRBuilder(writer.addBlock("entry"));
+    writerBuilder.createStore(Constant.intConst(1), state);
+    writerBuilder.createRetVoid();
+
+    Function function = loopFunction(module, "call_writer");
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction load = headerBuilder.createLoad(Type.INT, state);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    bodyBuilder.createCall(writer, Type.VOID);
+
+    assertFalse(LICM.runOnFunction(function, analysisManager()));
+    assertSame(header, load.getParent());
+  }
+
+  @Test
+  void keepsStoresVisibleToCallsThatReadTheObject() {
+    Module module = new Module();
+    GlobalVariable state = scalar(module, "state");
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    readerBuilder.createRet(readerBuilder.createLoad(Type.INT, state));
+
+    Function function = loopFunction(module, "call_reader");
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(body.getTerminator());
+    builder.createStore(Constant.intConst(1), state);
+    builder.createCall(reader, Type.INT);
+    builder.createLoad(Type.INT, state);
+
+    assertFalse(LICM.runOnFunction(function, analysisManager()));
+    assertTrue(hasAccess(body, state, Instruction.Opcode.STORE));
+  }
+
+  @Test
+  void hoistsPureCallsFromLoopHeaders() {
+    Module module = new Module();
+    Function pure = new Function("pure", Type.INT);
+    module.addFunction(pure);
+    Value argument = pure.addArgument(Type.INT, "argument");
+    new IRBuilder(pure.addBlock("entry")).createRet(argument);
+
+    Function function = loopFunction(module, "caller");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(header.getTerminator());
+    Instruction call = builder.createCall(pure, Type.INT, Constant.intConst(1));
+    builder.setInsertPointBefore(body.getTerminator());
+    Instruction conditional = builder.createCall(pure, Type.INT, Constant.intConst(2));
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    assertSame(entry, call.getParent());
+    assertSame(body, conditional.getParent());
+  }
+
+  @Test
+  void speculatesSafeAddressesIntoParentLoop() {
+    Module module = new Module();
+    Function function = new Function("nested", Type.VOID);
+    Value outerCondition = function.addArgument(Type.I1, "outer");
+    Value innerCondition = function.addArgument(Type.I1, "inner");
+    Value base = function.addArgument(Type.PTR, "base");
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock outer = function.addBlock("outer");
+    BasicBlock inner = function.addBlock("inner");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(outer);
+
+    IRBuilder outerBuilder = new IRBuilder(outer);
+    Instruction index = outerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    outerBuilder.createCondBr(outerCondition, inner, exit);
+
+    IRBuilder innerBuilder = new IRBuilder(inner);
+    Instruction extended = innerBuilder.createSExt(index, Type.I64);
+    Instruction address =
+        innerBuilder.createGEP(Type.INT, base, new Value[] {extended}, false);
+    innerBuilder.createCondBr(innerCondition, body, latch);
+    new IRBuilder(body).createBr(inner);
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(latch);
+    latchBuilder.createBr(outer);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(outer, extended.getParent());
+    assertSame(outer, address.getParent());
+  }
+
+  private static Function loopFunction(Module module, String name) {
+    Function function = new Function(name, Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    new IRBuilder(header).createCondBr(condition, body, exit);
+    new IRBuilder(body).createBr(header);
+    new IRBuilder(exit).createRetVoid();
+    return function;
+  }
+
+  private static GlobalVariable scalar(Module module, String name) {
+    GlobalVariable global =
+        new GlobalVariable(name, Type.INT, Constant.intConst(0), false);
+    module.addGlobal(global);
+    return global;
+  }
+
+  private static boolean hasAccess(
+      BasicBlock block, GlobalVariable global, Instruction.Opcode opcode) {
+    int pointerIndex = opcode == Instruction.Opcode.LOAD ? 0 : 1;
+    return block.getInstructions().stream().anyMatch(instruction ->
+        instruction.getOpcode() == opcode
+            && instruction.getOperand(pointerIndex) == global);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    return fam;
+  }
+}
