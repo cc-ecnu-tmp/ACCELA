@@ -48,4 +48,43 @@ final class TailMergeTest {
     assertSame(leftValue, phi.getOperand(0));
     assertSame(left, phi.getOperand(1));
   }
+
+  @Test
+  void mergesAllIndependentTailPairsInOneRun() {
+    Function function = new Function("two_diamonds", Type.INT);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value value = function.addArgument(Type.INT, "value");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left1 = function.addBlock("left1");
+    BasicBlock right1 = function.addBlock("right1");
+    BasicBlock merge1 = function.addBlock("merge1");
+    BasicBlock left2 = function.addBlock("left2");
+    BasicBlock right2 = function.addBlock("right2");
+    BasicBlock exit = function.addBlock("exit");
+
+    new IRBuilder(entry).createCondBr(condition, left1, right1);
+    addTail(left1, value, merge1);
+    addTail(right1, value, merge1);
+    new IRBuilder(merge1).createCondBr(condition, left2, right2);
+    Instruction leftValue = addTail(left2, value, exit);
+    Instruction rightValue = addTail(right2, value, exit);
+    IRBuilder exitBuilder = new IRBuilder(exit);
+    Instruction result = exitBuilder.createPhi(Type.INT);
+    result.addOperand(leftValue);
+    result.addOperand(left2);
+    result.addOperand(rightValue);
+    result.addOperand(right2);
+    exitBuilder.createRet(result);
+
+    assertTrue(TailMerge.run(function));
+    IRVerifier.verifyFunction(function);
+    assertEquals(5, function.getBlocks().size());
+  }
+
+  private static Instruction addTail(BasicBlock block, Value value, BasicBlock successor) {
+    IRBuilder builder = new IRBuilder(block);
+    Instruction result = builder.createAdd(value, Constant.intConst(1));
+    builder.createBr(successor);
+    return result;
+  }
 }

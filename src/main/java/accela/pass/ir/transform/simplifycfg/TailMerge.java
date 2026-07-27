@@ -5,25 +5,50 @@ import accela.ir.Function;
 import accela.ir.Instruction;
 import accela.ir.Value;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** Merges equivalent one-instruction blocks that branch to the same successor. */
 final class TailMerge {
   private TailMerge() {}
+
   static boolean run(Function function) {
-    List<BasicBlock> blocks = List.copyOf(function.getBlocks());
-    for (int leftIndex = 0; leftIndex < blocks.size(); leftIndex++) {
-      BasicBlock left = blocks.get(leftIndex);
-      for (int rightIndex = leftIndex + 1; rightIndex < blocks.size(); rightIndex++) {
-        BasicBlock right = blocks.get(rightIndex);
-        if (canMerge(left, right)) {
+    Map<BasicBlock, List<BasicBlock>> candidates = new IdentityHashMap<>();
+    for (BasicBlock block : function.getBlocks()) {
+      BasicBlock successor = candidateSuccessor(block);
+      if (successor != null) {
+        candidates.computeIfAbsent(successor, ignored -> new ArrayList<>()).add(block);
+      }
+    }
+
+    boolean changed = false;
+    for (List<BasicBlock> blocks : candidates.values()) {
+      for (int leftIndex = 0; leftIndex < blocks.size(); leftIndex++) {
+        BasicBlock left = blocks.get(leftIndex);
+        if (left.getParent() != function) continue;
+        for (int rightIndex = leftIndex + 1; rightIndex < blocks.size(); rightIndex++) {
+          BasicBlock right = blocks.get(rightIndex);
+          if (right.getParent() != function || !canMerge(left, right)) continue;
           merge(function, left, right);
-          return true;
+          changed = true;
         }
       }
     }
-    return false;
+    return changed;
   }
+
+  private static BasicBlock candidateSuccessor(BasicBlock block) {
+    if (block.getInstructions().size() != 2) return null;
+    Instruction value = block.getInstructions().getFirst();
+    Instruction branch = block.getTerminator();
+    return TailMergeMatcher.isPure(value)
+            && branch != null
+            && branch.getOpcode() == Instruction.Opcode.BR
+        ? (BasicBlock) branch.getOperand(0)
+        : null;
+  }
+
   private static boolean canMerge(BasicBlock left, BasicBlock right) {
     if (left.getInstructions().size() != 2
         || right.getInstructions().size() != 2
