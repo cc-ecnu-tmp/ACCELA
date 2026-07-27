@@ -1,0 +1,84 @@
+package accela.pass.ir.transform.loop.strength;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class AddressStreamSharingTest {
+  @Test
+  void sharesNearbyStencilStreamsAsMemoryOffsets() {
+    Function function = new Function("stencil", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value base = function.addArgument(Type.PTR, "base");
+    Value row = function.addArgument(Type.INT, "row");
+    Value column = function.addArgument(Type.INT, "column");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(1));
+    index.addOperand(entry);
+    headerBuilder.createCondBr(condition, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    int[][] offsets = {
+      {-1, 0, 0}, {1, 0, 0}, {0, -1, 0}, {0, 1, 0},
+      {0, 0, -1}, {0, 0, 1}, {-1, -1, -1}, {0, 0, 0}
+    };
+    for (int[] offset : offsets) {
+      Instruction address = address(bodyBuilder, base, row, column, index, offset);
+      bodyBuilder.createLoad(Type.INT, address);
+    }
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(body);
+    bodyBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(3, header.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI)
+        .filter(instruction -> instruction.getType() == Type.PTR)
+        .count());
+  }
+
+  private static Instruction address(
+      IRBuilder builder, Value base, Value row, Value column, Value index, int[] offset) {
+    Type cube = Type.array(Type.array(Type.array(Type.INT, 250), 250), 250);
+    Value[] coordinates = {row, column, index};
+    Value[] indices = new Value[4];
+    indices[0] = Constant.int64Const(0);
+    for (int dimension = 0; dimension < coordinates.length; dimension++) {
+      Value adjusted = builder.createAdd(
+          coordinates[dimension], Constant.intConst(offset[dimension]));
+      indices[dimension + 1] = builder.createSExt(adjusted, Type.I64);
+    }
+    return builder.createGEP(cube, base, indices, true);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+}

@@ -27,10 +27,10 @@ import accela.pass.ir.transform.TailRecursionElimination;
 import accela.pass.ir.transform.gvn.GVN;
 import accela.pass.ir.transform.indvars.IndVarSimplify;
 import accela.pass.ir.transform.inliner.Inliner;
-import accela.pass.ir.transform.looploadelimination.LoopLoadElimination;
-import accela.pass.ir.transform.loopstrengthreduce.LoopStrengthReduce;
-import accela.pass.ir.transform.looprotate.LoopRotate;
-import accela.pass.ir.transform.loopunroll.LoopUnroll;
+import accela.pass.ir.transform.loop.load.LoopLoadElimination;
+import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
+import accela.pass.ir.transform.loop.rotate.LoopRotate;
+import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 
 /**
  * Builds the project's default pass pipelines.

@@ -1,0 +1,85 @@
+package accela.pass.ir.transform.loop.load;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import org.junit.jupiter.api.Test;
+
+final class LoopLoadCandidateTest {
+  @Test
+  void findsAUnitDistanceDependenceInATopTestedLoop() {
+    Fixture fixture = new Fixture();
+    LoopLoadCandidate candidate = LoopLoadCandidate.match(fixture.loop());
+
+    assertNotNull(candidate);
+    assertSame(fixture.load, candidate.load());
+    assertSame(fixture.store, candidate.store());
+    assertSame(fixture.pointer, candidate.pointer());
+    assertSame(fixture.base, candidate.initialPointer());
+  }
+
+  @Test
+  void rejectsLoopsWithAnotherPossibleWrite() {
+    Fixture fixture = new Fixture();
+    fixture.body.insertInstructionBefore(
+        fixture.body.getTerminator(),
+        fixture.store.copyWithoutOperands());
+    Instruction extra = fixture.body.getInstructions()
+        .get(fixture.body.getInstructions().size() - 2);
+    extra.addOperand(Constant.intConst(0));
+    extra.addOperand(fixture.pointer);
+
+    assertNull(LoopLoadCandidate.match(fixture.loop()));
+  }
+
+  private static final class Fixture {
+    final Function function = new Function("forward", Type.VOID);
+    final Value condition = function.addArgument(Type.I1, "condition");
+    final Value base = function.addArgument(Type.PTR, "base");
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock header = function.addBlock("header");
+    final BasicBlock body = function.addBlock("body");
+    final BasicBlock exit = function.addBlock("exit");
+    final Instruction pointer;
+    final Instruction load;
+    final Instruction store;
+
+    Fixture() {
+      new IRBuilder(entry).createBr(header);
+      IRBuilder headerBuilder = new IRBuilder(header);
+      pointer = headerBuilder.createPhi(Type.PTR);
+      pointer.addOperand(base);
+      pointer.addOperand(entry);
+      headerBuilder.createCondBr(condition, body, exit);
+
+      IRBuilder bodyBuilder = new IRBuilder(body);
+      load = bodyBuilder.createLoad(Type.INT, pointer);
+      Instruction next = bodyBuilder.createGEP(
+          Type.INT, pointer, new Value[] {Constant.int64Const(1)}, false);
+      store = bodyBuilder.createStore(
+          bodyBuilder.createAdd(load, Constant.intConst(1)), next);
+      pointer.addOperand(next);
+      pointer.addOperand(body);
+      bodyBuilder.createBr(header);
+      new IRBuilder(exit).createRetVoid();
+    }
+
+    LoopAnalysis.Loop loop() {
+      FunctionAnalysisManager fam = new FunctionAnalysisManager();
+      fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+      fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+      return fam.getResult(LoopAnalysis.class, function).loops().getFirst();
+    }
+  }
+}
