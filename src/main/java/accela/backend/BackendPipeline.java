@@ -4,6 +4,7 @@ import accela.backend.lowering.GlobalAddressMaterialization;
 import accela.backend.lowering.IRToMachineLowering;
 import accela.backend.lowering.LoopConditionDuplication;
 import accela.backend.lowering.MachineBlockPlacement;
+import accela.backend.lowering.MachineCSE;
 import accela.backend.lowering.MachineConstantCSE;
 import accela.backend.lowering.MemoryAddressFolding;
 import accela.backend.lowering.PhiElimination;
@@ -29,6 +30,7 @@ final class BackendPipeline {
   private final MachineConstantCSE constantCse = new MachineConstantCSE();
   private final GlobalAddressMaterialization globalAddresses = new GlobalAddressMaterialization();
   private final MachineBlockPlacement blockPlacement = new MachineBlockPlacement();
+  private final MachineCSE machineCse = new MachineCSE();
   private final RegisterAllocator allocator = new IteratedRegisterAllocator();
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
   private final RISCVAsmEmitter asmEmitter = new RISCVAsmEmitter(target, frameLowering);
@@ -40,8 +42,9 @@ final class BackendPipeline {
 
     for (MachineFunction function : machineModule.getFunctions()) {
       phiElimination.run(function);
-      loopConditionDuplication.run(function);
       memoryAddressFolding.run(function);
+      machineCse.run(function);
+      loopConditionDuplication.run(function);
       constantCse.run(function);
       globalAddresses.run(function);
       blockPlacement.run(function);

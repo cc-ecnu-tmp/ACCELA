@@ -1,5 +1,6 @@
 package accela.backend.lowering;
 
+import accela.backend.machine.BlockOperand;
 import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
@@ -9,16 +10,17 @@ import accela.backend.machine.MachineType;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Shares large ADD immediates that occur at least three times in one machine block. */
+/** Shares profitable constant materializations without extending them beyond adjacent blocks. */
 public final class MachineConstantCSE {
   public boolean run(MachineFunction function) {
-    boolean changed = false;
+    boolean changed = shareWithUniqueSuccessors(function);
     for (MachineBasicBlock block : function.getBlocks()) {
-      for (var entry : collectUses(block).entrySet()) {
+      for (var entry : collectRepeatedAdds(block).entrySet()) {
         List<Use> uses = entry.getValue();
         if (uses.size() < 3) continue;
         materialize(function, block, entry.getKey(), uses);
@@ -28,7 +30,33 @@ public final class MachineConstantCSE {
     return changed;
   }
 
-  private static Map<Key, List<Use>> collectUses(MachineBasicBlock block) {
+  private static boolean shareWithUniqueSuccessors(MachineFunction function) {
+    Map<MachineBasicBlock, Integer> predecessorCounts = new IdentityHashMap<>();
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineBasicBlock successor : successors(block)) {
+        predecessorCounts.merge(successor, 1, Integer::sum);
+      }
+    }
+
+    boolean changed = false;
+    for (MachineBasicBlock block : function.getBlocks()) {
+      Map<Key, List<Use>> local = collectExpensiveUses(block);
+      for (var entry : local.entrySet()) {
+        List<Use> uses = new ArrayList<>(entry.getValue());
+        for (MachineBasicBlock successor : successors(block)) {
+          if (predecessorCounts.getOrDefault(successor, 0) != 1) continue;
+          uses.addAll(collectExpensiveUses(successor)
+              .getOrDefault(entry.getKey(), List.of()));
+        }
+        if (uses.size() == entry.getValue().size()) continue;
+        materialize(function, block, entry.getKey(), uses);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  private static Map<Key, List<Use>> collectRepeatedAdds(MachineBasicBlock block) {
     Map<Key, List<Use>> uses = new LinkedHashMap<>();
     for (MachineInstr instruction : block.getInstructions()) {
       if (instruction.getOpcode() != MachineOpcode.ADD) continue;
@@ -42,6 +70,42 @@ public final class MachineConstantCSE {
       }
     }
     return uses;
+  }
+
+  private static Map<Key, List<Use>> collectExpensiveUses(MachineBasicBlock block) {
+    Map<Key, List<Use>> uses = new LinkedHashMap<>();
+    for (MachineInstr instruction : block.getInstructions()) {
+      MachineType type = constantType(instruction);
+      if (type == null) continue;
+      for (int index = 0; index < instruction.getOperands().size(); index++) {
+        if (instruction.getOperands().get(index) instanceof ImmOperand immediate
+            && isExpensive(immediate.getValue())) {
+          Key key = new Key(type, immediate.getValue());
+          uses.computeIfAbsent(key, ignored -> new ArrayList<>())
+              .add(new Use(instruction, index));
+        }
+      }
+    }
+    return uses;
+  }
+
+  private static MachineType constantType(MachineInstr instruction) {
+    return switch (instruction.getOpcode()) {
+      case ICMP, CONDBR, SMULH -> MachineType.I32;
+      case ADD, SUB, MUL, AND, XOR ->
+          instruction.getType().isIntegerLike() ? instruction.getType() : null;
+      default -> null;
+    };
+  }
+
+  private static List<MachineBasicBlock> successors(MachineBasicBlock block) {
+    if (block.getInstructions().isEmpty()) return List.of();
+    return block.getInstructions().getLast().getOperands().stream()
+        .filter(BlockOperand.class::isInstance)
+        .map(BlockOperand.class::cast)
+        .map(BlockOperand::getBlock)
+        .distinct()
+        .toList();
   }
 
   private static void materialize(
@@ -60,6 +124,10 @@ public final class MachineConstantCSE {
 
   private static boolean fitsSigned12(long value) {
     return value >= -2048 && value <= 2047;
+  }
+
+  private static boolean isExpensive(long value) {
+    return !fitsSigned12(value) && (value & 0xfff) != 0;
   }
 
   private record Key(MachineType type, long value) {}

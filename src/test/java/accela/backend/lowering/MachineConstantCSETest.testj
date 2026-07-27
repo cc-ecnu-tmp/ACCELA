@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import accela.backend.machine.BlockOperand;
 import accela.backend.machine.ImmOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
@@ -51,6 +52,25 @@ final class MachineConstantCSETest {
         .allMatch(instruction -> instruction.getOpcode() == MachineOpcode.ADD));
   }
 
+  @Test
+  void sharesExpensiveConstantsWithUniqueSuccessors() {
+    MachineFunction function = new MachineFunction("branch", MachineType.I32);
+    MachineBasicBlock parent = function.addBlock("parent");
+    MachineBasicBlock child = function.addBlock("child");
+    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
+    MachineInstr first = largeMultiply(function, source, 4097);
+    MachineInstr second = largeMultiply(function, source, 4097);
+    parent.addInstruction(first);
+    parent.addInstruction(
+        new MachineInstr(MachineOpcode.BR, null).addOperand(new BlockOperand(child)));
+    child.addInstruction(second);
+    child.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertTrue(new MachineConstantCSE().run(function));
+    assertEquals(MachineOpcode.CONST_INT, parent.getInstructions().getFirst().getOpcode());
+    assertSame(operandRegister(first), operandRegister(second));
+  }
+
   private static VirtualRegister operandRegister(MachineInstr instruction) {
     return ((VRegOperand) instruction.getOperands().get(1)).getRegister();
   }
@@ -60,6 +80,15 @@ final class MachineConstantCSETest {
     MachineInstr instruction = new MachineInstr(
         MachineOpcode.ADD, function.createVirtualRegister(MachineType.PTR, "next"));
     instruction.setType(MachineType.PTR);
+    instruction.addOperand(new VRegOperand(source)).addOperand(new ImmOperand(immediate));
+    return instruction;
+  }
+
+  private static MachineInstr largeMultiply(
+      MachineFunction function, VirtualRegister source, long immediate) {
+    MachineInstr instruction = new MachineInstr(
+        MachineOpcode.MUL, function.createVirtualRegister(MachineType.I32, "product"));
+    instruction.setType(MachineType.I32);
     instruction.addOperand(new VRegOperand(source)).addOperand(new ImmOperand(immediate));
     return instruction;
   }

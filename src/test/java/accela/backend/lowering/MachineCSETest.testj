@@ -1,0 +1,63 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import org.junit.jupiter.api.Test;
+
+final class MachineCSETest {
+  @Test
+  void reusesPureExpressionsAcrossCallsAndUniqueSuccessors() {
+    MachineFunction function = new MachineFunction("cse", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock body = function.addBlock("body");
+    VirtualRegister input = function.createVirtualRegister(MachineType.I32, "input");
+    VirtualRegister first = multiplyByFour(function, entry, input);
+    entry.addInstruction(new MachineInstr(MachineOpcode.CALL, null));
+    branch(entry, body);
+
+    VirtualRegister duplicate = multiplyByFour(function, body, input);
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "result");
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, result);
+    add.setType(MachineType.I32);
+    add.addOperand(new VRegOperand(duplicate));
+    add.addOperand(new ImmOperand(1));
+    body.addInstruction(add);
+
+    assertTrue(new MachineCSE().run(function));
+    assertEquals(1, function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == MachineOpcode.MUL)
+        .count());
+    assertSame(
+        first,
+        ((VRegOperand) add.getOperands().getFirst()).getRegister());
+  }
+
+  private static VirtualRegister multiplyByFour(
+      MachineFunction function, MachineBasicBlock block, VirtualRegister input) {
+    VirtualRegister result = function.createVirtualRegister(MachineType.I32, "scaled");
+    MachineInstr multiply = new MachineInstr(MachineOpcode.MUL, result);
+    multiply.setType(MachineType.I32);
+    multiply.addOperand(new VRegOperand(input));
+    multiply.addOperand(new ImmOperand(4));
+    block.addInstruction(multiply);
+    return result;
+  }
+
+  private static void branch(MachineBasicBlock from, MachineBasicBlock to) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(to));
+    from.addInstruction(branch);
+  }
+}
