@@ -46,7 +46,9 @@ public final class PhiElimination {
 
   private MachineBasicBlock ensureEdgeInsertionBlock(
       MachineFunction function, MachineBasicBlock pred, MachineBasicBlock succ) {
-    if (successorCount(pred) <= 1) {
+    // A self-edge PHI result is only live on the next iteration. Its copies may
+    // execute speculatively before the loop exit without affecting that exit.
+    if (pred == succ || successorCount(pred) <= 1) {
       return pred;
     }
 

@@ -1,0 +1,52 @@
+package accela.backend.lowering;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import org.junit.jupiter.api.Test;
+
+final class PhiEliminationTest {
+  @Test
+  void insertsSelfEdgeCopiesBeforeTheBranch() {
+    MachineFunction function = new MachineFunction("loop", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock loop = function.addBlock("loop");
+    MachineBasicBlock exit = function.addBlock("exit");
+    var initial = function.createVirtualRegister(MachineType.I32, "initial");
+    var next = function.createVirtualRegister(MachineType.I32, "next");
+    var value = function.createVirtualRegister(MachineType.I32, "value");
+    var condition = function.createVirtualRegister(MachineType.I1, "condition");
+    branch(entry, loop);
+
+    MachineInstr phi = new MachineInstr(MachineOpcode.PHI, value);
+    phi.addOperand(new VRegOperand(initial));
+    phi.addOperand(new BlockOperand(entry));
+    phi.addOperand(new VRegOperand(next));
+    phi.addOperand(new BlockOperand(loop));
+    phi.setType(MachineType.I32);
+    loop.addInstruction(phi);
+    MachineInstr branch = new MachineInstr(MachineOpcode.CONDBR, null);
+    branch.addOperand(new VRegOperand(condition));
+    branch.addOperand(new BlockOperand(loop));
+    branch.addOperand(new BlockOperand(exit));
+    loop.addInstruction(branch);
+
+    new PhiElimination().run(function);
+
+    assertEquals(3, function.getBlocks().size());
+    assertEquals(MachineOpcode.MOVE, loop.getInstructions().getFirst().getOpcode());
+    assertEquals(MachineOpcode.CONDBR, loop.getInstructions().getLast().getOpcode());
+  }
+
+  private static void branch(MachineBasicBlock from, MachineBasicBlock to) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(to));
+    from.addInstruction(branch);
+  }
+}

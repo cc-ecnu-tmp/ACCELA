@@ -1,0 +1,72 @@
+package accela.pass.ir.transform.looprotate;
+
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopLoadRotationTest {
+  @Test
+  void rotatesLoadForwardingLoopWithAConditionalPredecessor() {
+    Module module = new Module();
+    Function function = new Function("forward", Type.VOID);
+    module.addFunction(function);
+    Value enter = function.addArgument(Type.I1, "enter");
+    Value iterate = function.addArgument(Type.I1, "iterate");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    BasicBlock bypass = function.addBlock("bypass");
+    new IRBuilder(entry).createCondBr(enter, header, bypass);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction pointer = headerBuilder.createPhi(Type.PTR);
+    pointer.addOperand(base);
+    pointer.addOperand(entry);
+    headerBuilder.createCondBr(iterate, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction load = bodyBuilder.createLoad(Type.INT, pointer);
+    Instruction next = bodyBuilder.createGEP(
+        Type.INT, pointer, new Value[] {Constant.int64Const(1)}, false);
+    bodyBuilder.createStore(bodyBuilder.createAdd(load, Constant.intConst(1)), next);
+    pointer.addOperand(next);
+    pointer.addOperand(body);
+    bodyBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+    new IRBuilder(bypass).createRetVoid();
+
+    assertTrue(LoopRotate.runForLoadElimination(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    BasicBlock guard = function.getBlocks().stream()
+        .filter(block -> block.getLabel().contains(".lr.ph"))
+        .findFirst()
+        .orElseThrow();
+    assertSame(body, guard.getSuccessors().getFirst());
+    assertSame(body, body.getSuccessors().getFirst());
+    assertSame(exit, body.getSuccessors().get(1));
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+}
