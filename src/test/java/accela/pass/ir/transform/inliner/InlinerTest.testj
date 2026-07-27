@@ -1,0 +1,114 @@
+package accela.pass.ir.transform.inliner;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class InlinerTest {
+  @Test
+  void clonesControlFlowAndRepairsSuccessorPhis() {
+    Module module = new Module();
+    Function choose = new Function("choose", Type.INT);
+    module.addFunction(choose);
+    Value condition = choose.addArgument(Type.I1, "condition");
+    BasicBlock chooseEntry = choose.addBlock("entry");
+    BasicBlock yes = choose.addBlock("yes");
+    BasicBlock no = choose.addBlock("no");
+    new IRBuilder(chooseEntry).createCondBr(condition, yes, no);
+    new IRBuilder(yes).createRet(Constant.intConst(1));
+    new IRBuilder(no).createRet(Constant.intConst(2));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    BasicBlock entry = main.addBlock("entry");
+    BasicBlock exit = main.addBlock("exit");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction call = builder.createCall(choose, Type.INT, Constant.boolConst(true));
+    Value sum = builder.createAdd(call, Constant.intConst(3));
+    builder.createBr(exit);
+    Instruction exitValue = Instruction.createPhi(Type.INT);
+    exit.addInstructionToFront(exitValue);
+    exitValue.addOperand(sum);
+    exitValue.addOperand(entry);
+    new IRBuilder(exit).createRet(exitValue);
+
+    assertTrue(Inliner.runOnModule(module));
+    IRVerifier.verifyModule(module);
+    assertTrue(call.getParent() == null);
+    assertTrue(
+        main.getBlocks().stream()
+            .flatMap(block -> block.getInstructions().stream())
+            .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL));
+  }
+
+  @Test
+  void exposesRecursiveCalleeOnlyOnce() {
+    Module module = new Module();
+    Function countdown = new Function("countdown", Type.INT);
+    module.addFunction(countdown);
+    Value value = countdown.addArgument(Type.INT, "value");
+    BasicBlock entry = countdown.addBlock("entry");
+    BasicBlock done = countdown.addBlock("done");
+    BasicBlock recurse = countdown.addBlock("recurse");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    entryBuilder.createCondBr(
+        entryBuilder.createICmp("eq", value, Constant.intConst(0)), done, recurse);
+    new IRBuilder(done).createRet(Constant.intConst(0));
+    IRBuilder recurseBuilder = new IRBuilder(recurse);
+    Value next = recurseBuilder.createSub(value, Constant.intConst(1));
+    recurseBuilder.createRet(recurseBuilder.createCall(countdown, Type.INT, next));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mainBuilder = new IRBuilder(main.addBlock("entry"));
+    mainBuilder.createRet(
+        mainBuilder.createCall(countdown, Type.INT, Constant.intConst(4)));
+
+    assertTrue(Inliner.runOnModule(module));
+    IRVerifier.verifyModule(module);
+    long remainingCalls =
+        main.getBlocks().stream()
+            .flatMap(block -> block.getInstructions().stream())
+            .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL)
+            .count();
+    assertEquals(1, remainingCalls);
+  }
+
+  @Test
+  void inlinesRepeatedMediumCallee() {
+    Module module = new Module();
+    Function callee = new Function("medium", Type.INT);
+    module.addFunction(callee);
+    Value argument = callee.addArgument(Type.INT, "argument");
+    IRBuilder calleeBuilder = new IRBuilder(callee.addBlock("entry"));
+    Value result = argument;
+    for (int index = 0; index < 40; index++) {
+      result = calleeBuilder.createAdd(result, Constant.intConst(index));
+    }
+    calleeBuilder.createRet(result);
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mainBuilder = new IRBuilder(main.addBlock("entry"));
+    Value first = mainBuilder.createCall(callee, Type.INT, Constant.intConst(1));
+    Value second = mainBuilder.createCall(callee, Type.INT, Constant.intConst(2));
+    mainBuilder.createRet(mainBuilder.createAdd(first, second));
+
+    assertTrue(Inliner.runOnModule(module));
+    IRVerifier.verifyModule(module);
+    assertTrue(
+        main.getBlocks().stream()
+            .flatMap(block -> block.getInstructions().stream())
+            .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL));
+  }
+}

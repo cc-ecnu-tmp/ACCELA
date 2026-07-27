@@ -1,0 +1,92 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class TailRecursionEliminationTest {
+  @Test
+  void convertsEveryDirectTailCallIntoABackedge() {
+    Module module = new Module();
+    Function function = new Function("walk", Type.INT);
+    module.addFunction(function);
+    Value value = function.addArgument(Type.INT, "value");
+    Value depth = function.addArgument(Type.INT, "depth");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock done = function.addBlock("done");
+    BasicBlock dispatch = function.addBlock("dispatch");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(builder.createICmp("eq", value, Constant.intConst(0)), done, dispatch);
+    new IRBuilder(done).createRet(depth);
+    builder = new IRBuilder(dispatch);
+    builder.createCondBr(
+        builder.createICmp("eq", value, Constant.intConst(1)), left, right);
+    builder = new IRBuilder(left);
+    Value nextDepth = builder.createAdd(depth, Constant.intConst(1));
+    Value nextValue = builder.createSub(value, Constant.intConst(1));
+    builder.createRet(builder.createCall(function, Type.INT, nextValue, nextDepth));
+    builder = new IRBuilder(right);
+    Value alternateValue = builder.createSub(value, Constant.intConst(2));
+    builder.createRet(builder.createCall(function, Type.INT, alternateValue, nextDepth));
+
+    assertTrue(TailRecursionElimination.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+    assertEquals("tailrecurse.entry", function.getEntryBlock().getLabel());
+    List<Instruction> phis = entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI)
+        .toList();
+    assertEquals(2, phis.size());
+    assertTrue(phis.stream().allMatch(phi -> phi.getNumOperands() == 6));
+    assertTrue(function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL));
+  }
+
+  @Test
+  void leavesNonTailRecursionAlone() {
+    Function function = new Function("sum", Type.INT);
+    Value value = function.addArgument(Type.INT, "value");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Value recursive = builder.createCall(function, Type.INT, value);
+    builder.createRet(builder.createAdd(recursive, Constant.intConst(1)));
+
+    assertFalse(TailRecursionElimination.runOnFunction(function));
+  }
+
+  @Test
+  void eliminatesOnlyTheTailEdgesOfMixedRecursion() {
+    Function function = new Function("mixed", Type.INT);
+    Value value = function.addArgument(Type.INT, "value");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock tail = function.addBlock("tail");
+    BasicBlock nonTail = function.addBlock("non.tail");
+    new IRBuilder(entry).createCondBr(Constant.boolConst(true), tail, nonTail);
+    IRBuilder builder = new IRBuilder(tail);
+    builder.createRet(builder.createCall(function, Type.INT, value));
+    builder = new IRBuilder(nonTail);
+    Value recursive = builder.createCall(function, Type.INT, value);
+    builder.createRet(builder.createAdd(recursive, Constant.intConst(1)));
+
+    assertTrue(TailRecursionElimination.runOnFunction(function));
+    long remainingCalls = function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL)
+        .count();
+    assertEquals(1, remainingCalls);
+  }
+}

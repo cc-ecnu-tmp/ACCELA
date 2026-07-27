@@ -139,6 +139,18 @@ public class Instruction extends Value {
     this.callee = callee;
   }
 
+  /** Copies this instruction's opcode and metadata, leaving operands and parent unset. */
+  public Instruction copyWithoutOperands() {
+    Instruction copy = new Instruction(opcode, type);
+    copy.setName(name);
+    copy.setPredicate(predicate);
+    copy.setAllocatedType(allocatedType);
+    copy.setGepSourceType(gepSourceType);
+    copy.setGepInbounds(gepInbounds);
+    copy.setCallee(callee);
+    return copy;
+  }
+
   /** Whether this instruction is a terminator. */
   public boolean isTerminator() {
     return opcode.isTerminator();

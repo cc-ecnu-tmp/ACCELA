@@ -19,6 +19,8 @@ import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.StrengthReduction;
+import accela.pass.ir.transform.TailRecursionElimination;
+import accela.pass.ir.transform.inliner.Inliner;
 
 /**
  * Builds the project's default pass pipelines.
@@ -61,6 +63,18 @@ public final class PassBuilder {
 
   private static boolean isEarlyCseEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_EARLYCSE");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isInlinerEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_INLINER");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isTailCallElimEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_TAILCALLELIM");
     return disable == null || disable.isEmpty() || disable.equals("0")
         || disable.equalsIgnoreCase("false");
   }
@@ -157,6 +171,18 @@ public final class PassBuilder {
     globalMemoryFpm.addPass(new EarlyCSE.Pass());
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
     postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    FunctionPassManager preInlineFpm = new FunctionPassManager(instrumentation);
+    preInlineFpm.addPass(new EarlyCSE.Pass());
+    if (isTailCallElimEnabled()) {
+      preInlineFpm.addPass(new TailRecursionElimination.Pass());
+    }
+    FunctionPassManager postInlineFpm = new FunctionPassManager(instrumentation);
+    postInlineFpm.addPass(new SimplifyCFG.Pass());
+    postInlineFpm.addPass(new EarlyCSE.Pass());
+    postInlineFpm.addPass(new SCCP.Pass());
+    postInlineFpm.addPass(new InstSimplify.Pass());
+    postInlineFpm.addPass(new ADCE.Pass());
+    postInlineFpm.addPass(new SimplifyCFG.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
     mpm.addPass(new ModuleToFunctionPassAdaptor(globalMemoryFpm));
     mpm.addPass(new DeadStoreElimination.Pass());
@@ -164,6 +190,12 @@ public final class PassBuilder {
     mpm.addPass(new GlobalOpt.Pass());
     mpm.addPass(new SROA.GlobalPass());
     mpm.addPass(new IPSCCP.Pass());
+    mpm.addPass(new ModuleToFunctionPassAdaptor(preInlineFpm));
+    if (isInlinerEnabled()) {
+      mpm.addPass(new Inliner.Pass());
+      mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
+      mpm.addPass(new IPSCCP.Pass());
+    }
     mpm.addPass(new ModuleToFunctionPassAdaptor(postIpsccpFpm));
     mpm.addPass(new ADCE.GlobalPass());
     return mpm;
