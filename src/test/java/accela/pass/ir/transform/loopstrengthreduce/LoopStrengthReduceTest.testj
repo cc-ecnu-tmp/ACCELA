@@ -1,0 +1,353 @@
+package accela.pass.ir.transform.loopstrengthreduce;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopStrengthReduceTest {
+  @Test
+  void formsPointerRecurrenceForAffineAddress() {
+    Function function = new Function("walk", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    Instruction index = Instruction.createPhi(Type.INT);
+    header.addInstructionToFront(index);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    new IRBuilder(header).createCondBr(condition, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction extended = bodyBuilder.createSExt(index, Type.I64);
+    Instruction address = bodyBuilder.createGEP(
+        Type.array(Type.INT, 16),
+        base,
+        new Value[] {Constant.int64Const(0), extended},
+        true);
+    Instruction load = bodyBuilder.createLoad(Type.INT, address);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+
+    Instruction pointer = (Instruction) load.getOperand(0);
+    assertEquals(Instruction.Opcode.PHI, pointer.getOpcode());
+    assertSame(header, pointer.getParent());
+    assertSame(entry, ((Instruction) pointer.getOperand(0)).getParent());
+    assertSame(body, ((Instruction) pointer.getOperand(2)).getParent());
+    assertEquals(1,
+        ((Constant.Int) ((Instruction) pointer.getOperand(2)).getOperand(1)).value);
+  }
+
+  @Test
+  void formsRecurrencesForEightIndependentStreams() {
+    Function function = new Function("streams", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value[] bases = new Value[8];
+    for (int index = 0; index < bases.length; index++) {
+      bases[index] = function.addArgument(Type.PTR, "base" + index);
+    }
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    headerBuilder.createCondBr(condition, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Value extended = bodyBuilder.createSExt(index, Type.I64);
+    Instruction[] loads = new Instruction[bases.length];
+    for (int stream = 0; stream < bases.length; stream++) {
+      Instruction address =
+          bodyBuilder.createGEP(Type.INT, bases[stream], new Value[] {extended}, false);
+      loads[stream] = bodyBuilder.createLoad(Type.INT, address);
+    }
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(body);
+    bodyBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    for (Instruction load : loads) {
+      assertEquals(Instruction.Opcode.PHI, ((Instruction) load.getOperand(0)).getOpcode());
+    }
+  }
+
+  @Test
+  void usesPointerRecurrenceForRotatedLoopExit() {
+    Function function = new Function("walk", Type.VOID);
+    Value limit = function.addArgument(Type.INT, "limit");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock preheader = function.addBlock("preheader");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createCondBr(
+        new IRBuilder(entry).createICmp("slt", Constant.intConst(0), limit),
+        preheader,
+        exit);
+    new IRBuilder(preheader).createBr(body);
+
+    IRBuilder builder = new IRBuilder(body);
+    Instruction index = builder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(preheader);
+    Instruction extended = builder.createSExt(index, Type.I64);
+    Instruction address =
+        builder.createGEP(Type.INT, base, new Value[] {extended}, false);
+    builder.createLoad(Type.INT, address);
+    Instruction next = builder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(body);
+    builder.createCondBr(builder.createICmp("slt", next, limit), body, exit);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+
+    Instruction compare = (Instruction) body.getTerminator().getOperand(0);
+    assertEquals("ne", compare.getPredicate());
+    assertEquals(Type.PTR, compare.getOperand(0).getType());
+    assertEquals(Type.PTR, compare.getOperand(1).getType());
+  }
+
+  @Test
+  void usesPointerRecurrenceForNonnegativePretestExit() {
+    Function function = new Function("walk", Type.VOID);
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", index, Constant.intConst(16)),
+        body,
+        exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction address = bodyBuilder.createGEP(
+        Type.INT,
+        base,
+        new Value[] {bodyBuilder.createSExt(index, Type.I64)},
+        false);
+    bodyBuilder.createLoad(Type.INT, address);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(body);
+    bodyBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    Instruction compare = (Instruction) header.getTerminator().getOperand(0);
+    assertEquals("ne", compare.getPredicate());
+    assertEquals(Type.PTR, compare.getOperand(0).getType());
+    assertEquals(Type.PTR, compare.getOperand(1).getType());
+  }
+
+  @Test
+  void sharesPointerRecurrenceAcrossConditionalPaths() {
+    Function function = new Function("select", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    headerBuilder.createCondBr(condition, body, exit);
+    new IRBuilder(body).createCondBr(condition, left, right);
+
+    Instruction leftAddress = indexedAddress(left, base, index);
+    Instruction leftLoad = new IRBuilder(left).createLoad(Type.INT, leftAddress);
+    new IRBuilder(left).createBr(latch);
+    Instruction rightAddress = indexedAddress(right, base, index);
+    Instruction rightLoad = new IRBuilder(right).createLoad(Type.INT, rightAddress);
+    new IRBuilder(right).createBr(latch);
+
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(latch);
+    latchBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(leftLoad.getOperand(0), rightLoad.getOperand(0));
+    assertEquals(Instruction.Opcode.PHI,
+        ((Instruction) leftLoad.getOperand(0)).getOpcode());
+  }
+
+  @Test
+  void formsOuterRecurrenceThroughAnInnerPointerPhi() {
+    Function function = new Function("nested", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock prepare = function.addBlock("prepare");
+    BasicBlock inner = function.addBlock("inner");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    headerBuilder.createCondBr(condition, prepare, exit);
+    Instruction row = indexedAddress(prepare, base, index);
+    new IRBuilder(prepare).createBr(inner);
+
+    IRBuilder innerBuilder = new IRBuilder(inner);
+    Instruction pointer = innerBuilder.createPhi(Type.PTR);
+    pointer.addOperand(row);
+    pointer.addOperand(prepare);
+    innerBuilder.createLoad(Type.INT, pointer);
+    Instruction nextPointer =
+        innerBuilder.createGEP(Type.INT, pointer, new Value[] {Constant.int64Const(1)}, false);
+    pointer.addOperand(nextPointer);
+    pointer.addOperand(inner);
+    innerBuilder.createCondBr(condition, inner, latch);
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(latch);
+    latchBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(Instruction.Opcode.PHI, ((Instruction) pointer.getOperand(0)).getOpcode());
+    assertSame(header, ((Instruction) pointer.getOperand(0)).getParent());
+  }
+
+  @Test
+  void insertsInitialAddressAfterPreheaderOperands() {
+    Function function = new Function("ordered", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value row = function.addArgument(Type.INT, "row");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock preheader = function.addBlock("preheader");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+
+    IRBuilder preheaderBuilder = new IRBuilder(preheader);
+    Instruction compare =
+        preheaderBuilder.createICmp("slt", row, Constant.intConst(16));
+    Instruction extendedRow = preheaderBuilder.createSExt(row, Type.I64);
+    preheaderBuilder.createCondBr(compare, header, exit);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(preheader);
+    headerBuilder.createCondBr(condition, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction extendedIndex = bodyBuilder.createSExt(index, Type.I64);
+    Instruction address = bodyBuilder.createGEP(
+        Type.array(Type.array(Type.INT, 16), 16),
+        base,
+        new Value[] {Constant.int64Const(0), extendedRow, extendedIndex},
+        true);
+    Instruction load = bodyBuilder.createLoad(Type.INT, address);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    index.addOperand(next);
+    index.addOperand(body);
+    bodyBuilder.createBr(header);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopStrengthReduce.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    Instruction pointer = (Instruction) load.getOperand(0);
+    Instruction initial = (Instruction) pointer.getOperand(0);
+    assertTrue(preheader.getInstructions().indexOf(extendedRow)
+        < preheader.getInstructions().indexOf(initial));
+  }
+
+  @Test
+  void rejectsNestedRecurrenceUnderHighPointerPressure() {
+    Function function = new Function("pressure", Type.VOID);
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock inner = function.addBlock("inner");
+    Instruction row =
+        new IRBuilder(entry).createGEP(
+            Type.INT, base, new Value[] {Constant.int64Const(0)}, false);
+    new IRBuilder(entry).createBr(inner);
+
+    Instruction first = null;
+    for (int index = 0; index < 3; index++) {
+      Instruction pointer = Instruction.createPhi(Type.PTR);
+      pointer.addOperand(row);
+      pointer.addOperand(entry);
+      inner.addInstruction(pointer);
+      if (first == null) first = pointer;
+    }
+    new IRBuilder(inner).createLoad(Type.INT, first);
+
+    assertFalse(AffineGep.isMemoryAddress(row));
+  }
+
+  private static Instruction indexedAddress(BasicBlock block, Value base, Value index) {
+    IRBuilder builder = new IRBuilder(block);
+    return builder.createGEP(
+        Type.INT, base, new Value[] {builder.createSExt(index, Type.I64)}, false);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+}

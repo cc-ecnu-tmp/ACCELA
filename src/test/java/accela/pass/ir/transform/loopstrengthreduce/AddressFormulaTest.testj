@@ -1,0 +1,55 @@
+package accela.pass.ir.transform.loopstrengthreduce;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import org.junit.jupiter.api.Test;
+
+final class AddressFormulaTest {
+  @Test
+  void measuresOnlyTheConstantOffsetBetweenAffineAddresses() {
+    Function function = new Function("offset", Type.VOID);
+    Value base = function.addArgument(Type.PTR, "base");
+    Value row = function.addArgument(Type.INT, "row");
+    Value column = function.addArgument(Type.INT, "column");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+
+    Instruction upper = address(builder, base, row, column, 0, 1);
+    Instruction diagonal = address(builder, base, row, column, -1, 0);
+    assertEquals(-1004L,
+        AddressFormula.match(diagonal).offsetFrom(AddressFormula.match(upper)));
+
+    Value otherColumn = function.addArgument(Type.INT, "other");
+    Instruction unrelated = address(builder, base, row, otherColumn, 0, 1);
+    assertNull(AddressFormula.match(unrelated).offsetFrom(AddressFormula.match(upper)));
+  }
+
+  private static Instruction address(
+      IRBuilder builder,
+      Value base,
+      Value row,
+      Value column,
+      int columnOffset,
+      int element) {
+    Type cube = Type.array(Type.array(Type.array(Type.INT, 250), 250), 250);
+    Value adjusted = builder.createAdd(column, Constant.intConst(columnOffset));
+    return builder.createGEP(
+        cube,
+        base,
+        new Value[] {
+          Constant.int64Const(0),
+          builder.createSExt(row, Type.I64),
+          builder.createSExt(adjusted, Type.I64),
+          Constant.int64Const(element)
+        },
+        true);
+  }
+}
