@@ -96,7 +96,7 @@ public final class EarlyCSE {
 
   private static boolean isSimple(Instruction instruction) {
     return switch (instruction.getOpcode()) {
-      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, FADD, FSUB, FMUL, FDIV, FNEG,
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, FADD, FSUB, FMUL, FDIV, FNEG,
           ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, XOR -> true;
       default -> false;
     };

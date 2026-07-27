@@ -112,6 +112,7 @@ public class IRPrinter {
       case SREM: return printBinOp(inst, "srem");
       case SHL:  return printBinOp(inst, "shl");
       case ASHR: return printBinOp(inst, "ashr");
+      case AND:  return printBinOp(inst, "and");
 
       case FADD: return printBinOp(inst, "fadd");
       case FSUB: return printBinOp(inst, "fsub");

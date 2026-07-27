@@ -13,6 +13,7 @@ import accela.pass.ir.transform.DeadStoreElimination;
 import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.transform.GlobalOpt;
 import accela.pass.ir.transform.IPSCCP;
+import accela.pass.ir.transform.InstCombine;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
@@ -160,6 +161,7 @@ public final class PassBuilder {
     if (isInstSimplifyEnabled()) {
       fpm.addPass(new InstSimplify.Pass());
     }
+    fpm.addPass(new InstCombine.Pass());
     if (enableAdce) {
       fpm.addPass(new ADCE.Pass());
       if (enableSimplifyCfg) {
@@ -183,6 +185,7 @@ public final class PassBuilder {
     postInlineFpm.addPass(new EarlyCSE.Pass());
     postInlineFpm.addPass(new SCCP.Pass());
     postInlineFpm.addPass(new InstSimplify.Pass());
+    postInlineFpm.addPass(new InstCombine.Pass());
     postInlineFpm.addPass(new ADCE.Pass());
     postInlineFpm.addPass(new SimplifyCFG.Pass());
     mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));

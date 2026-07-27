@@ -51,7 +51,7 @@ final class GVNValueTable {
 
   static boolean isPure(Instruction instruction) {
     return switch (instruction.getOpcode()) {
-      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, XOR,
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, XOR,
           FADD, FSUB, FMUL, FDIV, FNEG, ICMP, FCMP -> true;
       default -> false;
     };

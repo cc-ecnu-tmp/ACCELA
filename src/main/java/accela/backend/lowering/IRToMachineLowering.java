@@ -123,7 +123,7 @@ public final class IRToMachineLowering {
       case GEP:
         lowerGep(inst, block, function, valueToVReg, blocks);
         return;
-      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, XOR:
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, XOR:
         lowerIntegerBinary(inst, block, valueToVReg, blocks);
         return;
       case ICMP:
@@ -438,6 +438,7 @@ public final class IRToMachineLowering {
       case SREM -> MachineOpcode.REM;
       case SHL -> MachineOpcode.SHL;
       case ASHR -> MachineOpcode.ASHR;
+      case AND -> MachineOpcode.AND;
       case XOR -> MachineOpcode.XOR;
       default -> throw new IllegalStateException(
           "Not an integer binary instruction: " + instruction.getOpcode());

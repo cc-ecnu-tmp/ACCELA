@@ -1,0 +1,149 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class InstCombineTest {
+  @Test
+  void narrowsBooleanPhiBeforeNonzeroTest() {
+    Function function = new Function("booleanPhi", Type.I1);
+    var chooseRight = function.addArgument(Type.I1, "chooseRight");
+    var value = function.addArgument(Type.I1, "value");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(chooseRight, right, left);
+    new IRBuilder(left).createBr(merge);
+    var extended = new IRBuilder(right).createZExt(value, Type.INT);
+    new IRBuilder(right).createBr(merge);
+
+    IRBuilder builder = new IRBuilder(merge);
+    Instruction phi = builder.createPhi(Type.INT);
+    phi.addOperand(Constant.intConst(0));
+    phi.addOperand(left);
+    phi.addOperand(extended);
+    phi.addOperand(right);
+    var result = builder.createICmp("ne", phi, Constant.intConst(0));
+    var returnInstruction = builder.createRet(result);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    IRVerifier.verifyFunction(function);
+    Instruction narrow = (Instruction) returnInstruction.getOperand(0);
+    assertEquals(Instruction.Opcode.PHI, narrow.getOpcode());
+    assertSame(Type.I1, narrow.getType());
+    assertSame(value, narrow.getOperand(2));
+  }
+
+  @Test
+  void foldsPowerOfTwoRemainderAndExactDivision() {
+    Function function = new Function("divide", Type.INT);
+    var dividend = function.addArgument(Type.INT, "dividend");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock divisible = function.addBlock("divisible");
+    BasicBlock other = function.addBlock("other");
+
+    IRBuilder builder = new IRBuilder(entry);
+    var remainder = builder.createSRem(dividend, Constant.intConst(8));
+    var compare = builder.createICmp("eq", remainder, Constant.intConst(0));
+    builder.createCondBr(compare, divisible, other);
+    builder.setInsertPoint(divisible);
+    var division = builder.createSDiv(dividend, Constant.intConst(8));
+    var result = builder.createRet(division);
+    builder.setInsertPoint(other);
+    builder.createRet(dividend);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    IRVerifier.verifyFunction(function);
+    Instruction mask = (Instruction) compare.getOperand(0);
+    Instruction shift = (Instruction) result.getOperand(0);
+    assertEquals(Instruction.Opcode.AND, mask.getOpcode());
+    assertEquals(7L, ((Constant.Int) mask.getOperand(1)).value);
+    assertEquals(Instruction.Opcode.ASHR, shift.getOpcode());
+    assertEquals(3L, ((Constant.Int) shift.getOperand(1)).value);
+  }
+
+  @Test
+  void leavesNonPowerOfTwoRemaindersAlone() {
+    Function function = new Function("remainder", Type.I1);
+    var dividend = function.addArgument(Type.INT, "dividend");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var remainder = builder.createSRem(dividend, Constant.intConst(3));
+    var compare = builder.createICmp("eq", remainder, Constant.intConst(0));
+    builder.createRet(compare);
+
+    assertFalse(InstCombine.runOnFunction(function));
+    assertSame(remainder, compare.getOperand(0));
+  }
+
+  @Test
+  void foldsPositivePowerOfTwoRemainderTests() {
+    Function function = new Function("remainder", Type.I1);
+    var dividend = function.addArgument(Type.INT, "dividend");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var remainder = builder.createSRem(dividend, Constant.intConst(8));
+    var compare = builder.createICmp("eq", remainder, Constant.intConst(3));
+    builder.createRet(compare);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    IRVerifier.verifyFunction(function);
+    Instruction mask = (Instruction) compare.getOperand(0);
+    assertEquals(Instruction.Opcode.AND, mask.getOpcode());
+    assertEquals(
+        (long) (Integer.MIN_VALUE | 7), ((Constant.Int) mask.getOperand(1)).value);
+  }
+
+  @Test
+  void cancelsSharedAddSubTerms() {
+    Function function = new Function("combine", Type.INT);
+    var b = function.addArgument(Type.INT, "b");
+    var c = function.addArgument(Type.INT, "c");
+    var d = function.addArgument(Type.INT, "d");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+
+    var bc = builder.createAdd(b, c);
+    var tail = builder.createAdd(builder.createSub(Constant.intConst(-1), b), d);
+    var sum = builder.createAdd(bc, tail);
+    var left = builder.createSub(bc, sum);
+    var inner = builder.createSub(builder.createAdd(left, tail), sum);
+    var repeated = builder.createAdd(inner, sum);
+    var inverse = builder.createSub(inner, repeated);
+    var result = builder.createSub(builder.createAdd(inverse, sum), repeated);
+    var returnInstruction = builder.createRet(result);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    ADCE.runOnFunction(function);
+    IRVerifier.verifyFunction(function);
+    assertEquals(0L, ((Constant.Int) returnInstruction.getOperand(0)).value);
+  }
+
+  @Test
+  void startsLinearExpressionsWithAPositiveTerm() {
+    Function function = new Function("combine", Type.INT);
+    var a = function.addArgument(Type.INT, "a");
+    var b = function.addArgument(Type.INT, "b");
+    var c = function.addArgument(Type.INT, "c");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var difference = builder.createSub(c, builder.createAdd(a, b));
+    var returnInstruction =
+        builder.createRet(builder.createSub(Constant.intConst(0), difference));
+
+    assertTrue(InstCombine.runOnFunction(function));
+    ADCE.runOnFunction(function);
+    IRVerifier.verifyFunction(function);
+    Instruction result = (Instruction) returnInstruction.getOperand(0);
+    assertEquals(Instruction.Opcode.SUB, result.getOpcode());
+    assertEquals(Instruction.Opcode.ADD, ((Instruction) result.getOperand(0)).getOpcode());
+  }
+}

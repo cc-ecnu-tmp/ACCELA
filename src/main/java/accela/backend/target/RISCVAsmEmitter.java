@@ -93,6 +93,7 @@ public final class RISCVAsmEmitter {
       case REM:
       case SHL:
       case ASHR:
+      case AND:
       case XOR:
         emitBinaryArithmetic(instr, allocation, lines);
         return;
@@ -276,7 +277,8 @@ public final class RISCVAsmEmitter {
     boolean wordResult = instr.getType() == MachineType.I32;
     MachineOperand lhs = instr.getOperands().get(0);
     MachineOperand rhs = instr.getOperands().get(1);
-    if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.MUL || opcode == MachineOpcode.XOR)
+    if ((opcode == MachineOpcode.ADD || opcode == MachineOpcode.MUL
+            || opcode == MachineOpcode.AND || opcode == MachineOpcode.XOR)
         && lhs instanceof ImmOperand && !(rhs instanceof ImmOperand)) {
       MachineOperand temporary = lhs;
       lhs = rhs;
@@ -295,6 +297,7 @@ public final class RISCVAsmEmitter {
             ? wordResult ? "addiw" : "addi"
             : null;
         case XOR -> fitsSigned12(value) ? "xori" : null;
+        case AND -> fitsSigned12(value) ? "andi" : null;
         case SHL -> value >= 0 && value < (wordResult ? Integer.SIZE : Long.SIZE)
             ? wordResult ? "slliw" : "slli"
             : null;
@@ -323,6 +326,7 @@ public final class RISCVAsmEmitter {
       case REM -> wordResult ? "remw" : "rem";
       case SHL -> wordResult ? "sllw" : "sll";
       case ASHR -> wordResult ? "sraw" : "sra";
+      case AND -> "and";
       case XOR -> "xor";
       default -> throw new IllegalStateException("Unsupported arithmetic opcode: " + opcode);
     };

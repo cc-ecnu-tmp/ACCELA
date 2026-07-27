@@ -1,0 +1,25 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class InstSimplifyTest {
+  @Test
+  void foldsNonzeroTestOfExtendedBoolean() {
+    Function function = new Function("boolean", Type.I1);
+    var condition = function.addArgument(Type.I1, "condition");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var extension = builder.createZExt(condition, Type.INT);
+    var compare = builder.createICmp("ne", extension, Constant.intConst(0));
+    var returnInstruction = builder.createRet(compare);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    assertSame(condition, returnInstruction.getOperand(0));
+  }
+}

@@ -13,6 +13,7 @@ public enum MachineOpcode {
   REM,
   SHL,
   ASHR,
+  AND,
   XOR,
   ICMP,
   FCMP,

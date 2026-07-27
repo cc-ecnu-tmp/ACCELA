@@ -74,7 +74,7 @@ public final class InstSimplify {
 
   private static Value tryConstantFold(Instruction inst) {
     switch (inst.getOpcode()) {
-      case ADD: case SUB: case MUL: case SDIV: case SREM: case SHL: case XOR: {
+      case ADD: case SUB: case MUL: case SDIV: case SREM: case SHL: case AND: case XOR: {
         if (!(inst.getOperand(0) instanceof Constant.Int a)) return null;
         if (!(inst.getOperand(1) instanceof Constant.Int b)) return null;
         Long r = evalInt(inst.getOpcode(), a.value, b.value);
@@ -128,12 +128,32 @@ public final class InstSimplify {
         if (isIntZero(inst.getOperand(0))) return Constant.intConst(0);
         return null;
       }
+      case AND: {
+        if (inst.getOperand(0) == inst.getOperand(1)) return inst.getOperand(0);
+        if (isIntZero(inst.getOperand(0)) || isIntZero(inst.getOperand(1)))
+          return Constant.intConst(0);
+        return null;
+      }
       case XOR: {
         if (inst.getOperand(0) == inst.getOperand(1)) return Constant.intConst(0);
         return null;
       }
+      case ICMP:
+        return simplifyBooleanCompare(inst);
       default: return null;
     }
+  }
+
+  private static Value simplifyBooleanCompare(Instruction compare) {
+    if (!compare.getPredicate().equals("ne")) return null;
+    Value value = isIntZero(compare.getOperand(1))
+        ? compare.getOperand(0)
+        : isIntZero(compare.getOperand(0)) ? compare.getOperand(1) : null;
+    if (!(value instanceof Instruction extension)
+        || extension.getOpcode() != Opcode.ZEXT
+        || extension.getOperand(0).getType() != Type.I1) return null;
+    // zext preserves the only two i1 values, so zext(c) != 0 is exactly c.
+    return extension.getOperand(0);
   }
 
   private static boolean tryDeadCode(Instruction inst) {
@@ -184,6 +204,7 @@ public final class InstSimplify {
       case SDIV: return b == 0 ? null : a / b;
       case SREM: return b == 0 ? null : a % b;
       case SHL: return b >= 0 && b < Integer.SIZE ? (long) ((int) a << b) : null;
+      case AND: return a & b;
       case XOR: return a ^ b;
       default: return null;
     }
