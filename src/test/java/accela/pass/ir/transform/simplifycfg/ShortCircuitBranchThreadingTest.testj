@@ -1,0 +1,59 @@
+package accela.pass.ir.transform.simplifycfg;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.transform.InstCombine;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class ShortCircuitBranchThreadingTest {
+  @Test
+  void threadsBooleanPhiAndUpdatesSuccessorPhi() {
+    Function function = new Function("and", Type.INT);
+    Value first = function.addArgument(Type.I1, "first");
+    Value second = function.addArgument(Type.I1, "second");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock rhs = function.addBlock("rhs");
+    BasicBlock merge = function.addBlock("merge");
+    BasicBlock yes = function.addBlock("yes");
+    BasicBlock no = function.addBlock("no");
+
+    new IRBuilder(entry).createCondBr(first, rhs, merge);
+    IRBuilder rhsBuilder = new IRBuilder(rhs);
+    Value extended = rhsBuilder.createZExt(second, Type.INT);
+    rhsBuilder.createBr(merge);
+    IRBuilder mergeBuilder = new IRBuilder(merge);
+    Instruction phi = mergeBuilder.createPhi(Type.INT);
+    phi.addOperand(Constant.intConst(0));
+    phi.addOperand(entry);
+    phi.addOperand(extended);
+    phi.addOperand(rhs);
+    Value test = mergeBuilder.createICmp("ne", phi, Constant.intConst(0));
+    mergeBuilder.createCondBr(test, yes, no);
+    new IRBuilder(yes).createRet(Constant.intConst(1));
+    IRBuilder noBuilder = new IRBuilder(no);
+    Instruction fallback = noBuilder.createPhi(Type.INT);
+    fallback.addOperand(Constant.intConst(7));
+    fallback.addOperand(merge);
+    noBuilder.createRet(fallback);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    assertTrue(ShortCircuitBranchThreading.run(function));
+    IRVerifier.verifyFunction(function);
+
+    assertFalse(function.getBlocks().contains(merge));
+    assertSame(no, entry.getTerminator().getOperand(2));
+    assertSame(second, rhs.getTerminator().getOperand(0));
+    assertSame(yes, rhs.getTerminator().getOperand(1));
+    assertSame(no, rhs.getTerminator().getOperand(2));
+  }
+}

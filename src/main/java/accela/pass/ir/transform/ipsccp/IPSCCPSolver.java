@@ -5,6 +5,7 @@ import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.pass.ir.transform.SCCP.ConstVal;
 import accela.pass.ir.transform.SCCP.SCCPFact;
+import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;

@@ -17,7 +17,7 @@ import accela.pass.ir.transform.InstCombine;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.SCCP;
-import accela.pass.ir.transform.SimplifyCFG;
+import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.StrengthReduction;
 import accela.pass.ir.transform.TailRecursionElimination;

@@ -1,4 +1,4 @@
-package accela.pass.ir.transform;
+package accela.pass.ir.transform.simplifycfg;
 
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
@@ -41,7 +41,9 @@ public final class SimplifyCFG {
     boolean changed = false;
     while (true) {
       boolean iter =
-          foldBooleanPhis(function)
+          ShortCircuitBranchThreading.run(function)
+              | TailMerge.run(function)
+              | foldBooleanPhis(function)
               | foldSingleEntryPhis(function)
               | removeUnreachableBlocks(function)
               | mergeBlockIntoPredecessor(function)
