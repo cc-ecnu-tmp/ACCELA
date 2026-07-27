@@ -457,13 +457,18 @@ public final class RISCVAsmEmitter {
   private void emitStore(MachineInstr instr, AllocationResult allocation, List<String> lines) {
     long offset =
         instr.getOperands().size() > 2 ? ((ImmOperand) instr.getOperands().get(2)).getValue() : 0;
+    MachineOperand storedValue = instr.getOperands().get(0);
     String value =
-        operandRegisterOrScratch(
-            lines,
-            instr.getOperands().get(0),
-            instr.getType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
-            instr.getType(),
-            allocation);
+        !instr.getType().isFloat()
+                && storedValue instanceof ImmOperand immediate
+                && immediate.getValue() == 0
+            ? "zero"
+            : operandRegisterOrScratch(
+                lines,
+                storedValue,
+                instr.getType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
+                instr.getType(),
+                allocation);
     String address =
         operandRegisterOrScratch(
             lines,

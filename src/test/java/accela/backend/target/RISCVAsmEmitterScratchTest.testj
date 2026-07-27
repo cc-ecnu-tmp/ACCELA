@@ -50,6 +50,20 @@ final class RISCVAsmEmitterScratchTest {
   }
 
   @Test
+  void storesIntegerZeroWithoutMaterialization() {
+    MachineFunction function = new MachineFunction("store_zero", MachineType.VOID);
+    VirtualRegister address = function.createVirtualRegister(MachineType.PTR, "address");
+    MachineInstr store = new MachineInstr(MachineOpcode.STORE, null);
+    store.addOperand(new ImmOperand(0));
+    store.addOperand(new VRegOperand(address));
+    store.setType(MachineType.I32);
+
+    assertEquals(
+        List.of("  sw zero, 0(t0)"),
+        emit(function, store, allocation(address, "t0", MachineType.PTR)));
+  }
+
+  @Test
   void materializesFloatOperandWithoutOverwritingFtSource() {
     MachineFunction function = new MachineFunction("float_scratch", MachineType.F32);
     VirtualRegister source = function.createVirtualRegister(MachineType.F32, "source");
