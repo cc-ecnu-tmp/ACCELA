@@ -1,0 +1,75 @@
+package accela.pass.ir.transform.loop.unroll;
+
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.pass.ir.analysis.LoopNestDependenceAnalysis;
+import java.util.List;
+
+/** Chooses a small jam factor without exhausting the RISC-V integer or FP register files. */
+final class UnrollAndJamCostModel {
+  private static final int[] FACTORS = {4, 2};
+  // Keep scratch space for address calculation, the shared IV, and lowering temporaries.
+  private static final int INTEGER_BUDGET = 18;
+  private static final int FLOAT_BUDGET = 20;
+  private static final int MAX_CLONED_INSTRUCTIONS = 96;
+
+  private UnrollAndJamCostModel() {}
+
+  static int chooseFactor(LoopUnrollAndJamCandidate candidate) {
+    Pressure pressure = estimatePressure(candidate);
+    int bodySize = (int) candidate.innerBody().getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() != Instruction.Opcode.PHI
+            && !instruction.isTerminator())
+        .count();
+    for (int factor : FACTORS) {
+      if (bodySize * factor <= MAX_CLONED_INSTRUCTIONS
+          && pressure.integerShared + factor * pressure.integerPerLane <= INTEGER_BUDGET
+          && pressure.floatShared + factor * pressure.floatPerLane <= FLOAT_BUDGET
+          && LoopNestDependenceAnalysis.isSafe(
+              candidate.outerInduction().phi(),
+              candidate.outerInduction().step(),
+              candidate.innerInduction().phi(),
+              List.of(candidate.innerBody(), candidate.innerExit()),
+              factor)) {
+        return factor;
+      }
+    }
+    return 1;
+  }
+
+  private static Pressure estimatePressure(LoopUnrollAndJamCandidate candidate) {
+    int integerPerLane = 1; // outer induction value
+    int floatPerLane = 0;
+    int integerShared = 1; // inner induction value
+    int floatShared = 0;
+
+    for (Instruction phi : candidate.innerBody().getInstructions()) {
+      if (phi.getOpcode() != Instruction.Opcode.PHI) break;
+      if (phi == candidate.innerInduction().phi()) continue;
+      if (phi.getType() == Type.FLOAT) floatPerLane++;
+      else integerPerLane++;
+    }
+
+    for (Instruction instruction : candidate.innerPreheader().getInstructions()) {
+      if (instruction.isTerminator()
+          || !LoopUnrollAndJamCandidate.dependsOn(
+              instruction, candidate.outerInduction().phi())
+          || instruction.getUses().stream()
+              .noneMatch(use -> use.getUser().getParent() == candidate.innerBody())) continue;
+      if (instruction.getType() == Type.FLOAT) floatPerLane++;
+      else if (instruction.hasResult()) integerPerLane++;
+    }
+
+    for (Instruction instruction : candidate.innerBody().getInstructions()) {
+      if (instruction.getOpcode() == Instruction.Opcode.PHI || instruction.isTerminator()) continue;
+      if (LoopUnrollAndJamCandidate.dependsOn(
+          instruction, candidate.outerInduction().phi())) continue;
+      if (instruction.getType() == Type.FLOAT) floatShared++;
+      else if (instruction.hasResult()) integerShared++;
+    }
+    return new Pressure(integerPerLane, floatPerLane, integerShared, floatShared);
+  }
+
+  private record Pressure(
+      int integerPerLane, int floatPerLane, int integerShared, int floatShared) {}
+}

@@ -31,6 +31,7 @@ import accela.pass.ir.transform.loop.load.LoopLoadElimination;
 import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.rotate.LoopRotate;
 import accela.pass.ir.transform.loop.unroll.LoopUnroll;
+import accela.pass.ir.transform.loop.unroll.LoopUnrollAndJam;
 
 /**
  * Builds the project's default pass pipelines.
@@ -109,6 +110,12 @@ public final class PassBuilder {
 
   private static boolean isLoopUnrollEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_LOOP_UNROLL");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLoopUnrollAndJamEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_UNROLL_AND_JAM");
     return disable == null || disable.isEmpty() || disable.equals("0")
         || disable.equalsIgnoreCase("false");
   }
@@ -221,6 +228,9 @@ public final class PassBuilder {
       if (isEarlyCseEnabled()) {
         postIpsccpFpm.addPass(new EarlyCSE.Pass());
       }
+    }
+    if (isLoopUnrollAndJamEnabled()) {
+      postIpsccpFpm.addPass(new LoopUnrollAndJam.Pass());
     }
     if (isLoopUnrollEnabled()) {
       postIpsccpFpm.addPass(new LoopUnroll.Pass());

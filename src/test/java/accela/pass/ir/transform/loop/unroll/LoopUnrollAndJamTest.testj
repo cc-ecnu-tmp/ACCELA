@@ -1,0 +1,158 @@
+package accela.pass.ir.transform.loop.unroll;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopUnrollAndJamTest {
+  @Test
+  void jamsIndependentReductionsAndKeepsScalarRemainder() {
+    Fixture fixture = new Fixture(false);
+
+    assertTrue(LoopUnrollAndJam.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    BasicBlock jammedBody = fixture.function.getBlocks().stream()
+        .filter(block -> block.getLabel().endsWith(".unrolljam.body"))
+        .findFirst()
+        .orElseThrow();
+    long phis = jammedBody.getInstructions().stream()
+        .takeWhile(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI)
+        .count();
+    assertEquals(5, phis); // one shared k plus four independent sum lanes
+    assertTrue(fixture.function.getBlocks().contains(fixture.outerHeader));
+    assertTrue(fixture.outerHeader.getPredecessors().stream()
+        .anyMatch(block -> block.getLabel().endsWith(".unrolljam.header")));
+  }
+
+  @Test
+  void rejectsARealOuterLoopCarriedDependence() {
+    Fixture fixture = new Fixture(true);
+
+    assertFalse(LoopUnrollAndJam.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+    assertTrue(fixture.function.getBlocks().stream()
+        .noneMatch(block -> block.getLabel().contains(".unrolljam.")));
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(
+        InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+
+  private static final class Fixture {
+    private static final Type MATRIX = Type.array(Type.array(Type.INT, 16), 16);
+    private static final Type VECTOR = Type.array(Type.INT, 16);
+
+    final accela.ir.Module module = new accela.ir.Module();
+    final GlobalVariable input =
+        new GlobalVariable("input", MATRIX, Constant.zero(MATRIX), false);
+    final GlobalVariable output;
+    final Function function = new Function("kernel", Type.INT);
+    final Value limit = function.addArgument(Type.INT, "n");
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock outerHeader = function.addBlock("outer.header");
+    final BasicBlock innerCondition = function.addBlock("inner.condition");
+    final BasicBlock innerPreheader = function.addBlock("inner.preheader");
+    final BasicBlock innerBody = function.addBlock("inner.body");
+    final BasicBlock outerLatch = function.addBlock("outer.latch");
+    final BasicBlock exit = function.addBlock("exit");
+
+    Fixture(boolean dependent) {
+      output = dependent
+          ? input
+          : new GlobalVariable("output", VECTOR, Constant.zero(VECTOR), false);
+      module.addGlobal(input);
+      if (!dependent) module.addGlobal(output);
+      module.addFunction(function);
+
+      new IRBuilder(entry).createBr(outerHeader);
+      Instruction outer = Instruction.createPhi(Type.INT);
+      outerHeader.addInstruction(outer);
+      outer.addOperand(Constant.intConst(0));
+      outer.addOperand(entry);
+      IRBuilder outerBuilder = new IRBuilder(outerHeader);
+      outerBuilder.createCondBr(
+          outerBuilder.createICmp("slt", outer, limit), innerCondition, exit);
+
+      IRBuilder guardBuilder = new IRBuilder(innerCondition);
+      guardBuilder.createCondBr(
+          guardBuilder.createICmp("slt", Constant.intConst(0), limit),
+          innerPreheader,
+          outerLatch);
+      new IRBuilder(innerPreheader).createBr(innerBody);
+
+      Instruction inner = Instruction.createPhi(Type.INT);
+      Instruction sum = Instruction.createPhi(Type.INT);
+      innerBody.addInstruction(inner);
+      innerBody.addInstruction(sum);
+      inner.addOperand(Constant.intConst(0));
+      inner.addOperand(innerPreheader);
+      sum.addOperand(Constant.intConst(0));
+      sum.addOperand(innerPreheader);
+
+      IRBuilder bodyBuilder = new IRBuilder(innerBody);
+      Instruction address = bodyBuilder.createGEP(
+          MATRIX,
+          input,
+          new Value[] {Constant.int64Const(0), inner, outer},
+          true);
+      Instruction loaded = bodyBuilder.createLoad(Type.INT, address);
+      Instruction nextSum = bodyBuilder.createAdd(sum, loaded);
+      Instruction nextInner = bodyBuilder.createAdd(inner, Constant.intConst(1));
+      Value continues = bodyBuilder.createICmp("slt", nextInner, limit);
+      bodyBuilder.createCondBr(continues, innerBody, outerLatch);
+      inner.addOperand(nextInner);
+      inner.addOperand(innerBody);
+      sum.addOperand(nextSum);
+      sum.addOperand(innerBody);
+
+      Instruction result = Instruction.createPhi(Type.INT);
+      outerLatch.addInstruction(result);
+      result.addOperand(Constant.intConst(0));
+      result.addOperand(innerCondition);
+      result.addOperand(nextSum);
+      result.addOperand(innerBody);
+      IRBuilder latchBuilder = new IRBuilder(outerLatch);
+      Value storeIndex = dependent
+          ? latchBuilder.createAdd(outer, Constant.intConst(1))
+          : outer;
+      Value storeAddress = dependent
+          ? latchBuilder.createGEP(
+              MATRIX,
+              output,
+              new Value[] {Constant.int64Const(0), Constant.int64Const(0), storeIndex},
+              true)
+          : latchBuilder.createGEP(
+              VECTOR,
+              output,
+              new Value[] {Constant.int64Const(0), storeIndex},
+              true);
+      latchBuilder.createStore(result, storeAddress);
+      Instruction nextOuter = latchBuilder.createAdd(outer, Constant.intConst(1));
+      latchBuilder.createBr(outerHeader);
+      outer.addOperand(nextOuter);
+      outer.addOperand(outerLatch);
+      new IRBuilder(exit).createRet(Constant.intConst(0));
+    }
+  }
+}
