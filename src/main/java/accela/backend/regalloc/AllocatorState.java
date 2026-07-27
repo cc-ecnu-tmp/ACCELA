@@ -430,12 +430,39 @@ final class AllocatorState {
               + spillCostModel.cost(candidate.dst(), 1);
       if (move == null
           || weight > bestWeight
-          || (weight == bestWeight && candidate.order() < move.order())) {
+          || weight == bestWeight && candidate.order() < move.order()) {
         move = candidate;
         bestWeight = weight;
       }
     }
+    if (isPhiWeb(move)) move = latestMoveInPhiWeb(moves, move);
     moves.remove(move);
     return move;
+  }
+
+  private static InterferenceGraphBuilder.Move latestMoveInPhiWeb(
+      Set<InterferenceGraphBuilder.Move> moves, InterferenceGraphBuilder.Move seed) {
+    Set<VirtualRegister> registers = new HashSet<>(List.of(seed.src(), seed.dst()));
+    boolean changed;
+    do {
+      changed = false;
+      for (InterferenceGraphBuilder.Move move : moves) {
+        if (isPhiWeb(move) && (registers.contains(move.src()) || registers.contains(move.dst()))) {
+          if (registers.add(move.src())) changed = true;
+          if (registers.add(move.dst())) changed = true;
+        }
+      }
+    } while (changed);
+    return moves.stream()
+        .filter(AllocatorState::isPhiWeb)
+        .filter(move -> registers.contains(move.src()) && registers.contains(move.dst()))
+        .max(java.util.Comparator.comparingInt(InterferenceGraphBuilder.Move::order))
+        .orElse(seed);
+  }
+
+  private static boolean isPhiWeb(InterferenceGraphBuilder.Move move) {
+    return move != null
+        && "phi".equals(move.src().getHint())
+        && "phi".equals(move.dst().getHint());
   }
 }

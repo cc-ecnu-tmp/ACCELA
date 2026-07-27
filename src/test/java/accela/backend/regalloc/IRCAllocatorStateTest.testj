@@ -308,6 +308,24 @@ final class IRCAllocatorStateTest {
   }
 
   @Test
+  void coalescesPhiWebsFromTheLastCopyBackward() {
+    MachineFunction function = new MachineFunction("phi_web", MachineType.I32);
+    VirtualRegister first = function.createVirtualRegister(MachineType.I32, "phi");
+    VirtualRegister middle = function.createVirtualRegister(MachineType.I32, "phi");
+    VirtualRegister last = function.createVirtualRegister(MachineType.I32, "phi");
+    InterferenceGraph graph = new InterferenceGraph();
+    for (VirtualRegister register : List.of(first, middle, last)) graph.addNode(register);
+    InterferenceGraphBuilder.Move earlier = move(middle, first, 1);
+    InterferenceGraphBuilder.Move later = move(last, middle, 2);
+    AllocatorState state = state(graph, Set.of(earlier, later));
+
+    state.coalesce();
+
+    assertTrue(state.coalescedMoves.contains(later));
+    assertTrue(state.worklistMoves.contains(earlier));
+  }
+
+  @Test
   void coalesceConstrainsMoveWhenEndpointsInterfere() {
     MachineFunction function = new MachineFunction("coalesce_interfere", MachineType.I32);
     VirtualRegister a = function.createVirtualRegister(MachineType.I32, "a");
