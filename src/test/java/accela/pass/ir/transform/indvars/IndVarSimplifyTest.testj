@@ -1,0 +1,106 @@
+package accela.pass.ir.transform.indvars;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class IndVarSimplifyTest {
+  @Test
+  void foldsComparisonsImpliedByTheLoopGuard() {
+    Function function = new Function("loop", Type.VOID);
+    Value bound = function.addArgument(Type.INT, "bound");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    Instruction index = Instruction.createPhi(Type.INT);
+    header.addInstructionToFront(index);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", index, bound), body, exit);
+
+    IRBuilder builder = new IRBuilder(body);
+    Instruction below = builder.createSub(index, Constant.intConst(2));
+    Instruction upper = builder.createICmp("slt", below, bound);
+    Instruction plusOne = builder.createAdd(index, Constant.intConst(1));
+    Instruction lower = builder.createICmp("sge", plusOne, Constant.intConst(0));
+    Instruction plusTwo = builder.createAdd(index, Constant.intConst(2));
+    Instruction mayOverflow = builder.createICmp("sge", plusTwo, Constant.intConst(0));
+    Instruction next = builder.createAdd(index, Constant.intConst(1));
+    builder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    new IRBuilder(exit).createRetVoid();
+
+    new IndVarSimplify.Pass().run(function, analyses());
+    IRVerifier.verifyFunction(function);
+
+    assertNull(upper.getParent());
+    assertNull(lower.getParent());
+    assertSame(body, mayOverflow.getParent());
+  }
+
+  @Test
+  void masksPowerOfTwoRemaindersForBoundedNonNegativeInductions() {
+    Function function = new Function("loop", Type.VOID);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    Instruction index = Instruction.createPhi(Type.INT);
+    header.addInstructionToFront(index);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", index, Constant.intConst(64)), body, exit);
+
+    IRBuilder builder = new IRBuilder(body);
+    Value bounded = builder.createAdd(builder.createMul(index, Constant.intConst(5)),
+        Constant.intConst(1));
+    Instruction remainder = builder.createSRem(bounded, Constant.intConst(16));
+    Value overflowing = builder.createMul(index, Constant.intConst(100_000_000));
+    Instruction unsafe = builder.createSRem(overflowing, Constant.intConst(16));
+    Instruction use = builder.createAdd(remainder, unsafe);
+    Instruction next = builder.createAdd(index, Constant.intConst(1));
+    builder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    new IRBuilder(exit).createRetVoid();
+
+    new IndVarSimplify.Pass().run(function, analyses());
+    IRVerifier.verifyFunction(function);
+
+    assertNull(remainder.getParent());
+    assertEquals(Instruction.Opcode.AND, ((Instruction) use.getOperand(0)).getOpcode());
+    assertSame(body, unsafe.getParent());
+  }
+
+  private static FunctionAnalysisManager analyses() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+}

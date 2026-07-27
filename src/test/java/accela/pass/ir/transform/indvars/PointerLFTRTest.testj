@@ -1,0 +1,84 @@
+package accela.pass.ir.transform.indvars;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class PointerLFTRTest {
+  @Test
+  void replacesARotatedIntegerExitWithAPointerExit() {
+    Function function = new Function("walk", Type.VOID);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock guard = function.addBlock("guard");
+    BasicBlock preheader = function.addBlock("preheader");
+    BasicBlock loop = function.addBlock("loop");
+    BasicBlock exit = function.addBlock("exit");
+    IRBuilder guardBuilder = new IRBuilder(guard);
+    guardBuilder.createCondBr(
+        guardBuilder.createICmp("slt", Constant.intConst(1), bound),
+        preheader,
+        exit);
+    new IRBuilder(preheader).createBr(loop);
+
+    IRBuilder builder = new IRBuilder(loop);
+    Instruction index = builder.createPhi(Type.INT);
+    Instruction pointer = builder.createPhi(Type.PTR);
+    index.addOperand(Constant.intConst(1));
+    index.addOperand(preheader);
+    pointer.addOperand(base);
+    pointer.addOperand(preheader);
+    builder.createLoad(Type.INT, pointer);
+    builder.createSExt(builder.createAdd(index, Constant.intConst(2)), Type.I64);
+    Instruction nextIndex = builder.createAdd(index, Constant.intConst(1));
+    builder.createSExt(nextIndex, Type.I64);
+    Instruction nextPointer = builder.createGEP(
+        Type.INT, pointer, new Value[] {Constant.int64Const(1)}, false);
+    index.addOperand(nextIndex);
+    index.addOperand(loop);
+    pointer.addOperand(nextPointer);
+    pointer.addOperand(loop);
+    Instruction oldCompare = builder.createICmp("slt", nextIndex, bound);
+    builder.createCondBr(oldCompare, loop, exit);
+    new IRBuilder(exit).createRetVoid();
+
+    FunctionAnalysisManager fam = analyses();
+    var induction = fam.getResult(InductionVariableAnalysis.class, function)
+        .inductions().stream()
+        .filter(candidate -> candidate.phi() == index)
+        .findFirst()
+        .orElseThrow();
+    assertTrue(PointerLFTR.rewrite(induction));
+    IRVerifier.verifyFunction(function);
+
+    assertNull(oldCompare.getParent());
+    Instruction compare = (Instruction) loop.getTerminator().getOperand(0);
+    assertEquals("ne", compare.getPredicate());
+    assertSame(nextPointer, compare.getOperand(0));
+    Instruction end = (Instruction) compare.getOperand(1);
+    assertSame(preheader, end.getParent());
+  }
+
+  private static FunctionAnalysisManager analyses() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+}
