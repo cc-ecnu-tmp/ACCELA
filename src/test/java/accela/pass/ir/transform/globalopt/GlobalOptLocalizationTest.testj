@@ -10,8 +10,10 @@ import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.ir.Type;
+import accela.pass.PassBuilder;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
@@ -50,5 +52,44 @@ final class GlobalOptLocalizationTest {
     assertTrue(main.getBlocks().stream()
         .flatMap(block -> block.getInstructions().stream())
         .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA));
+  }
+
+  @Test
+  void localizesGlobalsExposedByInlining() {
+    Module module = new Module();
+    GlobalVariable global =
+        new GlobalVariable("state", Type.INT, Constant.intConst(0), false);
+    GlobalVariable local =
+        new GlobalVariable("local", Type.INT, Constant.intConst(1), false);
+    module.addGlobal(global);
+    module.addGlobal(local);
+
+    Function getint = new Function("getint", Type.INT);
+    module.addFunction(getint);
+    Function helper = new Function("helper", Type.VOID);
+    module.addFunction(helper);
+    var argument = helper.addArgument(Type.INT, "value");
+    IRBuilder helperBuilder = new IRBuilder(helper.addBlock("entry"));
+    helperBuilder.createStore(argument, global);
+    helperBuilder.createRetVoid();
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    var input = builder.createCall(getint, Type.INT);
+    builder.createStore(input, local);
+    builder.createCall(helper, Type.VOID, input);
+    builder.createRet(builder.createLoad(Type.INT, local));
+
+    PassBuilder passBuilder = new PassBuilder();
+    passBuilder.buildIRO0Pipeline(PassInstrumentation.noop()).run(
+        module,
+        passBuilder.buildModuleAnalysisManager(),
+        passBuilder.buildFunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+
+    assertFalse(global.hasUses());
+    assertFalse(local.hasUses());
+    assertFalse(module.getFunctions().contains(helper));
   }
 }

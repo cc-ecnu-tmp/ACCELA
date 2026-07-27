@@ -25,7 +25,7 @@ final class GlobalScalarLocalization {
     if (globals.isEmpty()) return null;
 
     var oldEntry = main.getEntryBlock();
-    var builder = new IRBuilder(main.prependBlock("global.local.entry"));
+    var builder = new IRBuilder(main.prependBlock(uniqueEntryLabel(main)));
     for (GlobalVariable global : globals) {
       Value local = builder.createAlloca(global.getValueType());
       builder.createStore(global.getInitializer(), local);
@@ -33,6 +33,20 @@ final class GlobalScalarLocalization {
     }
     builder.createBr(oldEntry);
     return main;
+  }
+
+  private static String uniqueEntryLabel(Function function) {
+    String label = "global.local.entry";
+    for (int suffix = 1;
+        hasBlockNamed(function, label);
+        suffix++) {
+      label = "global.local.entry." + suffix;
+    }
+    return label;
+  }
+
+  private static boolean hasBlockNamed(Function function, String label) {
+    return function.getBlocks().stream().anyMatch(block -> block.getLabel().equals(label));
   }
 
   private static boolean isCandidate(GlobalVariable global, Function main) {

@@ -294,6 +294,8 @@ public final class PassBuilder {
       mpm.addPass(new Inliner.Pass());
       mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
       mpm.addPass(new IPSCCP.Pass());
+      mpm.addPass(new ADCE.GlobalPass());
+      mpm.addPass(new GlobalOpt.Pass());
     }
     mpm.addPass(new ModuleToFunctionPassAdaptor(postIpsccpFpm));
     mpm.addPass(new ADCE.GlobalPass());
