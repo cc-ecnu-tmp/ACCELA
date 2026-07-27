@@ -1,4 +1,5 @@
 #include <qemu-plugin.h>
+#include "runtime-filter.h"
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 enum { SETS = 64, WAYS = 8, LINE_SIZE = 64 };
@@ -79,6 +80,7 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
           instruction, callback, QEMU_PLUGIN_CB_NO_REGS, NULL);
       continue;
     }
+    if (is_io_runtime(instruction)) continue;
     qemu_plugin_register_vcpu_mem_cb(
         instruction, access_memory, QEMU_PLUGIN_CB_NO_REGS,
         QEMU_PLUGIN_MEM_RW, NULL);

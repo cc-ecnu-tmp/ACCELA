@@ -4,6 +4,10 @@
 插件。统一通过 `scripts/qemu-run.sh` 使用：脚本会编译 SysY 测试点、链接
 适用于 `virt` 机器的 ELF、运行并校验输出，还可按需输出性能数据。
 
+裸机运行时实现了 SysY 的整数和单精度浮点 I/O，包括十进制/十六进制浮点
+输入以及与标准运行时 `%a` 一致的十六进制输出。启动代码会启用 RV64GC
+浮点状态，因此浮点运算、比较、类型转换和硬浮点 ABI 均可直接测试。
+
 ## 依赖
 
 - JDK 21，以及已构建的 ACCELA 编译器
@@ -26,6 +30,12 @@ JAVA_HOME=/path/to/jdk21/ bash gradlew classes --no-daemon
 
 ```sh
 scripts/qemu-run.sh path/to/NAME.sy
+```
+
+使用 LLVM `-O3`、相同 RV64GC ABI 和运行时作为对照：
+
+```sh
+QEMU_COMPILER=llvm scripts/qemu-run.sh path/to/NAME.sy
 ```
 
 统计动态指令和访存次数：
@@ -64,7 +74,9 @@ Default is for macOS.
 | 变量                  | 默认值                         | 用途                                  |
 |-----------------------|--------------------------------|---------------------------------------|
 | `QEMU_PROFILE`        | `0`                            | 可选 `0`、`1`、`hotblocks` 或 `cache` |
+| `QEMU_COMPILER`       | `accela`                       | 可选 `accela` 或 `llvm`               |
 | `QEMU_TIMEOUT`        | `120`                          | 单个测试点的超时秒数                  |
+| `LLVM_CLANG`          | Homebrew LLVM `clang`          | LLVM 对照编译器路径                    |
 | `ACCELA_JAVA_HOME`    | `/opt/homebrew/opt/openjdk@21` | runner 使用的 JDK                     |
 | `QEMU_PLUGIN_INCLUDE` | `/opt/homebrew/include`        | `qemu-plugin.h` 所在目录              |
 
@@ -74,6 +86,9 @@ Default is for macOS.
 完整的 `main`，不包含启动和退出过程。若程序调用 `_sysy_starttime` 和
 `_sysy_stoptime`，对应的显式计时区间优先；指令计数器会累加所有已完成的
 显式区间，热点块和 cache 报告对应最近一次区间。
+
+三种 profile 都排除 SysY I/O 运行时函数本身；用户代码中的调用仍计数。
+这避免 UART 轮询次数受主机调度影响，使同一 ELF 的重复测量保持一致。
 
 cache plugin 模拟容量为 32 KiB、8 路组相联、cache line 为 64 字节并采用
 LRU 替换的 L1D，不模拟延迟、预取、更高层缓存或 DRAM。TCG 指令数和 cache

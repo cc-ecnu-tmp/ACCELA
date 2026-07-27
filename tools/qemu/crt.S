@@ -11,6 +11,9 @@ _start:
   addi t0, t0, 8
   j .Lzero_bss
 .Lrun_main:
+  li t0, 0x6000
+  csrs mstatus, t0
+  csrwi fcsr, 0
   .word 0x12500013
   call main
   .word 0x12600013

@@ -1,4 +1,5 @@
 #include <qemu-plugin.h>
+#include "runtime-filter.h"
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
@@ -48,7 +49,7 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   (void) id;
   size_t count = qemu_plugin_tb_n_insns(tb);
   struct qemu_plugin_insn *first = qemu_plugin_tb_get_insn(tb, 0);
-  if (qemu_plugin_insn_vaddr(first) < 0x80000000ULL) return;
+  if (qemu_plugin_insn_vaddr(first) < 0x80000000ULL || is_io_runtime(first)) return;
   for (size_t index = 0; index < count; index++) {
     struct qemu_plugin_insn *instruction = qemu_plugin_tb_get_insn(tb, index);
     uint32_t encoding = 0;

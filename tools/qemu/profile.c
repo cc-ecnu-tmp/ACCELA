@@ -1,4 +1,5 @@
 #include <qemu-plugin.h>
+#include "runtime-filter.h"
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
 
@@ -58,8 +59,11 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
           : end_main;
       qemu_plugin_register_vcpu_insn_exec_cb(
           instruction, callback, QEMU_PLUGIN_CB_NO_REGS, NULL);
-      return;
+      continue;
     }
+    if (is_io_runtime(instruction)) continue;
+    qemu_plugin_register_vcpu_insn_exec_inline_per_vcpu(
+        instruction, QEMU_PLUGIN_INLINE_ADD_U64, instruction_count, 1);
     qemu_plugin_register_vcpu_mem_inline_per_vcpu(
         instruction, QEMU_PLUGIN_MEM_R, QEMU_PLUGIN_INLINE_ADD_U64,
         load_count, 1);
@@ -67,8 +71,6 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
         instruction, QEMU_PLUGIN_MEM_W, QEMU_PLUGIN_INLINE_ADD_U64,
         store_count, 1);
   }
-  qemu_plugin_register_vcpu_tb_exec_inline_per_vcpu(
-      tb, QEMU_PLUGIN_INLINE_ADD_U64, instruction_count, count);
 }
 
 static void report(qemu_plugin_id_t id, void *data) {

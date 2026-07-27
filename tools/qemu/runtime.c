@@ -1,8 +1,30 @@
+#include <stddef.h>
 #include <stdint.h>
 
 #define UART ((volatile uint8_t *) 0x10000000UL)
 
 static int at_line_start = 1;
+
+void *memset(void *destination, int value, size_t count) {
+  unsigned char *bytes = destination;
+  while (count-- != 0) *bytes++ = (unsigned char) value;
+  return destination;
+}
+
+void *memcpy(void *destination, const void *source, size_t count) {
+  unsigned char *output = destination;
+  const unsigned char *input = source;
+  while (count-- != 0) *output++ = *input++;
+  return destination;
+}
+
+void *memmove(void *destination, const void *source, size_t count) {
+  unsigned char *output = destination;
+  const unsigned char *input = source;
+  if ((uintptr_t) output <= (uintptr_t) input) return memcpy(destination, source, count);
+  while (count-- != 0) output[count] = input[count];
+  return destination;
+}
 
 static int uart_getc(void) {
   while ((UART[5] & 1) == 0) {}
@@ -35,9 +57,81 @@ int getint(void) {
   return negative ? (int) (0U - value) : (int) value;
 }
 
+static int digit_value(int ch) {
+  if (ch >= '0' && ch <= '9') return ch - '0';
+  if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+  if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+  return -1;
+}
+
+static double scale_by_power(double value, double base, int exponent) {
+  double factor = base;
+  unsigned magnitude = exponent < 0 ? 0U - (unsigned) exponent : (unsigned) exponent;
+  while (magnitude != 0) {
+    if ((magnitude & 1) != 0) value = exponent < 0 ? value / factor : value * factor;
+    factor *= factor;
+    magnitude >>= 1;
+  }
+  return value;
+}
+
+float getfloat(void) {
+  int ch;
+  do {
+    ch = uart_getc();
+  } while (ch == ' ' || ch == '\n' || ch == '\r' || ch == '\t');
+
+  int negative = ch == '-';
+  if (negative || ch == '+') ch = uart_getc();
+  int base = 10;
+  double value = 0;
+  if (ch == '0') {
+    ch = uart_getc();
+    if (ch == 'x' || ch == 'X') {
+      base = 16;
+      ch = uart_getc();
+    }
+  }
+  int digit;
+  while ((digit = digit_value(ch)) >= 0 && digit < base) {
+    value = value * base + digit;
+    ch = uart_getc();
+  }
+  if (ch == '.') {
+    double place = 1.0 / base;
+    while ((digit = digit_value(ch = uart_getc())) >= 0 && digit < base) {
+      value += digit * place;
+      place /= base;
+    }
+  }
+  if ((base == 10 && (ch == 'e' || ch == 'E'))
+      || (base == 16 && (ch == 'p' || ch == 'P'))) {
+    ch = uart_getc();
+    int exponent_negative = ch == '-';
+    if (exponent_negative || ch == '+') ch = uart_getc();
+    int exponent = 0;
+    while (ch >= '0' && ch <= '9') {
+      if (exponent < 10000) {
+        exponent = exponent * 10 + ch - '0';
+        if (exponent > 10000) exponent = 10000;
+      }
+      ch = uart_getc();
+    }
+    value = scale_by_power(value, base == 10 ? 10.0 : 2.0,
+                           exponent_negative ? -exponent : exponent);
+  }
+  return negative ? -(float) value : (float) value;
+}
+
 int getarray(int values[]) {
   int count = getint();
   for (int index = 0; index < count; index++) values[index] = getint();
+  return count;
+}
+
+int getfarray(float values[]) {
+  int count = getint();
+  for (int index = 0; index < count; index++) values[index] = getfloat();
   return count;
 }
 
@@ -63,6 +157,65 @@ void putarray(int count, int values[]) {
   for (int index = 0; index < count; index++) {
     uart_putc(' ');
     putint(values[index]);
+  }
+  uart_putc('\n');
+}
+
+static void put_string(const char *text) {
+  while (*text != '\0') uart_putc(*text++);
+}
+
+void putfloat(float value) {
+  union {
+    float value;
+    uint32_t bits;
+  } raw = {value};
+  if ((raw.bits >> 31) != 0) uart_putc('-');
+
+  uint32_t exponent = (raw.bits >> 23) & 0xff;
+  uint32_t mantissa = raw.bits & 0x7fffff;
+  if (exponent == 0xff) {
+    put_string(mantissa == 0 ? "inf" : "nan");
+    return;
+  }
+  if (exponent == 0 && mantissa == 0) {
+    put_string("0x0p+0");
+    return;
+  }
+
+  int power;
+  uint32_t fraction;
+  if (exponent == 0) {
+    int leading = 0;
+    for (uint32_t scan = mantissa; scan > 1; scan >>= 1) leading++;
+    power = leading - 149;
+    fraction = (mantissa ^ (1U << leading)) << (24 - leading);
+  } else {
+    power = (int) exponent - 127;
+    fraction = mantissa << 1;
+  }
+
+  put_string("0x1");
+  if (fraction != 0) {
+    static const char hex[] = "0123456789abcdef";
+    int last = 0;
+    while (last < 5 && ((fraction >> (last * 4)) & 0xf) == 0) last++;
+    uart_putc('.');
+    for (int digit = 5; digit >= last; digit--) {
+      uart_putc(hex[(fraction >> (digit * 4)) & 0xf]);
+    }
+  }
+  uart_putc('p');
+  uart_putc(power < 0 ? '-' : '+');
+  putint(power < 0 ? -power : power);
+}
+
+void putfarray(int count, float values[]) {
+  putint(count);
+  uart_putc(':');
+  for (int index = 0; index < count; index++) {
+    uart_putc(' ');
+    putfloat(values[index]);
   }
   uart_putc('\n');
 }
