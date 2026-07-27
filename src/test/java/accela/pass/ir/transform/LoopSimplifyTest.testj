@@ -1,0 +1,54 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.pass.PassBuilder;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopSimplifyTest {
+  @Test
+  void insertsOneBackedgeForMultipleLatches() {
+    Function function = new Function("loop", Type.VOID);
+    var chooseLeft = function.addArgument(Type.I1, "chooseLeft");
+    var repeat = function.addArgument(Type.I1, "repeat");
+    var enter = function.addArgument(Type.I1, "enter");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createCondBr(enter, header, exit);
+
+    IRBuilder builder = new IRBuilder(header);
+    Instruction phi = builder.createPhi(Type.INT);
+    phi.addOperand(Constant.intConst(0));
+    phi.addOperand(entry);
+    phi.addOperand(Constant.intConst(1));
+    phi.addOperand(left);
+    phi.addOperand(Constant.intConst(2));
+    phi.addOperand(right);
+    builder.createCondBr(chooseLeft, left, right);
+    new IRBuilder(left).createBr(header);
+    new IRBuilder(right).createCondBr(repeat, header, exit);
+    new IRBuilder(exit).createRetVoid();
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopSimplify.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+    assertEquals(2, header.getPredecessors().size());
+    BasicBlock backedge = header.getPredecessors().stream()
+        .filter(block -> block.getPredecessors().size() == 2)
+        .findFirst()
+        .orElseThrow();
+    assertEquals(2, backedge.getPredecessors().size());
+    assertEquals(Instruction.Opcode.PHI, backedge.getInstructions().getFirst().getOpcode());
+  }
+}
