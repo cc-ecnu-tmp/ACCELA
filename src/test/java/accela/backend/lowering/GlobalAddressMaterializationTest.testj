@@ -1,6 +1,7 @@
 package accela.backend.lowering;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -62,6 +63,24 @@ final class GlobalAddressMaterializationTest {
   }
 
   @Test
+  void reusesAnEntryAddressInLaterLoops() {
+    MachineFunction function = new MachineFunction("entry_address", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock loop = function.addBlock("loop");
+    addUse(entry, "shared");
+    connect(entry, loop);
+    addUse(loop, "shared");
+    connect(loop, loop);
+
+    assertTrue(new GlobalAddressMaterialization().run(function));
+    MachineInstr materialize = entry.getInstructions().getFirst();
+    assertEquals(MachineOpcode.MOVE, materialize.getOpcode());
+    assertEquals("shared",
+        assertInstanceOf(SymbolOperand.class, materialize.getOperands().getFirst()).getSymbol());
+    assertEquals(1, symbolUseCount(function, "shared"));
+  }
+
+  @Test
   void allocatesAddressesSpanningCallsToCalleeSavedRegisters() {
     MachineFunction function = new MachineFunction("calls", MachineType.VOID);
     MachineBasicBlock entry = function.addBlock("entry");
@@ -81,6 +100,27 @@ final class GlobalAddressMaterializationTest {
             .allocate(function, new RISCVTarget())
             .locationOf(materialize.getDest()));
     assertTrue(new TargetRegisterInfo().isCalleeSaved(location.getRegister()));
+  }
+
+  @Test
+  void doesNotExtendOneLoopUseAcrossCalls() {
+    MachineFunction function = new MachineFunction("loop_call", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock loop = function.addBlock("loop");
+    MachineBasicBlock exit = function.addBlock("exit");
+    connect(entry, loop);
+    addUse(loop, "hot");
+    MachineInstr call = new MachineInstr(MachineOpcode.CALL, null);
+    call.setCallee(function.getName());
+    loop.addInstruction(call);
+    MachineInstr branch = new MachineInstr(MachineOpcode.CONDBR, null);
+    branch.addOperand(new BlockOperand(loop));
+    branch.addOperand(new BlockOperand(exit));
+    loop.addInstruction(branch);
+    exit.addInstruction(new MachineInstr(MachineOpcode.RET, null));
+
+    assertFalse(new GlobalAddressMaterialization().run(function));
+    assertEquals(1, symbolUseCount(function, "hot"));
   }
 
   private static long symbolUseCount(MachineBasicBlock block, String name) {

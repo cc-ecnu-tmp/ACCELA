@@ -1,0 +1,82 @@
+package accela.backend.lowering.globalmerge;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineModule;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.SymbolOperand;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.target.RISCVTarget;
+import accela.ir.Constant;
+import accela.ir.GlobalVariable;
+import accela.ir.Module;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class GlobalMergeTest {
+  @Test
+  void foldsAdjacentGlobalDisplacementsAcrossCalls() {
+    Type array = Type.array(Type.INT, 4);
+    Module module = new Module();
+    module.addGlobal(new GlobalVariable("first", array, Constant.zero(array), false));
+    module.addGlobal(new GlobalVariable("second", array, Constant.zero(array), false));
+
+    MachineFunction function = new MachineFunction("merged", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock body = function.addBlock("body");
+    VirtualRegister index = function.createVirtualRegister(MachineType.PTR, "index");
+    VirtualRegister first = address(function, entry, "first", index);
+    load(function, entry, first);
+    entry.addInstruction(new MachineInstr(MachineOpcode.CALL, null));
+    branch(entry, body);
+    VirtualRegister second = address(function, body, "second", index);
+    MachineInstr secondLoad = load(function, body, second);
+
+    MachineModule machineModule = new MachineModule(module);
+    assertTrue(new GlobalMerge(machineModule, new RISCVTarget()).run(function));
+
+    assertEquals(1, function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == MachineOpcode.ADD)
+        .count());
+    assertSame(first, ((VRegOperand) secondLoad.getOperands().getFirst()).getRegister());
+    assertEquals(16, ((ImmOperand) secondLoad.getOperands().get(1)).getValue());
+  }
+
+  private static VirtualRegister address(
+      MachineFunction function, MachineBasicBlock block, String symbol, VirtualRegister index) {
+    VirtualRegister result = function.createVirtualRegister(MachineType.PTR, "address");
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, result);
+    add.setType(MachineType.PTR);
+    add.addOperand(new SymbolOperand(symbol));
+    add.addOperand(new VRegOperand(index));
+    block.addInstruction(add);
+    return result;
+  }
+
+  private static MachineInstr load(
+      MachineFunction function, MachineBasicBlock block, VirtualRegister address) {
+    MachineInstr load =
+        new MachineInstr(
+            MachineOpcode.LOAD, function.createVirtualRegister(MachineType.I32, "load"));
+    load.setType(MachineType.I32);
+    load.addOperand(new VRegOperand(address));
+    block.addInstruction(load);
+    return load;
+  }
+
+  private static void branch(MachineBasicBlock from, MachineBasicBlock to) {
+    MachineInstr branch = new MachineInstr(MachineOpcode.BR, null);
+    branch.addOperand(new BlockOperand(to));
+    from.addInstruction(branch);
+  }
+}

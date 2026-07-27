@@ -8,6 +8,7 @@ import accela.backend.lowering.MachineCSE;
 import accela.backend.lowering.MachineConstantCSE;
 import accela.backend.lowering.MemoryAddressFolding;
 import accela.backend.lowering.PhiElimination;
+import accela.backend.lowering.globalmerge.GlobalMerge;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineModule;
 import accela.backend.regalloc.AllocationResult;
@@ -38,12 +39,14 @@ final class BackendPipeline {
 
   String compileToAssembly(accela.ir.Module module) {
     MachineModule machineModule = lowering.lower(module);
+    GlobalMerge globalMerge = new GlobalMerge(machineModule, target);
     Map<MachineFunction, AllocationResult> allocations = new LinkedHashMap<>();
 
     for (MachineFunction function : machineModule.getFunctions()) {
       phiElimination.run(function);
       memoryAddressFolding.run(function);
       machineCse.run(function);
+      globalMerge.run(function);
       loopConditionDuplication.run(function);
       constantCse.run(function);
       globalAddresses.run(function);
