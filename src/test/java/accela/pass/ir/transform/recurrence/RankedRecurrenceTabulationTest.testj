@@ -1,0 +1,207 @@
+package accela.pass.ir.transform.recurrence;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class RankedRecurrenceTabulationTest {
+  @Test
+  void lowersPureRankedRecursionToTableLoops() {
+    Module module = recurrenceModule(false, false);
+    Function recursive = function(module, "recursive");
+    Function main = function(module, "main");
+
+    assertTrue(RankedRecurrenceTabulation.run(module));
+    IRVerifier.verifyModule(module);
+
+    Function helper = function(module, "recursive.rrt");
+    assertNotNull(helper);
+    assertSame(helper, calls(main).getFirst().getCallee());
+    assertEquals(1, calls(helper).stream()
+        .filter(call -> call.getCallee() == recursive)
+        .count());
+    assertFalse(calls(helper).stream().anyMatch(call -> call.getCallee() == helper));
+    assertTrue(helper.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI));
+    assertEquals(2, module.getGlobals().size());
+  }
+
+  @Test
+  void rejectsRecursionWithObservableStores() {
+    Module module = recurrenceModule(true, false);
+
+    assertFalse(RankedRecurrenceTabulation.run(module));
+    assertEquals(2, module.getFunctions().size());
+    assertEquals(1, module.getGlobals().size());
+  }
+
+  @Test
+  void rejectsDenseStatesWithUnguardedArrayAccesses() {
+    Module module = recurrenceModule(false, true);
+
+    assertFalse(RankedRecurrenceTabulation.run(module));
+    assertEquals(2, module.getFunctions().size());
+  }
+
+  @Test
+  void lowersOneDimensionalRecurrence() {
+    Module module = new Module();
+    Function fibonacci = new Function("fibonacci", Type.INT);
+    module.addFunction(fibonacci);
+    Value rank = fibonacci.addArgument(Type.INT, "rank");
+    BasicBlock entry = fibonacci.addBlock("entry");
+    BasicBlock base = fibonacci.addBlock("base");
+    BasicBlock recur = fibonacci.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(
+        builder.createICmp("sle", rank, Constant.intConst(1)), base, recur);
+    new IRBuilder(base).createRet(rank);
+    builder.setInsertPoint(recur);
+    Value previous = builder.createSub(rank, Constant.intConst(1));
+    Value earlier = builder.createSub(rank, Constant.intConst(2));
+    Value left = builder.createCall(fibonacci, Type.INT, previous);
+    Value right = builder.createCall(fibonacci, Type.INT, earlier);
+    builder.createRet(builder.createAdd(left, right));
+    addMain(module, fibonacci, Constant.intConst(10));
+
+    assertTrue(RankedRecurrenceTabulation.run(module));
+    IRVerifier.verifyModule(module);
+    Function helper = function(module, "fibonacci.rrt");
+    assertFalse(helper.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().startsWith("rrt.state.")));
+  }
+
+  @Test
+  void buildsOneLoopForEveryChangingStateDimension() {
+    Module module = new Module();
+    Function recurrence = new Function("three_dimensional", Type.INT);
+    module.addFunction(recurrence);
+    Value rank = recurrence.addArgument(Type.INT, "rank");
+    Value x = recurrence.addArgument(Type.INT, "x");
+    Value y = recurrence.addArgument(Type.INT, "y");
+    BasicBlock entry = recurrence.addBlock("entry");
+    BasicBlock checkX = recurrence.addBlock("check.x");
+    BasicBlock checkY = recurrence.addBlock("check.y");
+    BasicBlock base = recurrence.addBlock("base");
+    BasicBlock recur = recurrence.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(
+        builder.createICmp("eq", rank, Constant.intConst(0)), base, checkX);
+    builder.setInsertPoint(checkX);
+    builder.createCondBr(builder.createICmp("eq", x, Constant.intConst(0)), base, checkY);
+    builder.setInsertPoint(checkY);
+    builder.createCondBr(builder.createICmp("eq", y, Constant.intConst(0)), base, recur);
+    new IRBuilder(base).createRet(Constant.intConst(0));
+    builder.setInsertPoint(recur);
+    Value nextRank = builder.createSub(rank, Constant.intConst(1));
+    Value left = builder.createCall(recurrence, Type.INT, nextRank, x, y);
+    Value nextX = builder.createSub(x, Constant.intConst(1));
+    Value nextY = builder.createSub(y, Constant.intConst(1));
+    Value right = builder.createCall(recurrence, Type.INT, nextRank, nextX, nextY);
+    builder.createRet(builder.createAdd(left, right));
+    addMain(
+        module,
+        recurrence,
+        Constant.intConst(4),
+        Constant.intConst(3),
+        Constant.intConst(2));
+
+    assertTrue(RankedRecurrenceTabulation.run(module));
+    IRVerifier.verifyModule(module);
+    Function helper = function(module, "three_dimensional.rrt");
+    assertTrue(helper.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().equals("rrt.state.1")));
+    assertTrue(helper.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().equals("rrt.state.2")));
+  }
+
+  private static Module recurrenceModule(boolean addStore, boolean accessBeforeRankGuard) {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 8);
+    GlobalVariable values =
+        new GlobalVariable("values", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(values);
+
+    Function recursive = new Function("recursive", Type.INT);
+    module.addFunction(recursive);
+    Value rank = recursive.addArgument(Type.INT, "rank");
+    Value state = recursive.addArgument(Type.INT, "state");
+    BasicBlock entry = recursive.addBlock("entry");
+    BasicBlock stateCheck = recursive.addBlock("state.check");
+    BasicBlock base = recursive.addBlock("base");
+    BasicBlock recur = recursive.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    Value nextRank = builder.createSub(rank, Constant.intConst(1));
+    Value index = builder.createSExt(nextRank, Type.I64);
+    Value earlyAddress =
+        accessBeforeRankGuard
+            ? builder.createGEP(
+                arrayType, values, new Value[] {Constant.int64Const(0), index}, true)
+            : null;
+    Value earlyBonus =
+        accessBeforeRankGuard ? builder.createLoad(Type.INT, earlyAddress) : null;
+    builder.createCondBr(
+        builder.createICmp("eq", rank, Constant.intConst(0)), base, stateCheck);
+    builder.setInsertPoint(stateCheck);
+    builder.createCondBr(
+        builder.createICmp("eq", state, Constant.intConst(0)), base, recur);
+    new IRBuilder(base).createRet(Constant.intConst(0));
+
+    builder.setInsertPoint(recur);
+    Value address =
+        accessBeforeRankGuard
+            ? earlyAddress
+            : builder.createGEP(
+                arrayType, values, new Value[] {Constant.int64Const(0), index}, true);
+    Value bonus =
+        accessBeforeRankGuard ? earlyBonus : builder.createLoad(Type.INT, address);
+    if (addStore) builder.createStore(bonus, address);
+    Value left = builder.createCall(recursive, Type.INT, nextRank, state);
+    Value nextState = builder.createSub(state, Constant.intConst(1));
+    Value right = builder.createCall(recursive, Type.INT, nextRank, nextState);
+    builder.createRet(builder.createAdd(bonus, builder.createAdd(left, right)));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    builder.setInsertPoint(main.addBlock("entry"));
+    builder.createRet(builder.createCall(
+        recursive, Type.INT, Constant.intConst(4), Constant.intConst(3)));
+    return module;
+  }
+
+  private static Function function(Module module, String name) {
+    return module.getFunctions().stream()
+        .filter(function -> function.getName().equals(name))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static void addMain(Module module, Function callee, Value... arguments) {
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    builder.createRet(builder.createCall(callee, Type.INT, arguments));
+  }
+
+  private static java.util.List<Instruction> calls(Function function) {
+    return function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL)
+        .toList();
+  }
+}

@@ -33,6 +33,7 @@ import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.rotate.LoopRotate;
 import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 import accela.pass.ir.transform.loop.unroll.LoopUnrollAndJam;
+import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
 
 /**
  * Builds the project's default pass pipelines.
@@ -129,6 +130,12 @@ public final class PassBuilder {
 
   private static boolean isIndVarSimplifyEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_INDVAR_SIMPLIFY");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isRankedRecurrenceTabulationEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_RRT");
     return disable == null || disable.isEmpty() || disable.equals("0")
         || disable.equalsIgnoreCase("false");
   }
@@ -289,6 +296,9 @@ public final class PassBuilder {
     mpm.addPass(new GlobalOpt.Pass());
     mpm.addPass(new SROA.GlobalPass());
     mpm.addPass(new IPSCCP.Pass());
+    if (isRankedRecurrenceTabulationEnabled()) {
+      mpm.addPass(new RankedRecurrenceTabulation.Pass());
+    }
     mpm.addPass(new ModuleToFunctionPassAdaptor(preInlineFpm));
     if (isInlinerEnabled()) {
       mpm.addPass(new Inliner.Pass());
