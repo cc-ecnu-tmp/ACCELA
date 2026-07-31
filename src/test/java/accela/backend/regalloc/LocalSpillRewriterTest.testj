@@ -11,6 +11,7 @@ import accela.backend.machine.MachineInstr;
 import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineType;
 import accela.backend.machine.StackSlotOperand;
+import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.target.RISCVTarget;
@@ -74,6 +75,32 @@ final class LocalSpillRewriterTest {
     assertTrue(!rewrittenDef.getDest().equals(spilled));
     assertEquals(rewrittenDef.getDest(), ((VRegOperand) store.getOperands().get(0)).getRegister());
     assertEquals(load.getDest(), ((VRegOperand) add.getOperands().get(0)).getRegister());
+  }
+
+  @Test
+  void rematerializesSpilledGlobalAddressOncePerBlock() {
+    MachineFunction function = new MachineFunction("remat_global", MachineType.I32);
+    MachineBasicBlock entry = function.addBlock("entry");
+    VirtualRegister address = function.createVirtualRegister(MachineType.PTR, "address");
+    VirtualRegister first = function.createVirtualRegister(MachineType.I32, "first");
+    VirtualRegister second = function.createVirtualRegister(MachineType.I32, "second");
+    MachineInstr materialize = new MachineInstr(MachineOpcode.MOVE, address);
+    materialize.addOperand(new SymbolOperand("global"));
+    materialize.setType(MachineType.PTR);
+    entry.addInstruction(materialize);
+    entry.addInstruction(load(first, address));
+    entry.addInstruction(load(second, address));
+    entry.addInstruction(ret(second));
+
+    rewriter.rewrite(function, Set.of(address), target);
+
+    assertOpcodes(entry, MachineOpcode.MOVE, MachineOpcode.LOAD, MachineOpcode.LOAD, MachineOpcode.RET);
+    assertEquals(0, function.getFrameInfo().getSlots().size());
+    assertTrue(((SymbolOperand) entry.getInstructions().get(0).getOperands().getFirst())
+        .getSymbol().equals("global"));
+    assertEquals(
+        ((VRegOperand) entry.getInstructions().get(1).getOperands().getFirst()).getRegister(),
+        ((VRegOperand) entry.getInstructions().get(2).getOperands().getFirst()).getRegister());
   }
 
   @Test
@@ -244,6 +271,13 @@ final class LocalSpillRewriterTest {
     MachineInstr instr = new MachineInstr(MachineOpcode.ADD, dest);
     instr.addOperand(new VRegOperand(left));
     instr.addOperand(new ImmOperand(right));
+    instr.setType(dest.getType());
+    return instr;
+  }
+
+  private static MachineInstr load(VirtualRegister dest, VirtualRegister address) {
+    MachineInstr instr = new MachineInstr(MachineOpcode.LOAD, dest);
+    instr.addOperand(new VRegOperand(address));
     instr.setType(dest.getType());
     return instr;
   }

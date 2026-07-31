@@ -7,7 +7,7 @@ import java.util.List;
 
 /** Chooses a small jam factor without exhausting the RISC-V integer or FP register files. */
 final class UnrollAndJamCostModel {
-  private static final int[] FACTORS = {4, 2};
+  private static final int MAX_FACTOR = 8;
   // Keep scratch space for address calculation, the shared IV, and lowering temporaries.
   private static final int INTEGER_BUDGET = 18;
   private static final int FLOAT_BUDGET = 20;
@@ -15,27 +15,40 @@ final class UnrollAndJamCostModel {
 
   private UnrollAndJamCostModel() {}
 
-  static int chooseFactor(LoopUnrollAndJamCandidate candidate) {
-    Pressure pressure = estimatePressure(candidate);
-    var dependences = DependenceAnalysis.analyze(
+  static DependenceAnalysis.Result analyzeDependences(LoopUnrollAndJamCandidate candidate) {
+    return DependenceAnalysis.analyze(
         List.of(
             candidate.outerInduction().phi(),
             candidate.innerInduction().phi()),
-        List.of(candidate.innerBody(), candidate.innerExit()));
+        List.of(candidate.innerPreheader(), candidate.innerBody(), candidate.innerExit()));
+  }
+
+  static int chooseFactor(
+      LoopUnrollAndJamCandidate candidate, DependenceAnalysis.Result dependences) {
+    Pressure pressure = estimatePressure(candidate);
     int bodySize = (int) candidate.innerBody().getInstructions().stream()
         .filter(instruction -> instruction.getOpcode() != Instruction.Opcode.PHI
             && !instruction.isTerminator())
         .count();
-    for (int factor : FACTORS) {
+    for (int factor = highestPowerOfTwoAtMost(MAX_FACTOR); factor >= 2; factor /= 2) {
       if (bodySize * factor <= MAX_CLONED_INSTRUCTIONS
           && pressure.integerShared + factor * pressure.integerPerLane <= INTEGER_BUDGET
           && pressure.floatShared + factor * pressure.floatPerLane <= FLOAT_BUDGET
           && dependences.isSafeToJam(
-              0, 1, candidate.outerInduction().step(), factor)) {
+              candidate.outerInduction().phi(),
+              candidate.innerInduction().phi(),
+              candidate.outerInduction().step(),
+              factor)) {
         return factor;
       }
     }
     return 1;
+  }
+
+  private static int highestPowerOfTwoAtMost(int limit) {
+    int factor = 1;
+    while (factor <= limit / 2) factor *= 2;
+    return factor;
   }
 
   private static Pressure estimatePressure(LoopUnrollAndJamCandidate candidate) {

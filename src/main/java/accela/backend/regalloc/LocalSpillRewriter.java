@@ -33,13 +33,16 @@ final class LocalSpillRewriter {
 
     Set<VirtualRegister> effectiveSpills =
         expandOverfullCallArgumentSpills(function, spilledRegisters, target);
+    Map<VirtualRegister, MachineInstr> rematerializable =
+        findRematerializableGlobalAddresses(function, effectiveSpills);
     Map<VirtualRegister, StackSlot> slots = new LinkedHashMap<>();
     for (VirtualRegister register : effectiveSpills) {
+      if (rematerializable.containsKey(register)) continue;
       slots.put(register, createSpillSlot(function, register, target));
     }
 
     for (MachineBasicBlock block : function.getBlocks()) {
-      rewriteBlock(function, block, slots, target);
+      rewriteBlock(function, block, slots, rematerializable, target);
     }
 
     return slots;
@@ -97,10 +100,13 @@ final class LocalSpillRewriter {
       MachineFunction function,
       MachineBasicBlock block,
       Map<VirtualRegister, StackSlot> slots,
+      Map<VirtualRegister, MachineInstr> rematerializable,
       RISCVTarget target) {
     List<MachineInstr> rewritten = new ArrayList<>();
+    Map<VirtualRegister, VirtualRegister> blockRematerializations = new HashMap<>();
 
     for (MachineInstr instr : block.getInstructions()) {
+      if (instr.getDest() != null && rematerializable.get(instr.getDest()) == instr) continue;
       Map<VirtualRegister, VirtualRegister> reloads = new HashMap<>();
       List<MachineOperand> operands = new ArrayList<>();
       RISCVTarget.CallArgCursor callArgs =
@@ -115,6 +121,13 @@ final class LocalSpillRewriter {
         }
         if (operand instanceof VRegOperand) {
           VirtualRegister register = ((VRegOperand) operand).getRegister();
+          MachineInstr recipe = rematerializable.get(register);
+          if (recipe != null) {
+            VirtualRegister materialized = blockRematerializations.computeIfAbsent(
+                register, ignored -> rematerialize(function, rewritten, register, recipe));
+            operands.add(new VRegOperand(materialized));
+            continue;
+          }
           StackSlot slot = slots.get(register);
           if (slot != null) {
             if (callAssignment != null && !callAssignment.isInRegister()) {
@@ -144,10 +157,48 @@ final class LocalSpillRewriter {
       if (destSlot != null) {
         insertStore(function, rewritten, rewrittenDest, destSlot);
       }
+      if (instr.getOpcode() == MachineOpcode.CALL) blockRematerializations.clear();
     }
 
     block.getInstructions().clear();
     block.getInstructions().addAll(rewritten);
+  }
+
+  private static Map<VirtualRegister, MachineInstr> findRematerializableGlobalAddresses(
+      MachineFunction function, Set<VirtualRegister> spilledRegisters) {
+    Map<VirtualRegister, MachineInstr> definitions = new HashMap<>();
+    Set<VirtualRegister> multipleDefinitions = new HashSet<>();
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        VirtualRegister destination = instruction.getDest();
+        if (destination == null || !spilledRegisters.contains(destination)) continue;
+        if (definitions.putIfAbsent(destination, instruction) != null) {
+          multipleDefinitions.add(destination);
+        }
+      }
+    }
+    definitions.entrySet().removeIf(entry ->
+        multipleDefinitions.contains(entry.getKey())
+            || entry.getValue().getOpcode() != MachineOpcode.MOVE
+            || entry.getValue().getOperands().size() != 1
+            || !(entry.getValue().getOperands().getFirst() instanceof SymbolOperand));
+    return definitions;
+  }
+
+  private static VirtualRegister rematerialize(
+      MachineFunction function,
+      List<MachineInstr> rewritten,
+      VirtualRegister original,
+      MachineInstr recipe) {
+    VirtualRegister result = function.createVirtualRegister(
+        original.getType(), original.getHint() + ".remat");
+    MachineInstr materialize = new MachineInstr(recipe.getOpcode(), result);
+    materialize.setType(recipe.getType());
+    for (int index = 0; index < recipe.getOperands().size(); index++) {
+      materialize.addOperand(recipe.getOperands().get(index), recipe.getOperandType(index));
+    }
+    rewritten.add(materialize);
+    return result;
   }
 
   private VirtualRegister insertReload(

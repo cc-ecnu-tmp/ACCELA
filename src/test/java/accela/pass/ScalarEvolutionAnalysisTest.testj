@@ -1,0 +1,157 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
+import accela.pass.ir.analysis.scev.SCEV;
+import java.math.BigInteger;
+import org.junit.jupiter.api.Test;
+
+final class ScalarEvolutionAnalysisTest {
+  @Test
+  void canonicalizesCommutativeArithmeticAndConstants() {
+    Function function = new Function("arithmetic", Type.INT);
+    Value argument = function.addArgument(Type.INT, "x");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction first = builder.createAdd(argument, Constant.intConst(2));
+    Instruction second = builder.createAdd(Constant.intConst(2), argument);
+    Instruction folded = builder.createMul(Constant.intConst(6), Constant.intConst(7));
+    builder.createRet(first);
+
+    ScalarEvolutionAnalysis.Result scev = new ScalarEvolutionAnalysis().run(function, null);
+
+    assertSame(scev.getSCEV(first), scev.getSCEV(second));
+    SCEV.Constant constant = assertInstanceOf(SCEV.Constant.class, scev.getSCEV(folded));
+    assertEquals(BigInteger.valueOf(42), constant.value());
+  }
+
+  @Test
+  void canonicalizationDoesNotDependOnDebugNames() {
+    Function function = new Function("same_names", Type.INT);
+    Value left = function.addArgument(Type.INT, "x");
+    Value right = function.addArgument(Type.INT, "x");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction first = builder.createAdd(left, right);
+    Instruction second = builder.createAdd(right, left);
+    builder.createRet(first);
+
+    ScalarEvolutionAnalysis.Result scev = new ScalarEvolutionAnalysis().run(function, null);
+
+    assertSame(scev.getSCEV(first), scev.getSCEV(second));
+  }
+
+  @Test
+  void recognizesCanonicalAddRecAndExactExitCount() {
+    LoopFixture fixture = loop(0, 1, 10, "slt", true);
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
+
+    SCEV.AddRec recurrence = assertInstanceOf(SCEV.AddRec.class, scev.getSCEV(fixture.phi));
+    assertEquals(BigInteger.ZERO, ((SCEV.Constant) recurrence.start()).value());
+    assertEquals(BigInteger.ONE, ((SCEV.Constant) recurrence.step()).value());
+    assertSame(loop, recurrence.loop());
+    assertEquals(BigInteger.TEN, scev.getConstantBackedgeTakenCount(loop).orElseThrow());
+  }
+
+  @Test
+  void handlesDescendingLoopAndExitOnTrueBranch() {
+    LoopFixture fixture = loop(10, -2, 0, "sle", false);
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
+
+    SCEV.AddRec recurrence = assertInstanceOf(SCEV.AddRec.class, scev.getSCEV(fixture.phi));
+    assertEquals(BigInteger.valueOf(-2), ((SCEV.Constant) recurrence.step()).value());
+    assertEquals(BigInteger.valueOf(5), scev.getConstantBackedgeTakenCount(loop).orElseThrow());
+  }
+
+  @Test
+  void computesConstantGepByteOffsets() {
+    Function function = new Function("gep", Type.PTR);
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction gep =
+        builder.createGEP(Type.INT, base, new Value[] {Constant.intConst(3)}, true);
+    builder.createRet(gep);
+
+    ScalarEvolutionAnalysis.Result scev = new ScalarEvolutionAnalysis().run(function, null);
+    SCEV.PointerAdd address = assertInstanceOf(SCEV.PointerAdd.class, scev.getSCEV(gep));
+
+    assertSame(scev.getSCEV(base), address.base());
+    assertEquals(BigInteger.valueOf(12), ((SCEV.Constant) address.byteOffset()).value());
+  }
+
+  @Test
+  void derivesByteStrideForLoopGepWhenNoWrapIsProven() {
+    LoopFixture fixture = loop(0, 1, 10, "slt", true);
+    Value base = fixture.function.addArgument(Type.PTR, "base");
+    IRBuilder builder = new IRBuilder(fixture.header);
+    Instruction gep =
+        builder.createGEP(Type.INT, base, new Value[] {fixture.phi}, true);
+
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    SCEV.AddRec address = assertInstanceOf(SCEV.AddRec.class, scev.getSCEV(gep));
+
+    assertEquals(Type.PTR, address.getType());
+    assertSame(scev.getSCEV(base), address.start());
+    assertEquals(BigInteger.valueOf(4), ((SCEV.Constant) address.step()).value());
+  }
+
+  @Test
+  void refusesToClaimAnExitCountThatRequiresSignedWraparound() {
+    LoopFixture fixture = loop(Integer.MAX_VALUE - 1, 1, Integer.MAX_VALUE, "sle", true);
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
+
+    assertEquals(java.util.Optional.empty(), scev.getConstantBackedgeTakenCount(loop));
+  }
+
+  private static LoopFixture loop(
+      int start, int step, int bound, String predicate, boolean continueOnTrue) {
+    Function function = new Function("loop", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction phi = headerBuilder.createPhi(Type.INT);
+    Instruction compare = headerBuilder.createICmp(predicate, phi, Constant.intConst(bound));
+    headerBuilder.createCondBr(
+        compare,
+        continueOnTrue ? body : exit,
+        continueOnTrue ? exit : body);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next =
+        step >= 0
+            ? bodyBuilder.createAdd(phi, Constant.intConst(step))
+            : bodyBuilder.createSub(phi, Constant.intConst(-step));
+    bodyBuilder.createBr(header);
+    phi.addOperand(Constant.intConst(start));
+    phi.addOperand(entry);
+    phi.addOperand(next);
+    phi.addOperand(body);
+    new IRBuilder(exit).createRet(phi);
+    return new LoopFixture(function, header, phi);
+  }
+
+  private record LoopFixture(Function function, BasicBlock header, Instruction phi) {}
+}

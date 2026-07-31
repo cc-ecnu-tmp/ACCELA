@@ -12,12 +12,13 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
-/** A perfect two-level loop nest in the canonical form consumed by unroll-and-jam. */
+/** A canonical two-level nest, optionally preceded by a side-effect-free per-lane guard. */
 record LoopUnrollAndJamCandidate(
     InductionVariableAnalysis.Induction outerInduction,
     InductionVariableAnalysis.Induction innerInduction,
     BasicBlock outerHeader,
     BasicBlock outerPreheader,
+    BasicBlock laneGuard,
     BasicBlock innerCondition,
     BasicBlock innerPreheader,
     BasicBlock innerBody,
@@ -71,10 +72,18 @@ record LoopUnrollAndJamCandidate(
 
     BasicBlock innerCondition = innerPreheader.getPredecessors().getFirst();
     Instruction guard = innerCondition.getTerminator();
-    if (innerCondition != outerBody || !isConditional(guard)
+    BasicBlock laneGuard = outerBody == innerCondition ? null : outerBody;
+    if (!isConditional(guard)
         || !branchesToBoth(guard, innerPreheader, innerExit)
         || innerCondition.getPredecessors().size() != 1
-        || innerCondition.getPredecessors().getFirst() != outerHeader) return null;
+        || innerCondition.getPredecessors().getFirst()
+            != (laneGuard == null ? outerHeader : laneGuard)) return null;
+    if (laneGuard != null
+        && (!isConditional(laneGuard.getTerminator())
+            || !branchesToBoth(laneGuard.getTerminator(), innerCondition, innerExit)
+            || laneGuard.getPredecessors().size() != 1
+            || laneGuard.getPredecessors().getFirst() != outerHeader
+            || containsStoreOrCall(laneGuard))) return null;
 
     Instruction compare =
         outerBranch.getOperand(0) instanceof Instruction instruction
@@ -84,8 +93,8 @@ record LoopUnrollAndJamCandidate(
     NormalizedCompare normalized =
         normalize(compare, outerInduction.phi(), outerBranch.getOperand(1) == outerBody);
     if (normalized == null || !stepMatches(normalized.predicate(), outerInduction.step())
-        || outerInduction.phi().getType() != accela.ir.Type.INT
-        || normalized.bound().getType() != accela.ir.Type.INT
+        || !isIntegerType(outerInduction.phi().getType())
+        || normalized.bound().getType() != outerInduction.phi().getType()
         || !isInvariant(normalized.bound(), outer)
         || outerInduction.next().getUses().stream()
             .anyMatch(use -> use.getUser() != outerInduction.phi())) return null;
@@ -95,7 +104,6 @@ record LoopUnrollAndJamCandidate(
         || !hasCanonicalPhis(innerExit, innerCondition, innerBody)
         || containsCall(outer)
         || containsMemory(innerCondition)
-        || containsMemory(innerPreheader)
         || hasLaneVariantWork(innerCondition, outerInduction.phi())
         || innerExitConditionVariesByLane(
             innerBranch.getOperand(0), outerInduction.phi(), innerInduction.phi(), innerBody)) {
@@ -104,7 +112,7 @@ record LoopUnrollAndJamCandidate(
 
     return new LoopUnrollAndJamCandidate(
         outerInduction, innerInduction, outerHeader, outerPreheader,
-        innerCondition, innerPreheader, innerBody, innerExit,
+        laneGuard, innerCondition, innerPreheader, innerBody, innerExit,
         normalized.bound(), normalized.predicate());
   }
 
@@ -241,6 +249,16 @@ record LoopUnrollAndJamCandidate(
     return block.getInstructions().stream().anyMatch(instruction ->
         instruction.getOpcode() == Instruction.Opcode.LOAD
             || instruction.getOpcode() == Instruction.Opcode.STORE);
+  }
+
+  private static boolean isIntegerType(accela.ir.Type type) {
+    return type == accela.ir.Type.INT || type == accela.ir.Type.I64;
+  }
+
+  private static boolean containsStoreOrCall(BasicBlock block) {
+    return block.getInstructions().stream().anyMatch(instruction ->
+        instruction.getOpcode() == Instruction.Opcode.STORE
+            || instruction.getOpcode() == Instruction.Opcode.CALL);
   }
 
   private static boolean isInvariant(Value value, LoopAnalysis.Loop loop) {

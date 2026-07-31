@@ -3,6 +3,7 @@ package accela.pass.ir.transform.indvars;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
@@ -19,6 +20,119 @@ import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
 final class IndVarSimplifyTest {
+  @Test
+  void narrowsTriangularInnerLoopWithRuntimeMinimum() {
+    Function function = new Function("triangular", Type.VOID);
+    Value outerBound = function.addArgument(Type.INT, "outerBound");
+    Value innerBound = function.addArgument(Type.INT, "innerBound");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock outerHeader = function.addBlock("outer.header");
+    BasicBlock innerPreheader = function.addBlock("inner.preheader");
+    BasicBlock innerHeader = function.addBlock("inner.header");
+    BasicBlock guard = function.addBlock("guard");
+    BasicBlock work = function.addBlock("work");
+    BasicBlock innerLatch = function.addBlock("inner.latch");
+    BasicBlock outerLatch = function.addBlock("outer.latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(outerHeader);
+
+    IRBuilder outerBuilder = new IRBuilder(outerHeader);
+    Instruction outer = outerBuilder.createPhi(Type.INT);
+    outer.addOperand(Constant.intConst(0));
+    outer.addOperand(entry);
+    outerBuilder.createCondBr(
+        outerBuilder.createICmp("slt", outer, outerBound), innerPreheader, exit);
+    new IRBuilder(innerPreheader).createBr(innerHeader);
+
+    IRBuilder innerBuilder = new IRBuilder(innerHeader);
+    Instruction inner = innerBuilder.createPhi(Type.INT);
+    inner.addOperand(Constant.intConst(0));
+    inner.addOperand(innerPreheader);
+    Instruction innerLimit = innerBuilder.createICmp("slt", inner, innerBound);
+    innerBuilder.createCondBr(innerLimit, guard, outerLatch);
+
+    IRBuilder guardBuilder = new IRBuilder(guard);
+    Instruction skipped = guardBuilder.createICmp("slt", outer, inner);
+    guardBuilder.createCondBr(skipped, innerLatch, work);
+    new IRBuilder(work).createBr(innerLatch);
+
+    IRBuilder innerLatchBuilder = new IRBuilder(innerLatch);
+    Instruction innerNext = innerLatchBuilder.createAdd(inner, Constant.intConst(1));
+    inner.addOperand(innerNext);
+    inner.addOperand(innerLatch);
+    innerLatchBuilder.createBr(innerHeader);
+
+    IRBuilder outerLatchBuilder = new IRBuilder(outerLatch);
+    Instruction outerNext = outerLatchBuilder.createAdd(outer, Constant.intConst(1));
+    outer.addOperand(outerNext);
+    outer.addOperand(outerLatch);
+    outerLatchBuilder.createBr(outerHeader);
+    new IRBuilder(exit).createRetVoid();
+
+    new IndVarSimplify.Pass().run(function, analyses());
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(Instruction.Opcode.XOR,
+        ((Instruction) innerLimit.getOperand(1)).getOpcode());
+    assertTrue(guard.getTerminator().getOperand(0) instanceof Constant.Int constant
+        && constant.value == 0);
+  }
+
+  @Test
+  void doesNotNarrowWorkThatExecutesBeforeTheTriangularGuard() {
+    Function function = new Function("partialGuard", Type.VOID);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value pointer = function.addArgument(Type.PTR, "pointer");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock outerHeader = function.addBlock("outer.header");
+    BasicBlock innerPreheader = function.addBlock("inner.preheader");
+    BasicBlock innerHeader = function.addBlock("inner.header");
+    BasicBlock guard = function.addBlock("guard");
+    BasicBlock work = function.addBlock("work");
+    BasicBlock innerLatch = function.addBlock("inner.latch");
+    BasicBlock outerLatch = function.addBlock("outer.latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(outerHeader);
+
+    IRBuilder outerBuilder = new IRBuilder(outerHeader);
+    Instruction outer = outerBuilder.createPhi(Type.INT);
+    outer.addOperand(Constant.intConst(0));
+    outer.addOperand(entry);
+    outerBuilder.createCondBr(
+        outerBuilder.createICmp("slt", outer, bound), innerPreheader, exit);
+    new IRBuilder(innerPreheader).createBr(innerHeader);
+
+    IRBuilder innerBuilder = new IRBuilder(innerHeader);
+    Instruction inner = innerBuilder.createPhi(Type.INT);
+    inner.addOperand(Constant.intConst(0));
+    inner.addOperand(innerPreheader);
+    Instruction innerLimit = innerBuilder.createICmp("slt", inner, bound);
+    innerBuilder.createCondBr(innerLimit, guard, outerLatch);
+
+    IRBuilder guardBuilder = new IRBuilder(guard);
+    guardBuilder.createLoad(Type.INT, pointer);
+    Instruction condition = guardBuilder.createICmp("slt", outer, inner);
+    guardBuilder.createCondBr(condition, innerLatch, work);
+    new IRBuilder(work).createBr(innerLatch);
+    IRBuilder innerLatchBuilder = new IRBuilder(innerLatch);
+    Instruction innerNext = innerLatchBuilder.createAdd(inner, Constant.intConst(1));
+    inner.addOperand(innerNext);
+    inner.addOperand(innerLatch);
+    innerLatchBuilder.createBr(innerHeader);
+    IRBuilder outerLatchBuilder = new IRBuilder(outerLatch);
+    Instruction outerNext = outerLatchBuilder.createAdd(outer, Constant.intConst(1));
+    outer.addOperand(outerNext);
+    outer.addOperand(outerLatch);
+    outerLatchBuilder.createBr(outerHeader);
+    new IRBuilder(exit).createRetVoid();
+
+    new IndVarSimplify.Pass().run(function, analyses());
+    IRVerifier.verifyFunction(function);
+
+    assertSame(bound, innerLimit.getOperand(1));
+    assertSame(condition, guard.getTerminator().getOperand(0));
+  }
+
   @Test
   void foldsComparisonsImpliedByTheLoopGuard() {
     Function function = new Function("loop", Type.VOID);

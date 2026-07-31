@@ -15,6 +15,47 @@ import org.junit.jupiter.api.Test;
 
 final class LoopSimplifyTest {
   @Test
+  void canonicalizesEqualInductionUpdatesOnMultipleLatches() {
+    Function function = new Function("induction", Type.VOID);
+    var chooseLeft = function.addArgument(Type.I1, "chooseLeft");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction phi = headerBuilder.createPhi(Type.INT);
+    phi.addOperand(Constant.intConst(0));
+    phi.addOperand(entry);
+    Instruction condition = headerBuilder.createICmp("slt", phi, Constant.intConst(10));
+    headerBuilder.createCondBr(condition, left, exit);
+    IRBuilder leftBuilder = new IRBuilder(left);
+    Instruction leftNext = leftBuilder.createAdd(phi, Constant.intConst(1));
+    leftBuilder.createCondBr(chooseLeft, header, right);
+    phi.addOperand(leftNext);
+    phi.addOperand(left);
+    IRBuilder rightBuilder = new IRBuilder(right);
+    Instruction rightNext = rightBuilder.createAdd(phi, Constant.intConst(1));
+    rightBuilder.createBr(header);
+    phi.addOperand(rightNext);
+    phi.addOperand(right);
+    new IRBuilder(exit).createRetVoid();
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopSimplify.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+
+    BasicBlock backedge = (BasicBlock) phi.getOperand(3);
+    Instruction update = (Instruction) phi.getOperand(2);
+    assertEquals(backedge, update.getParent());
+    assertEquals(Instruction.Opcode.ADD, update.getOpcode());
+    assertEquals(phi, update.getOperand(0));
+    assertEquals(1, ((Constant.Int) update.getOperand(1)).value);
+  }
+
+  @Test
   void insertsOneBackedgeForMultipleLatches() {
     Function function = new Function("loop", Type.VOID);
     var chooseLeft = function.addArgument(Type.I1, "chooseLeft");

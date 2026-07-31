@@ -50,6 +50,29 @@ final class LoopUnrollAndJamTest {
         .noneMatch(block -> block.getLabel().contains(".unrolljam.")));
   }
 
+  @Test
+  void jamsGuardedRowsAndSharesCrossLaneLoads() {
+    GuardedFixture fixture = new GuardedFixture();
+
+    assertTrue(LoopUnrollAndJam.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    BasicBlock jammedBody = fixture.function.getBlocks().stream()
+        .filter(block -> block.getLabel().endsWith(".unrolljam.body"))
+        .findFirst()
+        .orElseThrow();
+    long loads = jammedBody.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.LOAD)
+        .count();
+    long stores = jammedBody.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.STORE)
+        .count();
+    assertTrue(stores >= 2);
+    assertEquals(stores + 1, loads); // one output load per lane plus one shared input load
+    assertTrue(fixture.outerHeader.getPredecessors().stream()
+        .anyMatch(block -> block.getLabel().endsWith(".unrolljam.guard")));
+  }
+
   private static FunctionAnalysisManager analysisManager() {
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
@@ -148,6 +171,94 @@ final class LoopUnrollAndJamTest {
               new Value[] {Constant.int64Const(0), storeIndex},
               true);
       latchBuilder.createStore(result, storeAddress);
+      Instruction nextOuter = latchBuilder.createAdd(outer, Constant.intConst(1));
+      latchBuilder.createBr(outerHeader);
+      outer.addOperand(nextOuter);
+      outer.addOperand(outerLatch);
+      new IRBuilder(exit).createRet(Constant.intConst(0));
+    }
+  }
+
+  private static final class GuardedFixture {
+    private static final Type MATRIX = Type.array(Type.array(Type.INT, 16), 16);
+    private static final Type VECTOR = Type.array(Type.INT, 16);
+
+    final accela.ir.Module module = new accela.ir.Module();
+    final GlobalVariable factors =
+        new GlobalVariable("factors", VECTOR, Constant.zero(VECTOR), false);
+    final GlobalVariable input =
+        new GlobalVariable("input", VECTOR, Constant.zero(VECTOR), false);
+    final GlobalVariable output =
+        new GlobalVariable("output", MATRIX, Constant.zero(MATRIX), false);
+    final Function function = new Function("guarded_kernel", Type.INT);
+    final Value limit = function.addArgument(Type.INT, "n");
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock outerHeader = function.addBlock("outer.header");
+    final BasicBlock laneGuard = function.addBlock("lane.guard");
+    final BasicBlock innerCondition = function.addBlock("inner.condition");
+    final BasicBlock innerPreheader = function.addBlock("inner.preheader");
+    final BasicBlock innerBody = function.addBlock("inner.body");
+    final BasicBlock outerLatch = function.addBlock("outer.latch");
+    final BasicBlock exit = function.addBlock("exit");
+
+    GuardedFixture() {
+      module.addGlobal(factors);
+      module.addGlobal(input);
+      module.addGlobal(output);
+      module.addFunction(function);
+      new IRBuilder(entry).createBr(outerHeader);
+
+      Instruction outer = Instruction.createPhi(Type.INT);
+      outerHeader.addInstruction(outer);
+      outer.addOperand(Constant.intConst(0));
+      outer.addOperand(entry);
+      IRBuilder outerBuilder = new IRBuilder(outerHeader);
+      outerBuilder.createCondBr(
+          outerBuilder.createICmp("slt", outer, limit), laneGuard, exit);
+
+      Instruction guardedRow = Instruction.createPhi(Type.INT);
+      laneGuard.addInstruction(guardedRow);
+      guardedRow.addOperand(outer);
+      guardedRow.addOperand(outerHeader);
+      IRBuilder guardBuilder = new IRBuilder(laneGuard);
+      Value factorAddress = guardBuilder.createGEP(
+          VECTOR, factors, new Value[] {Constant.int64Const(0), guardedRow}, true);
+      Value factor = guardBuilder.createLoad(Type.INT, factorAddress);
+      guardBuilder.createCondBr(
+          guardBuilder.createICmp("ne", factor, Constant.intConst(1)),
+          innerCondition,
+          outerLatch);
+
+      IRBuilder conditionBuilder = new IRBuilder(innerCondition);
+      conditionBuilder.createCondBr(
+          conditionBuilder.createICmp("slt", Constant.intConst(0), limit),
+          innerPreheader,
+          outerLatch);
+      new IRBuilder(innerPreheader).createBr(innerBody);
+
+      Instruction inner = Instruction.createPhi(Type.INT);
+      innerBody.addInstruction(inner);
+      inner.addOperand(Constant.intConst(0));
+      inner.addOperand(innerPreheader);
+      IRBuilder bodyBuilder = new IRBuilder(innerBody);
+      Value outputAddress = bodyBuilder.createGEP(
+          MATRIX,
+          output,
+          new Value[] {Constant.int64Const(0), outer, inner},
+          true);
+      Value previous = bodyBuilder.createLoad(Type.INT, outputAddress);
+      Value product = bodyBuilder.createMul(previous, factor);
+      Value inputAddress = bodyBuilder.createGEP(
+          VECTOR, input, new Value[] {Constant.int64Const(0), inner}, true);
+      Value shared = bodyBuilder.createLoad(Type.INT, inputAddress);
+      bodyBuilder.createStore(bodyBuilder.createAdd(product, shared), outputAddress);
+      Instruction nextInner = bodyBuilder.createAdd(inner, Constant.intConst(1));
+      bodyBuilder.createCondBr(
+          bodyBuilder.createICmp("slt", nextInner, limit), innerBody, outerLatch);
+      inner.addOperand(nextInner);
+      inner.addOperand(innerBody);
+
+      IRBuilder latchBuilder = new IRBuilder(outerLatch);
       Instruction nextOuter = latchBuilder.createAdd(outer, Constant.intConst(1));
       latchBuilder.createBr(outerHeader);
       outer.addOperand(nextOuter);

@@ -10,6 +10,7 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.transform.LoopSimplify;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,6 +30,7 @@ public final class IndVarSimplify {
   public static final class Pass implements FunctionPass {
     @Override
     public PreservedAnalyses run(Function function, FunctionAnalysisManager fam) {
+      boolean changed = LoopIterationDomainSimplify.run(function, fam);
       List<IndVarRange> ranges = fam
           .getResult(InductionVariableAnalysis.class, function)
           .allInductions().stream()
@@ -37,7 +39,6 @@ public final class IndVarSimplify {
           .toList();
       DominatorTreeAnalysis.Result dominators =
           fam.getResult(DominatorTreeAnalysis.class, function);
-      boolean changed = false;
       for (BasicBlock block : function.getBlocks()) {
         for (Instruction instruction : new ArrayList<>(block.getInstructions())) {
           if (instruction.getOpcode() == Instruction.Opcode.ICMP
@@ -51,6 +52,22 @@ public final class IndVarSimplify {
         }
       }
       return changed ? PreservedAnalyses.none() : PreservedAnalyses.all();
+    }
+  }
+
+  /** Runs loop-domain narrowing before loop rotation changes canonical pretest shapes. */
+  public static final class DomainPass implements FunctionPass {
+    @Override
+    public PreservedAnalyses run(Function function, FunctionAnalysisManager fam) {
+      boolean changed = false;
+      if (LoopIterationDomainSimplify.needsCanonicalization(function, fam)) {
+        changed = LoopSimplify.runOnFunction(function, fam);
+        if (changed) fam.invalidate(function, PreservedAnalyses.none());
+      }
+      changed |= LoopIterationDomainSimplify.run(function, fam);
+      return changed
+          ? PreservedAnalyses.none()
+          : PreservedAnalyses.all();
     }
   }
 

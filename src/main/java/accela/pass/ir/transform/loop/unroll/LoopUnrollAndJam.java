@@ -19,9 +19,10 @@ public final class LoopUnrollAndJam {
     boolean changed = false;
     for (LoopUnrollAndJamCandidate candidate :
         LoopUnrollAndJamCandidate.findAll(function, fam)) {
-      int factor = UnrollAndJamCostModel.chooseFactor(candidate);
+      var dependences = UnrollAndJamCostModel.analyzeDependences(candidate);
+      int factor = UnrollAndJamCostModel.chooseFactor(candidate, dependences);
       if (factor < 2) continue;
-      LoopUnrollAndJamTransform.apply(function, candidate, factor);
+      LoopUnrollAndJamTransform.apply(function, candidate, factor, dependences);
       changed = true;
     }
     return changed;

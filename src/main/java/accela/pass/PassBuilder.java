@@ -9,6 +9,7 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
+import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.ADCE;
 import accela.pass.ir.transform.DeadStoreElimination;
@@ -157,6 +158,7 @@ public final class PassBuilder {
     fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
     fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
     fam.registerPass(PostDominatorTreeAnalysis.class, new PostDominatorTreeAnalysis());
+    fam.registerPass(ScalarEvolutionAnalysis.class, new ScalarEvolutionAnalysis());
     return fam;
   }
 
@@ -234,6 +236,9 @@ public final class PassBuilder {
     FunctionPassManager globalMemoryFpm = new FunctionPassManager(instrumentation);
     globalMemoryFpm.addPass(new EarlyCSE.Pass());
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
+    if (isIndVarSimplifyEnabled()) {
+      postIpsccpFpm.addPass(new IndVarSimplify.DomainPass());
+    }
     if (isLoopInterchangeEnabled()) {
       postIpsccpFpm.addPass(new LoopInterchange.Pass());
     }

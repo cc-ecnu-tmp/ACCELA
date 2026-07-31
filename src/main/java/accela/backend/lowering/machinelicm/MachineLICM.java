@@ -36,7 +36,7 @@ public final class MachineLICM {
         // entry/exit cost when the source IR proves enough reuse inside the loop.
         if (constant.isCheapBranchConstant()
             && loop.tripCount() < MIN_CHEAP_BRANCH_TRIP_COUNT
-            && (hoistedCheapBranch || !function.getName().equals("main"))) continue;
+            && hoistedCheapBranch) continue;
         if (available-- <= 0) break;
         materialize(function, loop.preheader(), constant);
         hoistedCheapBranch |= constant.isCheapBranchConstant();

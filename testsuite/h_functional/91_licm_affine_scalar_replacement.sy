@@ -1,0 +1,48 @@
+const int N = 16;
+int a[N][N];
+int b[N][N];
+int c[N][N];
+
+int main() {
+  int n = getint();
+  int i = 0;
+  int j = 0;
+  while (i < n) {
+    j = 0;
+    while (j < n) {
+      a[i][j] = 1;
+      b[i][j] = 1;
+      c[i][j] = 0;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+
+  i = 0;
+  while (i < n) {
+    j = 0;
+    while (j < n) {
+      int k = 0;
+      while (k < n) {
+        c[i][j] = c[i][j] + a[i][k] * b[k][j];
+        k = k + 1;
+      }
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+
+  int checksum = 0;
+  i = 0;
+  while (i < n) {
+    j = 0;
+    while (j < n) {
+      checksum = checksum + c[i][j];
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+  putint(checksum);
+  putch(10);
+  return 0;
+}

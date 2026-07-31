@@ -1,9 +1,11 @@
 package accela.pass.ir.transform;
 
 import accela.ir.BasicBlock;
+import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
+import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
@@ -71,7 +73,7 @@ public final class LoopSimplify {
 
     for (Instruction phi : new ArrayList<>(header.getInstructions())) {
       if (phi.getOpcode() != Instruction.Opcode.PHI) break;
-      Value backedgeValue = mergeIncomingValues(builder, phi, latches);
+      Value backedgeValue = mergeBackedgeValues(builder, phi, latches);
       List<Value> outside = incomingPairsExcept(phi, latchSet);
       phi.clearAllOperands();
       outside.forEach(phi::addOperand);
@@ -80,6 +82,44 @@ public final class LoopSimplify {
     }
     builder.createBr(header);
     for (BasicBlock latch : latches) replaceSuccessor(latch, header, backedge);
+  }
+
+  private static Value mergeBackedgeValues(
+      IRBuilder builder, Instruction headerPhi, List<BasicBlock> latches) {
+    Long step = commonConstantStep(headerPhi, latches);
+    if (step != null && headerPhi.getType() == Type.INT) {
+      return builder.createAdd(headerPhi, Constant.intConst(step));
+    }
+    return mergeIncomingValues(builder, headerPhi, latches);
+  }
+
+  private static Long commonConstantStep(
+      Instruction headerPhi, List<BasicBlock> latches) {
+    Long common = null;
+    for (BasicBlock latch : latches) {
+      Long step = constantStep(incomingValue(headerPhi, latch), headerPhi);
+      if (step == null || common != null && !common.equals(step)) return null;
+      common = step;
+    }
+    return common;
+  }
+
+  private static Long constantStep(Value value, Instruction phi) {
+    if (!(value instanceof Instruction update)) return null;
+    if (update.getOpcode() == Instruction.Opcode.ADD) {
+      if (update.getOperand(0) == phi && update.getOperand(1) instanceof Constant.Int c) {
+        return c.value;
+      }
+      if (update.getOperand(1) == phi && update.getOperand(0) instanceof Constant.Int c) {
+        return c.value;
+      }
+    }
+    if (update.getOpcode() == Instruction.Opcode.SUB
+        && update.getOperand(0) == phi
+        && update.getOperand(1) instanceof Constant.Int c) {
+      return -c.value;
+    }
+    return null;
   }
 
   private static Value mergeIncomingValues(

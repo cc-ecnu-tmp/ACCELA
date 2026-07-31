@@ -48,14 +48,17 @@ public final class DependenceAnalysis {
   }
 
   public static final class Result {
+    private final List<Value> inductionValues;
     private final List<MemoryAccess> accesses;
     private final List<Dependence> dependences;
     private final boolean unknownMemory;
 
     private Result(
+        List<Value> inductionValues,
         List<MemoryAccess> accesses,
         List<Dependence> dependences,
         boolean unknownMemory) {
+      this.inductionValues = List.copyOf(inductionValues);
       this.accesses = List.copyOf(accesses);
       this.dependences = List.copyOf(dependences);
       this.unknownMemory = unknownMemory;
@@ -107,6 +110,15 @@ public final class DependenceAnalysis {
         }
       }
       return true;
+    }
+
+    /** Same proof using the actual induction values, avoiding caller-dependent loop numbering. */
+    public boolean isSafeToJam(
+        Value variedInduction, Value independentInduction, long step, int factor) {
+      int variedLoop = inductionValues.indexOf(variedInduction);
+      int independentLoop = inductionValues.indexOf(independentInduction);
+      if (variedLoop < 0 || independentLoop < 0 || variedLoop == independentLoop) return false;
+      return isSafeToJam(variedLoop, independentLoop, step, factor);
     }
 
     /** Estimates spatial locality from the byte stride of each memory instruction. */
@@ -161,7 +173,7 @@ public final class DependenceAnalysis {
         if (dependence != null) dependences.add(dependence);
       }
     }
-    return new Result(accesses, dependences, unknownMemory);
+    return new Result(inductionValues, accesses, dependences, unknownMemory);
   }
 
   private static Dependence dependence(

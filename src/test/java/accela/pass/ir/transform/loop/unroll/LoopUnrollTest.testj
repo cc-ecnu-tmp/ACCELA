@@ -12,6 +12,7 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
 import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
@@ -60,12 +61,42 @@ final class LoopUnrollTest {
         .isEmpty());
   }
 
+  @Test
+  void fullyUnrollsSmallDescendingLoopUsingScalarEvolution() {
+    Function function = new Function("descending", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("sgt", index, Constant.intConst(0)), body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createSub(index, Constant.intConst(2));
+    bodyBuilder.createBr(header);
+    index.addOperand(Constant.intConst(6));
+    index.addOperand(entry);
+    index.addOperand(next);
+    index.addOperand(body);
+    new IRBuilder(exit).createRet(index);
+
+    assertTrue(LoopUnroll.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertTrue(function.getBlocks().stream()
+        .noneMatch(block -> block.getLabel().equals("header")
+            || block.getLabel().equals("body")));
+  }
+
   private static FunctionAnalysisManager analysisManager() {
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
     fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
     fam.registerPass(
         InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    fam.registerPass(ScalarEvolutionAnalysis.class, new ScalarEvolutionAnalysis());
     return fam;
   }
 }

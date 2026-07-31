@@ -37,13 +37,20 @@ public final class LICM {
         fam.getResult(DominatorTreeAnalysis.class, function);
     boolean changed = false;
     List<LoopAnalysis.Loop> loops = fam.getResult(LoopAnalysis.class, function).loops();
-    for (LoopAnalysis.Loop loop : loops) {
+    for (int loopIndex = 0; loopIndex < loops.size(); loopIndex++) {
+      LoopAnalysis.Loop loop = loops.get(loopIndex);
+      boolean cfgChanged = false;
       boolean dedicatedPreheader = loop.preheader() != null;
       BasicBlock preheader = dedicatedPreheader
           ? loop.preheader() : speculativePreheader(loop, loops);
       if (preheader == null || preheader.getTerminator() == null) continue;
       if (dedicatedPreheader) {
-        changed |= LoopAccessPromotion.run(function, loop, modRef, dominators);
+        boolean promoted = LoopAccessPromotion.run(function, loop, modRef, dominators);
+        changed |= promoted;
+        if (promoted) {
+          dominators = new DominatorTreeAnalysis().run(function, null);
+          cfgChanged = true;
+        }
       }
       LoopMemory memory = collectMemoryEffects(function, loop);
 
@@ -63,6 +70,23 @@ public final class LICM {
           }
         }
       } while (localChange);
+      // Address expressions formed in the loop may only become promotion candidates after
+      // invariant GEPs have reached the preheader.
+      if (dedicatedPreheader) {
+        boolean promoted = LoopAccessPromotion.run(function, loop, modRef, dominators);
+        changed |= promoted;
+        if (promoted) {
+          dominators = new DominatorTreeAnalysis().run(function, null);
+          cfgChanged = true;
+        }
+      }
+      if (cfgChanged) {
+        fam.invalidate(function, PreservedAnalyses.none());
+        dominators = fam.getResult(DominatorTreeAnalysis.class, function);
+        loops = fam.getResult(LoopAnalysis.class, function).loops();
+        // Revisit nesting from the beginning so outer loops include newly split edges.
+        loopIndex = -1;
+      }
     }
     return changed;
   }
@@ -198,9 +222,7 @@ public final class LICM {
         modRef = cachedModule == null ? null : GlobalModRefAnalysis.analyze(cachedModule);
       }
       if (!runOnFunction(function, fam, modRef)) return PreservedAnalyses.all();
-      return PreservedAnalyses.none()
-          .preserve(DominatorTreeAnalysis.class)
-          .preserve(LoopAnalysis.class);
+      return PreservedAnalyses.none();
     }
   }
 }

@@ -99,9 +99,98 @@ final class LICMTest {
     assertTrue(LICM.runOnFunction(function, analysisManager()));
     IRVerifier.verifyFunction(function);
     assertTrue(hasAccess(entry, state, Instruction.Opcode.LOAD));
-    assertTrue(hasAccess(function.getBlocks().get(3), state, Instruction.Opcode.STORE));
+    assertTrue(hasPromotionWriteback(function, state));
     assertFalse(hasAccess(header, state, Instruction.Opcode.LOAD));
     assertFalse(hasAccess(body, state, Instruction.Opcode.STORE));
+  }
+
+  @Test
+  void promotesOuterIndexedElementAcrossInnerReductionLoop() {
+    NestedPromotionFixture fixture = new NestedPromotionFixture(false);
+
+    assertTrue(LICM.runOnFunction(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    assertFalse(hasAccess(fixture.innerHeader, fixture.pointer, Instruction.Opcode.LOAD));
+    assertFalse(hasAccess(fixture.innerBody, fixture.pointer, Instruction.Opcode.STORE));
+    assertTrue(hasAccess(fixture.outerHeader, fixture.pointer, Instruction.Opcode.LOAD));
+    assertTrue(hasPromotionWriteback(fixture.function, fixture.pointer));
+  }
+
+  @Test
+  void rejectsPromotionWhenAnotherArrayAccessMayAlias() {
+    NestedPromotionFixture fixture = new NestedPromotionFixture(true);
+
+    LICM.runOnFunction(fixture.function, analysisManager());
+    IRVerifier.verifyFunction(fixture.function);
+
+    assertTrue(hasAccess(fixture.innerHeader, fixture.pointer, Instruction.Opcode.LOAD));
+    assertTrue(hasAccess(fixture.innerBody, fixture.pointer, Instruction.Opcode.STORE));
+  }
+
+  @Test
+  void rejectsPromotionThatWouldSpeculativelyLoadAnArgument() {
+    Module module = new Module();
+    Function function = loopFunction(module, "guarded_pointer");
+    Value pointer = function.addArgument(Type.PTR, "pointer");
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction loaded = headerBuilder.createLoad(Type.INT, pointer);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    bodyBuilder.createStore(loaded, pointer);
+
+    LICM.runOnFunction(function, analysisManager());
+    IRVerifier.verifyFunction(function);
+
+    assertTrue(hasAccess(header, pointer, Instruction.Opcode.LOAD));
+    assertTrue(hasAccess(body, pointer, Instruction.Opcode.STORE));
+  }
+
+  @Test
+  void splitsEveryPromotionExitAndRepairsExitPhi() {
+    Module module = new Module();
+    GlobalVariable state = scalar(module, "multi_exit_state");
+    Function function = new Function("multi_exit_promotion", Type.VOID);
+    Value enter = function.addArgument(Type.I1, "enter");
+    Value early = function.addArgument(Type.I1, "early");
+    module.addGlobal(state);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock exit = function.addBlock("exit");
+
+    new IRBuilder(entry).createBr(header);
+    new IRBuilder(header).createCondBr(enter, body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction loaded = bodyBuilder.createLoad(Type.INT, state);
+    bodyBuilder.createStore(bodyBuilder.createAdd(loaded, Constant.intConst(1)), state);
+    bodyBuilder.createCondBr(early, exit, latch);
+    new IRBuilder(latch).createBr(header);
+    Instruction result = Instruction.createPhi(Type.INT);
+    result.addOperand(Constant.intConst(0));
+    result.addOperand(header);
+    result.addOperand(Constant.intConst(1));
+    result.addOperand(body);
+    exit.addInstructionToFront(result);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+
+    long writebacks = function.getBlocks().stream()
+        .filter(block -> block.getLabel().contains(".promote.exit."))
+        .count();
+    assertTrue(writebacks == 2);
+    assertTrue(function.getBlocks().stream().filter(
+        block -> block.getLabel().contains(".promote.exit."))
+        .allMatch(block -> hasAccess(block, state, Instruction.Opcode.STORE)));
+    assertFalse(phiHasPredecessor(result, header));
+    assertFalse(phiHasPredecessor(result, body));
   }
 
   @Test
@@ -235,12 +324,86 @@ final class LICMTest {
     return global;
   }
 
+  private static final class NestedPromotionFixture {
+    private static final Type ARRAY = Type.array(Type.INT, 8);
+
+    final Module module = new Module();
+    final GlobalVariable values =
+        new GlobalVariable("values", ARRAY, Constant.zero(ARRAY), false);
+    final Function function = new Function("nested_promotion", Type.VOID);
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock outerHeader = function.addBlock("outer.header");
+    final BasicBlock innerHeader = function.addBlock("inner.header");
+    final BasicBlock innerBody = function.addBlock("inner.body");
+    final BasicBlock outerLatch = function.addBlock("outer.latch");
+    final BasicBlock exit = function.addBlock("exit");
+    final Instruction pointer;
+
+    NestedPromotionFixture(boolean conflictingAccess) {
+      module.addGlobal(values);
+      module.addFunction(function);
+      new IRBuilder(entry).createBr(outerHeader);
+
+      IRBuilder outerBuilder = new IRBuilder(outerHeader);
+      Instruction outer = outerBuilder.createPhi(Type.INT);
+      outer.addOperand(Constant.intConst(0));
+      outer.addOperand(entry);
+      pointer = outerBuilder.createGEP(
+          ARRAY, values, new Value[] {Constant.int64Const(0), outer}, true);
+      outerBuilder.createBr(innerHeader);
+
+      IRBuilder innerBuilder = new IRBuilder(innerHeader);
+      Instruction inner = innerBuilder.createPhi(Type.INT);
+      inner.addOperand(Constant.intConst(0));
+      inner.addOperand(outerHeader);
+      Instruction loaded = innerBuilder.createLoad(Type.INT, pointer);
+      innerBuilder.createCondBr(
+          innerBuilder.createICmp("slt", inner, Constant.intConst(3)), innerBody, outerLatch);
+
+      IRBuilder bodyBuilder = new IRBuilder(innerBody);
+      bodyBuilder.createStore(bodyBuilder.createAdd(loaded, Constant.intConst(1)), pointer);
+      if (conflictingAccess) {
+        Value other = bodyBuilder.createGEP(
+            ARRAY,
+            values,
+            new Value[] {Constant.int64Const(0), Constant.int64Const(7)},
+            true);
+        bodyBuilder.createStore(Constant.intConst(0), other);
+      }
+      Instruction nextInner = bodyBuilder.createAdd(inner, Constant.intConst(1));
+      bodyBuilder.createBr(innerHeader);
+      inner.addOperand(nextInner);
+      inner.addOperand(innerBody);
+
+      IRBuilder latchBuilder = new IRBuilder(outerLatch);
+      Instruction nextOuter = latchBuilder.createAdd(outer, Constant.intConst(1));
+      latchBuilder.createCondBr(
+          latchBuilder.createICmp("slt", nextOuter, Constant.intConst(2)), outerHeader, exit);
+      outer.addOperand(nextOuter);
+      outer.addOperand(outerLatch);
+      new IRBuilder(exit).createRetVoid();
+    }
+  }
+
   private static boolean hasAccess(
-      BasicBlock block, GlobalVariable global, Instruction.Opcode opcode) {
+      BasicBlock block, Value pointer, Instruction.Opcode opcode) {
     int pointerIndex = opcode == Instruction.Opcode.LOAD ? 0 : 1;
     return block.getInstructions().stream().anyMatch(instruction ->
         instruction.getOpcode() == opcode
-            && instruction.getOperand(pointerIndex) == global);
+            && instruction.getOperand(pointerIndex) == pointer);
+  }
+
+  private static boolean hasPromotionWriteback(Function function, Value pointer) {
+    return function.getBlocks().stream().anyMatch(block ->
+        block.getLabel().contains(".promote.exit.")
+            && hasAccess(block, pointer, Instruction.Opcode.STORE));
+  }
+
+  private static boolean phiHasPredecessor(Instruction phi, BasicBlock predecessor) {
+    for (int index = 1; index < phi.getNumOperands(); index += 2) {
+      if (phi.getOperand(index) == predecessor) return true;
+    }
+    return false;
   }
 
   private static FunctionAnalysisManager analysisManager() {
