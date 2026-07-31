@@ -75,6 +75,38 @@ final class EarlyCSETest {
   }
 
   @Test
+  void removesAStoreThatWritesBackTheKnownValueThroughTheSamePointer() {
+    Function function = new Function("write_back", Type.INT);
+    Value source = function.addArgument(Type.PTR, "source");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction value = builder.createLoad(Type.INT, source);
+    Instruction writeBack = builder.createStore(value, source);
+    builder.createRet(value);
+
+    assertTrue(EarlyCSE.runOnFunction(function));
+    assertEquals(0, count(entry, Instruction.Opcode.STORE));
+    assertTrue(writeBack.getParent() == null);
+  }
+
+  @Test
+  void keepsAWriteBackAfterAPossibleAliasStore() {
+    Function function = new Function("clobbered", Type.INT);
+    Value source = function.addArgument(Type.PTR, "source");
+    Value destination = function.addArgument(Type.PTR, "destination");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction value = builder.createLoad(Type.INT, source);
+    builder.createStore(value, destination);
+    Instruction writeBack = builder.createStore(value, source);
+    builder.createRet(value);
+
+    assertFalse(EarlyCSE.runOnFunction(function));
+    assertEquals(2, count(entry, Instruction.Opcode.STORE));
+    assertTrue(writeBack.getParent() == entry);
+  }
+
+  @Test
   void readonlyCallPreservesAnUnrelatedGlobalLoad() {
     Module module = new Module();
     GlobalVariable limit =

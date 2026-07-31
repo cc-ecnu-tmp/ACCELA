@@ -65,14 +65,23 @@ public final class EarlyCSE {
     Map<Value, Value> availableLoads = new IdentityHashMap<>();
     boolean changed = false;
     for (Instruction instruction : new ArrayList<>(block.getInstructions())) {
-      Value replacement = switch (instruction.getOpcode()) {
-        case STORE -> {
-          Value pointer = instruction.getOperand(1);
-          availableLoads.keySet().removeIf(
-              loadedPointer -> PointerProvenance.mayAlias(loadedPointer, pointer));
-          availableLoads.put(instruction.getOperand(1), instruction.getOperand(0));
-          yield null;
+      if (instruction.getOpcode() == Instruction.Opcode.STORE) {
+        Value stored = instruction.getOperand(0);
+        Value pointer = instruction.getOperand(1);
+        boolean redundant = availableLoads.get(pointer) == stored;
+
+        // A store through another pointer may partially overlap the known load;
+        // retain facts only when the exact pointer is unchanged.
+        availableLoads.keySet().removeIf(
+            loadedPointer -> PointerProvenance.mayAlias(loadedPointer, pointer));
+        if (!redundant) availableLoads.put(pointer, stored);
+        if (redundant) {
+          instruction.eraseFromParent();
+          changed = true;
         }
+        continue;
+      }
+      Value replacement = switch (instruction.getOpcode()) {
         case CALL -> {
           if (modRef == null) availableLoads.clear();
           else availableLoads.keySet().removeIf(

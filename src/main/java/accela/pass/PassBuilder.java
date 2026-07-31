@@ -12,6 +12,7 @@ import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.ADCE;
+import accela.pass.ir.transform.AffineLoopSummarization;
 import accela.pass.ir.transform.DeadStoreElimination;
 import accela.pass.ir.transform.EarlyCSE;
 import accela.pass.ir.transform.GlobalOpt;
@@ -135,6 +136,12 @@ public final class PassBuilder {
         || disable.equalsIgnoreCase("false");
   }
 
+  private static boolean isAffineLoopSummarizationEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_AFFINE_LOOP_SUMMARIZATION");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
   private static boolean isRankedRecurrenceTabulationEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_RRT");
     return disable == null || disable.isEmpty() || disable.equals("0")
@@ -238,6 +245,9 @@ public final class PassBuilder {
     FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
     if (isIndVarSimplifyEnabled()) {
       postIpsccpFpm.addPass(new IndVarSimplify.DomainPass());
+    }
+    if (isAffineLoopSummarizationEnabled()) {
+      postIpsccpFpm.addPass(new AffineLoopSummarization.Pass());
     }
     if (isLoopInterchangeEnabled()) {
       postIpsccpFpm.addPass(new LoopInterchange.Pass());
