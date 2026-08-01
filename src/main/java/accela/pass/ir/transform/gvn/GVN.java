@@ -94,13 +94,21 @@ public final class GVN {
           || instruction.getParent() != phi.getOperand(index + 1)
           || instruction.getNumUses() != 1
           || instruction.getNumOperands() != 2
-          || !GVNValueTable.isPure(instruction)) return null;
+          || !isPhiTranslatableBinary(instruction)) return null;
       GVNValueTable.Expression current = GVNValueTable.expressionFor(instruction);
       if (expression != null && !expression.equals(current)) return null;
       expression = current;
       incoming.add(instruction);
     }
     return incoming;
+  }
+
+  private static boolean isPhiTranslatableBinary(Instruction instruction) {
+    return switch (instruction.getOpcode()) {
+      case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, XOR,
+          FADD, FSUB, FMUL, FDIV -> true;
+      default -> false;
+    };
   }
 
   public static final class Pass implements FunctionPass {

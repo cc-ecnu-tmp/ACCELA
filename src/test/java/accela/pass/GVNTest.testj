@@ -55,6 +55,46 @@ final class GVNTest {
   }
 
   @Test
+  void eliminatesGepExpressionsFromDominatingBlocks() {
+    Function function = new Function("f", Type.PTR);
+    Value index = function.addArgument(Type.I64, "index");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Type array = Type.array(Type.INT, 8);
+    Value storage = entryBuilder.createAlloca(array);
+    Instruction first =
+        entryBuilder.createGEP(array, storage, new Value[] {Constant.int64Const(0), index}, true);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction duplicate =
+        bodyBuilder.createGEP(array, storage, new Value[] {Constant.int64Const(0), index}, true);
+    Instruction ret = bodyBuilder.createRet(duplicate);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(first, ret.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
+  @Test
+  void eliminatesCastExpressionsFromDominatingBlocks() {
+    Function function = new Function("f", Type.I64);
+    Value value = function.addArgument(Type.INT, "value");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Instruction first = entryBuilder.createSExt(value, Type.I64);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction duplicate = bodyBuilder.createSExt(value, Type.I64);
+    Instruction ret = bodyBuilder.createRet(duplicate);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(first, ret.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
+  @Test
   void preservesLoadsAcrossLoopBackedgeStores() {
     Function function = new Function("f", Type.INT);
     Value condition = function.addArgument(Type.I1, "condition");
@@ -125,5 +165,40 @@ final class GVNTest {
     assertSame(merge, ((Instruction) ret.getOperand(0)).getParent());
     assertTrue(leftValue.getParent() == null);
     assertTrue(rightValue.getParent() == null);
+  }
+
+  @Test
+  void leavesEquivalentGepExpressionsThroughPhiAlone() {
+    Function function = new Function("f", Type.PTR);
+    Value index = function.addArgument(Type.I64, "index");
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Type array = Type.array(Type.INT, 8);
+    Value storage = entryBuilder.createAlloca(array);
+    entryBuilder.createCondBr(condition, left, right);
+    Instruction leftValue =
+        new IRBuilder(left).createGEP(
+            array, storage, new Value[] {Constant.int64Const(0), index}, true);
+    new IRBuilder(left).createBr(merge);
+    Instruction rightValue =
+        new IRBuilder(right).createGEP(
+            array, storage, new Value[] {Constant.int64Const(0), index}, true);
+    new IRBuilder(right).createBr(merge);
+    IRBuilder builder = new IRBuilder(merge);
+    Instruction phi = builder.createPhi(Type.PTR);
+    phi.addOperand(leftValue);
+    phi.addOperand(left);
+    phi.addOperand(rightValue);
+    phi.addOperand(right);
+    Instruction ret = builder.createRet(phi);
+
+    assertFalse(GVN.runOnFunction(function));
+    assertSame(phi, ret.getOperand(0));
+    assertSame(left, leftValue.getParent());
+    assertSame(right, rightValue.getParent());
   }
 }
