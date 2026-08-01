@@ -21,6 +21,7 @@ import accela.pass.ir.transform.InstCombine;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.LICM;
 import accela.pass.ir.transform.Mem2Reg;
+import accela.pass.ir.transform.ReductionPushdown;
 import accela.pass.ir.transform.SCCP;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
@@ -249,6 +250,7 @@ public final class PassBuilder {
     if (isAffineLoopSummarizationEnabled()) {
       postIpsccpFpm.addPass(new AffineLoopSummarization.Pass());
     }
+    postIpsccpFpm.addPass(new ReductionPushdown.Pass());
     if (isLoopInterchangeEnabled()) {
       postIpsccpFpm.addPass(new LoopInterchange.Pass());
     }

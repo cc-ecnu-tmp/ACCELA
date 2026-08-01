@@ -1,0 +1,105 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class ReductionPushdownTest {
+  @Test
+  void pushesAnInvariantIntegerFactorPastAnAdditiveReduction() {
+    Fixture fixture = fixture(true, true);
+
+    assertTrue(ReductionPushdown.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+    assertSame(fixture.variant, fixture.update.getOperand(1));
+    Instruction scaled = (Instruction) fixture.ret.getOperand(0);
+    assertEquals(Instruction.Opcode.MUL, scaled.getOpcode());
+    assertSame(fixture.reduction, scaled.getOperand(0));
+    assertSame(fixture.factor, scaled.getOperand(1));
+    assertTrue(fixture.product.getParent() == null);
+  }
+
+  @Test
+  void rejectsAProductWithoutExactlyOneInvariantFactor() {
+    Fixture fixture = fixture(false, true);
+
+    assertFalse(ReductionPushdown.run(fixture.function, analysisManager()));
+    assertSame(fixture.product, fixture.update.getOperand(1));
+  }
+
+  @Test
+  void rejectsReductionsWithANonzeroInitialValue() {
+    Fixture fixture = fixture(true, false);
+
+    assertFalse(ReductionPushdown.run(fixture.function, analysisManager()));
+    assertSame(fixture.product, fixture.update.getOperand(1));
+  }
+
+  private static Fixture fixture(boolean invariantFactor, boolean zeroStart) {
+    Function function = new Function("reduce", Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value factor = function.addArgument(Type.INT, "factor");
+    Value values = function.addArgument(Type.PTR, "values");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder hb = new IRBuilder(header);
+    Instruction induction = hb.createPhi(Type.INT);
+    Instruction reduction = hb.createPhi(Type.INT);
+    hb.createCondBr(hb.createICmp("slt", induction, bound), body, exit);
+
+    IRBuilder bb = new IRBuilder(body);
+    Value index = bb.createSExt(induction, Type.I64);
+    Value pointer = bb.createGEP(Type.INT, values, new Value[] {index}, true);
+    Instruction variant = bb.createLoad(Type.INT, pointer);
+    Value multiplier = invariantFactor ? factor : induction;
+    Instruction product = bb.createMul(multiplier, variant);
+    Instruction update = bb.createAdd(reduction, product);
+    Instruction next = bb.createAdd(induction, Constant.intConst(1));
+    bb.createBr(header);
+
+    induction.addOperand(Constant.intConst(0));
+    induction.addOperand(entry);
+    induction.addOperand(next);
+    induction.addOperand(body);
+    reduction.addOperand(Constant.intConst(zeroStart ? 0 : 7));
+    reduction.addOperand(entry);
+    reduction.addOperand(update);
+    reduction.addOperand(body);
+    Instruction ret = new IRBuilder(exit).createRet(reduction);
+    return new Fixture(function, factor, reduction, variant, product, update, ret);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    return fam;
+  }
+
+  private record Fixture(
+      Function function,
+      Value factor,
+      Instruction reduction,
+      Instruction variant,
+      Instruction product,
+      Instruction update,
+      Instruction ret) {}
+}

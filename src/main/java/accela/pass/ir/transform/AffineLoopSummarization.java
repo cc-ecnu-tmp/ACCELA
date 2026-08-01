@@ -12,7 +12,9 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.analysis.LoopAnalysis;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** Replaces side-effect-free affine counting loops with a guarded closed form. */
 public final class AffineLoopSummarization {
@@ -34,42 +36,93 @@ public final class AffineLoopSummarization {
     BasicBlock header = candidate.loop.header();
     BasicBlock summary = function.insertBlockAfter(header, header.getLabel() + ".affine.summary");
     BasicBlock entry = summary;
+    Value tripCount;
 
-    if (candidate.modulus != null) {
-      BasicBlock nonnegative = function.insertBlockAfter(
-          header, header.getLabel() + ".affine.nonnegative");
-      BasicBlock range = function.insertBlockAfter(
-          nonnegative, header.getLabel() + ".affine.range");
-      entry = nonnegative;
+    boolean needsNonnegativeGuard = !isKnownNonnegative(candidate.inductionStart);
+    boolean needsInductionRangeGuard = candidate.inductionStep > 1;
+    if (needsNonnegativeGuard || needsInductionRangeGuard || candidate.hasRemainder()) {
+      BasicBlock count = function.insertBlockAfter(header, header.getLabel() + ".affine.count");
+      entry = count;
+      IRBuilder builder = new IRBuilder(count);
+      if (needsNonnegativeGuard) {
+        Value nonnegative = builder.createICmp(
+            "sge", candidate.induction, Constant.intConst(0));
+        BasicBlock next = function.insertBlockAfter(count, header.getLabel() + ".affine.ivrange");
+        builder.createCondBr(nonnegative, next, candidate.body);
+        count = next;
+        builder = new IRBuilder(count);
+      }
+      if (needsInductionRangeGuard) {
+        long largestSafeBound = Integer.MAX_VALUE - (candidate.inductionStep - 1);
+        Value inRange = builder.createICmp(
+            "sle", candidate.bound, Constant.intConst(largestSafeBound));
+        BasicBlock next = function.insertBlockAfter(count, header.getLabel() + ".affine.tripcount");
+        builder.createCondBr(inRange, next, candidate.body);
+        count = next;
+        builder = new IRBuilder(count);
+      }
+      tripCount = createTripCount(builder, candidate);
 
-      IRBuilder guardBuilder = new IRBuilder(nonnegative);
-      Value nonnegativeStart = guardBuilder.createICmp(
-          "sge", candidate.stateStart, Constant.intConst(0));
-      guardBuilder.createCondBr(nonnegativeStart, range, candidate.body);
+      for (Recurrence recurrence : candidate.recurrences) {
+        if (recurrence.modulus == null) continue;
+        Value nonnegative = builder.createICmp(
+            "sge", recurrence.phi, Constant.intConst(0));
+        BasicBlock range = function.insertBlockAfter(count, header.getLabel() + ".affine.modrange");
+        builder.createCondBr(nonnegative, range, candidate.body);
 
-      IRBuilder rangeBuilder = new IRBuilder(range);
-      Value room = rangeBuilder.createSub(
-          Constant.intConst(Integer.MAX_VALUE), candidate.stateStart);
-      Value maximumCount = rangeBuilder.createSDiv(room, candidate.stateStep);
-      Value inRange = rangeBuilder.createICmp("sle", candidate.bound, maximumCount);
-      rangeBuilder.createCondBr(inRange, summary, candidate.body);
+        builder = new IRBuilder(range);
+        Value room = builder.createSub(Constant.intConst(Integer.MAX_VALUE), recurrence.phi);
+        Value maximumCount = builder.createSDiv(room, recurrence.step);
+        Value inRange = builder.createICmp("sle", tripCount, maximumCount);
+        BasicBlock next = function.insertBlockAfter(range, header.getLabel() + ".affine.modnext");
+        builder.createCondBr(inRange, next, candidate.body);
+        count = next;
+        builder = new IRBuilder(count);
+      }
+      builder.createBr(summary);
+    } else {
+      IRBuilder builder = new IRBuilder(summary);
+      tripCount = createTripCount(builder, candidate);
     }
 
     IRBuilder summaryBuilder = new IRBuilder(summary);
-    Value delta = summaryBuilder.createMul(candidate.bound, candidate.stateStep);
-    Value finalState = summaryBuilder.createAdd(candidate.stateStart, delta);
-    if (candidate.modulus != null) {
-      finalState = summaryBuilder.createSRem(finalState, candidate.modulus);
+    Value finalInduction = candidate.inductionStep == 1
+        ? candidate.bound
+        : summaryBuilder.createAdd(
+            candidate.induction,
+            summaryBuilder.createMul(tripCount, Constant.intConst(candidate.inductionStep)));
+    List<Value> finalStates = new ArrayList<>();
+    for (Recurrence recurrence : candidate.recurrences) {
+      Value delta = summaryBuilder.createMul(tripCount, recurrence.step);
+      Value finalState = summaryBuilder.createAdd(recurrence.phi, delta);
+      if (recurrence.modulus != null) {
+        finalState = summaryBuilder.createSRem(finalState, recurrence.modulus);
+      }
+      finalStates.add(finalState);
     }
     summaryBuilder.createBr(header);
 
     Instruction branch = header.getTerminator();
     int bodyOperand = branch.getOperand(1) == candidate.body ? 1 : 2;
     branch.setOperand(bodyOperand, entry);
-    candidate.induction.addOperand(candidate.bound);
+    candidate.induction.addOperand(finalInduction);
     candidate.induction.addOperand(summary);
-    candidate.state.addOperand(finalState);
-    candidate.state.addOperand(summary);
+    for (int index = 0; index < candidate.recurrences.size(); index++) {
+      candidate.recurrences.get(index).phi.addOperand(finalStates.get(index));
+      candidate.recurrences.get(index).phi.addOperand(summary);
+    }
+  }
+
+  private static Value createTripCount(IRBuilder builder, Candidate candidate) {
+    Value difference = builder.createSub(candidate.bound, candidate.induction);
+    if (candidate.inductionStep == 1) return difference;
+    Value adjusted = builder.createSub(difference, Constant.intConst(1));
+    Value quotient = builder.createSDiv(adjusted, Constant.intConst(candidate.inductionStep));
+    return builder.createAdd(quotient, Constant.intConst(1));
+  }
+
+  private static boolean isKnownNonnegative(Value value) {
+    return value instanceof Constant.Int constant && constant.value >= 0;
   }
 
   public static final class Pass implements FunctionPass {
@@ -81,15 +134,25 @@ public final class AffineLoopSummarization {
     }
   }
 
+  private record Recurrence(
+      Instruction phi,
+      Value step,
+      Instruction update,
+      Instruction addition,
+      Value modulus) {}
+
   private record Candidate(
       LoopAnalysis.Loop loop,
       BasicBlock body,
       Instruction induction,
-      Instruction state,
+      Value inductionStart,
+      long inductionStep,
       Value bound,
-      Value stateStart,
-      Value stateStep,
-      Value modulus) {
+      List<Recurrence> recurrences) {
+
+    private boolean hasRemainder() {
+      return recurrences.stream().anyMatch(recurrence -> recurrence.modulus != null);
+    }
 
     private static Candidate match(LoopAnalysis.Loop loop) {
       if (loop.preheader() == null
@@ -103,77 +166,97 @@ public final class AffineLoopSummarization {
       if (branch == null
           || branch.getOpcode() != Instruction.Opcode.CONDBR
           || !(branch.getOperand(0) instanceof Instruction compare)
-          || compare.getOpcode() != Instruction.Opcode.ICMP
-          || !"slt".equals(compare.getPredicate())) return null;
-      boolean trueIsBody = branch.getOperand(1) == body;
-      BasicBlock exit = trueIsBody
-          ? (BasicBlock) branch.getOperand(2)
-          : (BasicBlock) branch.getOperand(1);
-      if (!trueIsBody || loop.contains(exit)) return null;
+          || compare.getOpcode() != Instruction.Opcode.ICMP) return null;
+      boolean trueInside = loop.contains((BasicBlock) branch.getOperand(1));
+      boolean falseInside = loop.contains((BasicBlock) branch.getOperand(2));
+      if (trueInside == falseInside) return null;
+      BasicBlock inside = (BasicBlock) branch.getOperand(trueInside ? 1 : 2);
+      if (inside != body) return null;
 
       List<Instruction> phis = header.getInstructions().stream()
           .takeWhile(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI)
           .toList();
-      if (phis.size() != 2) return null;
+      String predicate = trueInside ? compare.getPredicate() : invert(compare.getPredicate());
+      if (predicate == null) return null;
       Instruction induction = null;
       Value bound = null;
-      if (compare.getOperand(0) instanceof Instruction phi
-          && phis.contains(phi)
-          && isZeroStart(phi, loop.preheader())) {
+      if (compare.getOperand(0) instanceof Instruction phi && phis.contains(phi)) {
         induction = phi;
         bound = compare.getOperand(1);
+      } else if (compare.getOperand(1) instanceof Instruction phi && phis.contains(phi)) {
+        induction = phi;
+        bound = compare.getOperand(0);
+        predicate = swap(predicate);
       }
       if (induction == null
+          || !"slt".equals(predicate)
           || induction.getType() != Type.INT
           || bound.getType() != Type.INT
           || definedInside(bound, loop)) return null;
 
+      Value inductionStart = incomingValue(induction, loop.preheader());
       Instruction inductionNext = incomingInstruction(induction, body);
-      if (!isAddOf(inductionNext, induction, 1)) return null;
-      Instruction state = phis.get(0) == induction ? phis.get(1) : phis.get(0);
-      if (state.getType() != Type.INT) return null;
-      Value stateStart = incomingValue(state, loop.preheader());
-      Instruction stateNext = incomingInstruction(state, body);
-      if (stateStart == null || stateNext == null || definedInside(stateStart, loop)) return null;
+      Long inductionStep = positiveConstantStep(inductionNext, induction);
+      if (inductionStart == null || inductionStep == null) return null;
 
-      Value modulus = null;
-      Instruction addition = stateNext;
-      if (stateNext.getOpcode() == Instruction.Opcode.SREM) {
-        if (!(stateNext.getOperand(1) instanceof Constant.Int constant)
-            || constant.value <= 0
-            || constant.value > Integer.MAX_VALUE
-            || !(stateNext.getOperand(0) instanceof Instruction add)) return null;
-        modulus = stateNext.getOperand(1);
-        addition = add;
+      List<Recurrence> recurrences = new ArrayList<>();
+      for (Instruction phi : phis) {
+        if (phi == induction) continue;
+        Recurrence recurrence = matchRecurrence(phi, loop, body);
+        if (recurrence == null) return null;
+        recurrences.add(recurrence);
       }
-      Value stateStep = invariantAddend(addition, state, loop);
-      if (stateStep == null || stateStep.getType() != Type.INT) return null;
-      if (modulus != null
-          && (!(stateStep instanceof Constant.Int step)
-              || step.value <= 0
-              || step.value > Integer.MAX_VALUE)) return null;
+      if (recurrences.isEmpty()) return null;
 
       Instruction bodyBranch = body.getTerminator();
       if (bodyBranch == null
           || bodyBranch.getOpcode() != Instruction.Opcode.BR
           || bodyBranch.getOperand(0) != header) return null;
-      for (Instruction instruction : body.getInstructions()) {
-        if (instruction == bodyBranch
-            || instruction == inductionNext
-            || instruction == stateNext
-            || instruction == addition) continue;
+      Set<Instruction> allowed = new HashSet<>();
+      allowed.add(bodyBranch);
+      allowed.add(inductionNext);
+      for (Recurrence recurrence : recurrences) {
+        allowed.add(recurrence.update);
+        allowed.add(recurrence.addition);
+      }
+      if (body.getInstructions().stream().anyMatch(instruction -> !allowed.contains(instruction))) {
         return null;
       }
-      if (hasEscapingUses(inductionNext, loop)
-          || hasEscapingUses(stateNext, loop)
-          || (addition != stateNext && hasUsesOtherThan(addition, stateNext))) return null;
+      if (hasEscapingUses(inductionNext, loop)) return null;
+      for (Recurrence recurrence : recurrences) {
+        if (hasEscapingUses(recurrence.update, loop)
+            || recurrence.addition != recurrence.update
+                && hasUsesOtherThan(recurrence.addition, recurrence.update)) return null;
+      }
       return new Candidate(
-          loop, body, induction, state, bound, stateStart, stateStep, modulus);
+          loop, body, induction, inductionStart,
+          inductionStep, bound, List.copyOf(recurrences));
     }
 
-    private static boolean isZeroStart(Instruction phi, BasicBlock preheader) {
-      Value start = incomingValue(phi, preheader);
-      return start instanceof Constant.Int constant && constant.value == 0;
+    private static Recurrence matchRecurrence(
+        Instruction phi, LoopAnalysis.Loop loop, BasicBlock body) {
+      if (phi.getType() != Type.INT) return null;
+      Value start = incomingValue(phi, loop.preheader());
+      Instruction update = incomingInstruction(phi, body);
+      if (start == null || update == null || definedInside(start, loop)) return null;
+
+      Value modulus = null;
+      Instruction addition = update;
+      if (update.getOpcode() == Instruction.Opcode.SREM) {
+        if (!(update.getOperand(1) instanceof Constant.Int constant)
+            || constant.value <= 0
+            || constant.value > Integer.MAX_VALUE
+            || !(update.getOperand(0) instanceof Instruction add)) return null;
+        modulus = update.getOperand(1);
+        addition = add;
+      }
+      Value step = invariantAddend(addition, phi, loop);
+      if (step == null || step.getType() != Type.INT) return null;
+      if (modulus != null
+          && (!(step instanceof Constant.Int constant)
+              || constant.value <= 0
+              || constant.value > Integer.MAX_VALUE)) return null;
+      return new Recurrence(phi, step, update, addition, modulus);
     }
 
     private static Value invariantAddend(
@@ -186,16 +269,39 @@ public final class AffineLoopSummarization {
       return definedInside(other, loop) ? null : other;
     }
 
-    private static boolean isAddOf(Instruction instruction, Value value, long constantValue) {
-      if (instruction == null || instruction.getOpcode() != Instruction.Opcode.ADD) return false;
-      return instruction.getOperand(0) == value
-              && isConstant(instruction.getOperand(1), constantValue)
-          || instruction.getOperand(1) == value
-              && isConstant(instruction.getOperand(0), constantValue);
+    private static Long positiveConstantStep(Instruction instruction, Value value) {
+      if (instruction == null || instruction.getOpcode() != Instruction.Opcode.ADD) return null;
+      Value other;
+      if (instruction.getOperand(0) == value) other = instruction.getOperand(1);
+      else if (instruction.getOperand(1) == value) other = instruction.getOperand(0);
+      else return null;
+      if (!(other instanceof Constant.Int constant)
+          || constant.value <= 0
+          || constant.value > Integer.MAX_VALUE) return null;
+      return constant.value;
     }
 
-    private static boolean isConstant(Value value, long expected) {
-      return value instanceof Constant.Int constant && constant.value == expected;
+    private static String invert(String predicate) {
+      return switch (predicate) {
+        case "slt" -> "sge";
+        case "sle" -> "sgt";
+        case "sgt" -> "sle";
+        case "sge" -> "slt";
+        case "eq" -> "ne";
+        case "ne" -> "eq";
+        default -> null;
+      };
+    }
+
+    private static String swap(String predicate) {
+      return switch (predicate) {
+        case "slt" -> "sgt";
+        case "sle" -> "sge";
+        case "sgt" -> "slt";
+        case "sge" -> "sle";
+        case "eq", "ne" -> predicate;
+        default -> null;
+      };
     }
 
     private static Instruction incomingInstruction(Instruction phi, BasicBlock predecessor) {

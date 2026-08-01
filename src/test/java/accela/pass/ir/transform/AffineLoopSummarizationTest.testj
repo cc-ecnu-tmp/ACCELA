@@ -28,7 +28,7 @@ final class AffineLoopSummarizationTest {
     assertTrue(fixture.function.getBlocks().stream()
         .anyMatch(block -> block.getLabel().contains("affine.summary")));
     assertTrue(fixture.function.getBlocks().stream()
-        .anyMatch(block -> block.getLabel().contains("affine.range")));
+        .anyMatch(block -> block.getLabel().contains("affine.modrange")));
   }
 
   @Test
@@ -40,7 +40,7 @@ final class AffineLoopSummarizationTest {
     assertTrue(fixture.function.getBlocks().stream()
         .anyMatch(block -> block.getLabel().contains("affine.summary")));
     assertFalse(fixture.function.getBlocks().stream()
-        .anyMatch(block -> block.getLabel().contains("affine.range")));
+        .anyMatch(block -> block.getLabel().contains("affine.count")));
   }
 
   @Test
@@ -49,6 +49,67 @@ final class AffineLoopSummarizationTest {
 
     assertFalse(AffineLoopSummarization.run(fixture.function, analysisManager()));
     assertEquals(4, fixture.function.getBlocks().size());
+  }
+
+  @Test
+  void summarizesNonzeroInductionWithAStrideAndMultipleStates() {
+    Function function = new Function("strided", Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value dynamicStep = function.addArgument(Type.INT, "step");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder hb = new IRBuilder(header);
+    Instruction induction = hb.createPhi(Type.INT);
+    Instruction first = hb.createPhi(Type.INT);
+    Instruction second = hb.createPhi(Type.INT);
+    hb.createCondBr(hb.createICmp("sgt", bound, induction), body, exit);
+
+    IRBuilder bb = new IRBuilder(body);
+    Instruction nextFirst = bb.createAdd(first, dynamicStep);
+    Instruction nextSecond = bb.createAdd(second, Constant.intConst(-3));
+    Instruction nextInduction = bb.createAdd(induction, Constant.intConst(4));
+    bb.createBr(header);
+    induction.addOperand(Constant.intConst(5));
+    induction.addOperand(entry);
+    induction.addOperand(nextInduction);
+    induction.addOperand(body);
+    first.addOperand(Constant.intConst(7));
+    first.addOperand(entry);
+    first.addOperand(nextFirst);
+    first.addOperand(body);
+    second.addOperand(Constant.intConst(11));
+    second.addOperand(entry);
+    second.addOperand(nextSecond);
+    second.addOperand(body);
+    new IRBuilder(exit).createRet(first);
+
+    assertTrue(AffineLoopSummarization.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(6, induction.getNumOperands());
+    assertEquals(6, first.getNumOperands());
+    assertEquals(6, second.getNumOperands());
+  }
+
+  @Test
+  void refusesAnUnrecognizedLoopCarriedPhi() {
+    Fixture fixture = fixture(false, false);
+    BasicBlock header = fixture.function.getBlocks().get(1);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(header.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() != Instruction.Opcode.PHI)
+        .findFirst()
+        .orElseThrow());
+    Instruction unknown = builder.createPhi(Type.INT);
+    unknown.addOperand(Constant.intConst(0));
+    unknown.addOperand(fixture.function.getBlocks().get(0));
+    unknown.addOperand(unknown);
+    unknown.addOperand(fixture.function.getBlocks().get(2));
+
+    assertFalse(AffineLoopSummarization.run(fixture.function, analysisManager()));
   }
 
   private static Fixture fixture(boolean remainder, boolean sideEffect) {
