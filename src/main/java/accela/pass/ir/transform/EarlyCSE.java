@@ -3,6 +3,7 @@ package accela.pass.ir.transform;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
+import accela.ir.GlobalVariable;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
@@ -70,10 +71,12 @@ public final class EarlyCSE {
         Value pointer = instruction.getOperand(1);
         boolean redundant = availableLoads.get(pointer) == stored;
 
-        // A store through another pointer may partially overlap the known load;
-        // retain facts only when the exact pointer is unchanged.
+        // Equal-width, naturally aligned accesses into one object are either identical or
+        // disjoint. Writing the known value therefore preserves the load fact in both cases.
         availableLoads.keySet().removeIf(
-            loadedPointer -> PointerProvenance.mayAlias(loadedPointer, pointer));
+            loadedPointer -> PointerProvenance.mayAlias(loadedPointer, pointer)
+                && (availableLoads.get(loadedPointer) != stored
+                    || mayPartiallyOverlap(loadedPointer, pointer, stored.getType())));
         if (!redundant) availableLoads.put(pointer, stored);
         if (redundant) {
           instruction.eraseFromParent();
@@ -101,6 +104,50 @@ public final class EarlyCSE {
       changed = true;
     }
     return changed;
+  }
+
+  private static boolean mayPartiallyOverlap(Value left, Value right, Type accessType) {
+    if (left == right || !PointerProvenance.mayAlias(left, right)) return false;
+    Value root = PointerProvenance.root(left);
+    if (root != PointerProvenance.root(right)
+        || !(root instanceof GlobalVariable || isAlloca(root))) return true;
+    long accessSize = sizeOf(accessType);
+    return !isAlignedTo(left, accessSize) || !isAlignedTo(right, accessSize);
+  }
+
+  private static boolean isAlignedTo(Value pointer, long alignment) {
+    if (pointer instanceof GlobalVariable global) {
+      return sizeOf(global.getValueType().scalarType()) % alignment == 0;
+    }
+    if (isAlloca(pointer)) {
+      return sizeOf(((Instruction) pointer).getAllocatedType().scalarType()) % alignment == 0;
+    }
+    if (!(pointer instanceof Instruction gep)
+        || gep.getOpcode() != Instruction.Opcode.GEP
+        || !isAlignedTo(gep.getOperand(0), alignment)) return false;
+    for (int operand = 1; operand < gep.getNumOperands(); operand++) {
+      if (gepStride(gep.getGepSourceType(), operand) % alignment != 0) return false;
+    }
+    return true;
+  }
+
+  private static long gepStride(Type sourceType, int operandIndex) {
+    Type type = sourceType;
+    for (int index = 1; index < operandIndex; index++) {
+      if (type.isArray()) type = type.innerType;
+    }
+    return sizeOf(type);
+  }
+
+  private static long sizeOf(Type type) {
+    if (type.isArray()) return Math.multiplyExact(type.size, sizeOf(type.innerType));
+    if (type == Type.I64 || type.isPointer()) return 8;
+    return type == Type.I1 ? 1 : 4;
+  }
+
+  private static boolean isAlloca(Value value) {
+    return value instanceof Instruction instruction
+        && instruction.getOpcode() == Instruction.Opcode.ALLOCA;
   }
 
   private static boolean isSimple(Instruction instruction) {

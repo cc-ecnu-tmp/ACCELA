@@ -90,14 +90,66 @@ final class EarlyCSETest {
   }
 
   @Test
-  void keepsAWriteBackAfterAPossibleAliasStore() {
+  void removesAWriteBackAfterAnAliasStoreOfTheSameValue() {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 8);
+    GlobalVariable values =
+        new GlobalVariable("values", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(values);
+    Function function = new Function("clobbered", Type.INT);
+    module.addFunction(function);
+    Value sourceIndex = function.addArgument(Type.I64, "sourceIndex");
+    Value destinationIndex = function.addArgument(Type.I64, "destinationIndex");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value source = builder.createGEP(
+        arrayType, values, new Value[] {Constant.int64Const(0), sourceIndex}, true);
+    Value destination = builder.createGEP(
+        arrayType, values, new Value[] {Constant.int64Const(0), destinationIndex}, true);
+    Instruction value = builder.createLoad(Type.INT, source);
+    builder.createStore(value, destination);
+    Instruction writeBack = builder.createStore(value, source);
+    builder.createRet(value);
+
+    assertTrue(EarlyCSE.runOnFunction(function));
+    assertEquals(1, count(entry, Instruction.Opcode.STORE));
+    assertTrue(writeBack.getParent() == null);
+  }
+
+  @Test
+  void keepsAWriteBackAfterAPossiblyPartialAliasStore() {
+    Module module = new Module();
+    Type bytes = Type.array(Type.I1, 8);
+    GlobalVariable storage =
+        new GlobalVariable("bytes", bytes, Constant.zero(bytes), false);
+    module.addGlobal(storage);
+    Function function = new Function("partial_alias", Type.INT);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value source = builder.createGEP(
+        bytes, storage, new Value[] {Constant.int64Const(0), Constant.int64Const(0)}, true);
+    Value destination = builder.createGEP(
+        bytes, storage, new Value[] {Constant.int64Const(0), Constant.int64Const(1)}, true);
+    Instruction value = builder.createLoad(Type.INT, source);
+    builder.createStore(value, destination);
+    Instruction writeBack = builder.createStore(value, source);
+    builder.createRet(value);
+
+    assertFalse(EarlyCSE.runOnFunction(function));
+    assertEquals(2, count(entry, Instruction.Opcode.STORE));
+    assertTrue(writeBack.getParent() == entry);
+  }
+
+  @Test
+  void keepsAWriteBackAfterAnAliasStoreOfADifferentValue() {
     Function function = new Function("clobbered", Type.INT);
     Value source = function.addArgument(Type.PTR, "source");
     Value destination = function.addArgument(Type.PTR, "destination");
     BasicBlock entry = function.addBlock("entry");
     IRBuilder builder = new IRBuilder(entry);
     Instruction value = builder.createLoad(Type.INT, source);
-    builder.createStore(value, destination);
+    builder.createStore(Constant.intConst(9), destination);
     Instruction writeBack = builder.createStore(value, source);
     builder.createRet(value);
 
