@@ -18,6 +18,24 @@ import org.junit.jupiter.api.Test;
 
 final class MachineConstantCSETest {
   @Test
+  void sharesRepeatedStoreValues() {
+    MachineFunction function = new MachineFunction("stores", MachineType.I32);
+    MachineBasicBlock block = function.addBlock("loop");
+    VirtualRegister firstAddress = function.createVirtualRegister(MachineType.PTR, "first");
+    VirtualRegister secondAddress = function.createVirtualRegister(MachineType.PTR, "second");
+    MachineInstr first = store(firstAddress, -1);
+    MachineInstr second = store(secondAddress, -1);
+    block.addInstruction(first);
+    block.addInstruction(second);
+
+    assertTrue(new MachineConstantCSE().run(function));
+    assertEquals(MachineOpcode.CONST_INT, block.getInstructions().getFirst().getOpcode());
+    assertSame(
+        ((VRegOperand) first.getOperands().getFirst()).getRegister(),
+        ((VRegOperand) second.getOperands().getFirst()).getRegister());
+  }
+
+  @Test
   void sharesLargeImmediateAtThreeUses() {
     MachineFunction function = new MachineFunction("large", MachineType.PTR);
     MachineBasicBlock block = function.addBlock("loop");
@@ -90,6 +108,13 @@ final class MachineConstantCSETest {
         MachineOpcode.MUL, function.createVirtualRegister(MachineType.I32, "product"));
     instruction.setType(MachineType.I32);
     instruction.addOperand(new VRegOperand(source)).addOperand(new ImmOperand(immediate));
+    return instruction;
+  }
+
+  private static MachineInstr store(VirtualRegister address, long value) {
+    MachineInstr instruction = new MachineInstr(MachineOpcode.STORE, null);
+    instruction.setType(MachineType.I32);
+    instruction.addOperand(new ImmOperand(value)).addOperand(new VRegOperand(address));
     return instruction;
   }
 }

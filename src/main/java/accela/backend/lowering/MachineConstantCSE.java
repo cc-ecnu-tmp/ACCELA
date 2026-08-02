@@ -20,6 +20,12 @@ public final class MachineConstantCSE {
   public boolean run(MachineFunction function) {
     boolean changed = shareWithUniqueSuccessors(function);
     for (MachineBasicBlock block : function.getBlocks()) {
+      for (var entry : collectRepeatedStoreValues(block).entrySet()) {
+        List<Use> uses = entry.getValue();
+        if (uses.size() < 2) continue;
+        materialize(function, block, entry.getKey(), uses);
+        changed = true;
+      }
       for (var entry : collectRepeatedAdds(block).entrySet()) {
         List<Use> uses = entry.getValue();
         if (uses.size() < 3) continue;
@@ -28,6 +34,20 @@ public final class MachineConstantCSE {
       }
     }
     return changed;
+  }
+
+  private static Map<Key, List<Use>> collectRepeatedStoreValues(MachineBasicBlock block) {
+    Map<Key, List<Use>> uses = new LinkedHashMap<>();
+    for (MachineInstr instruction : block.getInstructions()) {
+      if (instruction.getOpcode() != MachineOpcode.STORE
+          || !instruction.getType().isIntegerLike()
+          || !(instruction.getOperands().getFirst() instanceof ImmOperand immediate)
+          || immediate.getValue() == 0) continue;
+      Key key = new Key(instruction.getType(), immediate.getValue());
+      uses.computeIfAbsent(key, ignored -> new ArrayList<>())
+          .add(new Use(instruction, 0));
+    }
+    return uses;
   }
 
   private static boolean shareWithUniqueSuccessors(MachineFunction function) {
