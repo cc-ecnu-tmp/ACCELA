@@ -6,11 +6,9 @@ import java.util.List;
 /** Selects short constant-arithmetic sequences using allocator-reserved scratch registers. */
 final class RISCVStrengthReduction {
   private final String temporary;
-  private final String immediateScratch;
 
-  RISCVStrengthReduction(String temporary, String immediateScratch) {
+  RISCVStrengthReduction(String temporary) {
     this.temporary = temporary;
-    this.immediateScratch = immediateScratch;
   }
 
   boolean emit(
@@ -29,21 +27,7 @@ final class RISCVStrengthReduction {
       }
       return true;
     }
-    if (opcode != MachineOpcode.REM) return false;
-    if (shift == 0) {
-      lines.add("  li " + dst + ", 0");
-      return true;
-    }
-    emitBias(lhs, dst, shift, lines);
-    long mask = value - 1;
-    if (fitsSigned12(mask)) {
-      lines.add("  andi " + dst + ", " + dst + ", " + mask);
-    } else {
-      lines.add("  li " + immediateScratch + ", " + mask);
-      lines.add("  and " + dst + ", " + dst + ", " + immediateScratch);
-    }
-    lines.add("  subw " + dst + ", " + dst + ", " + temporary);
-    return true;
+    return false;
   }
 
   /** Biases negative dividends by 2^shift - 1 so shifting rounds toward zero. */
@@ -100,5 +84,4 @@ final class RISCVStrengthReduction {
 
   private static String shiftOpcode(boolean wordResult) { return wordResult ? "slliw" : "slli"; }
   private static boolean isPowerOfTwo(long value) { return value > 0 && (value & (value - 1)) == 0; }
-  private static boolean fitsSigned12(long value) { return value >= -2048 && value <= 2047; }
 }

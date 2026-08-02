@@ -111,7 +111,7 @@ final class RISCVAsmEmitterScratchTest {
   }
 
   @Test
-  void extractsTheRemainderByTwoBiasWithOneShift() {
+  void emitsPowerOfTwoRemainderInstruction() {
     MachineFunction function = new MachineFunction("remainder", MachineType.I32);
     VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
     VirtualRegister destination = function.createVirtualRegister(MachineType.I32, "destination");
@@ -125,10 +125,8 @@ final class RISCVAsmEmitterScratchTest {
 
     assertEquals(
         List.of(
-            "  srliw a5, t0, 31",
-            "  addw t1, t0, a5",
-            "  andi t1, t1, 1",
-            "  subw t1, t1, a5"),
+            "  li a7, 2",
+            "  remw t1, t0, a7"),
         emit(function, remainder, allocation));
   }
 

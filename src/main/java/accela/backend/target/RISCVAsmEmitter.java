@@ -32,7 +32,7 @@ public final class RISCVAsmEmitter {
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
   private final RISCVStrengthReduction strengthReduction =
-      new RISCVStrengthReduction(ADDRESS_SCRATCH, INT_SCRATCH_1);
+      new RISCVStrengthReduction(ADDRESS_SCRATCH);
 
   public RISCVAsmEmitter(RISCVTarget target, RISCVFrameLowering frameLowering) {
     this.target = target;

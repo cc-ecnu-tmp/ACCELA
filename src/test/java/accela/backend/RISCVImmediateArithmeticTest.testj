@@ -54,8 +54,9 @@ final class RISCVImmediateArithmeticTest {
     assertTrue(assembly.matches("(?s).*  srliw [a-z0-9]+, [a-z0-9]+, 29.*"));
     assertTrue(assembly.matches("(?s).*  mul a5, [a-z0-9]+, [a-z0-9]+.*"));
     assertTrue(assembly.matches("(?s).*  srai [a-z0-9]+, a5, 32.*"));
+    assertTrue(assembly.matches("(?s).*  remw [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
     assertFalse(assembly.matches("(?s).*  li [a-z0-9]+, 7.*"));
-    assertFalse(assembly.matches("(?s).*  (mulw|divw|remw) .*"));
+    assertFalse(assembly.matches("(?s).*  (mulw|divw) .*"));
     assertFalse(assembly.matches("(?s).*  xor [a-z0-9]+, [a-z0-9]+, [a-z0-9]+.*"));
   }
 }
