@@ -33,6 +33,13 @@ final class GVNValueTable {
       Instruction instruction,
       List<Expression> introduced,
       GlobalModRefAnalysis.Result modRef) {
+    if (instruction.getOpcode() == Instruction.Opcode.CALL
+        && modRef != null && modRef.isPure(instruction)) {
+      Expression expression = expressionFor(instruction);
+      Value existing = available.putIfAbsent(expression, instruction);
+      if (existing == null) introduced.add(expression);
+      return existing;
+    }
     if (instruction.getOpcode() == Instruction.Opcode.LOAD
         || instruction.getOpcode() == Instruction.Opcode.STORE
         || instruction.getOpcode() == Instruction.Opcode.CALL) {
@@ -65,6 +72,7 @@ final class GVNValueTable {
     }
     String detail = switch (instruction.getOpcode()) {
       case ICMP, FCMP -> instruction.getPredicate();
+      case CALL -> instruction.getCallee().getName();
       case GEP -> instruction.getGepSourceType() + ":" + instruction.isGepInbounds();
       default -> "";
     };

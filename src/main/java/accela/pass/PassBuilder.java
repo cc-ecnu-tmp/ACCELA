@@ -295,6 +295,7 @@ public final class PassBuilder {
     }
     FunctionPassManager preInlineFpm = new FunctionPassManager(instrumentation);
     preInlineFpm.addPass(new EarlyCSE.Pass());
+    preInlineFpm.addPass(new GVN.Pass());
     if (isTailCallElimEnabled()) {
       preInlineFpm.addPass(new TailRecursionElimination.Pass());
     }

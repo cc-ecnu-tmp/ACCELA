@@ -9,12 +9,39 @@ import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
+import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.ir.transform.gvn.GVN;
 import org.junit.jupiter.api.Test;
 
 final class GVNTest {
+  @Test
+  void eliminatesPureCallsFromDominatingBlocks() {
+    Module module = new Module();
+    Function square = new Function("square", Type.INT);
+    module.addFunction(square);
+    Value value = square.addArgument(Type.INT, "value");
+    IRBuilder squareBuilder = new IRBuilder(square.addBlock("entry"));
+    squareBuilder.createRet(squareBuilder.createMul(value, value));
+
+    Function function = new Function("f", Type.INT);
+    module.addFunction(function);
+    Value argument = function.addArgument(Type.INT, "argument");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Instruction first = entryBuilder.createCall(square, Type.INT, argument);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction duplicate = bodyBuilder.createCall(square, Type.INT, argument);
+    Instruction ret = bodyBuilder.createRet(duplicate);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(first, ret.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
   @Test
   void eliminatesExpressionsFromDominatingBlocks() {
     Function function = new Function("f", Type.INT);
