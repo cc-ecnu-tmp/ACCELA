@@ -87,7 +87,15 @@ def _verify_git_provenance(
     # A single porcelain status scan can exceed a short subprocess deadline on
     # large WSL worktrees mounted from NTFS.  Use Git's plumbing commands so
     # staged, unstaged, and untracked state remain independently observable and
-    # fail-fast without weakening the clean-worktree contract.
+    # fail-fast without weakening the clean-worktree contract.  Refreshing the
+    # index is required before diff-files: that command intentionally trusts
+    # cached stat data and otherwise reports an mtime-only change as dirty.
+    git(
+        "update-index",
+        "-q",
+        "--really-refresh",
+        allowed_returncodes=(0, 1),
+    )
     staged_dirty = git(
         "diff-index",
         "--cached",

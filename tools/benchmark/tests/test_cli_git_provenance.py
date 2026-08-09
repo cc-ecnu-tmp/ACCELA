@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -43,6 +44,15 @@ def test_git_provenance_fails_fast_on_head_or_dirty_mismatch(tmp_path: Path) -> 
         _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=False)
     _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=True)
     _git(tmp_path, "restore", "tracked.txt")
+
+    # A content-identical file with refreshed metadata is still clean.  This
+    # guards against diff-files trusting stale index stat data on WSL/NTFS.
+    stat = tracked.stat()
+    os.utime(
+        tracked,
+        ns=(stat.st_atime_ns, stat.st_mtime_ns + 2_000_000_000),
+    )
+    _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=False)
 
     staged = tmp_path / "staged.txt"
     staged.write_text("staged\n", encoding="utf-8")
