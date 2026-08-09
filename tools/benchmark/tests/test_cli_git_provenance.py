@@ -38,6 +38,21 @@ def test_git_provenance_fails_fast_on_head_or_dirty_mismatch(tmp_path: Path) -> 
     with pytest.raises(ConfigurationError, match="commit differs"):
         _verify_git_provenance(tmp_path, declared_commit="0" * 40, declared_dirty=False)
 
+    tracked.write_text("modified\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="dirty workspace"):
+        _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=False)
+    _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=True)
+    _git(tmp_path, "restore", "tracked.txt")
+
+    staged = tmp_path / "staged.txt"
+    staged.write_text("staged\n", encoding="utf-8")
+    _git(tmp_path, "add", "staged.txt")
+    with pytest.raises(ConfigurationError, match="dirty workspace"):
+        _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=False)
+    _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=True)
+    _git(tmp_path, "reset", "--quiet", "HEAD", "--", "staged.txt")
+    staged.unlink()
+
     (tmp_path / "untracked.txt").write_text("dirty\n", encoding="utf-8")
     with pytest.raises(ConfigurationError, match="dirty workspace"):
         _verify_git_provenance(tmp_path, declared_commit=head, declared_dirty=False)

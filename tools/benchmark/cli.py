@@ -56,7 +56,10 @@ def _verify_git_provenance(
 
     root = workspace_root.resolve(strict=True)
 
-    def git(*arguments: str) -> str:
+    def git(
+        *arguments: str,
+        allowed_returncodes: tuple[int, ...] = (0,),
+    ) -> subprocess.CompletedProcess[bytes]:
         try:
             result = subprocess.run(
                 ("git", "-C", str(root), *arguments),
@@ -64,18 +67,49 @@ def _verify_git_provenance(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
-                timeout=30,
+                timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ConfigurationError("unable to verify Git provenance") from exc
-        if result.returncode != 0:
+        if result.returncode not in allowed_returncodes:
             raise ConfigurationError("workspace is not a readable Git worktree")
-        return result.stdout.decode("utf-8", errors="strict")
+        return result
 
-    actual_commit = git("rev-parse", "--verify", "HEAD").strip().lower()
+    actual_commit = (
+        git("rev-parse", "--verify", "HEAD")
+        .stdout.decode("ascii", errors="strict")
+        .strip()
+        .lower()
+    )
     if actual_commit != declared_commit.lower():
         raise ConfigurationError("declared repository commit differs from workspace HEAD")
-    actual_dirty = bool(git("status", "--porcelain=v1", "--untracked-files=normal").strip())
+
+    # A single porcelain status scan can exceed a short subprocess deadline on
+    # large WSL worktrees mounted from NTFS.  Use Git's plumbing commands so
+    # staged, unstaged, and untracked state remain independently observable and
+    # fail-fast without weakening the clean-worktree contract.
+    staged_dirty = git(
+        "diff-index",
+        "--cached",
+        "--quiet",
+        "HEAD",
+        "--",
+        allowed_returncodes=(0, 1),
+    ).returncode == 1
+    unstaged_dirty = git(
+        "diff-files", "--quiet", "--", allowed_returncodes=(0, 1)
+    ).returncode == 1
+    untracked_dirty = bool(
+        git(
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--directory",
+            "--no-empty-directory",
+            "-z",
+        ).stdout
+    )
+    actual_dirty = staged_dirty or unstaged_dirty or untracked_dirty
     if actual_dirty != declared_dirty:
         state = "dirty" if actual_dirty else "clean"
         raise ConfigurationError(f"declared repository state differs from {state} workspace")
