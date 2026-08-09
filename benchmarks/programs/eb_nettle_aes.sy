@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: AES-shaped byte substitution, row permutation, and GF(2^8) column mixing
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int state_bytes[16]; int temp_bytes[16]; int round_key[16];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+int xor_byte(int a,int b){int result=0;int power=1;int i=0;while(i<8){int bit=((a/power)%2+(b/power)%2)%2;result=result+bit*power;power=power*2;i=i+1;}return result;}
+int xtime(int x){int high=x/128;int value=(x%128)*2;if(high!=0){value=xor_byte(value,27);}return value;}
+int gf_mul(int a,int b){int result=0;int i=0;while(i<8){if(b%2!=0){result=xor_byte(result,a);}a=xtime(a);b=b/2;i=i+1;}return result;}
+int gf_pow254(int value){if(value==0){return 0;}int result=1;int base=value;int exponent=254;while(exponent!=0){if(exponent%2!=0){result=gf_mul(result,base);}base=gf_mul(base,base);exponent=exponent/2;}return result;}
+int rotl_byte(int value,int amount){int power=1;int result=0;int i=0;while(i<8){int bit=(value/power)%2;int target=(i+amount)%8;int target_power=1;int j=0;while(j<target){target_power=target_power*2;j=j+1;}result=result+bit*target_power;power=power*2;i=i+1;}return result;}
+int sub_byte(int value){int inverse=gf_pow254(value);return xor_byte(xor_byte(xor_byte(xor_byte(inverse,rotl_byte(inverse,1)),rotl_byte(inverse,2)),rotl_byte(inverse,3)),xor_byte(rotl_byte(inverse,4),99));}
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<16){int value=next_small();if(value<0){value=0-value;}state_bytes[i]=(value*13+i+seed)%256;value=next_small();if(value<0){value=0-value;}round_key[i]=(value*17+3*i)%256;i=i+1;}
+  int block=0;
+  while(block<n){
+    int round=0;
+    while(round<6){
+      i=0;while(i<16){state_bytes[i]=sub_byte(xor_byte(state_bytes[i],round_key[i]));i=i+1;}
+      i=0;while(i<16){int row=i/4;int col=i%4;temp_bytes[row*4+col]=state_bytes[row*4+(col+row)%4];i=i+1;}
+      int col=0;while(col<4){int a0=temp_bytes[col];int a1=temp_bytes[4+col];int a2=temp_bytes[8+col];int a3=temp_bytes[12+col];
+        state_bytes[col]=xor_byte(xor_byte(gf_mul(a0,2),gf_mul(a1,3)),xor_byte(a2,a3));
+        state_bytes[4+col]=xor_byte(xor_byte(a0,gf_mul(a1,2)),xor_byte(gf_mul(a2,3),a3));
+        state_bytes[8+col]=xor_byte(xor_byte(a0,a1),xor_byte(gf_mul(a2,2),gf_mul(a3,3)));
+        state_bytes[12+col]=xor_byte(xor_byte(gf_mul(a0,3),a1),xor_byte(a2,gf_mul(a3,2)));col=col+1;}
+      i=0;while(i<16){round_key[i]=(round_key[i]+17+round+i)%256;i=i+1;}round=round+1;
+    }
+    block=block+1;
+  }
+  int acc=0;i=0;while(i<16){acc=checksum_step(acc,state_bytes[i],i);i=i+1;}putint(acc);putch(10);return 0;
+}

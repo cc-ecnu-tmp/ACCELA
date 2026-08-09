@@ -9,7 +9,6 @@ import accela.pass.PassBuilder;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
-import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.verify.IRVerifier;
 
 import java.io.PrintStream;
@@ -52,8 +51,7 @@ public class Compiler {
     PassBuilder passBuilder = new PassBuilder();
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
-    PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(false);
-    ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline(instrumentation);
+    ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline();
     irPipeline.run(module, mam, fam);
     IRVerifier.verifyModule(module);
     return module;

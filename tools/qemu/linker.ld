@@ -17,9 +17,12 @@ SECTIONS {
     __global_pointer$ = . + 0x800;
     *(.sdata .sdata.*)
   } > ram
-  . = ALIGN(16);
-  __bss_start = .;
-  .bss : { *(.bss .bss.* COMMON) } > ram
-  __bss_end = .;
+  .bss (NOLOAD) : ALIGN(16) {
+    __bss_start = .;
+    *(.sbss .sbss.*)
+    *(.bss .bss.* COMMON)
+    . = ALIGN(16);
+    __bss_end = .;
+  } > ram
   __stack_top = ORIGIN(ram) + LENGTH(ram) - 16;
 }

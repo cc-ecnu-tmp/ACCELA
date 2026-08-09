@@ -1,0 +1,47 @@
+{
+  "abi": "lp64d",
+  "cache_model": {
+    "initial_state": "cold_per_timing_region",
+    "line_bytes": 64,
+    "replacement": "lru",
+    "size_bytes": 32768,
+    "ways": 8
+  },
+  "code_model": "medany",
+  "measurement_mode": "cache_hotblock",
+  "plugin_binaries": {
+    "cache_sha256": "01dadb82f70f1adc708ed88bb118462c8c61698fc193a49d8921748b4382533a",
+    "hotblocks_sha256": "7e4db23fe2f8082ad0b7df0432478f095db10a4fd86cfd8b1c2148bdb8108f68",
+    "profile_sha256": "364ef0729b0e32ec6110bbae29640abf7f152306f738934678fb14b05e3c21aa"
+  },
+  "protocol_id": "rv64gc-qemu-cache-hotblock-v1-20260810",
+  "qemu": {
+    "accelerator": "tcg",
+    "binary_sha256": "b5d76963cfa9115e8172a7a7d6d9e394d8445fd67fc46f7b292120feb303caef",
+    "cpu_model": "default",
+    "machine": "virt",
+    "memory": "512M",
+    "plugin_log_flags": [
+      "-d",
+      "plugin",
+      "-D",
+      "{metric_file}"
+    ],
+    "runner_adapter": "host",
+    "runner_command_sha256": "8969e34940602af9a374d7a65e9a07768438d39cbe4add76754d3901ec6c6aff",
+    "runner_executable_sha256": "312329de2dfef7c01c24a1c106513daf60eb47e099cc0ecdc9f93baf8b1c1e94",
+    "version": "QEMU emulator version 11.0.3",
+    "wsl_distribution_sha256": null
+  },
+  "schema_version": "measurement-protocol.v1",
+  "sources": {
+    "cache_plugin_sha256": "beec659fb122cbc4c08237f94013f2472704e65c1e1b6461bf7657dde80de0af",
+    "crt_sha256": "0e5db9cc2df3b122ad4f6f7e6f32bc3cc58515fe7336c0833adad32e0bb95d6a",
+    "hotblocks_plugin_sha256": "b879813beedea40bfb1ce240c8c91a8772b2a2f93bd5caa42b99e559bacf957a",
+    "linker_script_sha256": "1dad06858fad32fc4b7fa86def79ac462fdfe33ebe9b04f423c1ac3b7c24e069",
+    "profile_plugin_sha256": "f5e945038845fdb14a825e953a999b4dffe7e24ab623917a78495538744e5f98",
+    "runtime_filter_sha256": "f36f2465bcdc3f2bb87a6503659dd977db2a99df2360bf9d9ab5ec5d76d2416f",
+    "runtime_sha256": "2d6ec5f5b7ad4fb08d9684931cf42e4ef3721f4691e45f8823e8971e025bbaa0"
+  },
+  "target": "rv64gc"
+}

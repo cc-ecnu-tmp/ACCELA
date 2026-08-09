@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/ablation-matrix.v1.json",
+  "title": "ACCELA schedulable ablation matrix v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "registry_sha256", "profiles", "schedule", "unschedulable_families"],
+  "properties": {
+    "schema_version": {"const": "ablation-matrix.v1"},
+    "registry_sha256": {"$ref": "#/$defs/sha256"},
+    "profiles": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/profile"}},
+    "schedule": {"type": "array", "items": {"$ref": "#/$defs/schedule"}},
+    "unschedulable_families": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_id", "kind", "logical_families", "profile_sha256", "path"],
+      "properties": {
+        "profile_id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["full", "mandatory", "family_ablation", "pair_ablation"]},
+        "logical_families": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "path": {"$ref": "#/$defs/path"}
+      }
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["baseline_profile_id", "candidate_profile_id", "kind"],
+      "properties": {
+        "baseline_profile_id": {"$ref": "#/$defs/id"},
+        "candidate_profile_id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["mandatory_control", "family_ablation", "pair_ablation"]}
+      }
+    }
+  }
+}

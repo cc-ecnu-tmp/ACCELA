@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for dp_storage/three_row: full history versus three-row ring; role=baseline
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int table[64][64];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int j = 0;
+  while (j < n) { table[0][j] = seed + j; table[1][j] = seed - j; j = j + 1; }
+  int i = 2;
+  while (i < n) {
+    j = 0;
+    while (j < n) {
+      table[i][j] = table[i-1][j] + table[i-2][j] + (i+j) % 5;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+  int acc = 0; j = 0;
+  while (j < n) { acc = checksum_step(acc, table[n-1][j], j); j = j + 1; }
+  putint(acc); putch(10); return 0;
+}

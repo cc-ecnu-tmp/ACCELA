@@ -1,0 +1,1 @@
+{"schema_version":1,"base":"FULL","disable":[{"pass":"ir.tail-recursion-elimination"}]}

@@ -1,0 +1,52 @@
+package accela.backend.instrument;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineModule;
+import accela.pass.PassDescriptor;
+import accela.pass.PassRegistry;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.instrument.PassRemark;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import org.junit.jupiter.api.Test;
+
+final class BackendPassInstrumentationTest {
+  @Test
+  void excludesPostTimingObservationAndReportsExplicitModification() {
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    AtomicLong clock = new AtomicLong(100);
+    AtomicBoolean postTimingObservationRan = new AtomicBoolean();
+    MachineModule module = new MachineModule(new accela.ir.Module());
+    PassDescriptor descriptor =
+        PassRegistry.standard().require(PassRegistry.BACKEND_ASM_EMISSION);
+
+    try (BackendPassInstrumentation instrumentation =
+        BackendPassInstrumentation.observed(remarks::add, clock::get)) {
+      String assembly = instrumentation.emitAssembly(
+          descriptor,
+          1,
+          module,
+          () -> {
+            clock.addAndGet(40);
+            return "assembly";
+          },
+          () -> true,
+          () -> {
+            postTimingObservationRan.set(true);
+            clock.addAndGet(1_000);
+          });
+      assertEquals("assembly", assembly);
+    }
+
+    assertTrue(postTimingObservationRan.get());
+    assertEquals(1, remarks.size());
+    PassRemark remark = (PassRemark) remarks.getFirst();
+    assertEquals(40, remark.elapsedNanos());
+    assertTrue(remark.changed());
+    assertEquals(1_140, clock.get());
+  }
+}

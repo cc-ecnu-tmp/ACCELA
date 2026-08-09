@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: clean-room structural variant for taxonomy 01_mm; variant_kind=cfg_induction_equivalent; role=structural_variant
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int data[256]; int aux[256]; int output_data[256];
+int matrix_a[32][32]; int matrix_b[32][32]; int matrix_c[32][32]; int matrix_d[32][32];
+int dp_table[64][256]; int active_nodes[512]; int node_weight[512];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+int xor_small(int a,int b){
+  int result=0;int power=1;int i=0;
+  while(i<16){int bit=((a/power)%2+(b/power)%2)%2;result=result+bit*power;power=power*2;i=i+1;}
+  return result;
+}
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  {
+
+  int i=0;
+  while(i<n){
+    int first=next_small();int second=next_small();
+    if(i%2==0){data[i]=first;aux[i]=second;}
+    else{data[i]=first+1;data[i]=data[i]-1;aux[i]=second-1;aux[i]=aux[i]+1;}
+    output_data[i]=0;i=i+1;
+  }
+  }
+
+  int i=0;while(i<n){int j=0;while(j<n){matrix_a[i][j]=data[(i+j)%n];matrix_b[i][j]=aux[(i*3+j)%n];matrix_c[i][j]=0;j=j+1;}i=i+1;}
+  i=0;while(i<n){int j=0;while(j<n){int k=0;while(k<n){matrix_c[i][j]=matrix_c[i][j]+matrix_a[i][k]*matrix_b[k][j];k=k+1;}j=j+1;}i=i+1;}
+  int acc=0;int index=0;i=0;while(i<n){int j=0;while(j<n){acc=checksum_step(acc,matrix_c[i][j],index);index=index+1;j=j+1;}i=i+1;}
+  putint(acc);putch(10);return 0;
+}

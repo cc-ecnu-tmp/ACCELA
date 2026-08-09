@@ -1,0 +1,111 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Type;
+import accela.pass.instrument.PassRemark;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.FunctionPassManager;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineType;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
+
+final class PassInstrumentationTest {
+  @Test
+  void reportsStableIdentityTimingAndBeforeAfterMetrics() {
+    Function function = new Function("observed", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    new IRBuilder(entry).createRet(Constant.intConst(0));
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    PassInstrumentation instrumentation = PassInstrumentation.observed(false, remarks::add);
+    FunctionPassManager manager = new FunctionPassManager(instrumentation);
+    PassDescriptor descriptor = PassRegistry.standard().require(PassRegistry.IR_STRENGTH_REDUCTION);
+    manager.addPass((ignored, fam) -> PreservedAnalyses.all(), descriptor, 1);
+
+    manager.run(function, new FunctionAnalysisManager());
+
+    assertEquals(1, remarks.size());
+    PassRemark remark = (PassRemark) remarks.getFirst();
+    assertEquals(PassRegistry.IR_STRENGTH_REDUCTION, remark.passId());
+    assertEquals(1, remark.occurrence());
+    assertEquals("@observed", remark.targetName());
+    assertTrue(remark.elapsedNanos() >= 0);
+    assertFalse(remark.changed());
+    assertEquals(1L, remark.before().get("instructions"));
+    assertEquals(remark.before(), remark.after());
+    assertEquals(accela.pass.instrument.DecisionObservability.UNAVAILABLE,
+        remark.decisionObservability());
+  }
+
+  @Test
+  void backendBlockReorderingReportsModifiedWhenAllStructuralCountsAreEqual() {
+    MachineFunction function = new MachineFunction("layout", MachineType.I32);
+    var entry = function.addBlock("entry");
+    var cold = function.addBlock("cold");
+    var hot = function.addBlock("hot");
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    BackendPassInstrumentation instrumentation =
+        BackendPassInstrumentation.observed(remarks::add);
+    PassDescriptor descriptor =
+        PassRegistry.standard().require(PassRegistry.BACKEND_BLOCK_PLACEMENT);
+
+    instrumentation.runFunction(descriptor, 1, function, () -> {
+      function.reorderBlocks(List.of(entry, hot, cold));
+      return true;
+    });
+
+    PassRemark remark = (PassRemark) remarks.getFirst();
+    assertTrue(remark.changed());
+    assertEquals(remark.before(), remark.after());
+    instrumentation.close();
+  }
+
+  @Test
+  void rejectsCrossThreadAccessAndUnpairedPassStarts() throws Exception {
+    PassInstrumentation instrumentation = PassInstrumentation.enabled(false);
+    AtomicReference<Throwable> failure = new AtomicReference<>();
+    Thread other = new Thread(() -> {
+      try {
+        instrumentation.getReports();
+      } catch (Throwable throwable) {
+        failure.set(throwable);
+      }
+    }, "not-owner");
+    other.start();
+    other.join();
+    assertTrue(failure.get() instanceof IllegalStateException);
+
+    Function function = new Function("unpaired", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    new IRBuilder(entry).createRet(Constant.intConst(0));
+    instrumentation.beforeFunctionPass(new Object(), function);
+    IllegalStateException exception =
+        assertThrows(IllegalStateException.class, instrumentation::close);
+    assertTrue(exception.getMessage().contains("unpaired pass instrumentation start"));
+  }
+
+  @Test
+  void noopInstrumentationRejectsAccidentalDecisionObservation() {
+    PassDescriptor descriptor =
+        PassRegistry.standard().require(PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION);
+
+    assertFalse(PassInstrumentation.noop().isEnabled());
+    assertThrows(
+        IllegalStateException.class,
+        () -> PassInstrumentation.noop().decisionEmitter(
+            descriptor, 1, "function", "@production"));
+  }
+}

@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for bitset/boolean_or: packed boolean union; role=optimized
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int left_bits[30]; int right_bits[30]; int output_bits[30];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<n){int x=next_small();if(x<0){x=0-x;}left_bits[i]=x%2;x=next_small();if(x<0){x=0-x;}right_bits[i]=x%2;output_bits[i]=0;i=i+1;}
+
+  int left_word=0;int right_word=0;int power=1;i=0;
+  while(i<n){left_word=left_word+left_bits[i]*power;right_word=right_word+right_bits[i]*power;power=power*2;i=i+1;}
+  int output_word=0;power=1;i=0;
+  while(i<n){int bit=(left_word/power)%2+(right_word/power)%2;if(bit!=0){output_word=output_word+power;}power=power*2;i=i+1;}
+  int acc=0;power=1;i=0;while(i<n){int bit=(output_word/power)%2;acc=checksum_step(acc,bit,i);power=power*2;i=i+1;}
+  putint(acc);putch(10);return 0;
+}

@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for dp_storage/reverse_single_row: diagonal dependence contracted in reverse order; role=optimized
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int row[3][64];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int j = 0;
+  while (j < n) { row[0][j] = seed + j; j = j + 1; }
+  int i = 1;
+  while (i < n) {
+    j = n - 1;
+    while (j >= 1) { row[0][j] = row[0][j-1] + i * 7 + j; j = j - 1; }
+    row[0][0] = seed - i; i = i + 1;
+  }
+  int acc = 0; j = 0;
+  while (j < n) { acc = checksum_step(acc, row[0][j], j); j = j + 1; }
+  putint(acc); putch(10); return 0;
+}

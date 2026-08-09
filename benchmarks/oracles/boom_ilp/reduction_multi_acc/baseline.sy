@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for boom_ilp/reduction_multi_acc: single reduction chain versus four accumulators; role=baseline
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int data_a[8192]; int data_b[8192];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<n){data_a[i]=next_small()*next_small();i=i+1;}
+
+  int sum=0;i=0;while(i<n){sum=sum+data_a[i];i=i+1;}
+  putint(sum);putch(10);return 0;
+}

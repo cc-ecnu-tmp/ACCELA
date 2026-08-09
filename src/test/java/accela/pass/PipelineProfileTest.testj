@@ -1,0 +1,103 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+
+final class PipelineProfileTest {
+  @Test
+  void parsesGlobalAndOccurrenceAblations() {
+    PipelineProfile profile = PipelineProfile.fromJson("""
+        {
+          "schema_version": 1,
+          "base": "FULL",
+          "disable": [
+            {"family": "backend.loop-optimization"},
+            {"pass": "ir.loop-interchange"},
+            {"pass": "ir.loop-unroll", "occurrence": 2}
+          ]
+        }
+        """);
+
+    assertFalse(profile.isEnabled(PassRegistry.IR_LOOP_INTERCHANGE, 1));
+    assertFalse(profile.isEnabled(PassRegistry.BACKEND_MACHINE_LICM, 1));
+    assertFalse(profile.isEnabled(PassRegistry.BACKEND_LOOP_CONDITION_DUPLICATION, 1));
+    assertTrue(profile.isEnabled(PassRegistry.IR_LOOP_UNROLL, 1));
+    assertFalse(profile.isEnabled(PassRegistry.IR_LOOP_UNROLL, 2));
+    assertTrue(profile.isEnabled(PassRegistry.IR_GVN, 1));
+  }
+
+  @Test
+  void rejectsUnknownPassOccurrenceAndConfigurationKeys() {
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.fromJson(
+        "{\"schema_version\":1,\"base\":\"FULL\",\"disable\":[{\"pass\":\"ir.missing\"}]}"));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.fromJson(
+        "{\"schema_version\":1,\"base\":\"FULL\",\"disable\":[{\"pass\":\"ir.loop-unroll\",\"occurrence\":3}]}"));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.fromJson(
+        "{\"schema_version\":1,\"base\":\"FULL\",\"disable\":[],\"extra\":true}"));
+  }
+
+  @Test
+  void rejectsRequiredAndConflictingAblations() {
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.builder()
+        .disable(PassRegistry.BACKEND_REGISTER_ALLOCATION));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.builder()
+        .disable(PassRegistry.IR_MEM2REG));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.builder()
+        .disableFamily(PassRegistry.FAMILY_IR_SSA_CONSTRUCTION));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.builder()
+        .disableOccurrence(PassRegistry.IR_LOOP_UNROLL, 1)
+        .disable(PassRegistry.IR_LOOP_UNROLL));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.fromJson(
+        "{\"schema_version\":1,\"schema_version\":1,\"base\":\"FULL\",\"disable\":[]}"));
+  }
+
+  @Test
+  void constructsAndRoundTripsMandatoryOnlyProfile() {
+    PipelineProfile profile = PipelineProfile.mandatoryOnly();
+    assertTrue(profile.isEnabled(PassRegistry.IR_MEM2REG, 1));
+    assertTrue(profile.isEnabled(PassRegistry.BACKEND_REGISTER_ALLOCATION, 1));
+    assertFalse(profile.isEnabled(PassRegistry.IR_SROA, 1));
+    assertFalse(profile.isEnabled(PassRegistry.BACKEND_MACHINE_CSE, 1));
+
+    PipelineProfile roundTrip = PipelineProfile.fromJson(profile.toJson());
+    assertTrue(roundTrip.isEnabled(PassRegistry.IR_MEM2REG, 1));
+    assertFalse(roundTrip.isEnabled(PassRegistry.IR_SROA, 1));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.fromJson(
+        "{\"schema_version\":1,\"base\":\"MANDATORY_ONLY\","
+            + "\"disable\":[{\"pass\":\"ir.sroa\"}]}"));
+  }
+
+  @Test
+  void familyAndPassAblationsCannotOverlap() {
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.builder()
+        .disable(PassRegistry.IR_LOOP_UNROLL_AND_JAM)
+        .disableFamily(PassRegistry.FAMILY_IR_LOOP_UNROLLING));
+    assertThrows(IllegalArgumentException.class, () -> PipelineProfile.builder()
+        .disableFamily(PassRegistry.FAMILY_IR_LOOP_UNROLLING)
+        .disableOccurrence(PassRegistry.IR_LOOP_UNROLL, 1));
+  }
+
+  @Test
+  void crossStageConstantArithmeticFamilyDisablesBothImplementations() {
+    PipelineProfile profile = PipelineProfile.builder()
+        .disableFamily(
+            PassRegistry.FAMILY_INTEGER_CONSTANT_ARITHMETIC_STRENGTH_REDUCTION)
+        .build();
+
+    assertFalse(profile.isEnabled(PassRegistry.IR_STRENGTH_REDUCTION, 1));
+    assertFalse(profile.isEnabled(PassRegistry.BACKEND_RISCV_STRENGTH_REDUCTION, 1));
+  }
+
+  @Test
+  void recognizesWhenEveryOccurrenceIsDisabledIndividually() {
+    PipelineProfile profile = PipelineProfile.builder()
+        .disableOccurrence(PassRegistry.IR_LOOP_UNROLL, 1)
+        .disableOccurrence(PassRegistry.IR_LOOP_UNROLL, 2)
+        .build();
+
+    assertTrue(profile.disablesAll(PassRegistry.IR_LOOP_UNROLL));
+  }
+}

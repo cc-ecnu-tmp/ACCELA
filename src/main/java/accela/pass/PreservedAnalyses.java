@@ -11,6 +11,10 @@ import java.util.Set;
  * <p>- preserve nothing
  *
  * <p>- preserve a named subset of analysis result types
+ *
+ * <p>Transform passes use {@link #all()} only when they made no change and a non-all result when
+ * they changed IR. Pass managers rely on this contract to report the pass's explicit modification
+ * result; structural metric deltas are diagnostic data and are not used to infer modification.
  */
 public final class PreservedAnalyses {
   private final boolean preserveAll;
@@ -44,6 +48,11 @@ public final class PreservedAnalyses {
   /** Returns whether no analysis is preserved. */
   public boolean preservesNone() {
     return !preserveAll && preserved.isEmpty();
+  }
+
+  /** Returns the transformation's explicit modified result under the pass-result contract. */
+  public boolean isModified() {
+    return !preserveAll;
   }
 
   /** Returns whether the given analysis result type remains valid. */

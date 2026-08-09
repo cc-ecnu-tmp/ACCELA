@@ -5,6 +5,7 @@ import java.nio.file.Paths;
 import java.util.List;
 import accela.backend.BackendCompiler;
 import accela.pass.PassBuilder;
+import accela.pass.PipelineProfile;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
@@ -33,9 +34,6 @@ public class Main implements Runnable {
   @Option(names = {"--ir-raw"}, description = "Emit raw IR")
   private boolean emitRawIR = false;
 
-  @Option(names = {"--ir-sroa"}, description = "Emit SROA optimized IR")
-  private boolean emitSroaIR = false;
-
   @Option(names = {"--ir"}, description = "Emit optimized IR")
   private boolean emitIR = false;
 
@@ -55,20 +53,17 @@ public class Main implements Runnable {
   }
 
   private static accela.ir.Module buildOptimizedIR(Node unit, boolean printPassStats) {
-    return buildOptimizedIR(unit, printPassStats, false);
-  }
-
-  private static accela.ir.Module buildOptimizedIR(
-      Node unit, boolean printPassStats, boolean sroaOnly) {
     accela.ir.Module module = buildRawIR(unit);
 
     PassBuilder passBuilder = new PassBuilder();
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
-    PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(printPassStats);
-    ModulePassManager irPipeline =
-        passBuilder.buildIRO0Pipeline(instrumentation, true, !sroaOnly);
-    irPipeline.run(module, mam, fam);
+    try (PassInstrumentation instrumentation =
+        passBuilder.buildIRInstrumentation(printPassStats)) {
+      ModulePassManager irPipeline =
+          passBuilder.buildIRO0Pipeline(instrumentation, PipelineProfile.full());
+      irPipeline.run(module, mam, fam);
+    }
     IRVerifier.verifyModule(module);
 
     return module;
@@ -81,7 +76,7 @@ public class Main implements Runnable {
       Lexer lexer = new Lexer(source, fileName);
       List<Token> tokens = lexer.tokenize();
 
-      if (printAst || interpret || emitRawIR || emitSroaIR || emitIR || emitAsm) {
+      if (printAst || interpret || emitRawIR || emitIR || emitAsm) {
         Parser parser = new Parser(tokens);
         Node unit = parser.parse();
         new Sema().analyze(unit);
@@ -89,8 +84,6 @@ public class Main implements Runnable {
           new AstDumper(System.out).dump(unit);
         } else if (emitRawIR) {
           new IRPrinter(System.out).print(buildRawIR(unit));
-        } else if (emitSroaIR) {
-          new IRPrinter(System.out).print(buildOptimizedIR(unit, printPassStats, true));
         } else if (emitIR) {
           new IRPrinter(System.out).print(buildOptimizedIR(unit, printPassStats));
         } else if (emitAsm) {

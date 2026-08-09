@@ -1,0 +1,226 @@
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+
+import accela.util.StrictJson;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.benchmark.JsonlRemarkWriter;
+import accela.pass.instrument.DecisionReasonCode;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+final class BenchmarkCompilerTest {
+  @TempDir Path tempDirectory;
+
+  @Test
+  void compilesWithProfileAndEmitsStructuredIrAndBackendRemarks() throws Exception {
+    Path input = tempDirectory.resolve("case.sy");
+    Path profile = tempDirectory.resolve("profile.json");
+    Path assembly = tempDirectory.resolve("case.s");
+    Path remarks = tempDirectory.resolve("case.jsonl");
+    Files.writeString(input, "int main() { return 0; }", StandardCharsets.UTF_8);
+    Files.writeString(profile, """
+        {
+          "schema_version": 1,
+          "base": "FULL",
+          "disable": [
+            {"pass": "ir.loop-interchange"},
+            {"pass": "backend.machine-licm"}
+          ]
+        }
+        """, StandardCharsets.UTF_8);
+
+    BenchmarkCompiler.main(new String[] {
+        input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    assertTrue(Files.readString(assembly).contains("main:"));
+    List<Map<?, ?>> records = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .<Map<?, ?>>map(value -> (Map<?, ?>) value)
+        .toList();
+    assertFalse(records.isEmpty());
+    assertTrue(records.stream().anyMatch(record -> "ir.sroa".equals(record.get("pass"))));
+    assertTrue(records.stream().anyMatch(record ->
+        "backend.register-allocation".equals(record.get("pass"))
+            && ((Map<?, ?>) record.get("details")).containsKey("stack_locations")));
+    assertTrue(records.stream().noneMatch(record ->
+        "ir.loop-interchange".equals(record.get("pass"))
+            || "backend.machine-licm".equals(record.get("pass"))));
+    assertTrue(records.stream().allMatch(record -> record.containsKey("elapsed_ns")
+        && record.containsKey("before") && record.containsKey("after")
+        && record.containsKey("delta")));
+    assertTrue(records.stream().allMatch(record ->
+        PassRegistry.standard().find((String) record.get("pass")) != null));
+    assertEquals(List.of(1, 2, 3, 4, 5, 6, 7), records.stream()
+        .filter(record -> "ir.early-cse".equals(record.get("pass")))
+        .map(record -> ((BigDecimal) record.get("occurrence")).intValueExact())
+        .toList());
+    assertTrue(records.stream().allMatch(record ->
+        "optimization-remark.v1".equals(record.get("schema_version"))
+            && "pass_summary".equals(record.get("event_type"))));
+    assertTrue(records.stream().filter(record -> Set.of(
+            PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
+            PassRegistry.IR_RANKED_RECURRENCE_TABULATION).contains(record.get("pass")))
+        .allMatch(record -> "available".equals(record.get("decision_observability"))));
+    assertTrue(records.stream().filter(record -> !Set.of(
+            PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
+            PassRegistry.IR_RANKED_RECURRENCE_TABULATION).contains(record.get("pass")))
+        .allMatch(record -> "unavailable".equals(record.get("decision_observability"))));
+  }
+
+  @Test
+  void fullProfileIsByteIdenticalToTheJudgeFacingCompiler() throws Exception {
+    Path input = tempDirectory.resolve("parity.sy");
+    Path profile = tempDirectory.resolve("full.json");
+    Path production = tempDirectory.resolve("production.s");
+    Path benchmark = tempDirectory.resolve("benchmark.s");
+    Path remarks = tempDirectory.resolve("parity.jsonl");
+    Files.writeString(input, """
+        int main() {
+          int value = getint();
+          return value % 8;
+        }
+        """, StandardCharsets.UTF_8);
+    PipelineProfile.full().writeJson(profile);
+
+    Compiler.main(new String[] {
+        input.toString(), "-S", "-o", production.toString(), "-O1"
+    });
+    BenchmarkCompiler.main(new String[] {
+        input.toString(), "-o", benchmark.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    assertArrayEquals(Files.readAllBytes(production), Files.readAllBytes(benchmark));
+  }
+
+  @Test
+  void fullProfileIsByteIdenticalForFloatingPointCode() throws Exception {
+    Path input = tempDirectory.resolve("float-parity.sy");
+    Path profile = tempDirectory.resolve("float-full.json");
+    Path production = tempDirectory.resolve("float-production.s");
+    Path benchmark = tempDirectory.resolve("float-benchmark.s");
+    Path remarks = tempDirectory.resolve("float-parity.jsonl");
+    Files.writeString(input, """
+        float transform(float value) {
+          return value * 1.5 + 2.0;
+        }
+        int main() {
+          putfloat(transform(getfloat()));
+          return 0;
+        }
+        """, StandardCharsets.UTF_8);
+    PipelineProfile.full().writeJson(profile);
+
+    Compiler.main(new String[] {
+        input.toString(), "-S", "-o", production.toString(), "-O1"
+    });
+    BenchmarkCompiler.main(new String[] {
+        input.toString(), "-o", benchmark.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    assertArrayEquals(Files.readAllBytes(production), Files.readAllBytes(benchmark));
+  }
+
+  @Test
+  void rejectsUnknownOrIncompleteArguments() {
+    assertThrows(IllegalArgumentException.class,
+        () -> BenchmarkCompiler.parseArguments(new String[] {"case.sy", "--unknown", "x"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> BenchmarkCompiler.parseArguments(new String[] {"case.sy", "-o", "case.s"}));
+  }
+
+  @Test
+  void exportsTheCanonicalRegistryWithoutCompileArguments() throws Exception {
+    Path registry = tempDirectory.resolve("pass-registry.json");
+
+    BenchmarkCompiler.main(new String[] {"--export-registry", registry.toString()});
+
+    assertEquals(PassRegistry.standard().toJson() + "\n",
+        Files.readString(registry, StandardCharsets.UTF_8));
+    Map<?, ?> document = (Map<?, ?>) StrictJson.parse(Files.readString(registry));
+    assertEquals("pass-registry.v1", document.get("schema_version"));
+    assertEquals(PassRegistry.standard().all().size(), ((List<?>) document.get("passes")).size());
+    assertThrows(IllegalArgumentException.class,
+        () -> BenchmarkCompiler.parseRegistryExport(
+            new String[] {"--export-registry", registry.toString(), "extra"}));
+  }
+
+  @Test
+  void mandatoryOnlyProfileCompilesAndRunsOnlyRequiredStages() throws Exception {
+    Path input = tempDirectory.resolve("mandatory.sy");
+    Path profile = tempDirectory.resolve("mandatory.json");
+    Path assembly = tempDirectory.resolve("mandatory.s");
+    Path remarks = tempDirectory.resolve("mandatory.jsonl");
+    Files.writeString(input, "int main() { return 0; }", StandardCharsets.UTF_8);
+    PipelineProfile.mandatoryOnly().writeJson(profile);
+
+    BenchmarkCompiler.main(new String[] {
+        input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    Set<String> passes = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .map(value -> (Map<?, ?>) value)
+        .map(record -> (String) record.get("pass"))
+        .collect(Collectors.toSet());
+    assertEquals(Set.of(
+        PassRegistry.IR_MEM2REG,
+        PassRegistry.BACKEND_IR_LOWERING,
+        PassRegistry.BACKEND_PHI_ELIMINATION,
+        PassRegistry.BACKEND_REGISTER_ALLOCATION,
+        PassRegistry.BACKEND_ASM_EMISSION), passes);
+    assertTrue(Files.readString(assembly).contains("main:"));
+  }
+
+  @Test
+  void writesTypedDecisionEventsAndRejectsInvalidDecisionSequences() throws Exception {
+    Path output = tempDirectory.resolve("decisions.jsonl");
+    try (JsonlRemarkWriter writer = new JsonlRemarkWriter(output)) {
+      var descriptor = PassRegistry.standard().require(PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION);
+      var invalid = writer.decisionEmitter(descriptor, 1, "function", "@candidate");
+      assertThrows(IllegalStateException.class,
+          () -> invalid.applied(DecisionReasonCode.APPLIED_PROFITABLE));
+
+      var decision = writer.decisionEmitter(descriptor, 1, "function", "@candidate");
+      decision.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+      decision.rejected(DecisionReasonCode.REJECTED_PROFITABILITY);
+      assertThrows(IllegalStateException.class,
+          () -> decision.applied(DecisionReasonCode.APPLIED_PROFITABLE));
+    }
+    List<Map<?, ?>> events = Files.readAllLines(output).stream()
+        .map(StrictJson::parse).<Map<?, ?>>map(value -> (Map<?, ?>) value).toList();
+    assertEquals(List.of("candidate", "rejected"),
+        events.stream().map(event -> event.get("decision")).toList());
+    assertTrue(events.stream().allMatch(event ->
+        "optimization-remark.v1".equals(event.get("schema_version"))
+            && "decision".equals(event.get("event_type"))));
+  }
+
+  @Test
+  void closingRemarkWriterRejectsUnterminatedCandidate() throws Exception {
+    Path output = tempDirectory.resolve("unterminated.jsonl");
+    JsonlRemarkWriter writer = new JsonlRemarkWriter(output);
+    var descriptor = PassRegistry.standard().require(PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION);
+    writer.decisionEmitter(descriptor, 1, "function", "@candidate")
+        .candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+
+    IllegalStateException exception = assertThrows(IllegalStateException.class, writer::close);
+    assertTrue(exception.getMessage().contains("unterminated optimization candidate"));
+  }
+}

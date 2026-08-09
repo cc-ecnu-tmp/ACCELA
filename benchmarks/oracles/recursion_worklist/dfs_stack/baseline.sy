@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for recursion_worklist/dfs_stack: recursive preorder traversal versus explicit stack; role=baseline
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int visit_acc; int visit_index; int stack_nodes[131072]; int stack_depth[131072]; int seed_global;
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+void visit_tree(int node,int depth,int limit){
+  if(depth>=limit){return;}
+  visit_acc=checksum_step(visit_acc,node+seed_global,visit_index);visit_index=visit_index+1;
+  visit_tree(node*2+1,depth+1,limit);visit_tree(node*2+2,depth+1,limit);
+}
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  seed_global=seed;visit_acc=0;visit_index=0;visit_tree(0,0,n);putint(visit_acc);putch(10);return 0;
+}

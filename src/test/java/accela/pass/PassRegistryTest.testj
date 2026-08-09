@@ -1,0 +1,79 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Set;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.stream.Collectors;
+import org.junit.jupiter.api.Test;
+
+final class PassRegistryTest {
+  @Test
+  void registersEveryCurrentIrAndBackendTransformation() {
+    PassRegistry registry = PassRegistry.standard();
+    assertEquals(46, registry.all().size());
+    assertEquals(46, registry.all().stream().map(PassDescriptor::id)
+        .collect(Collectors.toSet()).size());
+    assertEquals(28, registry.families().size());
+    assertEquals(7, registry.require(PassRegistry.IR_EARLY_CSE).fullPipelineOccurrences());
+    assertEquals(5, registry.require(PassRegistry.IR_SIMPLIFY_CFG).fullPipelineOccurrences());
+    assertEquals(2, registry.require(PassRegistry.BACKEND_BLOCK_PLACEMENT)
+        .fullPipelineOccurrences());
+    assertEquals(Set.of(
+            PassRegistry.BACKEND_IR_LOWERING,
+            PassRegistry.BACKEND_PHI_ELIMINATION,
+            PassRegistry.BACKEND_REGISTER_ALLOCATION,
+            PassRegistry.BACKEND_ASM_EMISSION,
+            PassRegistry.IR_MEM2REG),
+        registry.all().stream().filter(PassDescriptor::required).map(PassDescriptor::id)
+            .collect(Collectors.toSet()));
+    assertTrue(registry.all().stream().allMatch(pass -> pass.id().startsWith("ir.")
+        || pass.id().startsWith("backend.")));
+    assertEquals(Set.of(PassRegistry.IR_SROA, PassRegistry.IR_GLOBAL_SROA),
+        registry.forFamily(PassRegistry.FAMILY_IR_AGGREGATE_SCALARIZATION).stream()
+            .map(PassDescriptor::id).collect(Collectors.toSet()));
+    assertEquals(Set.of(PassRegistry.IR_LOOP_UNROLL, PassRegistry.IR_LOOP_UNROLL_AND_JAM),
+        registry.forFamily(PassRegistry.FAMILY_IR_LOOP_UNROLLING).stream()
+            .map(PassDescriptor::id).collect(Collectors.toSet()));
+    assertEquals(PassRegistry.FAMILY_IR_AFFINE_LOOP_SUMMARIZATION,
+        registry.require(PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION).logicalFamilyId());
+    assertEquals(PassRegistry.FAMILY_IR_RANKED_RECURRENCE_TABULATION,
+        registry.require(PassRegistry.IR_RANKED_RECURRENCE_TABULATION).logicalFamilyId());
+    assertEquals(PassRegistry.FAMILY_IR_REDUCTION_PUSHDOWN,
+        registry.require(PassRegistry.IR_REDUCTION_PUSHDOWN).logicalFamilyId());
+    assertEquals(PassRegistry.FAMILY_IR_LOOP_INTERCHANGE,
+        registry.require(PassRegistry.IR_LOOP_INTERCHANGE).logicalFamilyId());
+    assertEquals(PassRegistry.FAMILY_IR_LOOP_ROTATION,
+        registry.require(PassRegistry.IR_LOOP_ROTATE).logicalFamilyId());
+    assertEquals(PassRegistry.FAMILY_INTEGER_CONSTANT_ARITHMETIC_STRENGTH_REDUCTION,
+        registry.require(PassRegistry.IR_STRENGTH_REDUCTION).logicalFamilyId());
+    assertEquals(PassRegistry.FAMILY_INTEGER_CONSTANT_ARITHMETIC_STRENGTH_REDUCTION,
+        registry.require(PassRegistry.BACKEND_RISCV_STRENGTH_REDUCTION).logicalFamilyId());
+    assertEquals(Set.of(
+            PassRegistry.IR_STRENGTH_REDUCTION,
+            PassRegistry.BACKEND_RISCV_STRENGTH_REDUCTION),
+        registry.forFamily(
+                PassRegistry.FAMILY_INTEGER_CONSTANT_ARITHMETIC_STRENGTH_REDUCTION)
+            .stream().map(PassDescriptor::id).collect(Collectors.toSet()));
+    assertEquals(Set.of(
+            PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
+            PassRegistry.IR_RANKED_RECURRENCE_TABULATION),
+        registry.all().stream().filter(PassDescriptor::decisionObservable)
+            .map(PassDescriptor::id).collect(Collectors.toSet()));
+  }
+
+  @Test
+  void fullPipelineConstructionChecksRegistryOccurrenceCounts() {
+    new PassBuilder().buildIRO0Pipeline();
+  }
+
+  @Test
+  void checkedInRegistrySnapshotMatchesTheJavaSourceOfTruth() throws Exception {
+    Path snapshot = Path.of("docs", "optimization", "data", "pass-registry.v1.json");
+    assertEquals(PassRegistry.standard().toJson() + "\n",
+        Files.readString(snapshot, StandardCharsets.UTF_8));
+  }
+}

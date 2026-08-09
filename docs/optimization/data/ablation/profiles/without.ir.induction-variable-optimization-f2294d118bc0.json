@@ -1,0 +1,1 @@
+{"schema_version":1,"base":"FULL","disable":[{"pass":"ir.indvar-domain-simplify"},{"pass":"ir.indvar-simplify"},{"pass":"ir.loop-strength-reduce"},{"pass":"ir.pointer-lftr"}]}
