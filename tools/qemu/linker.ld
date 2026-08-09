@@ -22,7 +22,16 @@ SECTIONS {
     *(.sbss .sbss.*)
     *(.bss .bss.* COMMON)
     . = ALIGN(16);
-    __bss_end = .;
   } > ram
+  .sysy_input_transport (NOLOAD) : ALIGN(16) {
+    __sysy_input_transport_start = .;
+    KEEP(*(.sysy_input_transport))
+    KEEP(*(.sysy_input_transport.*))
+    . = ALIGN(16);
+    __sysy_input_transport_end = .;
+  } > ram
+  __bss_end = .;
+  ASSERT(SIZEOF(.sysy_input_transport) == 4112,
+         "invalid SysY input transport size")
   __stack_top = ORIGIN(ram) + LENGTH(ram) - 16;
 }

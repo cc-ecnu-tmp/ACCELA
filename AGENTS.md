@@ -40,8 +40,16 @@
 - Optimization decisions may use semantic IR and target properties only. Never
   dispatch on file names, function names, paths, source or input hashes, benchmark
   IDs, string fingerprints, or benchmark-specific constants.
-- Preserve input bytes, including unused trailing data. Validate exact program
-  output together with the low eight bits of `main`'s return value.
+- Preserve every input byte, including unused trailing data and the exact EOF
+  position. QEMU runners must expose the physical manifest input as the
+  size-delimited `opt/accela/sysy-input` fw_cfg item; never append a delimiter,
+  normalize bytes, or reuse UART stdin as guest input. A missing input sidecar is
+  an explicit zero-byte item. Validate exact program output together with the low
+  eight bits of `main`'s return value.
+- Static ELF metrics may exclude only the fixed 4112-byte
+  `.sysy_input_transport` NOBITS scratch; shared runtime text, rodata, and other
+  state remain counted. QEMU plugins may exclude runtime I/O dynamically only
+  through the exact audited helper allowlist, never by a user-matchable prefix.
 - Keep downloaded corpora and raw runs under ignored directories. Commit only
   clean-room benchmarks, versioned schemas, normalized records, reproducible
   analysis, and reader-facing reports; committed records must not contain local

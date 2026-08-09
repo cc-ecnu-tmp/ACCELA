@@ -170,6 +170,8 @@ def test_scheduler_cancellation_is_not_misclassified_by_any_stage(
                 "{qemu_binary}",
                 "{profile_plugin_binary}",
                 "{cache_plugin_binary}",
+                "{input}",
+                "{metric_file}",
             ),
             {},
         )
@@ -541,7 +543,7 @@ def test_qemu_metric_file_is_cleared_and_parsed_without_shell(benchmark_fixture)
         "host",
         (
             sys.executable, "{runner_executable}", "run", "{binary}", "file",
-            "{metric_file}", "{qemu_binary}", "{profile_plugin_binary}",
+            "{metric_file}", "{qemu_binary}", "{profile_plugin_binary}", "{input}",
             "{cache_plugin_binary}",
         ),
         {},
@@ -579,8 +581,9 @@ def test_triple_consistency_rejects_deterministic_counter_drift(benchmark_fixtur
         "host",
         (
             sys.executable, "{runner_executable}", "run", "{binary}", "vary",
-            "{sample_index}", "{qemu_binary}", "{profile_plugin_binary}",
+            "{sample_index}", "{qemu_binary}", "{profile_plugin_binary}", "{input}",
             "{cache_plugin_binary}",
+            "{metric_file}",
         ),
         {},
     )
@@ -871,8 +874,8 @@ def test_output_contracts_compare_stdout_and_main_return_independently(benchmark
             result_file.runner,
             command=(
                 sys.executable, "{runner_executable}", "run", "{binary}",
-                "result-file", "{result_file}", "{qemu_binary}",
-                "{profile_plugin_binary}", "{cache_plugin_binary}",
+                "result-file", "{result_file}", "{qemu_binary}", "{input}",
+                "{profile_plugin_binary}", "{cache_plugin_binary}", "{metric_file}",
             ),
         ),
         output_contract="result_file",

@@ -9,6 +9,7 @@ from typing import Any, Sequence
 
 from .errors import BenchmarkError, ExecutionError, ValidationError
 from .metrics import ANALYZER_METRICS
+from .protocol import INPUT_TRANSPORT_SECTION, INPUT_TRANSPORT_SECTION_SIZE_BYTES
 from .schema import load_and_validate_jsonl, validate_document
 from .util import atomic_write_json, sanitize_text
 
@@ -110,6 +111,22 @@ def _sections(text: str) -> dict[str, tuple[str, int, frozenset[str]]]:
             )
     if not any("A" in flags and "X" in flags for _, _, flags in sections.values()):
         raise ValidationError("readelf output does not contain an allocated executable section")
+    transport = sections.get(INPUT_TRANSPORT_SECTION)
+    if transport is None:
+        raise ValidationError(
+            f"readelf output does not contain required {INPUT_TRANSPORT_SECTION} section"
+        )
+    section_type, size, flags = transport
+    if (
+        section_type != "NOBITS"
+        or size != INPUT_TRANSPORT_SECTION_SIZE_BYTES
+        or flags != frozenset({"A", "W"})
+    ):
+        raise ValidationError(
+            f"{INPUT_TRANSPORT_SECTION} must be a "
+            f"{INPUT_TRANSPORT_SECTION_SIZE_BYTES}-byte "
+            "NOBITS section with exactly AW flags"
+        )
     return sections
 
 
@@ -235,7 +252,9 @@ def analyze_binary(
     )
     def section_bytes(*, writable: bool, executable: bool, nobits: bool) -> int:
         total = 0
-        for section_type, size, flags in section_table.values():
+        for name, (section_type, size, flags) in section_table.items():
+            if name == INPUT_TRANSPORT_SECTION:
+                continue
             if "A" not in flags:
                 continue
             if ("W" in flags) != writable or ("X" in flags) != executable:

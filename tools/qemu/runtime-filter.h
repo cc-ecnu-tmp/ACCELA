@@ -91,19 +91,29 @@ static inline bool accela_region_complete(
 
 static inline bool is_io_runtime(const struct qemu_plugin_insn *instruction) {
   const char *symbol = qemu_plugin_insn_symbol(instruction);
+#define ACCELA_RUNTIME_SYMBOL(name) \
+  (!g_strcmp0(symbol, name) \
+   || (g_str_has_prefix(symbol, name) && symbol[sizeof(name) - 1] == '.'))
   return symbol != NULL
-      && (!g_strcmp0(symbol, "getch")
-          || !g_strcmp0(symbol, "getint")
-          || !g_strcmp0(symbol, "getfloat")
-          || !g_strcmp0(symbol, "getarray")
-          || !g_strcmp0(symbol, "getfarray")
-          || !g_strcmp0(symbol, "putch")
-          || !g_strcmp0(symbol, "putint")
-          || !g_strcmp0(symbol, "putarray")
-          || !g_strcmp0(symbol, "putfloat")
-          || !g_strcmp0(symbol, "putfarray")
-          || !g_strcmp0(symbol, "_sysy_starttime")
-          || !g_strcmp0(symbol, "_sysy_stoptime"));
+      && (ACCELA_RUNTIME_SYMBOL("__accela_input_to_be32")
+          || ACCELA_RUNTIME_SYMBOL("__accela_input_to_be64")
+          || ACCELA_RUNTIME_SYMBOL("__accela_input_fail")
+          || ACCELA_RUNTIME_SYMBOL("__accela_input_dma_read")
+          || ACCELA_RUNTIME_SYMBOL("__accela_input_initialize")
+          || ACCELA_RUNTIME_SYMBOL("__accela_input_getc")
+          || ACCELA_RUNTIME_SYMBOL("getch")
+          || ACCELA_RUNTIME_SYMBOL("getint")
+          || ACCELA_RUNTIME_SYMBOL("getfloat")
+          || ACCELA_RUNTIME_SYMBOL("getarray")
+          || ACCELA_RUNTIME_SYMBOL("getfarray")
+          || ACCELA_RUNTIME_SYMBOL("putch")
+          || ACCELA_RUNTIME_SYMBOL("putint")
+          || ACCELA_RUNTIME_SYMBOL("putarray")
+          || ACCELA_RUNTIME_SYMBOL("putfloat")
+          || ACCELA_RUNTIME_SYMBOL("putfarray")
+          || ACCELA_RUNTIME_SYMBOL("_sysy_starttime")
+          || ACCELA_RUNTIME_SYMBOL("_sysy_stoptime"));
+#undef ACCELA_RUNTIME_SYMBOL
 }
 
 #endif

@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "protocol_id", "measurement_mode", "target", "abi", "code_model",
-    "sources", "plugin_binaries", "qemu", "cache_model"
+    "input_transport", "sources", "plugin_binaries", "qemu", "cache_model"
   ],
   "properties": {
     "schema_version": {"const": "measurement-protocol.v1"},
@@ -15,6 +15,23 @@
     "target": {"const": "rv64gc"},
     "abi": {"const": "lp64d"},
     "code_model": {"const": "medany"},
+    "input_transport": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "kind", "item_name", "exact_bytes", "eof", "max_input_size_bytes",
+        "guest_buffer_size_bytes", "guest_buffer_section", "transport_section_size_bytes"
+      ],
+      "properties": {
+        "kind": {"const": "fw_cfg_dma"},
+        "item_name": {"const": "opt/accela/sysy-input"},
+        "exact_bytes": {"const": true},
+        "eof": {"const": "size_delimited"},
+        "max_input_size_bytes": {"const": 4294967295},
+        "guest_buffer_size_bytes": {"const": 4096},
+        "guest_buffer_section": {"const": ".sysy_input_transport"},
+        "transport_section_size_bytes": {"const": 4112}
+      }
+    },
     "sources": {
       "type": "object", "additionalProperties": false,
       "required": [

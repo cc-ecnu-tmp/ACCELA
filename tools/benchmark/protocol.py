@@ -27,6 +27,19 @@ PLUGIN_ASSETS = (
 )
 REQUIRED_ASSETS = (*SOURCE_ASSETS, *PLUGIN_ASSETS, "qemu_binary", "runner_executable")
 
+INPUT_TRANSPORT_SECTION = ".sysy_input_transport"
+INPUT_TRANSPORT_SECTION_SIZE_BYTES = 4_112
+INPUT_TRANSPORT = {
+    "kind": "fw_cfg_dma",
+    "item_name": "opt/accela/sysy-input",
+    "exact_bytes": True,
+    "eof": "size_delimited",
+    "max_input_size_bytes": 4_294_967_295,
+    "guest_buffer_size_bytes": 4_096,
+    "guest_buffer_section": INPUT_TRANSPORT_SECTION,
+    "transport_section_size_bytes": INPUT_TRANSPORT_SECTION_SIZE_BYTES,
+}
+
 _SOURCE_FIELDS = {
     "profile_plugin_source": "profile_plugin_sha256",
     "cache_plugin_source": "cache_plugin_sha256",
@@ -66,16 +79,31 @@ def _runner_command_sha256(runner: StageSpec, *, measurement_mode: str) -> str:
     if measurement_mode not in {"standard_proxy", "cache_hotblock"}:
         raise ConfigurationError("unknown measurement protocol mode")
     formatter = string.Formatter()
-    placeholders: set[str] = set()
-    for value in (*runner.command, *runner.environment.values()):
+    command_placeholders: set[str] = set()
+    all_placeholders: set[str] = set()
+    for index, value in enumerate((*runner.command, *runner.environment.values())):
         try:
-            placeholders.update(
+            parsed = {
                 field_name
                 for _, field_name, _, _ in formatter.parse(value)
                 if field_name
-            )
+            }
         except ValueError as exc:
             raise ConfigurationError(f"invalid QEMU runner command template: {exc}") from exc
+        all_placeholders.update(parsed)
+        if index < len(runner.command):
+            command_placeholders.update(parsed)
+    # The snapshot fixes a plugin log sink as well as the executable and exact
+    # input payload.  All three must therefore be physical command arguments;
+    # environment-only references cannot prove that the runner consumes them.
+    for logical_name in ("binary", "metric_file", "input"):
+        accepted = {logical_name, f"{logical_name}_host", f"{logical_name}_wsl"}
+        if command_placeholders.isdisjoint(accepted):
+            raise ConfigurationError(
+                "QEMU runner command must reference the physical "
+                f"{{{logical_name}}}, {{{logical_name}_host}}, or "
+                f"{{{logical_name}_wsl}} artifact"
+            )
     for logical_name in (
         "qemu_binary",
         "runner_executable",
@@ -84,7 +112,7 @@ def _runner_command_sha256(runner: StageSpec, *, measurement_mode: str) -> str:
         *(() if measurement_mode == "standard_proxy" else ("hotblocks_plugin_binary",)),
     ):
         accepted = {logical_name, f"{logical_name}_host", f"{logical_name}_wsl"}
-        if placeholders.isdisjoint(accepted):
+        if all_placeholders.isdisjoint(accepted):
             raise ConfigurationError(
                 f"QEMU runner must reference the physically verified {{{logical_name}}} asset"
             )
@@ -147,6 +175,15 @@ def capture_measurement_protocol(
         raise ConfigurationError("QEMU machine, cpu model, and memory must be non-empty")
     if measurement_mode not in {"standard_proxy", "cache_hotblock"}:
         raise ConfigurationError("unknown measurement protocol mode")
+    runner_command_sha256 = _runner_command_sha256(
+        runner, measurement_mode=measurement_mode
+    )
+    qemu_version = _qemu_version(
+        normalized["qemu_binary"],
+        runner=runner,
+        wsl_executable=wsl_executable,
+        wsl_distribution=wsl_distribution,
+    )
     return validate_document(
         {
             "schema_version": "measurement-protocol.v1",
@@ -155,6 +192,7 @@ def capture_measurement_protocol(
             "target": "rv64gc",
             "abi": "lp64d",
             "code_model": "medany",
+            "input_transport": dict(INPUT_TRANSPORT),
             "sources": {
                 field: sha256_file(normalized[key]) for key, field in _SOURCE_FIELDS.items()
             },
@@ -163,20 +201,13 @@ def capture_measurement_protocol(
             },
             "qemu": {
                 "binary_sha256": sha256_file(normalized["qemu_binary"]),
-                "version": _qemu_version(
-                    normalized["qemu_binary"],
-                    runner=runner,
-                    wsl_executable=wsl_executable,
-                    wsl_distribution=wsl_distribution,
-                ),
+                "version": qemu_version,
                 "machine": machine,
                 "cpu_model": cpu_model,
                 "accelerator": "tcg",
                 "memory": memory,
                 "plugin_log_flags": ["-d", "plugin", "-D", "{metric_file}"],
-                "runner_command_sha256": _runner_command_sha256(
-                    runner, measurement_mode=measurement_mode
-                ),
+                "runner_command_sha256": runner_command_sha256,
                 "runner_executable_sha256": sha256_file(normalized["runner_executable"]),
                 "runner_adapter": runner.adapter,
                 "wsl_distribution_sha256": (
@@ -202,32 +233,34 @@ def verify_measurement_protocol(
     wsl_executable: str = "wsl.exe",
     wsl_distribution: str | None = None,
 ) -> None:
-    if snapshot.get("schema_version") != "measurement-protocol.v1":
+    validated = validate_document(dict(snapshot))
+    if validated["schema_version"] != "measurement-protocol.v1":
         raise ValidationError("measurement protocol must be measurement-protocol.v1")
+    runner_command_sha256 = _runner_command_sha256(
+        runner, measurement_mode=validated["measurement_mode"]
+    )
     normalized = _normalized_assets(assets)
     for key, field in _SOURCE_FIELDS.items():
-        if sha256_file(normalized[key]) != snapshot["sources"][field]:
+        if sha256_file(normalized[key]) != validated["sources"][field]:
             raise ValidationError(f"measurement protocol source hash drift: {key}")
     for key, field in _PLUGIN_FIELDS.items():
-        if sha256_file(normalized[key]) != snapshot["plugin_binaries"][field]:
+        if sha256_file(normalized[key]) != validated["plugin_binaries"][field]:
             raise ValidationError(f"measurement protocol plugin binary hash drift: {key}")
-    if sha256_file(normalized["qemu_binary"]) != snapshot["qemu"]["binary_sha256"]:
+    if sha256_file(normalized["qemu_binary"]) != validated["qemu"]["binary_sha256"]:
         raise ValidationError("measurement protocol QEMU binary hash drift")
-    if runner.adapter != snapshot["qemu"]["runner_adapter"]:
+    if runner.adapter != validated["qemu"]["runner_adapter"]:
         raise ValidationError("measurement protocol QEMU runner adapter drift")
     observed_distribution = sha256_json(wsl_distribution) if wsl_distribution is not None else None
-    if observed_distribution != snapshot["qemu"]["wsl_distribution_sha256"]:
+    if observed_distribution != validated["qemu"]["wsl_distribution_sha256"]:
         raise ValidationError("measurement protocol WSL distribution drift")
     if _qemu_version(
         normalized["qemu_binary"],
         runner=runner,
         wsl_executable=wsl_executable,
         wsl_distribution=wsl_distribution,
-    ) != snapshot["qemu"]["version"]:
+    ) != validated["qemu"]["version"]:
         raise ValidationError("measurement protocol QEMU version drift")
-    if _runner_command_sha256(
-        runner, measurement_mode=snapshot["measurement_mode"]
-    ) != snapshot["qemu"]["runner_command_sha256"]:
+    if runner_command_sha256 != validated["qemu"]["runner_command_sha256"]:
         raise ValidationError("measurement protocol QEMU runner command/configuration drift")
-    if sha256_file(normalized["runner_executable"]) != snapshot["qemu"]["runner_executable_sha256"]:
+    if sha256_file(normalized["runner_executable"]) != validated["qemu"]["runner_executable_sha256"]:
         raise ValidationError("measurement protocol runner executable/script hash drift")

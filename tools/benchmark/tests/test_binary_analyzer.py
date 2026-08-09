@@ -26,6 +26,7 @@ READELF = """
   [ 5] .srodata          PROGBITS        0000000000010078 001078 000004 00   A  0   0  4
   [ 6] .sdata            PROGBITS        000000000001007c 00107c 000004 00  WA  0   0  4
   [ 7] .sbss             NOBITS          0000000000010080 001080 000008 00  WA  0   0  8
+  [ 8] .sysy_input_transport NOBITS       0000000000011000 001088 001010 00  WA  0   0  8
 """
 
 OBJDUMP = """
@@ -178,6 +179,61 @@ def test_binary_analyzer_rejects_non_rv64gc_attributes_and_rvv_instructions(
         analyze_binary(binary=binary, toolchain="gcc")
 
 
+@pytest.mark.parametrize(
+    "invalid_transport",
+    (
+        "  [ 8] .sysy_input_transport PROGBITS     0000000000011000 001088 001010 00  WA  0   0  8",
+        "  [ 8] .sysy_input_transport NOBITS       0000000000011000 001088 001010 00   A  0   0  8",
+        "  [ 8] .sysy_input_transport NOBITS       0000000000011000 001088 001010 00 WAX  0   0  8",
+        "  [ 8] .sysy_input_transport NOBITS       0000000000011000 001088 001000 00  WA  0   0  8",
+    ),
+)
+def test_binary_analyzer_rejects_invalid_input_transport_section(
+    tmp_path: Path, monkeypatch, invalid_transport: str
+) -> None:
+    binary = tmp_path / "program.elf"
+    binary.write_bytes(b"ELF")
+    invalid = READELF.replace(
+        "  [ 8] .sysy_input_transport NOBITS       0000000000011000 001088 001010 00  WA  0   0  8",
+        invalid_transport,
+    )
+    monkeypatch.setattr(
+        binary_analyzer,
+        "_run_tool",
+        lambda command, *, label, timeout_seconds: invalid if label == "readelf" else OBJDUMP,
+    )
+    with pytest.raises(ValidationError, match="NOBITS section with exactly AW flags"):
+        analyze_binary(binary=binary, toolchain="gcc")
+
+
+def test_binary_analyzer_rejects_missing_or_duplicate_input_transport_section(
+    tmp_path: Path, monkeypatch
+) -> None:
+    binary = tmp_path / "program.elf"
+    binary.write_bytes(b"ELF")
+    transport_line = (
+        "  [ 8] .sysy_input_transport NOBITS       "
+        "0000000000011000 001088 001010 00  WA  0   0  8"
+    )
+    missing = READELF.replace(transport_line + "\n", "")
+    monkeypatch.setattr(
+        binary_analyzer,
+        "_run_tool",
+        lambda command, *, label, timeout_seconds: missing if label == "readelf" else OBJDUMP,
+    )
+    with pytest.raises(ValidationError, match="does not contain required"):
+        analyze_binary(binary=binary, toolchain="gcc")
+
+    duplicate = READELF + transport_line.replace("[ 8]", "[ 9]") + "\n"
+    monkeypatch.setattr(
+        binary_analyzer,
+        "_run_tool",
+        lambda command, *, label, timeout_seconds: duplicate if label == "readelf" else OBJDUMP,
+    )
+    with pytest.raises(ValidationError, match="repeats section .sysy_input_transport"):
+        analyze_binary(binary=binary, toolchain="gcc")
+
+
 def test_binary_analyzer_accepts_real_toolchain_rv64gc_closure(tmp_path: Path) -> None:
     required_tools = {
         name: shutil.which(name)
@@ -194,7 +250,9 @@ def test_binary_analyzer_accepts_real_toolchain_rv64gc_closure(tmp_path: Path) -
         ".globl _start\n"
         "_start:\n"
         "  li a0, 0\n"
-        "  ret\n",
+        "  ret\n"
+        '.section .sysy_input_transport,"aw",@nobits\n'
+        "  .space 4112\n",
         encoding="utf-8",
     )
     subprocess.run(

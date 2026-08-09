@@ -223,6 +223,16 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
             "protocol_id": f"campaign-{mode}",
             "measurement_mode": mode,
             "target": "rv64gc", "abi": "lp64d", "code_model": "medany",
+            "input_transport": {
+                "kind": "fw_cfg_dma",
+                "item_name": "opt/accela/sysy-input",
+                "exact_bytes": True,
+                "eof": "size_delimited",
+                "max_input_size_bytes": 4_294_967_295,
+                "guest_buffer_size_bytes": 4_096,
+                "guest_buffer_section": ".sysy_input_transport",
+                "transport_section_size_bytes": 4_112,
+            },
             "sources": {
                 "profile_plugin_sha256": "1" * 64,
                 "cache_plugin_sha256": "2" * 64,

@@ -20,10 +20,13 @@ profile 漂移或输出文件缺失都会立即失败。
   BOOM 周期，也不是官方平台成绩。QEMU 主机 wall-clock 只用于超时和调度。
 - `boom_hardware` 才能支持“决赛平台提速”或默认启用实验优化的结论。
 
-所有 correctness gate 都逐字节比较 stdout，并独立比较 `main` 返回值的低八位；
-输入尾部原样保留，不要求程序读到 EOF。任何错误输出、异常退出、非法汇编、
-链接失败、verifier 失败或缺失指标都会使该 profile 失去收益排名资格。超时是
-删失数据，不能用猜测值补齐。
+所有 correctness gate 都逐字节比较 stdout，并独立比较 `main` 返回值的低八位。
+每个物理输入文件通过长度定界的 `opt/accela/sysy-input` fw_cfg item 原样传入；
+runner 不追加分隔符、不做文本规范化，也不把 UART stdin 当作 guest 输入。没有
+`.in` sidecar 时仍传入显式零字节 item；runtime 在最后一个真实字节之后返回
+EOF。程序不必消费到 EOF，未读尾部仍完整保留。任何错误输出、异常退出、非法
+汇编、链接失败、verifier 失败或缺失指标都会使该 profile 失去收益排名资格。
+超时是删失数据，不能用猜测值补齐。
 
 优化只能依据语义 IR、分析结果和目标属性作决策。禁止依据文件名、函数名、
 路径、源码或输入哈希、case ID、字符串指纹以及公开样例常量分派优化。这一
@@ -279,11 +282,24 @@ QEMU 代理证据使用两份严格分离的实物快照：
   `cache_hotblock` 协议，另外运行 hotblocks plugin，不参与收益排名。
 
 每份快照都绑定 7 个源文件、3 个 plugin 二进制、QEMU 二进制及版本、自己的
-runner 脚本、runner command/environment，以及 32 KiB、8-way、64 B line、
-cold-per-region、LRU 模型。两份快照的 protocol hash 和 runner command hash
-必须不同。每次 `qemu_proxy` run 都重新核验所选协议的全部实物；任一漂移立即
-失败。runner 只能通过已核验 asset 占位符取得 QEMU、脚本和 plugin，不能再次
-从不受控 PATH 或其他目录选取实物。
+runner 脚本、runner command/environment、输入传输契约，以及 32 KiB、8-way、
+64 B line、cold-per-region、LRU 模型。两份快照的 protocol hash 和 runner
+command hash 必须不同。每次 `qemu_proxy` run 都重新核验所选协议的全部实物；
+任一漂移立即失败。runner 只能通过已核验 asset 占位符取得 QEMU、脚本和
+plugin，不能再次从不受控 PATH 或其他目录选取实物。
+
+输入传输遵循 QEMU 官方的
+[`fw_cfg` file directory 与 DMA 接口](https://www.qemu.org/docs/master/specs/fw_cfg.html)：
+runner 把当前 case 的物理 `{input}` 作为 `opt/accela/sysy-input` file item，
+guest 以 4 KiB 分块读取 directory 中记录的无符号 32 位长度，并据此提供精确
+EOF；最大输入为 `4294967295` 字节。ELF 只保留固定 4112 B 的
+`.sysy_input_transport` NOBITS scratch（16 B DMA descriptor + 4096 B buffer），
+不嵌入输入内容。规范化静态 ELF 指标只排除这个固定 scratch；共享 runtime 的
+helper text、rodata 和其他状态仍计入静态 text/rodata/data。动态 plugin 则按
+精确 allowlist 过滤固定 SysY I/O runtime/helper 基名及其编译器点号后缀，不使用
+用户可匹配的宽泛前缀；同前缀的用户函数仍会计数。输入字节数不会通过可变 ELF
+嵌入量伪造静态收益，
+也不会通过 runtime I/O 开销伪造动态收益。
 
 `data/toolchain-snapshot.json` 的 `measurement_protocols` 同时记录两份协议的
 逻辑 mode、相对 path、ID 和 canonical SHA-256。campaign plan 会把这些字段与
@@ -302,7 +318,7 @@ test -n "$qemu_binary" || {
 }
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json
 cache_hotblock_protocol=docs/optimization/data/measurement-protocol.cache-hotblock.v1.json
-runner_command='["sh","{runner_executable}","{binary}","{metric_file}"]'
+runner_command='["sh","{runner_executable}","{binary}","{metric_file}","{input}"]'
 
 set -- \
   --asset profile_plugin_source=tools/qemu/profile.c \
@@ -318,7 +334,7 @@ set -- \
   --asset "qemu_binary=$qemu_binary"
 
 python -m tools.benchmark protocol capture \
-  --protocol-id rv64gc-qemu-v1-20260810 \
+  --protocol-id rv64gc-qemu-fwcfg-v1-20260810 \
   --measurement-mode standard_proxy \
   --machine virt --cpu-model default --memory 512M \
   "$@" --asset runner_executable=scripts/benchmark-qemu.sh \
@@ -336,7 +352,7 @@ python -m tools.benchmark protocol verify "$standard_protocol" \
   --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}'
 
 python -m tools.benchmark protocol capture \
-  --protocol-id rv64gc-qemu-cache-hotblock-v1-20260810 \
+  --protocol-id rv64gc-qemu-cache-hotblock-fwcfg-v1-20260810 \
   --measurement-mode cache_hotblock \
   --machine virt --cpu-model default --memory 512M \
   "$@" --asset runner_executable=scripts/benchmark-qemu-hotblocks.sh \
@@ -411,7 +427,8 @@ done
 GCC/Clang 另用 `--official-version` 要求精确匹配。测量协议仍负责逐字节核验
 QEMU 与 runtime/plugin 实物，版本字符串不能替代 artifact hash。
 
-B1 correctness gate 不采集排名指标，可直接运行未插 plugin 的 QEMU：
+B1 correctness gate 不采集排名指标，使用未插 plugin、但与代理协议相同的
+exact-input fw_cfg runtime：
 
 ```sh
 python -m tools.benchmark validate suite \
@@ -426,7 +443,7 @@ python -m tools.benchmark validate suite \
   --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
   --remarks-file optimization-remarks.jsonl \
   --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
-  --runner-command-json '["qemu-system-riscv64","-machine","virt","-accel","tcg,thread=single","-smp","1","-m","512M","-bios","none","-kernel","{binary}","-display","none","-monitor","none","-serial","stdio"]' \
+  --runner-command-json '["sh","scripts/benchmark-qemu-correctness.sh","{binary}","{input}"]' \
   --runner-kind qemu --environment-label proxy \
   --evidence-level qemu_correctness --jobs 4 \
   --tool-version "qemu-system-riscv64=$qemu_version" \
@@ -466,7 +483,7 @@ python -m tools.benchmark run \
   --remarks-file optimization-remarks.jsonl \
   --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
   --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-  --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}"]' \
+  --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
   --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
   --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
   --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
@@ -522,7 +539,7 @@ python -m tools.benchmark run \
   --compiler-command-json '["sh","scripts/reference-compile.sh","gcc","{source}","{artifact}"]' \
   --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
   --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","gcc","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--output","{analysis_file}"]' \
-  --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}"]' \
+  --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
   --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
   --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
   --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
@@ -621,7 +638,7 @@ run_b2_task() {
     --remarks-file optimization-remarks.jsonl \
     --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
     --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}"]' \
+    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
     --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
     --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
     --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
@@ -745,7 +762,7 @@ run_cache_hotblock_task() {
     --remarks-file optimization-remarks.jsonl \
     --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
     --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}"]' \
+    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
     --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
     --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
     --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
@@ -908,7 +925,7 @@ run_oracle_leg() {
     --remarks-file optimization-remarks.jsonl \
     --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
     --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}"]' \
+    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
     --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
     --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
     --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \

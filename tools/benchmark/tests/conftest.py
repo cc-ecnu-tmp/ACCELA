@@ -129,14 +129,12 @@ elif mode == "run":
     metric = os.environ.get("TEST_INSTRUCTIONS", "80")
     if behavior == "vary":
         metric = str(int(metric) + int(sys.argv[4]))
-    if behavior == "file":
-        metric_path = sys.argv[4]
-        stale = os.path.exists(metric_path)
-        with open(metric_path, "a", encoding="utf-8") as stream:
-            stream.write(f"profile instructions={'999' if stale else metric} loads=30 stores=12\n")
-            stream.write("cache l1d=4\n")
-    else:
-        sys.stderr.write(f"instructions={metric} loads=30 stores=12 l1d=4\n")
+    metric_path = sys.argv[4] if behavior == "file" else sys.argv[-1]
+    stale = os.path.exists(metric_path)
+    with open(metric_path, "a", encoding="utf-8") as stream:
+        stream.write(f"profile instructions={'999' if stale else metric} loads=30 stores=12\n")
+        stream.write("cache l1d=4\n")
+    sys.stderr.write(f"instructions={metric} loads=30 stores=12 l1d=4\n")
 elif mode == "analyze":
     measurements = []
     measured = {
@@ -189,7 +187,7 @@ def benchmark_fixture(tmp_path: Path):
         output_name: str = "run.json",
         behavior: str = "exact",
         primary_metric_id: str = "dynamic_instruction_count",
-        metric_source: str = "stderr",
+        metric_source: str = "file",
         metric_pattern: str | None = r"instructions=(?P<value>\d+)",
         metric_unit: str = "instructions",
         run_timeout: float = 2.0,
@@ -210,6 +208,8 @@ def benchmark_fixture(tmp_path: Path):
                 "{qemu_binary}",
                 "{profile_plugin_binary}",
                 "{cache_plugin_binary}",
+                "{input}",
+                "{metric_file}",
             ),
             runner_environment or {},
         )
@@ -262,6 +262,7 @@ def benchmark_fixture(tmp_path: Path):
             metric_source=metric_source,
             metric_pattern=metric_pattern,
             metric_unit=metric_unit,
+            metric_file="metrics/plugin.log",
             additional_metrics=additional_metrics,
             run_id=run_id,
             environment_label="local_reference",

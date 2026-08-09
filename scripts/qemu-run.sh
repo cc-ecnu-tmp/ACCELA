@@ -89,11 +89,21 @@ if [ -f "$input" ]; then
 else
   : > "$stdin"
 fi
+safe_input=$(printf '%s' "$stdin" | LC_ALL=C tr -d ',[:cntrl:]')
+[ "$safe_input" = "$stdin" ] \
+  || fail "input path contains characters unsafe for QEMU -fw_cfg"
+input_size=$(wc -c < "$stdin" | LC_ALL=C tr -d '[:space:]')
+case "$input_size" in
+  ''|*[!0-9]*) fail "unable to determine input size for QEMU -fw_cfg" ;;
+esac
+[ "$input_size" -le 4294967295 ] \
+  || fail "input exceeds the fw_cfg 32-bit size limit"
 
 qemu=${QEMU_SYSTEM_RISCV64:-qemu-system-riscv64}
 require_command "$qemu"
 set -- "$qemu" -machine virt -accel tcg,thread=single -smp 1 -m 512M \
-  -bios none -kernel "$elf" -display none -monitor none -serial stdio
+  -bios none -kernel "$elf" -display none -monitor none -serial stdio \
+  -fw_cfg "name=opt/accela/sysy-input,file=$stdin"
 
 profile_mode=${QEMU_PROFILE:-0}
 profile_log=$work/profile.log
@@ -166,7 +176,7 @@ elif command -v gtimeout >/dev/null 2>&1; then
 else
   fail "required command is unavailable: timeout (or GNU gtimeout)"
 fi
-"$timeout_command" "${QEMU_TIMEOUT:-120}" "$@" < "$stdin" > "$actual"
+"$timeout_command" "${QEMU_TIMEOUT:-120}" "$@" </dev/null > "$actual"
 cmp "$expected" "$actual" || {
   diff -u "$expected" "$actual" >&2 || true
   fail "program output does not match expected output"

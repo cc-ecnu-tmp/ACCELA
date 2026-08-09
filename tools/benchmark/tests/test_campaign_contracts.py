@@ -18,7 +18,11 @@ from tools.benchmark.campaign import (
 )
 from tools.benchmark.errors import ConfigurationError, ValidationError
 from tools.benchmark.metrics import rv64gc_qemu_v1
-from tools.benchmark.protocol import REQUIRED_ASSETS, capture_measurement_protocol
+from tools.benchmark.protocol import (
+    REQUIRED_ASSETS,
+    capture_measurement_protocol,
+    verify_measurement_protocol,
+)
 from tools.benchmark.util import sha256_json
 
 
@@ -583,7 +587,8 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
         "qemu", "host",
         (
             "{qemu_binary}", "{runner_executable}", "{profile_plugin_binary}",
-            "{cache_plugin_binary}", "{hotblocks_plugin_binary}",
+            "{cache_plugin_binary}", "{hotblocks_plugin_binary}", "{binary}",
+            "{input}", "{metric_file}",
         ),
         {},
     )
@@ -598,9 +603,22 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
         machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
     )
     assert protocol["measurement_mode"] == "cache_hotblock"
+    assert protocol["input_transport"] == {
+        "kind": "fw_cfg_dma",
+        "item_name": "opt/accela/sysy-input",
+        "exact_bytes": True,
+        "eof": "size_delimited",
+        "max_input_size_bytes": 4_294_967_295,
+        "guest_buffer_size_bytes": 4_096,
+        "guest_buffer_section": ".sysy_input_transport",
+        "transport_section_size_bytes": 4_112,
+    }
     missing = StageSpec(
         "qemu", "host",
-        ("{qemu_binary}", "{runner_executable}", "{profile_plugin_binary}", "{cache_plugin_binary}"),
+        (
+            "{qemu_binary}", "{runner_executable}", "{profile_plugin_binary}",
+            "{cache_plugin_binary}", "{binary}", "{input}", "{metric_file}",
+        ),
         {},
     )
     with pytest.raises(ConfigurationError, match="hotblocks_plugin_binary"):
@@ -608,3 +626,52 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
             protocol_id="invalid-cache-hotblock", assets=assets, runner=missing,
             machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
         )
+
+    no_input = StageSpec(
+        "qemu", "host",
+        (
+            "{qemu_binary}", "{runner_executable}", "{profile_plugin_binary}",
+            "{cache_plugin_binary}", "{hotblocks_plugin_binary}", "{binary}",
+            "{metric_file}",
+        ),
+        {"ACCELA_INPUT": "{input}"},
+    )
+    with pytest.raises(ConfigurationError, match="physical.*input"):
+        capture_measurement_protocol(
+            protocol_id="invalid-input-transport", assets=assets, runner=no_input,
+            machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
+        )
+
+    complete_command = (
+        "{qemu_binary}", "{runner_executable}", "{profile_plugin_binary}",
+        "{cache_plugin_binary}", "{hotblocks_plugin_binary}", "{binary_host}",
+        "{input_wsl}", "{metric_file_host}",
+    )
+    for missing in ("binary", "metric_file"):
+        without_physical = StageSpec(
+            "qemu", "host",
+            tuple(value for value in complete_command if missing not in value),
+            {f"ACCELA_{missing.upper()}": "{" + missing + "}"},
+        )
+        with pytest.raises(ConfigurationError, match=rf"physical.*{missing}"):
+            capture_measurement_protocol(
+                protocol_id=f"invalid-{missing}-transport", assets=assets,
+                runner=without_physical, machine="virt", cpu_model="rv64",
+                memory="128M", measurement_mode="cache_hotblock",
+            )
+
+    variants = StageSpec("qemu", "host", complete_command, {})
+    capture_measurement_protocol(
+        protocol_id="physical-path-variants", assets=assets, runner=variants,
+        machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
+    )
+
+    legacy = deepcopy(protocol)
+    legacy.pop("input_transport")
+    with pytest.raises(ValidationError, match="input_transport.*required property"):
+        verify_measurement_protocol(legacy, assets=assets, runner=runner)
+
+    drifted = deepcopy(protocol)
+    drifted["input_transport"]["item_name"] = "opt/accela/other"
+    with pytest.raises(ValidationError, match="opt/accela/sysy-input"):
+        verify_measurement_protocol(drifted, assets=assets, runner=runner)

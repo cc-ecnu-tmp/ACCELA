@@ -7,25 +7,25 @@
   "measurement_protocols": {
     "cache_hotblock": {
       "cache_model_sha256": "ed15e8ff7a96168c748b8cf62c3954d7667f0c406ce83aab4a7defdd75330a33",
-      "cache_plugin_sha256": "01dadb82f70f1adc708ed88bb118462c8c61698fc193a49d8921748b4382533a",
-      "hotblocks_plugin_sha256": "7e4db23fe2f8082ad0b7df0432478f095db10a4fd86cfd8b1c2148bdb8108f68",
+      "cache_plugin_sha256": "cbfe3c190644d129d62145081d5e82de610a508d62fb6bfc472645753fdda7f1",
+      "hotblocks_plugin_sha256": "e1f4ed597ffe36db94d86f168ec3917a4a5399fa6a54cdcf94fedb9e0ded1d0d",
       "measurement_mode": "cache_hotblock",
-      "profile_plugin_sha256": "364ef0729b0e32ec6110bbae29640abf7f152306f738934678fb14b05e3c21aa",
-      "protocol_id": "rv64gc-qemu-cache-hotblock-v1-20260810",
-      "protocol_sha256": "517db3343f84546033c74f3952db6f22759948b2ba125a59143063023bbd8570",
+      "profile_plugin_sha256": "78927ffd23afed42a967ccc0d80e6c1e185726ba6eb5324ce889172fd2f7a581",
+      "protocol_id": "rv64gc-qemu-cache-hotblock-fwcfg-v1-20260810",
+      "protocol_sha256": "3a7203bb2fb31756f40bb7bf216165cf28b4595061eed33fe2b23b9a4f02d4f8",
       "runner_adapter": "host",
-      "runner_command_sha256": "8969e34940602af9a374d7a65e9a07768438d39cbe4add76754d3901ec6c6aff"
+      "runner_command_sha256": "df7732d8ca11b45c7080ee9e2d6b93707d41f891c362a718e7d0147a7e99051d"
     },
     "standard_proxy": {
       "cache_model_sha256": "ed15e8ff7a96168c748b8cf62c3954d7667f0c406ce83aab4a7defdd75330a33",
-      "cache_plugin_sha256": "01dadb82f70f1adc708ed88bb118462c8c61698fc193a49d8921748b4382533a",
-      "hotblocks_plugin_sha256": "7e4db23fe2f8082ad0b7df0432478f095db10a4fd86cfd8b1c2148bdb8108f68",
+      "cache_plugin_sha256": "cbfe3c190644d129d62145081d5e82de610a508d62fb6bfc472645753fdda7f1",
+      "hotblocks_plugin_sha256": "e1f4ed597ffe36db94d86f168ec3917a4a5399fa6a54cdcf94fedb9e0ded1d0d",
       "measurement_mode": "standard_proxy",
-      "profile_plugin_sha256": "364ef0729b0e32ec6110bbae29640abf7f152306f738934678fb14b05e3c21aa",
-      "protocol_id": "rv64gc-qemu-v1-20260810",
-      "protocol_sha256": "6820241035eae49f7141222370d6bb70d541538852fff7da9d88f3497b9bcc37",
+      "profile_plugin_sha256": "78927ffd23afed42a967ccc0d80e6c1e185726ba6eb5324ce889172fd2f7a581",
+      "protocol_id": "rv64gc-qemu-fwcfg-v1-20260810",
+      "protocol_sha256": "00de39da36b1cf7e0fe5bd21545e4e5b01d800e03eaefbf33a7935f6eeb66548",
       "runner_adapter": "host",
-      "runner_command_sha256": "d3afbaaf37d175dd03acda4f39837491095eaa6f347014f8df67cf8bb64953d4"
+      "runner_command_sha256": "f92bca54222cf7fc35a3c7a3fa8e3fc8a54ddf094f515bef75421a10b3651150"
     }
   },
   "oracle_plan": {
@@ -102,7 +102,7 @@
       "qemu-system-riscv64": "11.0.3"
     },
     "compile_driver_sha256": "1afe08bbffb1bc979db3cfcf136cdec4b76b080da89f49dd351624ab0e192a88",
-    "snapshot_sha256": "1663d6f055ea3245545ef36037edeea927e0a4ff211b14fee3448eaf83c7e23f"
+    "snapshot_sha256": "e2262e32dc8e4ea96600656eb61bb93fa6b5c6816d4b1184f751eff6fd1b61a5"
   },
   "schema_version": "campaign-plan.v1",
   "suites": [
