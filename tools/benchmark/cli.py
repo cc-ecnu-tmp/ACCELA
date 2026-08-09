@@ -70,9 +70,14 @@ def _verify_git_provenance(
                 timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise ConfigurationError("unable to verify Git provenance") from exc
+            raise ConfigurationError(
+                f"Git provenance command did not complete: {arguments[0]}"
+            ) from exc
         if result.returncode not in allowed_returncodes:
-            raise ConfigurationError("workspace is not a readable Git worktree")
+            raise ConfigurationError(
+                f"Git provenance command failed: {arguments[0]} "
+                f"(exit {result.returncode})"
+            )
         return result
 
     actual_commit = (
