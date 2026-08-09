@@ -279,6 +279,28 @@ def _validate_manifest_semantics(document: dict[str, Any], *, suite_root: Path |
             raise ValidationError(f"family group summary mismatch: {key[0]}")
 
 
+def _validate_compile_sample_evidence(
+    sample: dict[str, Any],
+    *,
+    remarks_configured: bool,
+    label: str,
+) -> None:
+    has_artifact = sample["artifact_sha256"] is not None
+    if has_artifact != (sample["artifact_size_bytes"] is not None):
+        raise ValidationError(f"{label} artifact hash/size evidence is inconsistent")
+    has_remarks = sample["remarks_sha256"] is not None
+    if has_remarks != (sample["remarks_event_count"] is not None):
+        raise ValidationError(f"{label} optimization-remark hash/count evidence is inconsistent")
+    if sample["status"] == "ok" and not has_artifact:
+        raise ValidationError(f"{label} successful cold compile lacks artifact evidence")
+    if sample["status"] == "ok" and remarks_configured and (
+        not has_remarks or sample["remarks_event_count"] <= 0
+    ):
+        raise ValidationError(f"{label} successful cold compile lacks non-empty remark evidence")
+    if not remarks_configured and has_remarks:
+        raise ValidationError(f"{label} carries remarks without a configured remarks output")
+
+
 def _validate_run_semantics(document: dict[str, Any]) -> None:
     if document["configuration_sha256"] != sha256_json(
         {"configuration": document["configuration"], "provenance": document["provenance"]}
@@ -409,14 +431,82 @@ def _validate_run_semantics(document: dict[str, Any]) -> None:
         raise ValidationError("summary consistency_selected_cases does not match cases")
     if summary["consistency_passed_cases"] != passed_consistency:
         raise ValidationError("summary consistency_passed_cases does not match cases")
+    remarks_configured = configuration["remarks_file_sha256"] is not None
     for case in document["cases"]:
         if [attempt["attempt_index"] for attempt in case["attempts"]] != list(range(len(case["attempts"]))):
             raise ValidationError(f"case {case['case_id']} attempt indexes are not contiguous")
+        if case["attempt_index"] != len(case["attempts"]):
+            raise ValidationError(f"case {case['case_id']} current attempt index is not contiguous")
+        has_attempt_start = case["attempt_started_at"] is not None
+        has_attempt_configuration = case["attempt_configuration_sha256"] is not None
+        if has_attempt_start != has_attempt_configuration:
+            raise ValidationError(
+                f"case {case['case_id']} attempt start/configuration binding is inconsistent"
+            )
+        if case["status"] not in {"pending", "cancelled"} and not has_attempt_start:
+            raise ValidationError(
+                f"case {case['case_id']} completed attempt lacks its start/configuration binding"
+            )
+        if not has_attempt_start and (
+            case["cache_hit"]
+            or any(
+                case[field] is not None
+                for field in (
+                    "artifact_sha256",
+                    "binary_sha256",
+                    "remarks_sha256",
+                    "remarks_event_count",
+                    "analysis_sha256",
+                    "compile",
+                    "compile_statistics",
+                    "link",
+                    "analyze",
+                )
+            )
+            or case["compile_samples"]
+            or case["measurements"]
+            or case["samples"]
+        ):
+            raise ValidationError(
+                f"case {case['case_id']} unstarted attempt carries execution evidence"
+            )
         for attempt in case["attempts"]:
             if attempt["failure_summary"] != _ATTEMPT_FAILURE_SUMMARIES[attempt["status"]]:
                 raise ValidationError(
                     f"case {case['case_id']} archived attempt summary does not match its failure status"
                 )
+            for index, sample in enumerate(attempt["compile_samples"]):
+                _validate_compile_sample_evidence(
+                    sample,
+                    remarks_configured=remarks_configured,
+                    label=(
+                        f"case {case['case_id']} attempt {attempt['attempt_index']} "
+                        f"cold sample {index}"
+                    ),
+                )
+            attempt_cancelled_stage = any(
+                phase is not None and phase["status"] == "cancelled"
+                for phase in (attempt["compile"], attempt["link"], attempt["analyze"])
+            ) or any(sample["status"] == "cancelled" for sample in attempt["samples"])
+            if attempt_cancelled_stage and attempt["status"] != "cancelled":
+                raise ValidationError(
+                    f"case {case['case_id']} attempt {attempt['attempt_index']} "
+                    "scheduler cancellation is misclassified"
+                )
+        for index, sample in enumerate(case["compile_samples"]):
+            _validate_compile_sample_evidence(
+                sample,
+                remarks_configured=remarks_configured,
+                label=f"case {case['case_id']} cold sample {index}",
+            )
+        cancelled_stage = any(
+            phase is not None and phase["status"] == "cancelled"
+            for phase in (case["compile"], case["link"], case["analyze"])
+        ) or any(sample["status"] == "cancelled" for sample in case["samples"])
+        if cancelled_stage and case["status"] != "cancelled":
+            raise ValidationError(
+                f"case {case['case_id']} scheduler cancellation is misclassified as {case['status']}"
+            )
         if case["source_group"] != f"sg-{case['source_sha256']}":
             raise ValidationError(f"case {case['case_id']} has inconsistent source_group")
         if configuration["timeout_policy"] == "fixed" and not math.isclose(

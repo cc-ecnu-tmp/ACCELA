@@ -80,7 +80,11 @@ class CompileCache:
             raise ExecutionError(f"compile cache entry {key} is incomplete")
         try:
             metadata = read_json(metadata_path)
-            if not isinstance(metadata, dict) or metadata.get("key") != key:
+            if (
+                not isinstance(metadata, dict)
+                or metadata.get("version") != 2
+                or metadata.get("key") != key
+            ):
                 raise ExecutionError(f"compile cache entry {key} has invalid metadata")
             if metadata.get("artifact_sha256") != sha256_file(artifact):
                 raise ExecutionError(f"compile cache entry {key} failed artifact integrity verification")
@@ -97,6 +101,46 @@ class CompileCache:
             statistics = metadata["statistics"]
             if not isinstance(samples, list) or not all(isinstance(item, dict) for item in samples):
                 raise ExecutionError(f"compile cache entry {key} has invalid sample metadata")
+            for index, sample in enumerate(samples):
+                repetition = directory / f"repetition-{index:04d}"
+                sample_artifact = repetition / f"artifact{suffix}"
+                if (
+                    not sample_artifact.is_file()
+                    or sample.get("artifact_sha256") != sha256_file(sample_artifact)
+                    or sample.get("artifact_size_bytes") != sample_artifact.stat().st_size
+                ):
+                    raise ExecutionError(
+                        f"compile cache entry {key} failed cold sample artifact integrity verification"
+                    )
+                sample_remarks_sha256 = sample.get("remarks_sha256")
+                sample_remarks_count = sample.get("remarks_event_count")
+                sample_remarks = repetition / "remarks.jsonl"
+                if (sample_remarks_sha256 is None) != (sample_remarks_count is None):
+                    raise ExecutionError(
+                        f"compile cache entry {key} has inconsistent cold sample remarks metadata"
+                    )
+                if sample_remarks_sha256 is not None and (
+                    not sample_remarks.is_file()
+                    or sha256_file(sample_remarks) != sample_remarks_sha256
+                ):
+                    raise ExecutionError(
+                        f"compile cache entry {key} failed cold sample remarks integrity verification"
+                    )
+                if sample_remarks_sha256 is not None:
+                    if (
+                        not isinstance(sample_remarks_count, int)
+                        or isinstance(sample_remarks_count, bool)
+                        or sample_remarks_count < 0
+                    ):
+                        raise ExecutionError(
+                            f"compile cache entry {key} has invalid cold sample remarks event count"
+                        )
+                    with sample_remarks.open("rb") as stream:
+                        observed_event_count = sum(bool(line.strip()) for line in stream)
+                    if observed_event_count != sample_remarks_count:
+                        raise ExecutionError(
+                            f"compile cache entry {key} failed cold sample remarks event-count integrity verification"
+                        )
             if statistics is not None and not isinstance(statistics, dict):
                 raise ExecutionError(f"compile cache entry {key} has invalid statistics metadata")
         except (KeyError, TypeError) as exc:
@@ -130,7 +174,7 @@ class CompileCache:
                     phase["diagnostic"] = "compiler exited successfully without creating {artifact}"
                     return CacheEntry(artifact, phase, build.samples, build.statistics, False)
                 metadata = {
-                    "version": 1,
+                    "version": 2,
                     "key": key,
                     "artifact_sha256": sha256_file(artifact),
                     "phase": build.phase,

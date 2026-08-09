@@ -1,18 +1,44 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import sys
+import threading
+import time
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+from queue import Empty
+from typing import Any
 
 import pytest
 
 from tools.benchmark.execution import MeasurementSpec, _summary, run_benchmark
-from tools.benchmark.errors import ConfigurationError, ValidationError
+from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
 from tools.benchmark.adapters import StageSpec
 from tools.benchmark.schema import load_and_validate, validate_document
 from tools.benchmark.protocol import capture_measurement_protocol
-from tools.benchmark.util import atomic_write_json, sha256_json
+from tools.benchmark.process import run_process
+from tools.benchmark.util import atomic_write_json, sha256_file, sha256_json
+
+
+def _run_benchmark_in_subprocess(options: Any, result_queue: Any) -> None:
+    try:
+        record = run_benchmark(options)
+    except BaseException as exc:
+        result_queue.put(("error", type(exc).__name__, str(exc)))
+    else:
+        result_queue.put(("ok", record["state"], record["run_id"]))
+
+
+def _raw_attempt_directory(state_root: Path, case_id: str, attempt_index: int) -> Path:
+    matches: list[Path] = []
+    for identity_path in state_root.glob("runs/*/cases/*/attempts/attempt-*/identity.json"):
+        identity = json.loads(identity_path.read_text(encoding="utf-8"))
+        if identity["case_id"] == case_id and identity["attempt_index"] == attempt_index:
+            matches.append(identity_path.parent)
+    assert len(matches) == 1
+    return matches[0]
 
 
 def _rebind_protocol(options, *, runner=None, assets=None, name: str):
@@ -41,6 +67,206 @@ def _rebind_protocol(options, *, runner=None, assets=None, name: str):
             measurement_protocol_sha256=sha256_json(protocol),
         ),
     )
+
+
+def test_run_process_reports_scheduler_cancellation_as_a_typed_status(tmp_path: Path) -> None:
+    cancellation = threading.Event()
+    cancellation.set()
+    result = run_process(
+        (sys.executable, "-c", "raise SystemExit(91)"),
+        cwd=tmp_path,
+        environment=None,
+        stdin_path=None,
+        stdout_path=tmp_path / "cancelled.stdout",
+        stderr_path=tmp_path / "cancelled.stderr",
+        timeout_seconds=1.0,
+        privacy_roots=(tmp_path,),
+        cancellation_event=cancellation,
+    )
+    assert result.status == "cancelled"
+    assert result.exit_code is None
+    assert result.diagnostic == "process cancelled by benchmark scheduler"
+
+
+@pytest.mark.parametrize(
+    ("stage_name", "failure_status"),
+    (
+        ("compile", "compile_error"),
+        ("link", "link_error"),
+        ("analyze", "analyze_error"),
+        ("run", "runtime_error"),
+    ),
+)
+def test_scheduler_cancellation_is_not_misclassified_by_any_stage(
+    benchmark_fixture,
+    stage_name: str,
+    failure_status: str,
+) -> None:
+    _, _, _, tool, make_options = benchmark_fixture
+    base = make_options(
+        output_name=f"cancel-{stage_name}.json",
+        run_id=f"cancel-{stage_name}",
+    )
+    options = replace(base, max_workers=2, keep_going=False)
+    if stage_name == "compile":
+        options = replace(
+            options,
+            compiler=replace(
+                options.compiler,
+                command=(
+                    sys.executable,
+                    str(tool),
+                    "compile-controlled",
+                    "{source}",
+                    "{artifact}",
+                ),
+            ),
+        )
+    elif stage_name == "link":
+        options = replace(
+            options,
+            linker=StageSpec(
+                "external",
+                "host",
+                (
+                    sys.executable,
+                    str(tool),
+                    "link-controlled",
+                    "{artifact}",
+                    "{binary}",
+                ),
+                {},
+            ),
+        )
+    elif stage_name == "analyze":
+        options = replace(
+            options,
+            analyzer=StageSpec(
+                "analyzer",
+                "host",
+                (
+                    sys.executable,
+                    str(tool),
+                    "analyze-controlled",
+                    "{binary}",
+                    "{analysis_file}",
+                ),
+                {},
+            ),
+            analysis_file="analysis/binary.json",
+            additional_metrics=(
+                MeasurementSpec("elf_text_bytes", "analyzer", "bytes"),
+            ),
+        )
+    else:
+        runner = StageSpec(
+            "qemu",
+            "host",
+            (
+                sys.executable,
+                "{runner_executable}",
+                "run-controlled",
+                "{binary}",
+                "{qemu_binary}",
+                "{profile_plugin_binary}",
+                "{cache_plugin_binary}",
+            ),
+            {},
+        )
+        options = _rebind_protocol(options, runner=runner, name="cancel-run-protocol")
+
+    record = run_benchmark(options)
+    assert record["cases"][0]["status"] == failure_status
+    cancelled = record["cases"][1]
+    assert cancelled["status"] == "cancelled"
+    if stage_name == "run":
+        assert cancelled["samples"][0]["status"] == "cancelled"
+    else:
+        assert cancelled[stage_name]["status"] == "cancelled"
+    assert "cancelled by benchmark scheduler" in cancelled["diagnostic"]
+
+
+def test_second_orchestrator_fails_fast_on_output_and_execution_state_leases(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, tool, make_options = benchmark_fixture
+    ready = tmp_path / "compiler.ready"
+    release = tmp_path / "compiler.release"
+    base = make_options(
+        output_name="leased.json",
+        run_id="leased-run",
+        compile_repetitions=1,
+    )
+    options = replace(
+        base,
+        compiler=replace(
+            base.compiler,
+            command=(
+                sys.executable,
+                str(tool),
+                "compile-gated",
+                "{source}",
+                "{artifact}",
+                str(ready),
+                str(release),
+            ),
+        ),
+        compile_timeout_seconds=25,
+        max_workers=1,
+    )
+    context = multiprocessing.get_context("spawn")
+    result_queue = context.Queue()
+    process = context.Process(
+        target=_run_benchmark_in_subprocess,
+        args=(options, result_queue),
+    )
+    output_locks: list[Path] = []
+    state_locks: list[Path] = []
+    process.start()
+    try:
+        deadline = time.monotonic() + 15
+        while not ready.is_file() and time.monotonic() < deadline:
+            if not process.is_alive():
+                break
+            time.sleep(0.02)
+        assert ready.is_file()
+
+        started = time.monotonic()
+        different_output_identity = replace(options, run_id="different-run-id")
+        with pytest.raises(ExecutionError, match="output target is already owned"):
+            run_benchmark(different_output_identity)
+        assert time.monotonic() - started < 2
+
+        second_output = tmp_path / "leased-second-output.json"
+        second_options = replace(options, output_path=second_output)
+        with pytest.raises(ExecutionError, match="execution state is already owned"):
+            run_benchmark(second_options)
+        assert not second_output.exists()
+
+        output_locks = list((tmp_path / ".accela-benchmark-locks").glob("*.lock"))
+        state_locks = list((tmp_path / "state" / "runs").glob("*/.run.lock"))
+        assert output_locks and len(state_locks) == 1
+    finally:
+        release.write_bytes(b"release\n")
+        process.join(timeout=30)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=10)
+    assert process.exitcode == 0
+    try:
+        child_result = result_queue.get(timeout=5)
+    except Empty as exc:
+        raise AssertionError("benchmark subprocess did not report its result") from exc
+    assert child_result == ("ok", "completed", "leased-run")
+    with pytest.raises(ExecutionError, match="already bound to another output"):
+        run_benchmark(second_options)
+    assert not second_output.exists()
+    for lock_path in [*output_locks, *state_locks]:
+        metadata = json.loads(lock_path.read_text(encoding="utf-8"))
+        rendered = json.dumps(metadata, sort_keys=True)
+        assert metadata["schema_version"] == "benchmark-run-lock.v1"
+        assert metadata["run_id"] == "leased-run"
+        assert str(tmp_path) not in rendered
 
 
 def test_multimetric_exact_bytes_cache_and_consistency(benchmark_fixture) -> None:
@@ -146,6 +372,120 @@ def test_retry_failures_preserves_prior_attempt_evidence(benchmark_fixture) -> N
     assert attempt["samples"]
 
 
+def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, tool, make_options = benchmark_fixture
+    marker = tmp_path / "compile-failed-once.marker"
+    base = make_options(
+        output_name="raw-retry.json",
+        run_id="raw-retry-run",
+        compile_repetitions=1,
+    )
+    options = replace(
+        base,
+        compiler=replace(
+            base.compiler,
+            command=(
+                sys.executable,
+                str(tool),
+                "compile-fail-once",
+                "{source}",
+                "{artifact}",
+                str(marker),
+            ),
+        ),
+        max_workers=1,
+        keep_going=False,
+    )
+
+    first = run_benchmark(options)
+    assert first["state"] == "failed"
+    failed = first["cases"][0]
+    assert failed["status"] == "compile_error"
+    first_directory = _raw_attempt_directory(options.state_root, failed["case_id"], 0)
+    first_stderr = first_directory / "compile-repetition-0000.stderr"
+    first_payload = first_stderr.read_bytes()
+    assert first_payload.decode().splitlines() == ["first-attempt-failure"]
+    assert sha256_file(first_stderr) == failed["compile_samples"][0]["stderr"]["sha256"]
+
+    retried = run_benchmark(replace(options, retry_failures=True))
+    assert retried["state"] == "completed"
+    current = retried["cases"][0]
+    assert current["attempt_index"] == 1
+    assert len(current["attempts"]) == 1
+    archived = current["attempts"][0]
+    assert archived["attempt_index"] == 0
+    assert archived["status"] == "compile_error"
+    assert archived["started_at"] == failed["attempt_started_at"]
+    assert first_stderr.read_bytes() == first_payload
+    assert sha256_file(first_stderr) == archived["compile_samples"][0]["stderr"]["sha256"]
+
+    second_directory = _raw_attempt_directory(options.state_root, failed["case_id"], 1)
+    assert second_directory != first_directory
+    assert (
+        second_directory / "compile-repetition-0000.stderr"
+    ).read_text(encoding="utf-8").splitlines() == ["later-attempt-success"]
+    assert archived["configuration_sha256"] != current["attempt_configuration_sha256"]
+    assert all(
+        case["attempt_index"] == 0 and not case["attempts"]
+        for case in retried["cases"][1:]
+    )
+
+    non_contiguous = deepcopy(retried)
+    non_contiguous["cases"][0]["attempt_index"] = 0
+    with pytest.raises(ValidationError, match="current attempt index is not contiguous"):
+        validate_document(non_contiguous)
+    unbound = deepcopy(retried)
+    unbound["cases"][0]["attempt_started_at"] = None
+    with pytest.raises(ValidationError, match="start/configuration binding is inconsistent"):
+        validate_document(unbound)
+
+
+def test_cache_v2_recomputes_cold_sample_remark_event_count(benchmark_fixture) -> None:
+    tmp_path, _, _, tool, make_options = benchmark_fixture
+    base = make_options(
+        output_name="cache-count-first.json",
+        run_id="cache-count-first",
+        compile_repetitions=1,
+    )
+    options = replace(
+        base,
+        compiler=replace(
+            base.compiler,
+            command=(
+                sys.executable,
+                str(tool),
+                "compile-remarks",
+                "{source}",
+                "{artifact}",
+                "{compile_sample_index}",
+                "{remarks_file}",
+            ),
+        ),
+        remarks_file="remarks.jsonl",
+        reuse_compile_cache=True,
+        max_workers=1,
+    )
+    first = run_benchmark(options)
+    assert first["state"] == "completed"
+
+    metadata_path = next((options.state_root / "cache" / "compile").glob("*/metadata.json"))
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["version"] == 2
+    assert metadata["samples"][0]["remarks_event_count"] == 1
+    metadata["samples"][0]["remarks_event_count"] = 2
+    atomic_write_json(metadata_path, metadata)
+
+    second = replace(
+        options,
+        output_path=tmp_path / "cache-count-second.json",
+        run_id="cache-count-second",
+    )
+    with pytest.raises(ExecutionError, match="event-count integrity verification"):
+        run_benchmark(second)
+
+
 def test_exact_output_rejects_appended_newline(benchmark_fixture) -> None:
     _, _, _, _, make_options = benchmark_fixture
     record = run_benchmark(make_options(output_name="wrong.json", behavior="append", run_id="wrong-run"))
@@ -172,6 +512,12 @@ def test_timeout_is_right_censored(benchmark_fixture) -> None:
     assert record["summary"]["censored_cases"] == 1
     assert record["summary"]["pending_cases"] == 0
     assert record["summary"]["failed_cases"] == 10
+    assert [case["status"] for case in record["cases"]].count("timeout") == 1
+    assert [case["status"] for case in record["cases"]].count("cancelled") == 9
+    assert not any(
+        case["status"] in {"compile_error", "link_error", "analyze_error", "runtime_error"}
+        for case in record["cases"]
+    )
     load_and_validate(options.output_path)
 
 
@@ -401,13 +747,115 @@ def test_cold_compile_logs_survive_mid_repetition_failure(benchmark_fixture) -> 
     )
     record = run_benchmark(options)
     assert record["state"] == "failed"
-    case_directories = list((tmp_path / "state" / "runs").glob("*/cases/*"))
+    case_directories = list(
+        (tmp_path / "state" / "runs").glob("*/cases/*/attempts/attempt-0000")
+    )
     assert case_directories
     for case_directory in case_directories:
         assert (case_directory / "compile-repetition-0000.stderr").is_file()
         assert (case_directory / "compile-repetition-0001.stderr").is_file()
         assert (case_directory / "compile-repetition-0002.stderr").read_text(encoding="utf-8") == "compile-sample=2\n"
         assert not (case_directory / "compile-repetition-0003.stderr").exists()
+
+
+def test_cold_compile_nondeterminism_preserves_structured_artifact_evidence(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, tool, make_options = benchmark_fixture
+    base = make_options(
+        output_name="compile-nondeterminism.json",
+        run_id="compile-nondeterminism",
+        compile_repetitions=5,
+    )
+    options = replace(
+        base,
+        compiler=replace(
+            base.compiler,
+            command=(
+                sys.executable,
+                str(tool),
+                "compile-vary",
+                "{source}",
+                "{artifact}",
+                "{compile_sample_index}",
+            ),
+        ),
+        max_workers=1,
+        keep_going=False,
+    )
+
+    record = run_benchmark(options)
+    failed = record["cases"][0]
+    assert failed["status"] == "compile_error"
+    assert len(failed["compile_samples"]) == 2
+    first, current = failed["compile_samples"]
+    assert first["artifact_sha256"] != current["artifact_sha256"]
+    assert first["artifact_size_bytes"] > 0
+    assert current["artifact_size_bytes"] > 0
+    assert first["remarks_sha256"] is None
+    assert first["remarks_event_count"] is None
+    assert failed["diagnostic"] == (
+        "compiler artifact differs across cold repetitions: "
+        "sample_index=1, first_sample_index=0, "
+        f"first_sha256={first['artifact_sha256']}, current_sha256={current['artifact_sha256']}"
+    )
+    assert str(tmp_path) not in failed["diagnostic"]
+    case_directory = next(
+        (tmp_path / "state" / "runs").glob("*/cases/*/attempts/attempt-0000")
+    )
+    for index, sample in enumerate((first, current)):
+        raw_artifact = case_directory / f"compile-repetition-{index:04d}.artifact.s"
+        assert raw_artifact.is_file()
+        assert raw_artifact.stat().st_size == sample["artifact_size_bytes"]
+    load_and_validate(options.output_path)
+
+
+def test_each_cold_compile_sample_records_and_preserves_remarks_evidence(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, tool, make_options = benchmark_fixture
+    base = make_options(
+        output_name="compile-remarks.json",
+        run_id="compile-remarks",
+        compile_repetitions=3,
+    )
+    options = replace(
+        base,
+        compiler=replace(
+            base.compiler,
+            command=(
+                sys.executable,
+                str(tool),
+                "compile-remarks",
+                "{source}",
+                "{artifact}",
+                "{compile_sample_index}",
+                "{remarks_file}",
+            ),
+        ),
+        remarks_file="remarks.jsonl",
+        max_workers=1,
+    )
+
+    record = run_benchmark(options)
+    assert record["state"] == "completed"
+    for case in record["cases"]:
+        assert len(case["compile_samples"]) == 3
+        assert {sample["remarks_event_count"] for sample in case["compile_samples"]} == {1}
+        assert len({sample["remarks_sha256"] for sample in case["compile_samples"]}) == 3
+        assert all(sample["artifact_size_bytes"] > 0 for sample in case["compile_samples"])
+        assert case["remarks_sha256"] == case["compile_samples"][-1]["remarks_sha256"]
+    case_directory = next(
+        (tmp_path / "state" / "runs").glob("*/cases/*/attempts/attempt-0000")
+    )
+    for index in range(3):
+        assert (case_directory / f"compile-repetition-{index:04d}.artifact.s").is_file()
+        assert (case_directory / f"compile-repetition-{index:04d}.remarks.jsonl").is_file()
+
+    tampered = deepcopy(record)
+    tampered["cases"][0]["compile_samples"][0]["artifact_size_bytes"] = None
+    with pytest.raises(ValidationError, match="artifact hash/size evidence is inconsistent"):
+        validate_document(tampered)
 
 
 def test_output_contracts_compare_stdout_and_main_return_independently(benchmark_fixture) -> None:

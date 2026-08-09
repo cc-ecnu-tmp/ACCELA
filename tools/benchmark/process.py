@@ -7,12 +7,15 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Sequence
+from typing import BinaryIO, Literal, Sequence
 
 import psutil
 
 from .errors import ExecutionError
 from .util import sanitize_text, sha256_file
+
+
+ProcessStatus = Literal["ok", "error", "timeout", "cancelled"]
 
 
 @dataclass(frozen=True)
@@ -26,7 +29,7 @@ class StreamDigest:
 
 @dataclass(frozen=True)
 class ProcessResult:
-    status: str
+    status: ProcessStatus
     duration_ns: int
     exit_code: int | None
     stdout: StreamDigest
@@ -96,32 +99,38 @@ def run_process(
     stderr_path.parent.mkdir(parents=True, exist_ok=True)
     stdin_stream: BinaryIO | None = None
     started = time.monotonic_ns()
-    status = "error"
+    status: ProcessStatus = "error"
     exit_code: int | None = None
     diagnostic: str | None = None
     try:
         if stdin_path is not None:
             stdin_stream = stdin_path.open("rb")
         with stdout_path.open("wb") as stdout_stream, stderr_path.open("wb") as stderr_stream:
-            try:
-                process = subprocess.Popen(
-                    list(command),
-                    cwd=cwd,
-                    env=environment,
-                    stdin=stdin_stream if stdin_stream is not None else subprocess.DEVNULL,
-                    stdout=stdout_stream,
-                    stderr=stderr_stream,
-                    shell=False,
-                )
-            except OSError as exc:
-                diagnostic = sanitize_text(f"process start failed: {exc}", privacy_roots)
+            process: subprocess.Popen[bytes] | None = None
+            if cancellation_event is not None and cancellation_event.is_set():
+                status = "cancelled"
+                diagnostic = "process cancelled by benchmark scheduler"
             else:
+                try:
+                    process = subprocess.Popen(
+                        list(command),
+                        cwd=cwd,
+                        env=environment,
+                        stdin=stdin_stream if stdin_stream is not None else subprocess.DEVNULL,
+                        stdout=stdout_stream,
+                        stderr=stderr_stream,
+                        shell=False,
+                    )
+                except OSError as exc:
+                    diagnostic = sanitize_text(f"process start failed: {exc}", privacy_roots)
+                    process = None
+            if process is not None:
                 deadline = time.monotonic() + timeout_seconds
                 while True:
                     if cancellation_event is not None and cancellation_event.is_set():
                         _terminate_process_tree(process)
                         process.wait(timeout=5)
-                        status = "error"
+                        status = "cancelled"
                         diagnostic = "process cancelled by benchmark scheduler"
                         break
                     remaining = deadline - time.monotonic()

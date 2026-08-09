@@ -52,12 +52,36 @@
       "additionalProperties": false,
       "required": ["status", "duration_ns", "exit_code", "stdout", "stderr", "diagnostic"],
       "properties": {
-        "status": {"enum": ["ok", "error", "timeout"]},
+        "status": {"enum": ["ok", "error", "timeout", "cancelled"]},
         "duration_ns": {"type": "integer", "minimum": 0},
         "exit_code": {"oneOf": [{"type": "null"}, {"type": "integer"}]},
         "stdout": {"$ref": "#/$defs/stream"},
         "stderr": {"$ref": "#/$defs/stream"},
         "diagnostic": {"oneOf": [{"type": "null"}, {"type": "string", "maxLength": 4096}]}
+      }
+    },
+    "compile_sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status", "duration_ns", "exit_code", "stdout", "stderr", "diagnostic",
+        "artifact_sha256", "artifact_size_bytes", "remarks_sha256", "remarks_event_count"
+      ],
+      "properties": {
+        "status": {"enum": ["ok", "error", "timeout", "cancelled"]},
+        "duration_ns": {"type": "integer", "minimum": 0},
+        "exit_code": {"oneOf": [{"type": "null"}, {"type": "integer"}]},
+        "stdout": {"$ref": "#/$defs/stream"},
+        "stderr": {"$ref": "#/$defs/stream"},
+        "diagnostic": {"oneOf": [{"type": "null"}, {"type": "string", "maxLength": 4096}]},
+        "artifact_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "artifact_size_bytes": {
+          "oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]
+        },
+        "remarks_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "remarks_event_count": {
+          "oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]
+        }
       }
     },
     "stage": {
@@ -213,7 +237,7 @@
       ],
       "properties": {
         "index": {"type": "integer", "minimum": 0},
-        "status": {"enum": ["passed", "wrong_output", "runtime_error", "timeout"]},
+        "status": {"enum": ["passed", "wrong_output", "runtime_error", "timeout", "cancelled"]},
         "duration_ns": {"type": "integer", "minimum": 0},
         "exit_code": {"oneOf": [{"type": "null"}, {"type": "integer"}]},
         "measurements": {
@@ -248,8 +272,9 @@
       "additionalProperties": false,
       "required": [
         "case_id", "family", "source_group", "target", "weight", "tags", "data_role", "oracle_pair",
-        "effective_timeout_seconds", "source_sha256", "input_sha256",
-        "artifact_sha256", "binary_sha256", "remarks_sha256", "analysis_sha256",
+        "effective_timeout_seconds", "attempt_index", "attempt_started_at", "attempt_configuration_sha256",
+        "source_sha256", "input_sha256",
+        "artifact_sha256", "binary_sha256", "remarks_sha256", "remarks_event_count", "analysis_sha256",
         "expected_output_sha256", "status", "cache_hit", "compile", "compile_samples", "compile_statistics", "link", "analyze",
         "measurements", "samples", "consistency_selected", "consistency_passed",
         "consistency_mismatched_metrics", "diagnostic", "attempts"
@@ -277,6 +302,11 @@
           ]
         },
         "effective_timeout_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "attempt_index": {"type": "integer", "minimum": 0},
+        "attempt_started_at": {
+          "oneOf": [{"type": "null"}, {"type": "string", "format": "date-time"}]
+        },
+        "attempt_configuration_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "timeout_derivation": {
           "oneOf": [
             {"type": "null"},
@@ -311,7 +341,7 @@
         "status": {"enum": ["pending", "passed", "wrong_output", "compile_error", "link_error", "analyze_error", "runtime_error", "timeout", "measurement_inconsistent", "cancelled"]},
         "cache_hit": {"type": "boolean"},
         "compile": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/phase"}]},
-        "compile_samples": {"type": "array", "items": {"$ref": "#/$defs/phase"}},
+        "compile_samples": {"type": "array", "items": {"$ref": "#/$defs/compile_sample"}},
         "compile_statistics": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/compile_statistics"}]},
         "link": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/phase"}]},
         "analyze": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/phase"}]},
@@ -332,14 +362,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "attempt_index", "archived_at", "configuration_sha256", "status", "failure_summary", "cache_hit",
-        "artifact_sha256", "binary_sha256", "remarks_sha256", "analysis_sha256",
+        "attempt_index", "started_at", "archived_at", "configuration_sha256", "status", "failure_summary", "cache_hit",
+        "artifact_sha256", "binary_sha256", "remarks_sha256", "remarks_event_count", "analysis_sha256",
         "compile", "compile_samples", "compile_statistics", "link", "analyze",
         "measurements", "samples", "consistency_passed",
         "consistency_mismatched_metrics", "diagnostic"
       ],
       "properties": {
         "attempt_index": {"type": "integer", "minimum": 0},
+        "started_at": {"type": "string", "format": "date-time"},
         "archived_at": {"type": "string", "format": "date-time"},
         "configuration_sha256": {"$ref": "#/$defs/sha256"},
         "status": {"enum": ["wrong_output", "compile_error", "link_error", "analyze_error", "runtime_error", "timeout", "measurement_inconsistent", "cancelled"]},
@@ -359,7 +390,7 @@
         },
         "analysis_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "compile": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/phase"}]},
-        "compile_samples": {"type": "array", "items": {"$ref": "#/$defs/phase"}},
+        "compile_samples": {"type": "array", "items": {"$ref": "#/$defs/compile_sample"}},
         "compile_statistics": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/compile_statistics"}]},
         "link": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/phase"}]},
         "analyze": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/phase"}]},

@@ -1160,7 +1160,7 @@ def _run_end(run: Mapping[str, Any]) -> datetime:
 
 
 def _failed_run_reason(run: Mapping[str, Any]) -> str:
-    statuses = {case["status"] for case in run["cases"]}
+    statuses = {case["status"] for case in run["cases"]} - {"cancelled"}
     if statuses & {"wrong_output", "runtime_error"}:
         return "correctness_failure"
     if "timeout" in statuses:

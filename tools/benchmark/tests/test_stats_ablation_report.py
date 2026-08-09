@@ -46,6 +46,16 @@ def _phase_record() -> dict:
     }
 
 
+def _compile_sample_record(*, with_remarks: bool = True) -> dict:
+    return {
+        **_phase_record(),
+        "artifact_sha256": "8" * 64,
+        "artifact_size_bytes": 1,
+        "remarks_sha256": "6" * 64 if with_remarks else None,
+        "remarks_event_count": 1 if with_remarks else None,
+    }
+
+
 def make_run(
     run_id: str,
     values: dict[str, tuple[str, float]],
@@ -54,6 +64,7 @@ def make_run(
     profile_id: str = "full",
     profile_sha256: str = "2" * 64,
 ) -> dict:
+    now = utc_now()
     preset = rv64gc_qemu_v1()
     formal_specs = [
         {
@@ -172,6 +183,9 @@ def make_run(
                 "oracle_pair": None,
                 "effective_timeout_seconds": 1800.0 if source != "wall_time" else 1.0,
                 "timeout_derivation": None,
+                "attempt_index": 0,
+                "attempt_started_at": now,
+                "attempt_configuration_sha256": None,
                 "source_sha256": source_sha256,
                 "input_sha256": None,
                 "expected_output_sha256": SHA,
@@ -184,7 +198,7 @@ def make_run(
                 "cache_hit": False,
                 "compile": _phase_record() if source != "wall_time" else None,
                 "compile_samples": (
-                    [deepcopy(_phase_record()) for _ in range(5)] if source != "wall_time" else []
+                    [_compile_sample_record() for _ in range(5)] if source != "wall_time" else []
                 ),
                 "compile_statistics": (
                     {"sample_count": 5, "median_duration_ns": 10.0, "mad_duration_ns": 0.0}
@@ -218,7 +232,6 @@ def make_run(
     )
     selected_case["consistency_selected"] = True
     selected_case["consistency_passed"] = True
-    now = utc_now()
     provenance = {
         "repo_commit": "1" * 40,
         "repo_dirty": False,
@@ -229,6 +242,11 @@ def make_run(
         "measurement_protocol_id": "test-rv64gc-qemu" if source != "wall_time" else None,
         "measurement_protocol_sha256": "4" * 64 if source != "wall_time" else None,
     }
+    configuration_sha256 = sha256_json(
+        {"configuration": configuration, "provenance": provenance}
+    )
+    for case in cases:
+        case["attempt_configuration_sha256"] = configuration_sha256
     run = {
         "schema_version": "run-record.v1",
         "run_id": run_id,
@@ -236,7 +254,7 @@ def make_run(
         "manifest_sha256": SHA,
         "manifest_case_count": len(cases),
         "manifest_case_ids_sha256": sha256_json([case["case_id"] for case in cases]),
-        "configuration_sha256": sha256_json({"configuration": configuration, "provenance": provenance}),
+        "configuration_sha256": configuration_sha256,
         "started_at": now,
         "updated_at": now,
         "completed_at": now,

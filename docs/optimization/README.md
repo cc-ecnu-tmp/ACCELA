@@ -659,6 +659,14 @@ done < .tmp/campaign/b2-tasks.tsv
 correctness、tool 或 timeout 失败洗成可排名结果。修复根因后应创建新的明确
 run，而不是覆盖历史证据。
 
+每个 run 会同时持有 output target 与共享 state identity 的非等待 OS 独占锁；
+重复 orchestrator 必须立即失败，不能并发改写同一规范化记录或原始目录。上述
+run 锁文件永久保留，存活性只由 OS 锁判断，不按 mtime 或 PID 删除所谓 stale lock。每个已
+启动 attempt 的原始文件写入独立的 `attempt-XXXX` 目录，resume/retry 只能创建
+下一编号；规范化 attempt 通过编号、开始时间和配置哈希与原始 identity 对应。
+同一 run 只允许从一个 OS 环境启动；Windows host 与 WSL 对同一文件的跨内核锁
+互操作尚未形成验收证据。
+
 ### Top 5 cache/hotblock 诊断
 
 cache/hotblock 只在 B3 promotion study 已产生五个合格 profile 后调度。它使用

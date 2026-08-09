@@ -31,6 +31,83 @@ elif mode == "compile-sampled":
     if sample == 2:
         raise SystemExit(7)
     shutil.copyfile(sys.argv[2], sys.argv[3])
+elif mode == "compile-vary":
+    sample = int(sys.argv[4])
+    with open(sys.argv[2], "rb") as source, open(sys.argv[3], "wb") as artifact:
+        artifact.write(source.read())
+        artifact.write(f"sample={sample}\n".encode())
+elif mode == "compile-remarks":
+    sample = int(sys.argv[4])
+    shutil.copyfile(sys.argv[2], sys.argv[3])
+    event = {
+        "schema_version": "optimization-remark.v1",
+        "sequence": 1,
+        "event_type": "decision",
+        "pass": "fixture-pass",
+        "occurrence": 1,
+        "stage": "ir_module",
+        "target_kind": "module",
+        "target_name": f"sample-{sample}",
+        "decision": "candidate",
+        "reason": "candidate_matched",
+    }
+    with open(sys.argv[5], "w", encoding="utf-8", newline="\n") as stream:
+        json.dump(event, stream, sort_keys=True)
+        stream.write("\n")
+elif mode == "compile-controlled":
+    data = open(sys.argv[2], "rb").read()
+    if b"source 0" in data:
+        time.sleep(0.25)
+        raise SystemExit(7)
+    if b"source 1" in data:
+        time.sleep(5)
+    with open(sys.argv[3], "wb") as artifact:
+        artifact.write(data)
+elif mode == "compile-gated":
+    ready = sys.argv[4]
+    release = sys.argv[5]
+    with open(ready, "wb") as stream:
+        stream.write(b"ready\n")
+    deadline = time.monotonic() + 20
+    while not os.path.exists(release):
+        if time.monotonic() >= deadline:
+            raise SystemExit(75)
+        time.sleep(0.02)
+    shutil.copyfile(sys.argv[2], sys.argv[3])
+elif mode == "compile-fail-once":
+    marker = sys.argv[4]
+    if not os.path.exists(marker):
+        with open(marker, "xb") as stream:
+            stream.write(b"failed\n")
+        sys.stderr.write("first-attempt-failure\n")
+        raise SystemExit(7)
+    sys.stderr.write("later-attempt-success\n")
+    shutil.copyfile(sys.argv[2], sys.argv[3])
+elif mode == "link-controlled":
+    data = open(sys.argv[2], "rb").read()
+    if b"source 0" in data:
+        time.sleep(0.25)
+        raise SystemExit(7)
+    if b"source 1" in data:
+        time.sleep(5)
+    with open(sys.argv[3], "wb") as binary:
+        binary.write(data)
+elif mode == "analyze-controlled":
+    data = open(sys.argv[2], "rb").read()
+    if b"source 0" in data:
+        time.sleep(0.25)
+        raise SystemExit(7)
+    if b"source 1" in data:
+        time.sleep(5)
+    raise SystemExit(70)
+elif mode == "run-controlled":
+    data = open(sys.argv[2], "rb").read()
+    if b"source 0" in data:
+        time.sleep(0.25)
+        raise SystemExit(7)
+    if b"source 1" in data:
+        time.sleep(5)
+    raise SystemExit(70)
 elif mode == "run":
     behavior = sys.argv[3] if len(sys.argv) > 3 else "exact"
     if behavior == "sleep":

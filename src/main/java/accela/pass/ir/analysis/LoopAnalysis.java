@@ -6,6 +6,7 @@ import accela.pass.ir.FunctionAnalysis;
 import accela.pass.ir.FunctionAnalysisManager;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.IdentityHashMap;
@@ -23,8 +24,9 @@ public final class LoopAnalysis implements FunctionAnalysis<LoopAnalysis.Result>
       BasicBlock preheader,
       Set<BasicBlock> blocks) {
     public Loop {
-      latches = Set.copyOf(latches);
-      blocks = Set.copyOf(blocks);
+      // Downstream transforms derive stable block and exit-edge order from analysis discovery order.
+      latches = Collections.unmodifiableSet(new LinkedHashSet<>(latches));
+      blocks = Collections.unmodifiableSet(new LinkedHashSet<>(blocks));
     }
 
     public boolean contains(BasicBlock block) {

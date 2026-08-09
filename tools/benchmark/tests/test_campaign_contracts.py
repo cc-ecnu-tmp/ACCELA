@@ -328,6 +328,13 @@ def test_failure_categories_are_closed() -> None:
     assert _failed_run_reason({"cases": [{"status": "runtime_error"}]}) == "correctness_failure"
     assert _failed_run_reason({"cases": [{"status": "timeout"}]}) == "timeout"
     assert _failed_run_reason({"cases": [{"status": "compile_error"}]}) == "tool_failure"
+    assert _failed_run_reason(
+        {"cases": [{"status": "compile_error"}, {"status": "cancelled"}]}
+    ) == "tool_failure"
+    assert _failed_run_reason(
+        {"cases": [{"status": "wrong_output"}, {"status": "cancelled"}]}
+    ) == "correctness_failure"
+    assert _failed_run_reason({"cases": [{"status": "cancelled"}]}) == "tool_failure"
 
 
 def _scheduled_task(

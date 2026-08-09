@@ -9,6 +9,7 @@ description = "Reproducible, privacy-preserving benchmark orchestration for ACCE
 requires-python = ">=3.11"
 dependencies = [
   "jsonschema>=4.23,<5",
+  "portalocker>=3.1,<4",
   "psutil>=5.9,<8",
 ]
 

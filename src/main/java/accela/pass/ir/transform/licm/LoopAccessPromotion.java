@@ -8,7 +8,7 @@ import accela.ir.Value;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
-import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -32,7 +32,7 @@ final class LoopAccessPromotion {
       LoopAnalysis.Loop loop,
       List<PromotionCandidate> candidates) {
     IRBuilder builder = new IRBuilder();
-    Map<PromotionCandidate, Instruction> slots = new IdentityHashMap<>();
+    Map<PromotionCandidate, Instruction> slots = new LinkedHashMap<>();
     for (PromotionCandidate candidate : candidates) {
       Instruction slot =
           builder.createAllocaInEntry(candidate.valueType(), function.getEntryBlock());

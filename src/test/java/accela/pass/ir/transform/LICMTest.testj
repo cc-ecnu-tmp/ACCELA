@@ -189,6 +189,10 @@ final class LICMTest {
     assertTrue(function.getBlocks().stream().filter(
         block -> block.getLabel().contains(".promote.exit."))
         .allMatch(block -> hasAccess(block, state, Instruction.Opcode.STORE)));
+    assertTrue(header.getSuccessors().stream()
+        .anyMatch(block -> block.getLabel().endsWith(".promote.exit.0")));
+    assertTrue(body.getSuccessors().stream()
+        .anyMatch(block -> block.getLabel().endsWith(".promote.exit.1")));
     assertFalse(phiHasPredecessor(result, header));
     assertFalse(phiHasPredecessor(result, body));
   }

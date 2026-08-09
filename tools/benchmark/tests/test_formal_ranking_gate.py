@@ -85,6 +85,9 @@ def test_formal_gate_allows_external_toolchain_but_requires_accela_bindings() ->
     for case in external["cases"]:
         case["remarks_sha256"] = None
         case["remarks_event_count"] = None
+        for sample in case["compile_samples"]:
+            sample["remarks_sha256"] = None
+            sample["remarks_event_count"] = None
     _rehash(external)
     validate_document(external)
 
@@ -147,9 +150,11 @@ def test_baseline_derived_timeout_records_exact_binding_and_formula() -> None:
 def test_archived_failure_summary_is_normalized_and_disqualifies_profile() -> None:
     run = _formal_run()
     case = run["cases"][0]
+    case["attempt_index"] = 1
     case["attempts"].append(
         {
             "attempt_index": 0,
+            "started_at": utc_now(),
             "archived_at": utc_now(),
             "configuration_sha256": run["configuration_sha256"],
             "status": "wrong_output",

@@ -15,7 +15,8 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .adapters import CommandRenderer, StageSpec, WslPathMapper
 from .cache import CompileBuild, CompileCache
-from .errors import ConfigurationError, ExecutionError
+from .errors import ConfigurationError, ExecutionError, ValidationError
+from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .metrics import ANALYZER_METRICS, rv64gc_qemu_v1
 from .process import ProcessResult, extract_metric, first_mismatch_offset, run_process
 from .protocol import verify_measurement_protocol
@@ -23,6 +24,7 @@ from .schema import load_and_validate, load_and_validate_jsonl, validate_documen
 from .util import (
     atomic_write_json,
     executable_label,
+    read_json,
     resolve_manifest_path,
     safe_slug,
     sanitize_text,
@@ -584,6 +586,13 @@ def _summary(cases: Sequence[Mapping[str, Any]]) -> dict[str, int]:
     }
 
 
+def _compile_phase(sample: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: deepcopy(sample[key])
+        for key in ("status", "duration_ns", "exit_code", "stdout", "stderr", "diagnostic")
+    }
+
+
 def _new_case(
     case: Mapping[str, Any],
     consistency_selected: bool,
@@ -601,6 +610,9 @@ def _new_case(
         "oracle_pair": deepcopy(case.get("oracle_pair")),
         "effective_timeout_seconds": effective_timeout_seconds,
         "timeout_derivation": deepcopy(timeout_derivation),
+        "attempt_index": 0,
+        "attempt_started_at": None,
+        "attempt_configuration_sha256": None,
         "source_sha256": case["source"]["sha256"],
         "input_sha256": None if case["input"] is None else case["input"]["sha256"],
         "expected_output_sha256": case["expected_output"]["sha256"],
@@ -659,21 +671,54 @@ _ATTEMPT_FAILURE_SUMMARIES = {
 }
 
 
-def _archive_attempt(case: dict[str, Any], *, configuration_sha256: str) -> None:
+def _archive_attempt(case: dict[str, Any]) -> None:
     if case["status"] == "pending":
-        return
+        raise ExecutionError("cannot archive a pending benchmark attempt")
+    if case["attempt_index"] != len(case["attempts"]):
+        raise ExecutionError("benchmark attempt index is not contiguous")
+    started_at = case["attempt_started_at"]
+    configuration_sha256 = case["attempt_configuration_sha256"]
+    if started_at is None or configuration_sha256 is None:
+        raise ExecutionError("cannot archive an attempt that was never started")
     failure_summary = _ATTEMPT_FAILURE_SUMMARIES.get(case["status"])
     if failure_summary is None:
         raise ExecutionError(f"cannot archive non-failure attempt status: {case['status']}")
     attempts = case["attempts"]
     attempts.append(
         {
-            "attempt_index": len(attempts),
+            "attempt_index": case["attempt_index"],
+            "started_at": started_at,
             "archived_at": utc_now(),
             "configuration_sha256": configuration_sha256,
             "failure_summary": failure_summary,
             **{field: deepcopy(case[field]) for field in _ATTEMPT_FIELDS},
         }
+    )
+
+
+def _reset_case_for_pending(case: dict[str, Any], *, advance_attempt: bool) -> None:
+    if advance_attempt:
+        case["attempt_index"] += 1
+    case.update(
+        attempt_started_at=None,
+        attempt_configuration_sha256=None,
+        status="pending",
+        cache_hit=False,
+        compile=None,
+        compile_samples=[],
+        compile_statistics=None,
+        artifact_sha256=None,
+        binary_sha256=None,
+        remarks_sha256=None,
+        remarks_event_count=None,
+        analysis_sha256=None,
+        link=None,
+        analyze=None,
+        measurements=[],
+        samples=[],
+        consistency_passed=(False if case["consistency_selected"] else None),
+        consistency_mismatched_metrics=[],
+        diagnostic=None,
     )
 
 
@@ -730,7 +775,7 @@ class BenchmarkCompiler:
     ]:
         key = sha256_json(
             {
-                "schema": 1,
+                "schema": 2,
                 "source_sha256": case["source"]["sha256"],
                 "input_sha256": None if case["input"] is None else case["input"]["sha256"],
                 "target": case["target"],
@@ -748,6 +793,7 @@ class BenchmarkCompiler:
             last_artifact: Path | None = None
             last_remarks: Path | None = None
             first_artifact_sha256: str | None = None
+            first_artifact_index: int | None = None
             case_directory = context_paths["case_dir"]
             for index in range(self.repetitions):
                 repetition_directory = temporary / f"repetition-{index:04d}"
@@ -783,33 +829,73 @@ class BenchmarkCompiler:
                     cancellation_event=self.cancellation_event,
                 )
                 phase = result.as_phase_record()
-                samples.append(phase)
                 last_result = result
                 preserved_stdout = case_directory / f"compile-repetition-{index:04d}.stdout"
                 preserved_stderr = case_directory / f"compile-repetition-{index:04d}.stderr"
                 shutil.copy2(repetition_directory / "compile.stdout", preserved_stdout)
                 shutil.copy2(repetition_directory / "compile.stderr", preserved_stderr)
+                preserved_artifact = (
+                    case_directory
+                    / f"compile-repetition-{index:04d}.artifact{self.artifact_suffix}"
+                )
+                preserved_remarks = case_directory / f"compile-repetition-{index:04d}.remarks.jsonl"
+                if repetition_artifact.is_file():
+                    shutil.copy2(repetition_artifact, preserved_artifact)
+                    phase["artifact_sha256"] = sha256_file(preserved_artifact)
+                    phase["artifact_size_bytes"] = preserved_artifact.stat().st_size
+                else:
+                    phase["artifact_sha256"] = None
+                    phase["artifact_size_bytes"] = None
+                repetition_remarks = paths.get("remarks_file")
+                if repetition_remarks is not None and repetition_remarks.is_file():
+                    shutil.copy2(repetition_remarks, preserved_remarks)
+                    phase["remarks_sha256"] = sha256_file(preserved_remarks)
+                    with preserved_remarks.open("rb") as stream:
+                        phase["remarks_event_count"] = sum(
+                            bool(line.strip()) for line in stream
+                        )
+                    if result.status == "ok":
+                        try:
+                            load_and_validate_jsonl(preserved_remarks)
+                        except ValidationError as exc:
+                            phase["status"] = "error"
+                            phase["diagnostic"] = sanitize_text(
+                                f"compiler emitted invalid optimization remarks: {exc}",
+                                self.privacy_roots,
+                            )
+                else:
+                    phase["remarks_sha256"] = None
+                    phase["remarks_event_count"] = None
+                samples.append(phase)
                 cold_logs.update(stdout=preserved_stdout, stderr=preserved_stderr)
+                if phase["status"] == "error" and result.status == "ok":
+                    return CompileBuild(_compile_phase(phase), tuple(samples), None)
                 if result.status != "ok":
-                    return CompileBuild(phase, tuple(samples), None)
+                    return CompileBuild(_compile_phase(phase), tuple(samples), None)
                 if not repetition_artifact.is_file():
                     phase["status"] = "error"
                     phase["diagnostic"] = "compiler exited successfully without creating {artifact}"
-                    return CompileBuild(phase, tuple(samples), None)
+                    return CompileBuild(_compile_phase(phase), tuple(samples), None)
                 if "remarks_file" in context_paths:
                     repetition_remarks = paths["remarks_file"]
                     if not repetition_remarks.is_file():
                         phase["status"] = "error"
                         phase["diagnostic"] = "compiler exited successfully without creating {remarks_file}"
-                        return CompileBuild(phase, tuple(samples), None)
+                        return CompileBuild(_compile_phase(phase), tuple(samples), None)
                     last_remarks = repetition_remarks
-                artifact_sha256 = sha256_file(repetition_artifact)
+                artifact_sha256 = phase["artifact_sha256"]
+                assert isinstance(artifact_sha256, str)
                 if first_artifact_sha256 is None:
                     first_artifact_sha256 = artifact_sha256
+                    first_artifact_index = index
                 elif artifact_sha256 != first_artifact_sha256:
                     phase["status"] = "error"
-                    phase["diagnostic"] = "compiler artifact differs across cold repetitions"
-                    return CompileBuild(phase, tuple(samples), None)
+                    phase["diagnostic"] = (
+                        "compiler artifact differs across cold repetitions: "
+                        f"sample_index={index}, first_sample_index={first_artifact_index}, "
+                        f"first_sha256={first_artifact_sha256}, current_sha256={artifact_sha256}"
+                    )
+                    return CompileBuild(_compile_phase(phase), tuple(samples), None)
                 last_artifact = repetition_artifact
             assert last_result is not None and last_artifact is not None
             shutil.copy2(last_artifact, artifact)
@@ -854,6 +940,19 @@ class BenchmarkCompiler:
                     shutil.copy2(
                         cached_stream,
                         case_directory / f"compile-repetition-{index:04d}.{stream_name}",
+                    )
+                cached_artifact = cached_repetition / f"artifact{self.artifact_suffix}"
+                shutil.copy2(
+                    cached_artifact,
+                    case_directory
+                    / f"compile-repetition-{index:04d}.artifact{self.artifact_suffix}",
+                )
+                cached_remarks = cached_repetition / "remarks.jsonl"
+                sample = entry.samples[index]
+                if sample["remarks_sha256"] is not None:
+                    shutil.copy2(
+                        cached_remarks,
+                        case_directory / f"compile-repetition-{index:04d}.remarks.jsonl",
                     )
             if "remarks_file" in context_paths:
                 cached_remarks = entry.artifact.parent / "remarks.jsonl"
@@ -1081,11 +1180,10 @@ class BenchmarkRun:
         validate_document(record)
         return record
 
-    def _load_or_create_record(self) -> dict[str, Any]:
+    def _load_record(self) -> dict[str, Any]:
         if not self.output_path.exists():
             return self._initial_record()
         record = load_and_validate(self.output_path)
-        archived_configuration_sha256 = record["configuration_sha256"]
         if record["manifest_sha256"] != self.manifest_sha256:
             raise ConfigurationError("cannot resume: benchmark manifest digest changed")
         if record["configuration_sha256"] != self.configuration_sha256:
@@ -1104,35 +1202,196 @@ class BenchmarkRun:
         actual_ids = [case["case_id"] for case in record["cases"]]
         if actual_ids != expected_ids:
             raise ConfigurationError("cannot resume: case sequence differs from manifest")
-        for case in record["cases"]:
-            if case["status"] in {"pending", "cancelled"} or (
-                self.options.retry_failures and case["status"] != "passed"
-            ):
-                _archive_attempt(case, configuration_sha256=archived_configuration_sha256)
-                case.update(
-                    status="pending",
-                    cache_hit=False,
-                    compile=None,
-                    compile_samples=[],
-                    compile_statistics=None,
-                    artifact_sha256=None,
-                    binary_sha256=None,
-                    remarks_sha256=None,
-                    remarks_event_count=None,
-                    analysis_sha256=None,
-                    link=None,
-                    analyze=None,
-                    measurements=[],
-                    samples=[],
-                    consistency_passed=(False if case["consistency_selected"] else None),
-                    consistency_mismatched_metrics=[],
-                    diagnostic=None,
+        return record
+
+    def _run_directory(self, record: Mapping[str, Any]) -> Path:
+        identity = f"{record['run_id']}:{record['manifest_sha256']}"
+        return self.state_root / "runs" / safe_slug(identity)
+
+    def _bind_state_identity(
+        self,
+        record: Mapping[str, Any],
+        run_directory: Path,
+    ) -> None:
+        identity = {
+            "schema_version": "benchmark-run-state.v1",
+            "run_id": record["run_id"],
+            "manifest_sha256": record["manifest_sha256"],
+            "started_at": record["started_at"],
+            "output_path_sha256": path_identity(self.output_path),
+        }
+        identity_path = run_directory / "identity.json"
+        if identity_path.exists():
+            try:
+                observed = read_json(identity_path)
+            except ValidationError as exc:
+                raise ExecutionError("benchmark execution-state identity is unreadable") from exc
+            if observed != identity:
+                raise ExecutionError(
+                    "benchmark execution state is already bound to another output or run record"
                 )
+            return
+        atomic_write_json(identity_path, identity)
+
+    def _attempt_directory(
+        self,
+        run_directory: Path,
+        *,
+        case_id: str,
+        attempt_index: int,
+    ) -> Path:
+        return (
+            run_directory
+            / "cases"
+            / safe_slug(case_id)
+            / "attempts"
+            / f"attempt-{attempt_index:04d}"
+        )
+
+    def _attempt_identity(
+        self,
+        record: Mapping[str, Any],
+        *,
+        case_id: str,
+        attempt_index: int,
+        started_at: str,
+        configuration_sha256: str,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "benchmark-raw-attempt.v1",
+            "run_id": record["run_id"],
+            "manifest_sha256": record["manifest_sha256"],
+            "case_id": case_id,
+            "attempt_index": attempt_index,
+            "started_at": started_at,
+            "configuration_sha256": configuration_sha256,
+        }
+
+    def _bind_attempt_directory(
+        self,
+        record: Mapping[str, Any],
+        run_directory: Path,
+        *,
+        case_id: str,
+        attempt_index: int,
+        started_at: str,
+        configuration_sha256: str,
+        allow_existing: bool,
+        create_if_missing: bool,
+    ) -> Path:
+        directory = self._attempt_directory(
+            run_directory,
+            case_id=case_id,
+            attempt_index=attempt_index,
+        )
+        identity = self._attempt_identity(
+            record,
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        identity_path = directory / "identity.json"
+        if directory.exists():
+            if not allow_existing or not directory.is_dir() or not identity_path.is_file():
+                raise ExecutionError(
+                    f"raw attempt directory collision for case {case_id} attempt {attempt_index}"
+                )
+            try:
+                observed = read_json(identity_path)
+            except ValidationError as exc:
+                raise ExecutionError(
+                    f"raw attempt identity is unreadable for case {case_id} attempt {attempt_index}"
+                ) from exc
+            if observed != identity:
+                raise ExecutionError(
+                    f"raw attempt identity differs for case {case_id} attempt {attempt_index}"
+                )
+            return directory
+        if not create_if_missing:
+            raise ExecutionError(
+                f"raw attempt evidence is missing for case {case_id} attempt {attempt_index}"
+            )
+        directory.mkdir(parents=True, exist_ok=False)
+        atomic_write_json(identity_path, identity)
+        return directory
+
+    def _prepare_record_for_execution(
+        self,
+        record: dict[str, Any],
+        run_directory: Path,
+    ) -> None:
+        for case in record["cases"]:
+            for attempt in case["attempts"]:
+                self._bind_attempt_directory(
+                    record,
+                    run_directory,
+                    case_id=case["case_id"],
+                    attempt_index=attempt["attempt_index"],
+                    started_at=attempt["started_at"],
+                    configuration_sha256=attempt["configuration_sha256"],
+                    allow_existing=True,
+                    create_if_missing=False,
+                )
+            started_at = case["attempt_started_at"]
+            configuration_sha256 = case["attempt_configuration_sha256"]
+            if started_at is not None:
+                assert configuration_sha256 is not None
+                self._bind_attempt_directory(
+                    record,
+                    run_directory,
+                    case_id=case["case_id"],
+                    attempt_index=case["attempt_index"],
+                    started_at=started_at,
+                    configuration_sha256=configuration_sha256,
+                    allow_existing=True,
+                    create_if_missing=case["status"] == "pending",
+                )
+            if case["status"] == "pending" and started_at is not None:
+                case["status"] = "cancelled"
+                case["diagnostic"] = "interrupted before the attempt result was committed"
+                _archive_attempt(case)
+                _reset_case_for_pending(case, advance_attempt=True)
+            elif case["status"] == "cancelled":
+                if started_at is None:
+                    _reset_case_for_pending(case, advance_attempt=False)
+                else:
+                    _archive_attempt(case)
+                    _reset_case_for_pending(case, advance_attempt=True)
+            elif self.options.retry_failures and case["status"] != "passed":
+                _archive_attempt(case)
+                _reset_case_for_pending(case, advance_attempt=True)
         record["state"] = "running"
         record["completed_at"] = None
         record["updated_at"] = utc_now()
         record["summary"] = _summary(record["cases"])
-        return record
+
+    def _reserve_attempt(
+        self,
+        record: dict[str, Any],
+        case: dict[str, Any],
+        run_directory: Path,
+    ) -> Path:
+        if (
+            case["status"] != "pending"
+            or case["attempt_started_at"] is not None
+            or case["attempt_configuration_sha256"] is not None
+            or case["attempt_index"] != len(case["attempts"])
+        ):
+            raise ExecutionError("cannot reserve a non-pending or non-contiguous attempt")
+        case["attempt_started_at"] = utc_now()
+        case["attempt_configuration_sha256"] = self.configuration_sha256
+        self._write_record(record)
+        return self._bind_attempt_directory(
+            record,
+            run_directory,
+            case_id=case["case_id"],
+            attempt_index=case["attempt_index"],
+            started_at=case["attempt_started_at"],
+            configuration_sha256=case["attempt_configuration_sha256"],
+            allow_existing=False,
+            create_if_missing=True,
+        )
 
     def _write_record(self, record: dict[str, Any]) -> None:
         with self._write_lock:
@@ -1150,6 +1409,7 @@ class BenchmarkRun:
         expected: Path,
         artifact: Path,
         binary: Path,
+        run_directory: Path,
         case_directory: Path,
         run_id: str,
     ) -> tuple[dict[str, Path], dict[str, str]]:
@@ -1162,7 +1422,7 @@ class BenchmarkRun:
             "workspace": self.workspace_root,
             "suite_root": self.suite_root,
             "state_dir": self.state_root,
-            "run_dir": case_directory.parent,
+            "run_dir": run_directory,
             "case_dir": case_directory,
             **self.measurement_protocol_assets,
         }
@@ -1277,7 +1537,16 @@ class BenchmarkRun:
                 measurements.append(self._measurement(spec, value, "observed"))
         return measurements
 
-    def _execute_case(self, case: Mapping[str, Any], run_id: str, run_directory: Path) -> dict[str, Any]:
+    def _execute_case(
+        self,
+        case: Mapping[str, Any],
+        run_id: str,
+        run_directory: Path,
+        case_directory: Path,
+        attempt_index: int,
+        attempt_started_at: str,
+        attempt_configuration_sha256: str,
+    ) -> dict[str, Any]:
         effective_timeout_seconds = self.case_timeouts[case["id"]]
         record = _new_case(
             case,
@@ -1285,8 +1554,9 @@ class BenchmarkRun:
             effective_timeout_seconds,
             self.case_timeout_derivations[case["id"]],
         )
-        case_directory = run_directory / "cases" / safe_slug(case["id"])
-        case_directory.mkdir(parents=True, exist_ok=True)
+        record["attempt_index"] = attempt_index
+        record["attempt_started_at"] = attempt_started_at
+        record["attempt_configuration_sha256"] = attempt_configuration_sha256
         source = resolve_manifest_path(self.suite_root, case["source"]["path"])
         expected = resolve_manifest_path(self.suite_root, case["expected_output"]["path"])
         expected_bytes = expected.read_bytes()
@@ -1313,6 +1583,7 @@ class BenchmarkRun:
             expected=expected,
             artifact=provisional_artifact,
             binary=provisional_binary,
+            run_directory=run_directory,
             case_directory=case_directory,
             run_id=run_id,
         )
@@ -1335,7 +1606,9 @@ class BenchmarkRun:
         record["compile_statistics"] = compile_statistics
         record["cache_hit"] = cache_hit
         if compile_phase["status"] != "ok":
-            record["status"] = "compile_error"
+            record["status"] = (
+                "cancelled" if compile_phase["status"] == "cancelled" else "compile_error"
+            )
             record["diagnostic"] = compile_phase["diagnostic"] or "compiler stage failed"
             return record
         if compile_statistics is None:
@@ -1387,7 +1660,9 @@ class BenchmarkRun:
             )
             record["link"] = link_result.as_phase_record()
             if link_result.status != "ok":
-                record["status"] = "link_error"
+                record["status"] = (
+                    "cancelled" if link_result.status == "cancelled" else "link_error"
+                )
                 record["diagnostic"] = link_result.diagnostic or "linker stage failed"
                 return record
             if not binary.is_file():
@@ -1444,7 +1719,9 @@ class BenchmarkRun:
             )
             record["analyze"] = analyze_result.as_phase_record()
             if analyze_result.status != "ok":
-                record["status"] = "analyze_error"
+                record["status"] = (
+                    "cancelled" if analyze_result.status == "cancelled" else "analyze_error"
+                )
                 record["diagnostic"] = analyze_result.diagnostic or "post-link analyzer failed"
                 return record
             if not analysis_file.is_file():
@@ -1524,7 +1801,9 @@ class BenchmarkRun:
             diagnostic = result.diagnostic
             observed_return_uint8: int | None = None
             program_stdout_bytes = stdout_path.read_bytes()
-            if result.status == "timeout":
+            if result.status == "cancelled":
+                sample_status = "cancelled"
+            elif result.status == "timeout":
                 sample_status = "timeout"
                 censoring = "right"
                 censor_bound = effective_timeout_seconds * 1_000_000_000
@@ -1643,13 +1922,13 @@ class BenchmarkRun:
                 record["consistency_passed"] = True
         return record
 
-    def execute(self) -> dict[str, Any]:
-        record = self._load_or_create_record()
+    def _execute_locked(
+        self,
+        record: dict[str, Any],
+        run_directory: Path,
+    ) -> dict[str, Any]:
+        self._prepare_record_for_execution(record, run_directory)
         self._write_record(record)
-        run_directory = self.state_root / "runs" / safe_slug(
-            f"{record['run_id']}:{self.manifest_sha256}:{self.configuration_sha256}"
-        )
-        run_directory.mkdir(parents=True, exist_ok=True)
         manifest_by_id = {case["id"]: case for case in self.manifest["cases"]}
         records_by_id = {case["case_id"]: case for case in record["cases"]}
         pending_ids = [
@@ -1666,13 +1945,33 @@ class BenchmarkRun:
         stop_submitting = False
         internal_error: BaseException | None = None
         executor = ThreadPoolExecutor(max_workers=self.options.max_workers, thread_name_prefix="benchmark")
+
+        def submit(case_id: str) -> None:
+            case_record = records_by_id[case_id]
+            attempt_directory = self._reserve_attempt(
+                record,
+                case_record,
+                run_directory,
+            )
+            future = executor.submit(
+                self._execute_case,
+                manifest_by_id[case_id],
+                record["run_id"],
+                run_directory,
+                attempt_directory,
+                case_record["attempt_index"],
+                case_record["attempt_started_at"],
+                case_record["attempt_configuration_sha256"],
+            )
+            active[future] = case_id
+
         try:
             while len(active) < self.options.max_workers:
                 try:
                     case_id = next(iterator)
                 except StopIteration:
                     break
-                active[executor.submit(self._execute_case, manifest_by_id[case_id], record["run_id"], run_directory)] = case_id
+                submit(case_id)
 
             while active:
                 completed, _ = wait(active, return_when=FIRST_COMPLETED)
@@ -1707,14 +2006,7 @@ class BenchmarkRun:
                             case_id = next(iterator)
                         except StopIteration:
                             break
-                        active[
-                            executor.submit(
-                                self._execute_case,
-                                manifest_by_id[case_id],
-                                record["run_id"],
-                                run_directory,
-                            )
-                        ] = case_id
+                        submit(case_id)
 
             if stop_submitting:
                 for case_id in iterator:
@@ -1742,6 +2034,36 @@ class BenchmarkRun:
         record["completed_at"] = utc_now()
         self._write_record(record)
         return record
+
+    def execute(self) -> dict[str, Any]:
+        lease_metadata = {
+            "run_id": self.options.run_id,
+            "manifest_sha256": self.manifest_sha256,
+            "configuration_sha256": self.configuration_sha256,
+            "output_path_sha256": path_identity(self.output_path),
+            "state_root_sha256": path_identity(self.state_root),
+        }
+        with ExclusiveFileLease(
+            output_lease_path(self.output_path),
+            "output target",
+            lease_metadata,
+        ) as output_lease:
+            record = self._load_record()
+            run_directory = self._run_directory(record)
+            run_directory.mkdir(parents=True, exist_ok=True)
+            bound_metadata = {
+                **lease_metadata,
+                "run_id": record["run_id"],
+                "configuration_sha256": record["configuration_sha256"],
+            }
+            output_lease.bind(bound_metadata)
+            with ExclusiveFileLease(
+                run_directory / ".run.lock",
+                "execution state",
+                bound_metadata,
+            ):
+                self._bind_state_identity(record, run_directory)
+                return self._execute_locked(record, run_directory)
 
 
 def run_benchmark(options: RunOptions) -> dict[str, Any]:
