@@ -570,8 +570,12 @@ Clang 基线完整复用上面的 manifest、protocol、assets、link、runner�
 确定性指标完全一致。冷进程编译运行五次，记录 median/MAD。初始单例超时
 1800 秒；后续 profile 使用 `min(1800, max(120, 3 * baseline median))`，通过
 `--timeout-policy baseline_derived --baseline-timeout-run RUN.json` 绑定基线。
-最多并行四个 QEMU 任务。缓存键绑定源码、输入、编译器、profile、工具链和
-测量协议哈希；失败重试保留 attempt history，不能吞掉原错误。
+最多并行四个 QEMU 任务。正式运行默认使用 `attempt_local_v1`：五次冷编译及
+最终 artifact、remarks、stdout/stderr 都保存在本次 attempt 目录，直接用于
+链接，既不读取也不发布共享编译缓存。`--reuse-compile-cache` 仅用于非正式的
+`reusable_cache_v2` 调试；其键绑定源码、输入、编译器、profile、工具链和测量
+协议哈希，启用后不得进入正式收益排名。失败重试保留 attempt history，不能
+吞掉原错误。
 
 GCC 13.3 `-O2` 和 Clang 18 `-O3` 对照通过 `scripts/reference-compile.sh`，共享
 RV64GC、LP64D、medany、显式整数 wrap 和严格 FP 选项。它们仍是本地代理，

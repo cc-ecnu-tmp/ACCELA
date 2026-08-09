@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from .adapters import CommandRenderer, StageSpec, WslPathMapper
-from .cache import CompileBuild, CompileCache
+from .cache import (
+    CompileBuild,
+    CompileCache,
+    compile_storage_contract,
+)
 from .errors import ConfigurationError, ExecutionError, ValidationError
 from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .metrics import ANALYZER_METRICS, rv64gc_qemu_v1
@@ -226,6 +230,8 @@ def _require_path_placeholder(stage: StageSpec, logical_name: str, label: str) -
 def _validate_options(options: RunOptions) -> None:
     if options.compiler.command is None or options.runner.command is None:
         raise ConfigurationError("compiler and runner commands are required")
+    if not isinstance(options.reuse_compile_cache, bool):
+        raise ConfigurationError("reuse_compile_cache must be a boolean")
     if (
         options.evidence_level == "qemu_proxy"
         and options.metric_profile_id == "rv64gc-qemu-v1"
@@ -531,6 +537,7 @@ def _configuration(options: RunOptions) -> dict[str, Any]:
         "compile_timeout_seconds": options.compile_timeout_seconds,
         "compile_repetitions": options.compile_repetitions,
         "reuse_compile_cache": options.reuse_compile_cache,
+        "compile_storage_contract": compile_storage_contract(options.reuse_compile_cache),
         "link_timeout_seconds": options.link_timeout_seconds,
         "analyze_timeout_seconds": options.analyze_timeout_seconds,
         "run_timeout_seconds": options.run_timeout_seconds,
@@ -728,12 +735,12 @@ def _run_id(configuration_sha256: str, manifest_sha256: str) -> str:
 
 
 class BenchmarkCompiler:
-    """Cached source-to-artifact stage used by the benchmark orchestrator."""
+    """Source-to-artifact stage with explicit reusable or attempt-local storage."""
 
     def __init__(
         self,
         *,
-        cache: CompileCache,
+        cache: CompileCache | None,
         renderer: CommandRenderer,
         stage: StageSpec,
         timeout_seconds: float,
@@ -756,6 +763,10 @@ class BenchmarkCompiler:
         self.repetitions = repetitions
         self.reuse_cache = reuse_cache
         self.cancellation_event = cancellation_event
+        if self.reuse_cache != (self.cache is not None):
+            raise ConfigurationError(
+                "compile storage contract requires a cache only in reusable_cache_v2 mode"
+            )
 
     def compile(
         self,
@@ -773,18 +784,6 @@ class BenchmarkCompiler:
         Path,
         Path,
     ]:
-        key = sha256_json(
-            {
-                "schema": 2,
-                "source_sha256": case["source"]["sha256"],
-                "input_sha256": None if case["input"] is None else case["input"]["sha256"],
-                "target": case["target"],
-                "stage_fingerprint": self.stage_fingerprint,
-                "artifact_suffix": self.artifact_suffix,
-                "compile_repetitions": self.repetitions,
-            }
-        )
-
         cold_logs: dict[str, Path] = {}
 
         def build(artifact: Path, temporary: Path) -> CompileBuild:
@@ -921,12 +920,41 @@ class BenchmarkCompiler:
             }
             return CompileBuild(last_result.as_phase_record(), tuple(samples), compile_statistics)
 
-        entry = self.cache.get_or_build(
-            key,
-            self.artifact_suffix,
-            build,
-            read_allowed=self.reuse_cache,
+        if not self.reuse_cache:
+            compile_directory = context_paths["case_dir"] / "attempt-local-compile"
+            compile_directory.mkdir(parents=False, exist_ok=False)
+            artifact = compile_directory / f"artifact{self.artifact_suffix}"
+            direct = build(artifact, compile_directory)
+            compile_stdout = cold_logs.get(
+                "stdout", context_paths["case_dir"] / "cold-compile.stdout"
+            )
+            compile_stderr = cold_logs.get(
+                "stderr", context_paths["case_dir"] / "cold-compile.stderr"
+            )
+            return (
+                artifact,
+                direct.phase,
+                direct.samples,
+                direct.statistics,
+                False,
+                compile_stdout,
+                compile_stderr,
+            )
+
+        assert self.cache is not None
+        key = sha256_json(
+            {
+                "schema": "compile-cache-key.v3",
+                "storage_contract": compile_storage_contract(True),
+                "source_sha256": case["source"]["sha256"],
+                "input_sha256": None if case["input"] is None else case["input"]["sha256"],
+                "target": case["target"],
+                "stage_fingerprint": self.stage_fingerprint,
+                "artifact_suffix": self.artifact_suffix,
+                "compile_repetitions": self.repetitions,
+            }
         )
+        entry = self.cache.get_or_build(key, self.artifact_suffix, build)
         if entry.hit:
             compile_stdout = entry.artifact.parent / "compile.stdout"
             compile_stderr = entry.artifact.parent / "compile.stderr"
@@ -1040,7 +1068,7 @@ class BenchmarkRun:
         compiler_record = self.configuration["compiler"]
         assert isinstance(compiler_record, dict)
         self.compiler = BenchmarkCompiler(
-            cache=CompileCache(self.state_root),
+            cache=(CompileCache(self.state_root) if options.reuse_compile_cache else None),
             renderer=self.renderer,
             stage=options.compiler,
             timeout_seconds=options.compile_timeout_seconds,

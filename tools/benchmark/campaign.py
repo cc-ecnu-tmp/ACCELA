@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from .ablation import _require_formal_measurement
+from .ablation import _require_formal_measurement, _require_no_historical_attempts
 from .errors import ConfigurationError, ValidationError
 from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
 from .schema import load_and_validate, validate_document
@@ -719,6 +719,7 @@ def _require_campaign_correctness(run: Mapping[str, Any]) -> None:
         or configuration["output_contract"] == "raw_stdout"
         or configuration["compile_repetitions"] != 5
         or configuration["reuse_compile_cache"]
+        or configuration["compile_storage_contract"] != "attempt_local_v1"
     ):
         raise ValidationError("campaign B1 run is not strict QEMU correctness evidence")
     if (
@@ -735,6 +736,7 @@ def _require_campaign_correctness(run: Mapping[str, Any]) -> None:
         raise ValidationError("campaign B1 correctness must not claim the performance protocol")
     if not configuration["tool_versions"]:
         raise ValidationError("campaign B1 correctness lacks toolchain version evidence")
+    _require_no_historical_attempts(run, context="campaign B1 correctness")
     for case in run["cases"]:
         if case["status"] != "passed":
             continue
@@ -824,6 +826,7 @@ def _validate_campaign_run(
         configuration["metric_profile_id"] != contract["metric_profile_id"]
         or configuration["compile_repetitions"] != contract["compile_repetitions"]
         or configuration["reuse_compile_cache"] != contract["reuse_compile_cache"]
+        or configuration["compile_storage_contract"] != "attempt_local_v1"
         or contract["additional_metric_specs"]
         != (
             _HOTBLOCK_METRIC_SPECS

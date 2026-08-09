@@ -99,6 +99,7 @@ def make_run(
         "compile_timeout_seconds": 1.0,
         "compile_repetitions": 5,
         "reuse_compile_cache": False,
+        "compile_storage_contract": "attempt_local_v1",
         "link_timeout_seconds": 1.0,
         "analyze_timeout_seconds": 1.0,
         "run_timeout_seconds": 1800.0 if source != "wall_time" else 1.0,

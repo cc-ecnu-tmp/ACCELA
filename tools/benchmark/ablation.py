@@ -27,13 +27,35 @@ def _load_run(path: Path) -> dict[str, Any]:
     return run
 
 
+def _require_no_historical_attempts(
+    run: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    historical_attempts = [
+        (case["case_id"], attempt["attempt_index"], attempt["status"])
+        for case in run["cases"]
+        for attempt in case["attempts"]
+    ]
+    if historical_attempts:
+        case_id, attempt_index, status = historical_attempts[0]
+        raise ValidationError(
+            f"{context} rejects profiles with historical failed attempts: "
+            f"case={case_id}, attempt={attempt_index}, status={status}"
+        )
+
+
 def _require_formal_measurement(
     run: Mapping[str, Any],
     *,
     require_accela_pipeline: bool = False,
     allow_metric_superset: bool = False,
 ) -> None:
-    if run["configuration"]["compile_repetitions"] != 5 or run["configuration"]["reuse_compile_cache"]:
+    if (
+        run["configuration"]["compile_repetitions"] != 5
+        or run["configuration"]["reuse_compile_cache"]
+        or run["configuration"]["compile_storage_contract"] != "attempt_local_v1"
+    ):
         raise ValidationError(
             "formal optimization ranking requires five cold compiler starts with compile-cache reuse disabled"
         )
@@ -120,17 +142,7 @@ def _require_formal_measurement(
             )
         if configuration["remarks_file_sha256"] is None:
             raise ValidationError("ACCELA ranking requires configured optimization remarks")
-    failed_attempts = [
-        (case["case_id"], attempt["attempt_index"], attempt["status"])
-        for case in run["cases"]
-        for attempt in case["attempts"]
-    ]
-    if failed_attempts:
-        case_id, attempt_index, status = failed_attempts[0]
-        raise ValidationError(
-            "formal optimization ranking rejects profiles with historical failed attempts: "
-            f"case={case_id}, attempt={attempt_index}, status={status}"
-        )
+    _require_no_historical_attempts(run, context="formal optimization ranking")
     runtime_ids = {preset["primary_metric_id"]} | {
         item["metric_id"] for item in preset["additional"] if item["source"] == "file"
     }

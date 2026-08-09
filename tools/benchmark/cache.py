@@ -14,6 +14,57 @@ from .errors import ExecutionError
 from .util import atomic_write_json, read_json, sha256_file
 
 
+ATTEMPT_LOCAL_COMPILE_STORAGE = "attempt_local_v1"
+REUSABLE_COMPILE_CACHE_STORAGE = "reusable_cache_v2"
+
+
+def compile_storage_contract(reuse_compile_cache: bool) -> str:
+    if not isinstance(reuse_compile_cache, bool):
+        raise TypeError("reuse_compile_cache must be a boolean")
+    return (
+        REUSABLE_COMPILE_CACHE_STORAGE
+        if reuse_compile_cache
+        else ATTEMPT_LOCAL_COMPILE_STORAGE
+    )
+
+
+def _validate_cached_stream(
+    path: Path,
+    record: object,
+    *,
+    entry_key: str,
+    label: str,
+) -> None:
+    if (
+        not isinstance(record, dict)
+        or set(record) != {"sha256", "size_bytes"}
+        or not isinstance(record.get("sha256"), str)
+        or len(record["sha256"]) != 64
+        or any(character not in "0123456789abcdef" for character in record["sha256"])
+        or not isinstance(record.get("size_bytes"), int)
+        or isinstance(record["size_bytes"], bool)
+        or record["size_bytes"] < 0
+    ):
+        raise ExecutionError(
+            f"compile cache entry {entry_key} has invalid {label} metadata"
+        )
+    if not path.is_file():
+        raise ExecutionError(
+            f"compile cache entry {entry_key} is missing {label}"
+        )
+    try:
+        observed_sha256 = sha256_file(path)
+        observed_size = path.stat().st_size
+    except OSError as exc:
+        raise ExecutionError(
+            f"compile cache entry {entry_key} cannot read {label}"
+        ) from exc
+    if record["sha256"] != observed_sha256 or record["size_bytes"] != observed_size:
+        raise ExecutionError(
+            f"compile cache entry {entry_key} failed {label} integrity verification"
+        )
+
+
 @dataclass(frozen=True)
 class CacheEntry:
     artifact: Path
@@ -97,12 +148,26 @@ class CompileCache:
             phase = metadata["phase"]
             if not isinstance(phase, dict):
                 raise ExecutionError(f"compile cache entry {key} has invalid phase metadata")
+            for stream_name in ("stdout", "stderr"):
+                _validate_cached_stream(
+                    directory / f"compile.{stream_name}",
+                    phase.get(stream_name),
+                    entry_key=key,
+                    label=f"top-level compile.{stream_name}",
+                )
             samples = metadata["samples"]
             statistics = metadata["statistics"]
             if not isinstance(samples, list) or not all(isinstance(item, dict) for item in samples):
                 raise ExecutionError(f"compile cache entry {key} has invalid sample metadata")
             for index, sample in enumerate(samples):
                 repetition = directory / f"repetition-{index:04d}"
+                for stream_name in ("stdout", "stderr"):
+                    _validate_cached_stream(
+                        repetition / f"compile.{stream_name}",
+                        sample.get(stream_name),
+                        entry_key=key,
+                        label=f"cold sample {index} compile.{stream_name}",
+                    )
                 sample_artifact = repetition / f"artifact{suffix}"
                 if (
                     not sample_artifact.is_file()
@@ -154,13 +219,11 @@ class CompileCache:
         key: str,
         suffix: str,
         builder: Callable[[Path, Path], CompileBuild],
-        *,
-        read_allowed: bool,
     ) -> CacheEntry:
         lock = self._thread_lock(key)
         with lock, self._file_lock(key):
             cached = self._load(key, suffix)
-            if cached is not None and read_allowed:
+            if cached is not None:
                 return cached
             temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=self.root))
             artifact = temporary / f"artifact{suffix}"

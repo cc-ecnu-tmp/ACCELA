@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import errno
 import json
 import multiprocessing
+import os
 import sys
 import threading
 import time
@@ -13,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from tools.benchmark import cache as cache_module
 from tools.benchmark.execution import MeasurementSpec, _summary, run_benchmark
 from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
 from tools.benchmark.adapters import StageSpec
@@ -304,20 +307,115 @@ def test_multimetric_exact_bytes_cache_and_consistency(benchmark_fixture) -> Non
     sample_metric_ids = {item["metric_id"] for item in first["cases"][0]["samples"][0]["measurements"]}
     assert {"dynamic_instruction_count", "dynamic_load_count", "dynamic_store_count", "l1d_miss_count"} <= sample_metric_ids
     assert all(case["samples"][0]["stdout"]["sha256"] == case["expected_output_sha256"] for case in first["cases"])
+    assert first["configuration"]["compile_storage_contract"] == "attempt_local_v1"
+    assert not (tmp_path / "state" / "cache" / "compile").exists()
+    attempt_directories = [
+        _raw_attempt_directory(tmp_path / "state", case["case_id"], 0)
+        for case in first["cases"]
+    ]
+    assert len(set(attempt_directories)) == len(first["cases"])
+    for attempt_directory in attempt_directories:
+        compile_directory = attempt_directory / "attempt-local-compile"
+        assert (compile_directory / "artifact.s").is_file()
+        assert (attempt_directory / "binary.elf").is_file()
+        assert len(list(compile_directory.glob("repetition-*/artifact.s"))) == 5
+    inconsistent_storage = deepcopy(first)
+    inconsistent_storage["configuration"]["compile_storage_contract"] = "reusable_cache_v2"
+    inconsistent_storage["configuration_sha256"] = sha256_json(
+        {
+            "configuration": inconsistent_storage["configuration"],
+            "provenance": inconsistent_storage["provenance"],
+        }
+    )
+    with pytest.raises(ValidationError, match="compile storage contract disagrees"):
+        validate_document(inconsistent_storage)
 
-    second_options = replace(
+    populate_options = replace(
         make_options(
-            output_name="cached.json",
+            output_name="cache-populate.json",
             additional_metrics=metrics,
             compile_repetitions=5,
         ),
-        run_id="cached-run",
+        run_id="cache-populate-run",
         reuse_compile_cache=True,
+    )
+    populated = run_benchmark(populate_options)
+    assert populated["state"] == "completed"
+    assert populated["configuration"]["compile_storage_contract"] == "reusable_cache_v2"
+    assert not any(case["cache_hit"] for case in populated["cases"])
+
+    second_options = replace(
+        populate_options,
+        output_path=tmp_path / "cached.json",
+        run_id="cached-run",
     )
     second = run_benchmark(second_options)
     assert second["state"] == "completed"
     assert all(case["cache_hit"] for case in second["cases"])
     load_and_validate(tmp_path / "cached.json")
+
+
+def test_attempt_local_compile_bypasses_cache_publish_eacces_and_cache_mode_fails_fast(
+    benchmark_fixture,
+    monkeypatch,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    compile_cache_root = (tmp_path / "state" / "cache" / "compile").resolve()
+    real_replace = os.replace
+    cache_publish_attempts = 0
+
+    def deny_cache_directory_publish(source, destination):
+        nonlocal cache_publish_attempts
+        source_path = Path(source).resolve()
+        destination_path = Path(destination).resolve()
+        if (
+            source_path.parent == compile_cache_root
+            and destination_path.parent == compile_cache_root
+            and source_path.is_dir()
+        ):
+            cache_publish_attempts += 1
+            raise PermissionError(errno.EACCES, "simulated cache publication denial")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(cache_module.os, "replace", deny_cache_directory_publish)
+
+    no_cache = run_benchmark(
+        replace(
+            make_options(
+                output_name="attempt-local.json",
+                run_id="attempt-local-run",
+                compile_repetitions=2,
+            ),
+            max_workers=4,
+            reuse_compile_cache=False,
+        )
+    )
+    assert no_cache["state"] == "completed"
+    assert cache_publish_attempts == 0
+    assert not compile_cache_root.exists()
+    assert all(case["cache_hit"] is False for case in no_cache["cases"])
+    for case in no_cache["cases"]:
+        attempt_directory = _raw_attempt_directory(
+            tmp_path / "state", case["case_id"], case["attempt_index"]
+        )
+        compile_directory = attempt_directory / "attempt-local-compile"
+        assert (compile_directory / "artifact.s").is_file()
+        assert (attempt_directory / "binary.elf").is_file()
+        assert len(list(compile_directory.glob("repetition-*/artifact.s"))) == 2
+
+    cache_options = replace(
+        make_options(
+            output_name="cache-publish-denied.json",
+            run_id="cache-publish-denied-run",
+            compile_repetitions=2,
+        ),
+        max_workers=1,
+        reuse_compile_cache=True,
+    )
+    with pytest.raises(ExecutionError, match="cannot publish compile cache entry"):
+        run_benchmark(cache_options)
+    assert cache_publish_attempts == 1
+    assert list(compile_cache_root.iterdir()) == []
 
 
 def test_resume_only_reexecutes_cancelled_case(benchmark_fixture) -> None:
@@ -410,6 +508,13 @@ def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
     first_payload = first_stderr.read_bytes()
     assert first_payload.decode().splitlines() == ["first-attempt-failure"]
     assert sha256_file(first_stderr) == failed["compile_samples"][0]["stderr"]["sha256"]
+    first_workspace_stderr = (
+        first_directory
+        / "attempt-local-compile"
+        / "repetition-0000"
+        / "compile.stderr"
+    )
+    assert first_workspace_stderr.read_bytes() == first_payload
 
     retried = run_benchmark(replace(options, retry_failures=True))
     assert retried["state"] == "completed"
@@ -428,6 +533,8 @@ def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
     assert (
         second_directory / "compile-repetition-0000.stderr"
     ).read_text(encoding="utf-8").splitlines() == ["later-attempt-success"]
+    assert (second_directory / "attempt-local-compile" / "artifact.s").is_file()
+    assert first_workspace_stderr.read_bytes() == first_payload
     assert archived["configuration_sha256"] != current["attempt_configuration_sha256"]
     assert all(
         case["attempt_index"] == 0 and not case["attempts"]
@@ -486,6 +593,64 @@ def test_cache_v2_recomputes_cold_sample_remark_event_count(benchmark_fixture) -
     )
     with pytest.raises(ExecutionError, match="event-count integrity verification"):
         run_benchmark(second)
+
+
+def test_reusable_cache_v2_rejects_missing_or_tampered_compile_streams(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name="cache-stream-source.json",
+            run_id="cache-stream-source",
+            compile_repetitions=1,
+        ),
+        reuse_compile_cache=True,
+        max_workers=1,
+    )
+    source_run = run_benchmark(options)
+    assert source_run["state"] == "completed"
+    entry_directories = sorted(
+        metadata_path.parent
+        for metadata_path in (options.state_root / "cache" / "compile").glob(
+            "*/metadata.json"
+        )
+    )
+    assert len(entry_directories) == len(source_run["cases"])
+    for directory in entry_directories:
+        metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8"))
+        for stream_name in ("stdout", "stderr"):
+            assert set(metadata["phase"][stream_name]) == {"sha256", "size_bytes"}
+            assert set(metadata["samples"][0][stream_name]) == {"sha256", "size_bytes"}
+
+    mutations = (
+        (Path("repetition-0000/compile.stdout"), False),
+        (Path("repetition-0000/compile.stderr"), False),
+        (Path("compile.stdout"), False),
+        (Path("compile.stderr"), False),
+        (Path("repetition-0000/compile.stdout"), True),
+    )
+    for index, (relative_path, remove) in enumerate(mutations):
+        originals: dict[Path, bytes] = {}
+        for directory in entry_directories:
+            target = directory / relative_path
+            originals[target] = target.read_bytes()
+            if remove:
+                target.unlink()
+            else:
+                target.write_bytes(originals[target] + b"tampered-cache-stream\n")
+        try:
+            changed = replace(
+                options,
+                output_path=tmp_path / f"cache-stream-tampered-{index}.json",
+                run_id=f"cache-stream-tampered-{index}",
+            )
+            expected = "is missing" if remove else "integrity verification"
+            with pytest.raises(ExecutionError, match=expected):
+                run_benchmark(changed)
+        finally:
+            for target, payload in originals.items():
+                target.write_bytes(payload)
 
 
 def test_exact_output_rejects_appended_newline(benchmark_fixture) -> None:
@@ -854,6 +1019,15 @@ def test_each_cold_compile_sample_records_and_preserves_remarks_evidence(
     for index in range(3):
         assert (case_directory / f"compile-repetition-{index:04d}.artifact.s").is_file()
         assert (case_directory / f"compile-repetition-{index:04d}.remarks.jsonl").is_file()
+    compile_directory = case_directory / "attempt-local-compile"
+    assert (compile_directory / "artifact.s").is_file()
+    assert (compile_directory / "remarks.jsonl").is_file()
+    for index in range(3):
+        repetition_directory = compile_directory / f"repetition-{index:04d}"
+        assert (repetition_directory / "artifact.s").is_file()
+        assert (repetition_directory / "remarks.jsonl").is_file()
+        assert (repetition_directory / "compile.stdout").is_file()
+        assert (repetition_directory / "compile.stderr").is_file()
 
     tampered = deepcopy(record)
     tampered["cases"][0]["compile_samples"][0]["artifact_size_bytes"] = None

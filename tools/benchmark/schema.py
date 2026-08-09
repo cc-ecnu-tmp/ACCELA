@@ -11,6 +11,7 @@ from typing import Any
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 
+from .cache import compile_storage_contract
 from .errors import ValidationError
 from .metrics import ANALYZER_METRICS, UNAVAILABLE_REASONS, cache_hotblock_metrics_v1
 from .util import read_json, resolve_manifest_path, sha256_file, sha256_json, validate_relative_path
@@ -349,6 +350,12 @@ def _validate_run_semantics(document: dict[str, Any]) -> None:
     if state in {"running", "interrupted"} and completed_at is not None:
         raise ValidationError("running/interrupted run must not contain a completion timestamp")
     configuration = document["configuration"]
+    if configuration["compile_storage_contract"] != compile_storage_contract(
+        configuration["reuse_compile_cache"]
+    ):
+        raise ValidationError(
+            "compile storage contract disagrees with reuse_compile_cache"
+        )
     specs = configuration["metrics"]
     metric_ids = [spec["metric_id"] for spec in specs]
     if len(metric_ids) != len(set(metric_ids)):

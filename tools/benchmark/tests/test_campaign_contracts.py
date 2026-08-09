@@ -10,6 +10,7 @@ from tools.benchmark.adapters import StageSpec
 from tools.benchmark.campaign import (
     _HOTBLOCK_METRIC_SPECS,
     _failed_run_reason,
+    _require_campaign_correctness,
     _study_decisions,
     _validate_campaign_run,
     campaign_task,
@@ -169,6 +170,7 @@ def _run(plan: dict, task: dict) -> dict:
             "metric_profile_id": "rv64gc-qemu-v1",
             "compile_repetitions": 5,
             "reuse_compile_cache": False,
+            "compile_storage_contract": "attempt_local_v1",
             "runner": {
                 "kind": "qemu",
                 "adapter": protocol["runner_adapter"],
@@ -228,6 +230,50 @@ def test_campaign_run_gate_binds_standard_and_cache_protocols(monkeypatch) -> No
     wrong_protocol["provenance"]["measurement_protocol_sha256"] = "f" * 64
     with pytest.raises(ValidationError, match="provenance differs"):
         _validate_campaign_run(plan, cache_task, wrong_protocol)
+
+
+def test_campaign_b1_rejects_retry_history_even_when_final_attempt_passes() -> None:
+    run = {
+        "configuration": {
+            "evidence_level": "qemu_correctness",
+            "runner": {"kind": "qemu"},
+            "metric_profile_id": None,
+            "primary_metric_id": "wall_time_ns",
+            "output_contract": "lf_return_trailer",
+            "compile_repetitions": 5,
+            "reuse_compile_cache": False,
+            "compile_storage_contract": "attempt_local_v1",
+            "retry_failures": True,
+            "compiler": {"kind": "benchmark-compiler"},
+            "pipeline_profile_file_sha256": "1" * 64,
+            "remarks_file_sha256": "2" * 64,
+            "tool_versions": [{"tool": "accela-jdk", "actual": "21.0.11"}],
+        },
+        "provenance": {
+            "pipeline_profile_sha256": "1" * 64,
+            "measurement_protocol_id": None,
+            "measurement_protocol_sha256": None,
+        },
+        "cases": [
+            {
+                "case_id": "b1-retried-case",
+                "status": "passed",
+                "attempts": [],
+                "cache_hit": False,
+                "compile": {"status": "ok"},
+                "compile_samples": [{"status": "ok"} for _ in range(5)],
+                "compile_statistics": {"sample_count": 5},
+                "link": {"status": "ok"},
+            }
+        ],
+    }
+    _require_campaign_correctness(run)
+
+    run["cases"][0]["attempts"] = [
+        {"attempt_index": 0, "status": "wrong_output"}
+    ]
+    with pytest.raises(ValidationError, match="historical failed attempts"):
+        _require_campaign_correctness(run)
 
 
 def test_reference_baseline_requires_exact_command_artifact_version_and_profile(monkeypatch) -> None:

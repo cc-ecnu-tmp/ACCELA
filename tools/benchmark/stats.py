@@ -195,7 +195,7 @@ def _ensure_comparable_runs(
                 raise ValidationError(f"cannot attribute a pipeline difference when provenance changed: {key}")
     comparable_configuration = [
         "linker", "runner", "primary_metric_id", "metric_profile_id", "metrics", "compile_timeout_seconds",
-        "compile_repetitions", "reuse_compile_cache", "link_timeout_seconds", "analyze_timeout_seconds",
+        "compile_repetitions", "reuse_compile_cache", "compile_storage_contract", "link_timeout_seconds", "analyze_timeout_seconds",
         "repetitions", "max_workers", "keep_going", "retry_failures", "seed",
         "artifact_suffix", "binary_suffix", "wsl_distribution_sha256", "environment_label",
         "evidence_level", "metric_file_sha256", "analysis_file_sha256",
