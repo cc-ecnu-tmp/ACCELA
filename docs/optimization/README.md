@@ -523,19 +523,23 @@ python -m tools.benchmark run \
 外部参考前端不读取 ACCELA profile。campaign 为固定 flags 生成逻辑 profile
 hash，toolchain snapshot 作为 compiler artifact 绑定 compile driver、镜像和
 编译器版本；run configuration 同时记录 external compiler command，所以 GCC
-和 Clang 身份不会混淆。下列命令可单独执行；纳入 72 小时 campaign 时，必须
-另外传入 `--run-id`，值逐字取自 `data/campaign/initial.plan.json` 对应 task，
-不得自行另造 ID：
+和 Clang 身份不会混淆。reference profile hash 和 run ID 必须在执行时逐字读取
+当前 campaign plan，不得把生成值复制进文档或自行另造 ID：
 
 ```sh
+gcc_task='task:baseline_validation:B3:gcc-13.3-o2-0e6a1017b8f7:standard_proxy'
+clang_task='task:baseline_validation:B3:clang-18-o3-bf83309b138c:standard_proxy'
+gcc_profile_sha256=$(campaign_task_field "$gcc_task" profile_sha256)
+clang_profile_sha256=$(campaign_task_field "$clang_task" profile_sha256)
+
 python -m tools.benchmark run \
   docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
   --suite-root .tmp/official/2026-riscv-performance/performance \
   --output .tmp/runs/b3-gcc-13.3-o2/run.json --state-dir .tmp/runs/state \
-  --run-id "$(campaign_run_id 'task:baseline_validation:B3:gcc-13.3-o2-0e6a1017b8f7:standard_proxy')" \
+  --run-id "$(campaign_run_id "$gcc_task")" \
   --repo-commit "$repo_commit" --repo-dirty false \
   --pipeline-profile-id gcc-13.3-o2 \
-  --pipeline-profile-sha256 4d06d4b816af821fa0ca86ad8b9b8de59b5b3b8300cb43ebe87b178a7afe29df \
+  --pipeline-profile-sha256 "$gcc_profile_sha256" \
   --compiler-artifact docs/optimization/data/toolchain-snapshot.json \
   --measurement-protocol "$standard_protocol" \
   --measurement-asset profile_plugin_source=tools/qemu/profile.c \
@@ -573,9 +577,9 @@ Clang 基线完整复用上面的 manifest、protocol、assets、link、runner�
 并发参数，只做以下确定替换；不得把两者并入同一个 run record：
 
 - `--output .tmp/runs/b3-clang-18-o3/run.json`
-- `--run-id "$(campaign_run_id 'task:baseline_validation:B3:clang-18-o3-bf83309b138c:standard_proxy')"`
+- `--run-id "$(campaign_run_id "$clang_task")"`
 - `--pipeline-profile-id clang-18-o3`
-- `--pipeline-profile-sha256 cf167a53c4e164fbe7e60c82f16b858d1c472802181c9177cfee362cf4a24281`
+- `--pipeline-profile-sha256 "$clang_profile_sha256"`
 - `--compiler-command-json '["sh","scripts/reference-compile.sh","clang","{source}","{artifact}"]'`
 - `--analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","clang","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--output","{analysis_file}"]'`
 - 把 `--tool-version riscv-gcc=13.3.0 --official-version riscv-gcc=13.3.0`
