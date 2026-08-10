@@ -1,0 +1,130 @@
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.BackendCompiler;
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.pass.IntegerLinearTransitionCandidate;
+import accela.pass.IntegerLinearTransitionCandidatePassBuilder;
+import accela.pass.IntegerLinearTransitionCandidateRegistry;
+import accela.pass.PassBuilder;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.util.StrictJson;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+final class IntegerLinearTransitionBenchmarkCompilerTest {
+  private static final String SOURCE = """
+      int main() {
+        int bound = getint();
+        int state = getint();
+        int index = 0;
+        while (index < bound) {
+          state = 3 * state + 5;
+          index = index + 1;
+        }
+        putint(state);
+        putch(10);
+        return 0;
+      }
+      """;
+
+  @TempDir Path temporaryDirectory;
+
+  @Test
+  void enabledCandidateRunsThroughTheRealDevelopmentCompilerAndRv64gcBackend()
+      throws Exception {
+    PassRegistry registry = IntegerLinearTransitionCandidateRegistry.create();
+    Path input = temporaryDirectory.resolve("linear.sy");
+    Path profile = temporaryDirectory.resolve("enabled.json");
+    Path assembly = temporaryDirectory.resolve("enabled.s");
+    Path remarks = temporaryDirectory.resolve("enabled.jsonl");
+    Files.writeString(input, SOURCE, StandardCharsets.UTF_8);
+    PipelineProfile.builder(registry)
+        .enableCandidate(IntegerLinearTransitionCandidate.ID)
+        .build()
+        .writeJson(profile);
+    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
+
+    BenchmarkCompiler.runForTesting(new String[] {
+        input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    }, pipeline);
+
+    assertEquals(1, pipeline.passFactoryInvocations.get());
+    String emittedAssembly = Files.readString(assembly, StandardCharsets.UTF_8);
+    assertTrue(emittedAssembly.contains("main:"));
+    List<Map<?, ?>> events = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse).<Map<?, ?>>map(value -> (Map<?, ?>) value).toList();
+    List<Map<?, ?>> candidateEvents = events.stream()
+        .filter(event -> IntegerLinearTransitionCandidate.ID.equals(event.get("pass")))
+        .toList();
+    assertEquals(java.util.Arrays.asList("candidate", "applied", null), candidateEvents.stream()
+        .map(event -> event.get("decision")).toList());
+    assertEquals("pass_summary", candidateEvents.getLast().get("event_type"));
+    assertEquals(Boolean.TRUE, candidateEvents.getLast().get("changed"));
+  }
+
+  @Test
+  void disabledCandidateNeverInvokesItsPassFactoryAndKeepsJudgeAssemblyIdentical()
+      throws Exception {
+    PassRegistry registry = IntegerLinearTransitionCandidateRegistry.create();
+    Path input = temporaryDirectory.resolve("disabled.sy");
+    Path profile = temporaryDirectory.resolve("disabled.json");
+    Path assembly = temporaryDirectory.resolve("disabled.s");
+    Path judgeAssembly = temporaryDirectory.resolve("judge.s");
+    Path remarks = temporaryDirectory.resolve("disabled.jsonl");
+    Files.writeString(input, SOURCE, StandardCharsets.UTF_8);
+    PipelineProfile.full(registry).writeJson(profile);
+    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
+
+    BenchmarkCompiler.runForTesting(new String[] {
+        input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    }, pipeline);
+    Compiler.main(new String[] {
+        input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
+    });
+
+    assertEquals(0, pipeline.passFactoryInvocations.get());
+    assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(assembly));
+    assertTrue(Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse).map(value -> (Map<?, ?>) value)
+        .noneMatch(event -> IntegerLinearTransitionCandidate.ID.equals(event.get("pass"))));
+  }
+
+  private static final class CandidateDevelopmentPipeline
+      implements BenchmarkCompiler.DevelopmentPipeline {
+    private final PassRegistry registry;
+    private final AtomicInteger passFactoryInvocations = new AtomicInteger();
+
+    CandidateDevelopmentPipeline(PassRegistry registry) {
+      this.registry = registry;
+    }
+
+    @Override
+    public PassRegistry registry() {
+      return registry;
+    }
+
+    @Override
+    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
+      return IntegerLinearTransitionCandidatePassBuilder.create(
+          instrumentation, passFactoryInvocations);
+    }
+
+    @Override
+    public BackendCompiler backendCompiler(
+        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
+      return new BackendCompiler(profile, instrumentation);
+    }
+  }
+}
