@@ -170,6 +170,8 @@ def test_screening_report_binds_base_registry_without_exposing_path(
         in markdown
     )
     assert screening["base_pass_registry"]["path"] not in markdown
+    assert "n/ax" not in markdown
+    assert "n/a" in markdown
 
     tampered = deepcopy(screening)
     tampered["base_pass_registry"]["canonical_sha256"] = "e" * 64

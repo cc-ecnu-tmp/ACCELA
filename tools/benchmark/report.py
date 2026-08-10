@@ -67,6 +67,12 @@ def _format_number(value: float | None, digits: int = 4) -> str:
     return f"{value:.{digits}f}"
 
 
+def _format_ratio(value: float | None, digits: int = 4) -> str:
+    if value is None:
+        return "n/a"
+    return f"{_format_number(value, digits)}x"
+
+
 def _markdown_cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
@@ -1304,7 +1310,7 @@ def build_candidate_screening_report(
             lines.append(
                 f"| {index} | `{_markdown_cell(item['candidate_id'])}` | "
                 f"`{_markdown_cell(item['implementation_candidate_id'])}` | "
-                f"{_format_number(item['best_complete_allowed_oracle_geometric_mean'])}x | "
+                f"{_format_ratio(item['best_complete_allowed_oracle_geometric_mean'])} | "
                 f"`{item['risk']}` | `{item['implementation_cost']}` |"
             )
     else:
@@ -1381,7 +1387,7 @@ def build_candidate_screening_report(
                 f"{_screening_tier_cell(structure['sizes']['medium'])} | "
                 f"{_screening_tier_cell(structure['sizes']['large'])} | "
                 f"{('是' if structure['eligible_for_ranking'] else '否')} | "
-                f"{_format_number(structure['geometric_mean_speedup'])}x | {outcome} |"
+                f"{_format_ratio(structure['geometric_mean_speedup'])} | {outcome} |"
             )
 
     lines.extend(
@@ -1415,7 +1421,7 @@ def build_candidate_screening_report(
         best = max(complete_upper_bounds) if complete_upper_bounds else None
         lines.append(
             f"| `{family_id}` | {len(allowed)} | {len(qualifying)} | {coverage} | "
-            f"{_format_number(best)}x | n/a（B3 未实测） |"
+            f"{_format_ratio(best)} | n/a（B3 未实测） |"
         )
 
     lines.extend(["", "## 家族级实现与拒绝依据", ""])
@@ -1438,7 +1444,7 @@ def build_candidate_screening_report(
                 "",
                 f"- 锁定能力：{capability}。",
                 f"- 静态处理：{static_handling}",
-                f"- 允许／达标结构：{_screening_oracle_refs(item['eligible_oracle_structure_refs'])} / {_screening_oracle_refs(item['qualifying_oracle_structure_refs'])}；最佳完整允许 Oracle GM 上界 {_format_number(best)}x。",
+                f"- 允许／达标结构：{_screening_oracle_refs(item['eligible_oracle_structure_refs'])} / {_screening_oracle_refs(item['qualifying_oracle_structure_refs'])}；最佳完整允许 Oracle GM 上界 {_format_ratio(best)}。",
                 f"- 现有能力重叠：{_screening_ids(item['overlaps_existing_pass_ids'])}；duplicate_of：{('`' + _markdown_cell(item['duplicate_of']) + '`') if item['duplicate_of'] is not None else '无'}。",
                 f"- Legality：proof path `{item['legality_proof_path']}`；obligations {_screening_ids(item['legality_obligation_ids'])}。",
                 f"- 工程代价／风险：`{item['implementation_cost']}` / `{item['risk']}`；规格 `{item['specification_status']}`；BOOM 特性依赖 `{str(item['requires_boom_feature']).lower()}`。",
@@ -2883,7 +2889,7 @@ def build_candidate_report(
             f"| {_markdown_cell(row['candidate_id'])} | {_markdown_cell(row['implementation_candidate_id'] or '—')} | "
             f"{row['qualification_status']} | {_screening_oracle_refs(row['eligible_oracle_structure_refs'])} | "
             f"{_screening_oracle_refs(row['qualifying_oracle_structure_refs'])} | "
-            f"{_format_number(row['best_eligible_oracle_geometric_mean_upper_bound'])}x | "
+            f"{_format_ratio(row['best_eligible_oracle_geometric_mean_upper_bound'])} | "
             f"{row['implementation_cost']} | {row['risk']} | {_screening_rejections(row['rejection_reasons'])} |"
         )
     lines.extend(
@@ -2900,8 +2906,8 @@ def build_candidate_report(
     for row in capture_rows:
         lines.append(
             f"| `{_markdown_cell(row['candidate_id'])}` | "
-            f"{_format_number(row['oracle_upper_bound'])}x | "
-            f"{_format_number(row['b3_measured_speedup'])}x | "
+            f"{_format_ratio(row['oracle_upper_bound'])} | "
+            f"{_format_ratio(row['b3_measured_speedup'])} | "
             f"{_format_number(None if row['oracle_capture_ratio'] is None else 100.0 * row['oracle_capture_ratio'], 2)}% |"
         )
     lines.extend(
@@ -2922,10 +2928,10 @@ def build_candidate_report(
     for row in ranking_rows:
         lines.append(
             f"| {row['rank']} | {_markdown_cell(row['candidate_id'])} | "
-            f"{_format_number(row['combined_case_geometric_mean_speedup'])}x | "
-            f"{_format_number(row['b3_case_geometric_mean_speedup'])}x | "
+            f"{_format_ratio(row['combined_case_geometric_mean_speedup'])} | "
+            f"{_format_ratio(row['b3_case_geometric_mean_speedup'])} | "
             f"{_format_number(row['combined_static_text_bytes_full_plus_candidate'], 0)} | "
-            f"{_format_number(row['combined_static_text_ratio'])}x | "
+            f"{_format_ratio(row['combined_static_text_ratio'])} | "
             f"{row['implementation_cost']} | {row['risk']} |"
         )
     if not ranking_rows:
@@ -2975,7 +2981,7 @@ def build_candidate_report(
     for row in b2_rows:
         lines.append(
             f"| `{_markdown_cell(row['candidate_id'])}` | "
-            f"{_format_number(row['case_geometric_mean_speedup'])}x | "
+            f"{_format_ratio(row['case_geometric_mean_speedup'])} | "
             f"{_candidate_ci_cell(row)} | {row['comparable_cases']} | "
             f"{row['correctness_failures']} / {row['censored_cases']} / {row['excluded_cases']} | "
             f"{('可分析' if row['eligible_for_analysis'] else _markdown_cell(row['failure_classification'] or 'ineligible'))} |"
@@ -2994,7 +3000,7 @@ def build_candidate_report(
     for row in suite_rows:
         lines.append(
             f"| `{_markdown_cell(row['candidate_id'])}` | {row['data_role']} | "
-            f"{_format_number(row['case_geometric_mean_speedup'])}x | "
+            f"{_format_ratio(row['case_geometric_mean_speedup'])} | "
             f"{_candidate_ci_cell(row)} | {row['comparable_cases']} / {row['expected_case_count']} | "
             f"{row['correctness_failures']} / {row['censored_cases']} / {row['excluded_cases']} | "
             f"{('可排名' if row['eligible_for_ranking'] else _markdown_cell(row['failure_classification'] or 'ineligible'))} |"
@@ -3032,8 +3038,8 @@ def build_candidate_report(
         for item in interaction_rows:
             lines.append(
                 f"| {_markdown_cell(item['left_candidate_id'])} | {_markdown_cell(item['right_candidate_id'])} | "
-                f"{_format_number(item['pair_case_geometric_mean_speedup'])}x | "
-                f"{_format_number(item['expected_multiplicative_speedup'])}x | "
+                f"{_format_ratio(item['pair_case_geometric_mean_speedup'])} | "
+                f"{_format_ratio(item['expected_multiplicative_speedup'])} | "
                 f"{_format_number(item['delta_ln_geometric_mean'], 6)} | "
                 f"{item['state']} / "
                 f"{_markdown_cell(item['terminal_failure_classification'] or 'none')} / "
@@ -3072,8 +3078,8 @@ def build_candidate_report(
         lines.append(
             f"| `{_markdown_cell(item['label'])}` | "
             f"{item['state']} / {_markdown_cell(item['failure_classification'] or 'none')} | "
-            f"{_format_number(item['reference_over_full_geometric_mean'])}x {full_ci} | "
-            f"{_format_number(item['reference_over_winner_geometric_mean'])}x {winner_ci} | "
+            f"{_format_ratio(item['reference_over_full_geometric_mean'])} {full_ci} | "
+            f"{_format_ratio(item['reference_over_winner_geometric_mean'])} {winner_ci} | "
             f"{item['comparable_cases']} | {item['failed_cases']} / "
             f"{item['pending_cases']} / {item['censored_cases']} |"
         )
@@ -3608,8 +3614,8 @@ def build_report(
             [
                 "## 成对对比",
                 "",
-                f"- 官方用例权重几何平均加速：{_format_number(comparison_summary['geometric_mean_speedup'])}x",
-                f"- 按源码哈希去重后的几何平均加速：{_format_number(comparison_summary['source_group_geometric_mean_speedup'])}x",
+                f"- 官方用例权重几何平均加速：{_format_ratio(comparison_summary['geometric_mean_speedup'])}",
+                f"- 按源码哈希去重后的几何平均加速：{_format_ratio(comparison_summary['source_group_geometric_mean_speedup'])}",
                 f"- 可比较用例：{comparison_summary['comparable_cases']}",
                 f"- 正确性失败：{comparison_summary['correctness_failures']}",
                 f"- 删失用例：{comparison_summary['censored_cases']}",
@@ -3628,8 +3634,8 @@ def build_report(
         for item in labeled_comparisons:
             lines.append(
                 f"| {_markdown_cell(item['label'])} | {_markdown_cell(item['run_id'])} | "
-                f"{_markdown_cell(run['run_id'])} | {_format_number(item['case_geometric_mean_speedup'])}x | "
-                f"{_format_number(item['source_group_geometric_mean_speedup'])}x | "
+                f"{_markdown_cell(run['run_id'])} | {_format_ratio(item['case_geometric_mean_speedup'])} | "
+                f"{_format_ratio(item['source_group_geometric_mean_speedup'])} | "
                 f"{item['correctness_failures']} | {item['censored_cases']} |"
             )
         lines.append("")
@@ -3683,8 +3689,8 @@ def build_report(
             for row in group["ranking"]:
                 lines.append(
                     f"| {row['rank'] if row['rank'] is not None else '—'} | {_markdown_cell(row['optimization_id'])} | "
-                    f"{_format_number(row['case_geometric_mean_contribution'])}x | "
-                    f"{_format_number(row['source_group_geometric_mean_contribution'])}x | "
+                    f"{_format_ratio(row['case_geometric_mean_contribution'])} | "
+                    f"{_format_ratio(row['source_group_geometric_mean_contribution'])} | "
                     f"{row['comparable_source_groups']} | "
                     f"{('可排名' if row['eligible_for_ranking'] else row['ineligibility_reason'])} | "
                     f"{row['correctness_failures']} | {row['censored_cases']} | {row['comparable_cases']} | "
@@ -3708,7 +3714,7 @@ def build_report(
                 for row, family in family_rows:
                     lines.append(
                         f"| {_markdown_cell(row['optimization_id'])} | {_markdown_cell(family['family'])} | "
-                        f"{family['comparable_cases']} | {_format_number(family['geometric_mean_speedup'])}x | "
+                        f"{family['comparable_cases']} | {_format_ratio(family['geometric_mean_speedup'])} | "
                         f"{_markdown_cell(row['baseline_run_id'])} | {_markdown_cell(row['variant_run_id'])} |"
                     )
             lines.append("")
@@ -3755,7 +3761,7 @@ def build_report(
         for row in oracle_ranking:
             lines.append(
                 f"| {row['rank'] if row['rank'] is not None else '—'} | {_markdown_cell(row['family'])} | "
-                f"{row['paired_datasets']} | {_format_number(row['geometric_mean_speedup'])}x | "
+                f"{row['paired_datasets']} | {_format_ratio(row['geometric_mean_speedup'])} | "
                 f"{('可排名' if row['eligible_for_ranking'] else row['ineligibility_reason'])} | "
                 f"{_markdown_cell(row['baseline_run_id'])} | {_markdown_cell(row['optimized_run_id'])} |"
             )
@@ -3772,8 +3778,8 @@ def build_report(
         for item in implementation_priority:
             lines.append(
                 f"| {item['rank'] if item['rank'] is not None else '—'} | {item['priority']} | "
-                f"{_markdown_cell(item['candidate_id'])} | {_format_number(item['cleanroom_oracle_geometric_mean_upper_bound'])}x | "
-                f"{_format_number(item['official_oracle_geometric_mean'])}x | {item['official_family_hits']} | "
+                f"{_markdown_cell(item['candidate_id'])} | {_format_ratio(item['cleanroom_oracle_geometric_mean_upper_bound'])} | "
+                f"{_format_ratio(item['official_oracle_geometric_mean'])} | {item['official_family_hits']} | "
                 f"{item['holdout_or_mature_hits']} | {item['legality_proof_path']} | "
                 f"{item['implementation_cost']} | {item['risk']} | {_markdown_cell(item['priority_reason'])} |"
             )
