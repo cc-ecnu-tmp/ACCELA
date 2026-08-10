@@ -100,6 +100,16 @@ elif mode == "analyze-controlled":
     if b"source 1" in data:
         time.sleep(5)
     raise SystemExit(70)
+elif mode == "analyze-empty":
+    with open(sys.argv[3], "w", encoding="utf-8", newline="\n") as stream:
+        json.dump({
+            "schema_version": "binary-analysis.v1",
+            "measurements": [{
+                "metric_id": "elf_text_bytes", "value": 1, "unit": "bytes",
+                "availability": "measured", "reason": None,
+            }],
+        }, stream)
+        stream.write("\n")
 elif mode == "run-controlled":
     data = open(sys.argv[2], "rb").read()
     if b"source 0" in data:

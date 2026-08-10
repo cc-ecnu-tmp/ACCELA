@@ -6,7 +6,7 @@ import re
 import statistics
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
@@ -14,7 +14,15 @@ from jsonschema.exceptions import ValidationError as JsonSchemaValidationError
 from .cache import compile_storage_contract
 from .errors import ValidationError
 from .metrics import ANALYZER_METRICS, UNAVAILABLE_REASONS, cache_hotblock_metrics_v1
-from .util import read_json, resolve_manifest_path, sha256_file, sha256_json, validate_relative_path
+from .util import (
+    raw_attempt_identity_sha256,
+    read_json,
+    resolve_manifest_path,
+    sha256_bytes,
+    sha256_file,
+    sha256_json,
+    validate_relative_path,
+)
 
 _SCHEMA_FILES = {
     "benchmark-manifest.v1": "benchmark-manifest.v1.json",
@@ -78,6 +86,15 @@ def _load_schema(version: str) -> dict[str, Any]:
     schema = json.loads(resource.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
     return schema
+
+
+def schema_sha256(version: str) -> str:
+    """Return the canonical physical digest of a bundled schema resource."""
+    filename = _SCHEMA_FILES.get(version)
+    if filename is None:
+        raise ValidationError(f"unsupported schema_version: {version!r}")
+    resource = files("tools.benchmark").joinpath("schemas", filename)
+    return sha256_bytes(resource.read_bytes())
 
 
 def _format_error(error: JsonSchemaValidationError) -> str:
@@ -302,6 +319,208 @@ def _validate_compile_sample_evidence(
         raise ValidationError(f"{label} carries remarks without a configured remarks output")
 
 
+def _attempt_has_execution_evidence(attempt: Mapping[str, Any]) -> bool:
+    return bool(
+        attempt["cache_hit"]
+        or any(
+            attempt[field] is not None
+            for field in (
+                "artifact_sha256",
+                "binary_sha256",
+                "remarks_sha256",
+                "remarks_event_count",
+                "analysis_sha256",
+                "compile",
+                "compile_statistics",
+                "link",
+                "analyze",
+            )
+        )
+        or attempt["compile_samples"]
+        or attempt["measurements"]
+        or attempt["samples"]
+    )
+
+
+def _typed_cancellation_observed(attempt: Mapping[str, Any]) -> bool:
+    return any(
+        phase is not None and phase["status"] == "cancelled"
+        for phase in (attempt["compile"], attempt["link"], attempt["analyze"])
+    ) or any(sample["status"] == "cancelled" for sample in attempt["compile_samples"]) or any(
+        sample["status"] == "cancelled" for sample in attempt["samples"]
+    )
+
+
+def validate_attempt_cancellation_state(
+    attempt: Mapping[str, Any],
+    *,
+    label: str,
+) -> None:
+    """Validate one normalized attempt's typed cancellation state machine.
+
+    This semantic contract is intentionally shared by schema validation and the
+    formal-ranking gate.  Journal validation independently proves the physical
+    event sequence; normalized evidence must still describe exactly one logical
+    terminal cancellation, with successful predecessors and no later stage.
+    A cancelled compile aggregate and its final cancelled cold sample are one
+    logical compile terminal because the aggregate is derived from that sample.
+    """
+    cancelled = attempt["status"] == "cancelled"
+    reason = attempt["cancellation_reason"]
+    if cancelled != (reason is not None):
+        raise ValidationError(f"{label} cancellation status/reason binding is inconsistent")
+    typed_observation = _typed_cancellation_observed(attempt)
+    if not cancelled:
+        if typed_observation:
+            raise ValidationError(
+                f"{label} non-cancelled attempt contains a typed cancelled stage"
+            )
+        return
+    has_evidence = _attempt_has_execution_evidence(attempt)
+    if reason == "execution_interrupted" and has_evidence:
+        raise ValidationError(
+            f"{label} pre-commit interruption cannot carry normalized execution evidence"
+        )
+    if reason == "execution_interrupted":
+        return
+
+    compile_phase = attempt["compile"]
+    compile_samples = attempt["compile_samples"]
+    link_phase = attempt["link"]
+    analyze_phase = attempt["analyze"]
+    run_samples = attempt["samples"]
+
+    if reason == "infrastructure_failure":
+        if typed_observation:
+            raise ValidationError(
+                f"{label} infrastructure failure cannot masquerade as a typed scheduler cancellation"
+            )
+        phase_statuses = {
+            phase["status"]
+            for phase in (attempt["compile"], attempt["link"], attempt["analyze"])
+            if phase is not None
+        }
+        compile_statuses = {sample["status"] for sample in attempt["compile_samples"]}
+        sample_statuses = {sample["status"] for sample in attempt["samples"]}
+        if (
+            phase_statuses - {"ok"}
+            or compile_statuses - {"ok"}
+            or sample_statuses - {"passed"}
+        ):
+            raise ValidationError(
+                f"{label} infrastructure failure prefix contains a real stage failure"
+            )
+        if compile_phase is None and has_evidence:
+            raise ValidationError(
+                f"{label} infrastructure failure prefix has evidence without a committed compile stage"
+            )
+        if not attempt["diagnostic"]:
+            raise ValidationError(
+                f"{label} infrastructure failure lacks its original diagnostic"
+            )
+        return
+
+    if reason != "scheduler_cancelled":
+        raise ValidationError(f"{label} has an unknown cancellation reason")
+
+    phase_statuses = {
+        phase["status"]
+        for phase in (compile_phase, link_phase, analyze_phase)
+        if phase is not None
+    }
+    compile_statuses = [sample["status"] for sample in compile_samples]
+    run_statuses = [sample["status"] for sample in run_samples]
+    if (
+        phase_statuses - {"ok", "cancelled"}
+        or set(compile_statuses) - {"ok", "cancelled"}
+        or set(run_statuses) - {"passed", "cancelled"}
+    ):
+        raise ValidationError(
+            f"{label} scheduler cancellation contains a real stage failure"
+        )
+
+    if compile_phase is None:
+        if has_evidence:
+            raise ValidationError(
+                f"{label} scheduler cancellation has evidence without a committed compile stage"
+            )
+        return
+
+    compile_status = compile_phase["status"]
+    if compile_status == "cancelled":
+        if (
+            not compile_statuses
+            or compile_statuses[-1] != "cancelled"
+            or any(status != "ok" for status in compile_statuses[:-1])
+        ):
+            raise ValidationError(
+                f"{label} cancelled compile aggregate differs from its terminal cold sample"
+            )
+        if (
+            link_phase is not None
+            or analyze_phase is not None
+            or run_samples
+            or attempt["binary_sha256"] is not None
+            or attempt["analysis_sha256"] is not None
+        ):
+            raise ValidationError(
+                f"{label} scheduler cancellation has evidence after its compile terminal"
+            )
+        return
+
+    if compile_status != "ok":
+        raise ValidationError(
+            f"{label} scheduler cancellation contains a real compile failure"
+        )
+    if not compile_statuses or any(status != "ok" for status in compile_statuses):
+        raise ValidationError(
+            f"{label} scheduler cancellation lacks an all-successful cold-compile prefix"
+        )
+
+    if link_phase is not None:
+        if link_phase["status"] == "cancelled":
+            if (
+                analyze_phase is not None
+                or run_samples
+                or attempt["binary_sha256"] is not None
+                or attempt["analysis_sha256"] is not None
+            ):
+                raise ValidationError(
+                    f"{label} scheduler cancellation has evidence after its link terminal"
+                )
+            return
+        if link_phase["status"] != "ok":
+            raise ValidationError(
+                f"{label} scheduler cancellation contains a real link failure"
+            )
+
+    if analyze_phase is not None:
+        if analyze_phase["status"] == "cancelled":
+            if run_samples or attempt["analysis_sha256"] is not None:
+                raise ValidationError(
+                    f"{label} scheduler cancellation has evidence after its analyzer terminal"
+                )
+            return
+        if analyze_phase["status"] != "ok":
+            raise ValidationError(
+                f"{label} scheduler cancellation contains a real analyzer failure"
+            )
+
+    if run_samples:
+        if run_statuses[-1] != "cancelled" or any(
+            status != "passed" for status in run_statuses[:-1]
+        ):
+            raise ValidationError(
+                f"{label} scheduler cancellation runtime terminal is not the unique final sample"
+            )
+        return
+
+    if has_evidence:
+        raise ValidationError(
+            f"{label} scheduler cancellation with execution evidence lacks a typed terminal stage"
+        )
+
+
 def _validate_run_semantics(document: dict[str, Any]) -> None:
     if document["configuration_sha256"] != sha256_json(
         {"configuration": document["configuration"], "provenance": document["provenance"]}
@@ -450,6 +669,30 @@ def _validate_run_semantics(document: dict[str, Any]) -> None:
             raise ValidationError(
                 f"case {case['case_id']} attempt start/configuration binding is inconsistent"
             )
+        if has_attempt_configuration and case["attempt_configuration_sha256"] != document[
+            "configuration_sha256"
+        ]:
+            raise ValidationError(
+                f"case {case['case_id']} current attempt configuration differs from the run"
+            )
+        has_journal_sha256 = case["attempt_journal_sha256"] is not None
+        has_journal_count = case["attempt_journal_event_count"] is not None
+        if has_journal_sha256 != has_journal_count:
+            raise ValidationError(
+                f"case {case['case_id']} journal hash/count binding is inconsistent"
+            )
+        if not has_attempt_start and has_journal_sha256:
+            raise ValidationError(f"case {case['case_id']} unstarted attempt carries a journal")
+        if case["status"] == "pending" and has_journal_sha256:
+            raise ValidationError(f"case {case['case_id']} pending attempt carries a terminal journal")
+        if case["status"] not in {"pending", "cancelled"} and not has_journal_sha256:
+            raise ValidationError(
+                f"case {case['case_id']} terminal attempt lacks its journal commitment"
+            )
+        if case["status"] == "cancelled" and has_attempt_start and not has_journal_sha256:
+            raise ValidationError(
+                f"case {case['case_id']} started cancellation lacks its journal commitment"
+            )
         if case["status"] not in {"pending", "cancelled"} and not has_attempt_start:
             raise ValidationError(
                 f"case {case['case_id']} completed attempt lacks its start/configuration binding"
@@ -464,6 +707,8 @@ def _validate_run_semantics(document: dict[str, Any]) -> None:
                     "remarks_sha256",
                     "remarks_event_count",
                     "analysis_sha256",
+                    "attempt_journal_sha256",
+                    "attempt_journal_event_count",
                     "compile",
                     "compile_statistics",
                     "link",
@@ -478,9 +723,25 @@ def _validate_run_semantics(document: dict[str, Any]) -> None:
                 f"case {case['case_id']} unstarted attempt carries execution evidence"
             )
         for attempt in case["attempts"]:
+            if attempt["configuration_sha256"] != document["configuration_sha256"]:
+                raise ValidationError(
+                    f"case {case['case_id']} archived attempt configuration differs from the run"
+                )
             if attempt["failure_summary"] != _ATTEMPT_FAILURE_SUMMARIES[attempt["status"]]:
                 raise ValidationError(
                     f"case {case['case_id']} archived attempt summary does not match its failure status"
+                )
+            expected_raw_identity_sha256 = raw_attempt_identity_sha256(
+                run_id=document["run_id"],
+                manifest_sha256=document["manifest_sha256"],
+                case_id=case["case_id"],
+                attempt_index=attempt["attempt_index"],
+                started_at=attempt["started_at"],
+                configuration_sha256=attempt["configuration_sha256"],
+            )
+            if attempt["raw_attempt_identity_sha256"] != expected_raw_identity_sha256:
+                raise ValidationError(
+                    f"case {case['case_id']} attempt {attempt['attempt_index']} raw identity digest differs"
                 )
             for index, sample in enumerate(attempt["compile_samples"]):
                 _validate_compile_sample_evidence(
@@ -491,29 +752,20 @@ def _validate_run_semantics(document: dict[str, Any]) -> None:
                         f"cold sample {index}"
                     ),
                 )
-            attempt_cancelled_stage = any(
-                phase is not None and phase["status"] == "cancelled"
-                for phase in (attempt["compile"], attempt["link"], attempt["analyze"])
-            ) or any(sample["status"] == "cancelled" for sample in attempt["samples"])
-            if attempt_cancelled_stage and attempt["status"] != "cancelled":
-                raise ValidationError(
-                    f"case {case['case_id']} attempt {attempt['attempt_index']} "
-                    "scheduler cancellation is misclassified"
-                )
+            validate_attempt_cancellation_state(
+                attempt,
+                label=f"case {case['case_id']} attempt {attempt['attempt_index']}",
+            )
         for index, sample in enumerate(case["compile_samples"]):
             _validate_compile_sample_evidence(
                 sample,
                 remarks_configured=remarks_configured,
                 label=f"case {case['case_id']} cold sample {index}",
             )
-        cancelled_stage = any(
-            phase is not None and phase["status"] == "cancelled"
-            for phase in (case["compile"], case["link"], case["analyze"])
-        ) or any(sample["status"] == "cancelled" for sample in case["samples"])
-        if cancelled_stage and case["status"] != "cancelled":
-            raise ValidationError(
-                f"case {case['case_id']} scheduler cancellation is misclassified as {case['status']}"
-            )
+        validate_attempt_cancellation_state(
+            case,
+            label=f"case {case['case_id']} current attempt",
+        )
         if case["source_group"] != f"sg-{case['source_sha256']}":
             raise ValidationError(f"case {case['case_id']} has inconsistent source_group")
         if configuration["timeout_policy"] == "fixed" and not math.isclose(
@@ -820,6 +1072,10 @@ def _validate_cross_suite_audit_semantics(document: dict[str, Any]) -> None:
 
 
 def _validate_campaign_plan_semantics(document: dict[str, Any]) -> None:
+    if document["run_record_schema_sha256"] != schema_sha256("run-record.v1"):
+        raise ValidationError(
+            "campaign run-record schema binding differs from the active benchmark schema"
+        )
     finalized = document["parent_plan_sha256"] is not None
     if finalized != (document["promotion_status_sha256"] is not None):
         raise ValidationError("campaign parent-plan and promotion-status hashes must be present together")
@@ -875,7 +1131,14 @@ def _validate_campaign_plan_semantics(document: dict[str, Any]) -> None:
     for baseline_id, (profile_id, tool, version, optimization) in expected_reference.items():
         item = reference_baselines[baseline_id]
         expected_profile_sha256 = sha256_json(
-            {"compiler_baseline": baseline_id, "flags": [optimization]}
+            {
+                "schema": "reference-frontend-profile.v1",
+                "compiler_baseline": baseline_id,
+                "compiler_argv_sha256": item["compiler_argv_sha256"],
+                "source_adapter_sha256": document["reference_toolchain"]["source_adapter_sha256"],
+                "builtin_header_sha256": document["reference_toolchain"]["builtin_header_sha256"],
+                "image_id": document["reference_toolchain"]["image_id"],
+            }
         )
         if (
             item["profile_id"] != profile_id

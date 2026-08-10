@@ -53,14 +53,21 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def sha256_artifact(path: Path) -> str:
-    """Hash a compiler binary or class tree without recording its external path."""
+    """Hash a compiler binary or class tree without recording its external path.
+
+    Tree entries are normalized to POSIX relative paths before sorting.  The
+    ordering key is the UTF-8 byte sequence of that normalized path; unlike
+    ``Path`` ordering, this contract is independent of host path case-folding.
+    UTF-8 byte order preserves the previous POSIX code-point order, so existing
+    Linux/WSL artifact digests remain stable.
+    """
     resolved = path.resolve(strict=True)
     if resolved.is_file():
         return sha256_file(resolved)
     if not resolved.is_dir():
         raise ValidationError("compiler artifact must be a regular file or directory")
     entries: list[dict[str, Any]] = []
-    for item in sorted(resolved.rglob("*")):
+    for item in resolved.rglob("*"):
         if item.is_symlink():
             raise ValidationError("compiler artifact trees must not contain symbolic links")
         if item.is_file():
@@ -75,7 +82,51 @@ def sha256_artifact(path: Path) -> str:
             raise ValidationError("compiler artifact trees must contain only regular files/directories")
     if not entries:
         raise ValidationError("compiler artifact directory is empty")
+    entries.sort(key=lambda entry: entry["path"].encode("utf-8"))
     return sha256_json({"tree_version": 1, "files": entries})
+
+
+def raw_attempt_identity(
+    *,
+    run_id: str,
+    manifest_sha256: str,
+    case_id: str,
+    attempt_index: int,
+    started_at: str,
+    configuration_sha256: str,
+) -> dict[str, Any]:
+    """Return the portable identity shared by normalized and raw attempt evidence."""
+    return {
+        "schema_version": "benchmark-raw-attempt.v1",
+        "run_id": run_id,
+        "manifest_sha256": manifest_sha256,
+        "case_id": case_id,
+        "attempt_index": attempt_index,
+        "started_at": started_at,
+        "configuration_sha256": configuration_sha256,
+    }
+
+
+def raw_attempt_identity_sha256(
+    *,
+    run_id: str,
+    manifest_sha256: str,
+    case_id: str,
+    attempt_index: int,
+    started_at: str,
+    configuration_sha256: str,
+) -> str:
+    """Hash a raw-attempt identity using the canonical JSON contract."""
+    return sha256_json(
+        raw_attempt_identity(
+            run_id=run_id,
+            manifest_sha256=manifest_sha256,
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+    )
 
 
 def file_ref(path: Path, relative_to: Path) -> dict[str, Any]:

@@ -6,7 +6,11 @@ from typing import Any, Mapping
 
 from .errors import ConfigurationError, ValidationError
 from .metrics import rv64gc_qemu_v1
-from .schema import load_and_validate, validate_document
+from .schema import (
+    load_and_validate,
+    validate_attempt_cancellation_state,
+    validate_document,
+)
 from .stats import (
     bootstrap_geometric_mean_ci,
     case_geometric_mean,
@@ -17,7 +21,7 @@ from .stats import (
     metric_spec,
     source_group_geometric_mean,
 )
-from .util import sha256_json, utc_now
+from .util import raw_attempt_identity_sha256, sha256_json, utc_now
 
 
 def _load_run(path: Path) -> dict[str, Any]:
@@ -27,22 +31,59 @@ def _load_run(path: Path) -> dict[str, Any]:
     return run
 
 
-def _require_no_historical_attempts(
+def _require_eligible_attempt_history(
     run: Mapping[str, Any],
     *,
     context: str,
 ) -> None:
-    historical_attempts = [
-        (case["case_id"], attempt["attempt_index"], attempt["status"])
-        for case in run["cases"]
-        for attempt in case["attempts"]
-    ]
-    if historical_attempts:
-        case_id, attempt_index, status = historical_attempts[0]
-        raise ValidationError(
-            f"{context} rejects profiles with historical failed attempts: "
-            f"case={case_id}, attempt={attempt_index}, status={status}"
-        )
+    if run["configuration"]["retry_failures"]:
+        raise ValidationError(f"{context} forbids retry_failures")
+    for case in run["cases"]:
+        if case.get("attempt_started_at") is not None and case.get(
+            "attempt_configuration_sha256"
+        ) != run.get("configuration_sha256"):
+            raise ValidationError(
+                f"{context} rejects current attempt configuration drift: case={case['case_id']}"
+            )
+        for attempt in case["attempts"]:
+            label = f"case={case['case_id']}, attempt={attempt['attempt_index']}"
+            if (
+                attempt["status"] != "cancelled"
+                or attempt["failure_summary"] != "scheduler_cancelled"
+                or attempt["cancellation_reason"]
+                not in {"scheduler_cancelled", "execution_interrupted"}
+            ):
+                raise ValidationError(
+                    f"{context} rejects historical failed attempt: {label}, "
+                    f"status={attempt['status']}"
+                )
+            if attempt["configuration_sha256"] != run["configuration_sha256"]:
+                raise ValidationError(
+                    f"{context} rejects cancellation history with configuration drift: {label}"
+                )
+            if (
+                attempt.get("attempt_journal_sha256") is None
+                or attempt.get("attempt_journal_event_count") is None
+            ):
+                raise ValidationError(
+                    f"{context} rejects cancellation history without a journal commitment: {label}"
+                )
+            expected_identity_sha256 = raw_attempt_identity_sha256(
+                run_id=run["run_id"],
+                manifest_sha256=run["manifest_sha256"],
+                case_id=case["case_id"],
+                attempt_index=attempt["attempt_index"],
+                started_at=attempt["started_at"],
+                configuration_sha256=attempt["configuration_sha256"],
+            )
+            if attempt["raw_attempt_identity_sha256"] != expected_identity_sha256:
+                raise ValidationError(
+                    f"{context} rejects cancellation history with untraceable raw identity: {label}"
+                )
+            validate_attempt_cancellation_state(
+                attempt,
+                label=f"{context} {label}",
+            )
 
 
 def _require_formal_measurement(
@@ -142,7 +183,7 @@ def _require_formal_measurement(
             )
         if configuration["remarks_file_sha256"] is None:
             raise ValidationError("ACCELA ranking requires configured optimization remarks")
-    _require_no_historical_attempts(run, context="formal optimization ranking")
+    _require_eligible_attempt_history(run, context="formal optimization ranking")
     runtime_ids = {preset["primary_metric_id"]} | {
         item["metric_id"] for item in preset["additional"] if item["source"] == "file"
     }

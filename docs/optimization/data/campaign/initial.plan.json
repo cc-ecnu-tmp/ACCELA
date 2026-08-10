@@ -75,35 +75,41 @@
     "accela_jdk_version": "21.0.11",
     "baselines": [
       {
+        "compiler_argv_sha256": "e600bab15333c60d4fa6a1e1b250866f400d4649794d0b643a3cc96380474c12",
         "compiler_baseline": "gcc_13_3_o2",
         "compiler_command_sha256": "6d295873303c9603461375c4186a2f31297108f4f4a85db3a83adf8c5a4ff7cb",
         "compiler_executable": "sh",
         "optimization": "-O2",
         "profile_id": "gcc-13.3-o2",
-        "profile_sha256": "4d06d4b816af821fa0ca86ad8b9b8de59b5b3b8300cb43ebe87b178a7afe29df",
+        "profile_sha256": "6f6cdc1cbe784016c6ea54ec608f683aee4a2445f9ad63e5d6208827ba0af4d0",
         "tool": "riscv-gcc",
         "version": "13.3.0"
       },
       {
+        "compiler_argv_sha256": "0273d7ff3f99968cdd649def06452b06e4a53b5de84d428aea87de021c1e8db8",
         "compiler_baseline": "clang_18_o3",
         "compiler_command_sha256": "460ad659c3c71d35026b637e085c2a055ab4c25950378bfe80ba8c3323d55c1e",
         "compiler_executable": "sh",
         "optimization": "-O3",
         "profile_id": "clang-18-o3",
-        "profile_sha256": "cf167a53c4e164fbe7e60c82f16b858d1c472802181c9177cfee362cf4a24281",
+        "profile_sha256": "3d1182f943c81a0f3a710d9a71435d14f4eca207758cbdce4e8983ea7bc93628",
         "tool": "clang",
         "version": "18.1.3"
       }
     ],
+    "builtin_header_sha256": "d84eeb701f41d59484ff6df30c19390d015cb1edc5fe3a1acbc56d45f6b552fa",
     "common_tool_versions": {
       "bare-metal-linker": "15.2.0",
       "glib": "2.88.3",
       "python": "3.14.6",
       "qemu-system-riscv64": "11.0.3"
     },
-    "compile_driver_sha256": "1afe08bbffb1bc979db3cfcf136cdec4b76b080da89f49dd351624ab0e192a88",
-    "snapshot_sha256": "e2262e32dc8e4ea96600656eb61bb93fa6b5c6816d4b1184f751eff6fd1b61a5"
+    "compile_driver_sha256": "dc172807182a4e701f57d8ddc60d4569b47ba75572d64673490aec3261bd215f",
+    "image_id": "sha256:fe44723405d667db6f4eef5375717cae5fe68fe67313a525037e452fdab1d728",
+    "snapshot_sha256": "8b3b0b41e3116a32263a290a417994f02d8d5fc2769e4a3ce95af0726f5dc266",
+    "source_adapter_sha256": "c6f612e79b09a96eefb606332f26b488476288e9149980d163d0dc47e8d31a09"
   },
+  "run_record_schema_sha256": "c25dca259dcf770924dff426f6b6a21d8e24c7d033a35a5891f2173ce3bb73ad",
   "schema_version": "campaign-plan.v1",
   "suites": [
     {
@@ -247,14 +253,15 @@
       "phase_id": "baseline_validation",
       "profile_id": "gcc-13.3-o2",
       "profile_path": null,
-      "profile_sha256": "4d06d4b816af821fa0ca86ad8b9b8de59b5b3b8300cb43ebe87b178a7afe29df",
+      "profile_sha256": "6f6cdc1cbe784016c6ea54ec608f683aee4a2445f9ad63e5d6208827ba0af4d0",
       "reference_compiler_contract": {
+        "compiler_argv_sha256": "e600bab15333c60d4fa6a1e1b250866f400d4649794d0b643a3cc96380474c12",
         "compiler_baseline": "gcc_13_3_o2",
         "compiler_command_sha256": "6d295873303c9603461375c4186a2f31297108f4f4a85db3a83adf8c5a4ff7cb",
         "compiler_executable": "sh",
         "optimization": "-O2",
         "profile_id": "gcc-13.3-o2",
-        "profile_sha256": "4d06d4b816af821fa0ca86ad8b9b8de59b5b3b8300cb43ebe87b178a7afe29df",
+        "profile_sha256": "6f6cdc1cbe784016c6ea54ec608f683aee4a2445f9ad63e5d6208827ba0af4d0",
         "tool": "riscv-gcc",
         "version": "13.3.0"
       },
@@ -282,14 +289,15 @@
       "phase_id": "baseline_validation",
       "profile_id": "clang-18-o3",
       "profile_path": null,
-      "profile_sha256": "cf167a53c4e164fbe7e60c82f16b858d1c472802181c9177cfee362cf4a24281",
+      "profile_sha256": "3d1182f943c81a0f3a710d9a71435d14f4eca207758cbdce4e8983ea7bc93628",
       "reference_compiler_contract": {
+        "compiler_argv_sha256": "0273d7ff3f99968cdd649def06452b06e4a53b5de84d428aea87de021c1e8db8",
         "compiler_baseline": "clang_18_o3",
         "compiler_command_sha256": "460ad659c3c71d35026b637e085c2a055ab4c25950378bfe80ba8c3323d55c1e",
         "compiler_executable": "sh",
         "optimization": "-O3",
         "profile_id": "clang-18-o3",
-        "profile_sha256": "cf167a53c4e164fbe7e60c82f16b858d1c472802181c9177cfee362cf4a24281",
+        "profile_sha256": "3d1182f943c81a0f3a710d9a71435d14f4eca207758cbdce4e8983ea7bc93628",
         "tool": "clang",
         "version": "18.1.3"
       },

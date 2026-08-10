@@ -96,14 +96,29 @@ sh scripts/build-qemu-plugins.sh
 
 参考前端镜像由 `tools/benchmark/reference-toolchain.Dockerfile` 构建，并在
 `data/toolchain-snapshot.json` 中固定 image tag 和 ID。`scripts/reference-compile.sh`
-默认从该快照读取两者；`ACCELA_TOOLCHAIN_SNAPSHOT` 可改用另一份已审计快照。
-只有 `ACCELA_REFERENCE_IMAGE` 与 `ACCELA_REFERENCE_IMAGE_ID` 同时显式设置时才
-不读取快照。脚本会核验 tag 实际 ID；不匹配时失败，不会改用主机上的其他
-GCC/Clang。快照同时记录 compile driver 的仓库相对路径和字节哈希；formal run
-以该快照作为 compiler artifact，因而同时绑定 driver、镜像和版本。
+只接受仓库中的这份固定快照。`ACCELA_TOOLCHAIN_SNAPSHOT`、`PYTHON` 以及镜像
+tag/ID 环境变量都会被显式拒绝。launcher 固定以 `python3 -I` 隔离模式运行，
+因此忽略 `PYTHONPATH`/`PYTHONHOME`；启动后用 `platform.python_version()` 与快照中
+规范化的三段式 Python 版本逐字匹配，漂移时在调用 Docker 前失败。其 PATH 解析
+结果和版本证据由 campaign preflight 绑定。脚本按 native `docker`、WSL
+`docker.exe` 的顺序先执行 daemon readiness；只有已分类的 transport/unreachable
+失败才尝试下一候选。首个 reachable daemon 一旦出现镜像缺失、inspect 格式错误
+或 ID 不符就立即失败，绝不跨 daemon 搜索另一份镜像；容器始终用精确 image ID
+启动。stderr 记录规范化的 `python_mode`/版本、`chosen_cli`/server version、候选
+transport 失败和 compiler argv/hash，原始本地 endpoint 诊断不进入提交记录。
+formal run 以同一仓库快照作为 compiler artifact，因而同时绑定 driver、adapter、
+header、完整 frontend argv、launcher policy、镜像和版本。launcher policy 只有
+一个代码常量；reference contract loader 与 campaign toolchain loader 都和快照
+逐字段精确比较，缺失或漂移会在编译/计划生成前失败，不能只靠文档或测试声明。
+目录型 compiler artifact 先把每个文件名规范化为 POSIX 相对路径，再按该路径的
+UTF-8 字节序排序后计算 tree hash；该顺序不依赖 Windows 路径大小写折叠，并与
+既有 Linux/WSL Unicode code-point 顺序一致。目录中出现符号链接或非常规文件会
+立即失败。仓库 `.gitattributes` 同时把所有 Git 文本固定为 LF；因此 Windows 的
+`core.autocrlf` 不会改变 schema、snapshot、plan、wrapper、adapter 或 header 的
+物理哈希。评测测试会同时核验 Git `eol` 属性和这些 hash-bound 文件的实际字节。
 
 ```sh
-docker image inspect accela/reference-toolchain:2026.08.09 --format '{{.Id}}'
+docker image inspect accela/reference-toolchain:2026.08.10-cxx1 --format '{{.Id}}'
 ```
 
 清洁室语料必须能由固定生成器逐字节重建：
@@ -574,13 +589,35 @@ Clang 基线完整复用上面的 manifest、protocol、assets、link、runner�
 最终 artifact、remarks、stdout/stderr 都保存在本次 attempt 目录，直接用于
 链接，既不读取也不发布共享编译缓存。`--reuse-compile-cache` 仅用于非正式的
 `reusable_cache_v2` 调试；其键绑定源码、输入、编译器、profile、工具链和测量
-协议哈希，启用后不得进入正式收益排名。失败重试保留 attempt history，不能
-吞掉原错误。
+协议哈希，启用后不得进入正式收益排名。`--retry-failures` 是非正式诊断能力，
+在 B1 与正式收益门中始终禁止；它会保留 attempt history，不能吞掉原错误。
+retry policy 属于不可变 measurement configuration，必须在首次创建 run 时声明；
+已有 run 不能通过切换该开关重绑配置或重新解释历史 attempt。
 
 GCC 13.3 `-O2` 和 Clang 18 `-O3` 对照通过 `scripts/reference-compile.sh`，共享
-RV64GC、LP64D、medany、显式整数 wrap 和严格 FP 选项。它们仍是本地代理，
-不是官方平台分数。二进制静态/ELF 指标包含共享代理 runtime，比较时必须使用
-同一 runtime 与链接协议。
+RV64GC、LP64D、medany、显式整数 wrap 和严格 FP 选项。SysY 的 file-scope
+`const int` 是合法数组维度，不能直接交给 C frontend；固定 adapter 因此把
+源码送入 C++17 frontend，并在轻量词法边界内完成三项 SysY 语义适配：无碰撞
+重命名 C++17 额外保留词、把 `IntConst` 规范化为有符号 32 位常量表达式、把
+`FloatConst`（含十六进制浮点）规范化为 binary32。它不是第二个 SysY parser：
+只识别标识符、数值、注释及规范允许的运算符/分隔符，并拒绝引号、预处理指令、
+条件/位运算、递增递减、复合赋值、shift 和未知标点。注释字节与物理行数不变；
+越出 32 位 bit-pattern 范围或词法不完整的常量立即失败。所有正式语料必须先通过
+manifest 完整性检查与 ACCELA 的编译、执行、逐字节输出 correctness gate；adapter
+及 GCC/Clang 成功编译本身不构成 SysY 合法性证明。强制 header
+用 C linkage 固定 `main` 和 runtime 符号；数组 I/O 参数使用 ABI 等价的
+`void *`，保留 SysY 多维数组首地址语义。每次编译在 stderr 写入 frontend argv、
+adapter 与 header 的 SHA-256；完整 argv 同时冻结在 toolchain snapshot 中。
+wrapper 从已重算哈希且与内置 SSOT 一致的 snapshot argv 逐参数执行，不会执行
+仅有声明哈希的另一条命令。adapter 使用固定临时文件名；正式 runner 的每次冷
+编译都有私有 output directory。直接调用 wrapper 时，同一 output directory
+不得并发运行两个编译；冲突会 fail-fast，不会覆盖另一任务的临时源码或 argv。
+reference raw stderr 中的 `ACCELA_REFERENCE_PYTHON`、
+`ACCELA_REFERENCE_DOCKER_CANDIDATE`、`ACCELA_REFERENCE_DOCKER` 和
+`ACCELA_REFERENCE_COMMAND` 是 launcher 选择与身份的审计记录；性能排名不得把
+某个 daemon 的失败替换成另一 daemon 上同 tag 但不同 ID 的产物。
+它们仍是本地代理，不是官方平台分数。二进制静态/ELF 指标包含共享代理 runtime，
+比较时必须使用同一 runtime 与链接协议。
 
 ### B2 全量单项消融
 
@@ -683,8 +720,30 @@ run，而不是覆盖历史证据。
 每个 run 会同时持有 output target 与共享 state identity 的非等待 OS 独占锁；
 重复 orchestrator 必须立即失败，不能并发改写同一规范化记录或原始目录。上述
 run 锁文件永久保留，存活性只由 OS 锁判断，不按 mtime 或 PID 删除所谓 stale lock。每个已
-启动 attempt 的原始文件写入独立的 `attempt-XXXX` 目录，resume/retry 只能创建
-下一编号；规范化 attempt 通过编号、开始时间和配置哈希与原始 identity 对应。
+启动 attempt 的原始文件写入独立的 `attempt-XXXX` 目录；每个 compile、link、
+analyze、`run-N` 都必须按顺序先持久化 phase-start，再执行子进程，并在合并
+normalized record 前写入 hash-chained phase-result。terminal event 绑定完整 case
+结果以及所有 raw 文件的相对路径、SHA-256 和字节数。事件采用 create-if-absent
+原子发布；POSIX 同时 fsync 文件和目录，Windows 使用 write-through 发布，竞态
+写入不能覆盖已有证据。resume/retry 只能创建下一编号；规范化 attempt 通过编号、
+开始时间、不可变配置哈希、journal commitment 和 `raw_attempt_identity_sha256`
+与原始 identity 对应。resume 会精确枚举 normalized 与 physical attempts，并逐项
+核验 identity、journal hash chain、stage 顺序和 terminal/raw inventory；missing、
+orphan、碰撞或篡改立即失败。已经启动的 attempt 绝不补造 identity 或 journal。
+只有 journal 为空且目录除 identity/journal metadata 外无任何 raw evidence，才可
+归类为 typed `execution_interrupted`。任何 phase/raw evidence 没有可验证 terminal
+都属于不可恢复的 infrastructure failure。若 worker 在 phase-result 已持久化、但结果
+返回 scheduler 前异常，scheduler 必须从 journal 的最后一个已提交 case prefix 构造
+`infrastructure_failure` terminal：只允许保留该 prefix 中已成功阶段的只读证据，完整
+绑定 raw inventory，并记录原始异常类型与脱敏诊断；不得从内存中的空 skeleton 补造、
+扩展或重分类证据。此 terminal 可用于定位 crash window，但不能 resume，且 B1/正式
+收益门始终拒绝该 history。断点续跑不会把所有历史一概视为重试：正式
+门仅接受同一配置下、identity 可追溯的 `scheduler_cancelled` 或
+`execution_interrupted` 历史。前者必须由 typed process/stage cancellation 证明，
+或明确表示尚未进入任何 stage；后者不得携带已提交的执行或 metric 证据。诊断
+字符串不参与分类。compile/link/analyze/runtime/correctness/timeout/确定性失败，
+以及 `infrastructure_failure`，都永久取消该 run 的正式排名资格；不得用后续成功
+attempt 洗掉。
 同一 run 只允许从一个 OS 环境启动；Windows host 与 WSL 对同一文件的跨内核锁
 互操作尚未形成验收证据。
 
@@ -808,7 +867,10 @@ Top 5 后才扩展。72 小时截止时，每个缺失项必须保留 run/task I
 依赖/晋级原因，不能静默删除。
 
 初始计划绑定全部七类 manifest、singleton matrix、paired Oracle plan、两份测量
-协议和 reference toolchain snapshot。它会
+协议、reference toolchain snapshot，以及 workspace 中实际
+`tools/benchmark/schemas/run-record.v1.json` 的 SHA-256。生成、finalize、status、
+next/task query 和 schema semantic gate 都会将该值与当前 active schema 交叉核验；
+schema 漂移必须重生计划，不能让旧 run-record contract 静默延续。它会
 产生 149 个 task：前 12 小时 5 个、B2 阶段 24 个、B3 晋级阶段 23 个、最终
 阶段 97 个；`final_pair_families` 初始为空。
 

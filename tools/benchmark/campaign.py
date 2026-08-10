@@ -7,10 +7,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from .ablation import _require_formal_measurement, _require_no_historical_attempts
+from .ablation import _require_eligible_attempt_history, _require_formal_measurement
 from .errors import ConfigurationError, ValidationError
 from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
-from .schema import load_and_validate, validate_document
+from .reference_source import (
+    REFERENCE_BASELINES,
+    REFERENCE_BUILTIN_HEADER_PATH,
+    REFERENCE_COMMON_SEMANTICS,
+    REFERENCE_FRONTEND_ARGV,
+    REFERENCE_LAUNCHER_CONTRACT,
+    REFERENCE_SOURCE_ADAPTER_PATH,
+)
+from .schema import load_and_validate, schema_sha256, validate_document
 from .util import safe_slug, sha256_file, sha256_json, utc_now, validate_relative_path
 
 
@@ -22,30 +30,15 @@ _PHASES = (
     ("final_validation", 12 * 60 * 60),
 )
 _TOTAL_BUDGET_SECONDS = 72 * 60 * 60
+_RUN_RECORD_SCHEMA_RELATIVE_PATH = Path("tools/benchmark/schemas/run-record.v1.json")
 
-_REFERENCE_BASELINES = {
-    "gcc_13_3_o2": {
-        "profile_id": "gcc-13.3-o2",
-        "frontend": "gcc",
-        "tool": "riscv-gcc",
-        "version": "13.3.0",
-        "optimization": "-O2",
-    },
-    "clang_18_o3": {
-        "profile_id": "clang-18-o3",
-        "frontend": "clang",
-        "tool": "clang",
-        "version": "18.1.3",
-        "optimization": "-O3",
-    },
+_REFERENCE_BASELINES = REFERENCE_BASELINES
+_REFERENCE_COMMON_SEMANTICS = list(REFERENCE_COMMON_SEMANTICS)
+_REFERENCE_SOURCE_ADAPTER = REFERENCE_SOURCE_ADAPTER_PATH
+_REFERENCE_BUILTIN_HEADER = REFERENCE_BUILTIN_HEADER_PATH
+_REFERENCE_FRONTEND_ARGV = {
+    frontend: list(arguments) for frontend, arguments in REFERENCE_FRONTEND_ARGV.items()
 }
-_REFERENCE_COMMON_SEMANTICS = [
-    "-fwrapv",
-    "-fno-fast-math",
-    "-ffp-contract=off",
-    "-ffreestanding",
-    "-fno-builtin",
-]
 _HOTBLOCK_METRIC_SPECS = [
     {
         "metric_id": item["metric_id"],
@@ -55,6 +48,34 @@ _HOTBLOCK_METRIC_SPECS = [
     }
     for item in cache_hotblock_metrics_v1()
 ]
+
+
+def _workspace_run_record_schema_sha256(workspace_root: Path) -> str:
+    root = workspace_root.resolve(strict=True)
+    if not root.is_dir():
+        raise ConfigurationError("campaign workspace root must be a directory")
+    physical = (root / _RUN_RECORD_SCHEMA_RELATIVE_PATH).resolve(strict=True)
+    try:
+        physical.relative_to(root)
+    except ValueError as exc:
+        raise ValidationError("campaign run-record schema escapes the workspace") from exc
+    if not physical.is_file() or physical.is_symlink():
+        raise ValidationError("campaign run-record schema is not a physical regular file")
+    observed = sha256_file(physical)
+    if observed != schema_sha256("run-record.v1"):
+        raise ValidationError(
+            "campaign workspace run-record schema differs from the active benchmark schema"
+        )
+    return observed
+
+
+def _require_run_record_schema_binding(plan: Mapping[str, Any]) -> None:
+    if plan.get("run_record_schema_sha256") != schema_sha256("run-record.v1"):
+        raise ValidationError(
+            "campaign plan run-record schema binding differs from the active benchmark schema"
+        )
+
+
 _HOTBLOCK_RUNNER_ENVIRONMENT_KEY = "QEMU_HOTBLOCK_PLUGIN"
 
 
@@ -81,6 +102,8 @@ def _reference_toolchain_contract(
         frontends = snapshot["reference_frontends"]
         proxy = snapshot["proxy_execution"]
         compile_driver = frontends["compile_driver_path"]
+        source_adapter = frontends["source_adapter_path"]
+        builtin_header = frontends["builtin_header_path"]
         common_semantics = frontends["common_semantics"]
     except KeyError as exc:
         raise ValidationError(f"reference toolchain snapshot lacks {exc.args[0]}") from exc
@@ -90,10 +113,10 @@ def _reference_toolchain_contract(
         raise ValidationError("reference toolchain snapshot target is not RV64GC/LP64D/medany")
     if common_semantics != _REFERENCE_COMMON_SEMANTICS:
         raise ValidationError("reference toolchain snapshot has drifted integer/FP semantics")
-    validate_relative_path(compile_driver, label="reference compile driver path")
-    compile_driver_sha256 = frontends.get("compile_driver_sha256")
-    if not isinstance(compile_driver_sha256, str) or len(compile_driver_sha256) != 64:
-        raise ValidationError("reference toolchain snapshot lacks a compile-driver SHA-256")
+    if frontends.get("frontend_language") != "c++17":
+        raise ValidationError("reference toolchain snapshot must use the SysY C++17 frontend contract")
+    if frontends.get("launcher_contract") != REFERENCE_LAUNCHER_CONTRACT:
+        raise ValidationError("reference toolchain launcher contract has drifted")
     root = workspace_root.resolve(strict=True)
     if not root.is_dir():
         raise ConfigurationError("campaign workspace root must be a directory")
@@ -142,13 +165,53 @@ def _reference_toolchain_contract(
             raise ValidationError(
                 f"reference toolchain protocol binding differs from supplied protocol: {mode}"
             )
-    driver_file = (root / compile_driver).resolve(strict=True)
-    try:
-        driver_file.relative_to(root)
-    except ValueError as exc:
-        raise ValidationError("reference compile driver escapes the campaign workspace") from exc
-    if not driver_file.is_file() or sha256_file(driver_file) != compile_driver_sha256:
-        raise ValidationError("reference compile driver physical hash differs from snapshot")
+    support_contracts = (
+        (
+            compile_driver,
+            frontends.get("compile_driver_sha256"),
+            "reference compile driver",
+            None,
+        ),
+        (
+            source_adapter,
+            frontends.get("source_adapter_sha256"),
+            "reference source adapter",
+            _REFERENCE_SOURCE_ADAPTER,
+        ),
+        (
+            builtin_header,
+            frontends.get("builtin_header_sha256"),
+            "reference builtin header",
+            _REFERENCE_BUILTIN_HEADER,
+        ),
+    )
+    support_hashes: dict[str, str] = {}
+    for relative_path, expected_hash, label, expected_path in support_contracts:
+        if not isinstance(relative_path, str):
+            raise ValidationError(f"{label} path is invalid")
+        validate_relative_path(relative_path, label=f"{label} path")
+        if expected_path is not None and relative_path != expected_path:
+            raise ValidationError(f"{label} path differs from the fixed contract")
+        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+            raise ValidationError(f"{label} lacks a SHA-256")
+        physical = (root / relative_path).resolve(strict=True)
+        try:
+            physical.relative_to(root)
+        except ValueError as exc:
+            raise ValidationError(f"{label} escapes the campaign workspace") from exc
+        if not physical.is_file() or sha256_file(physical) != expected_hash:
+            raise ValidationError(f"{label} physical hash differs from snapshot")
+        support_hashes[label] = expected_hash
+    compile_driver_sha256 = support_hashes["reference compile driver"]
+    source_adapter_sha256 = support_hashes["reference source adapter"]
+    builtin_header_sha256 = support_hashes["reference builtin header"]
+    local_image_id = frontends.get("local_image_id")
+    if (
+        not isinstance(local_image_id, str)
+        or not local_image_id.startswith("sha256:")
+        or len(local_image_id) != 71
+    ):
+        raise ValidationError("reference toolchain snapshot lacks a sha256 image ID")
     baselines: list[dict[str, Any]] = []
     for baseline_id, expected in _REFERENCE_BASELINES.items():
         observed = frontends.get(expected["frontend"])
@@ -157,8 +220,21 @@ def _reference_toolchain_contract(
         if (
             observed.get("version") != expected["version"]
             or observed.get("optimization") != expected["optimization"]
+            or observed.get("executable") != expected["executable"]
+            or observed.get("package") != expected["package"]
+            or (
+                "cxx_package" in expected
+                and observed.get("cxx_package") != expected["cxx_package"]
+            )
         ):
             raise ValidationError(f"reference toolchain baseline drift: {baseline_id}")
+        compiler_argv = observed.get("compiler_argv")
+        compiler_argv_sha256 = observed.get("compiler_argv_sha256")
+        if (
+            compiler_argv != _REFERENCE_FRONTEND_ARGV[expected["frontend"]]
+            or compiler_argv_sha256 != sha256_json({"argv": compiler_argv})
+        ):
+            raise ValidationError(f"reference toolchain exact argv drift: {baseline_id}")
         command = [
             "sh",
             compile_driver,
@@ -168,8 +244,12 @@ def _reference_toolchain_contract(
         ]
         profile_sha256 = sha256_json(
             {
+                "schema": "reference-frontend-profile.v1",
                 "compiler_baseline": baseline_id,
-                "flags": [expected["optimization"]],
+                "compiler_argv_sha256": compiler_argv_sha256,
+                "source_adapter_sha256": source_adapter_sha256,
+                "builtin_header_sha256": builtin_header_sha256,
+                "image_id": local_image_id,
             }
         )
         baselines.append(
@@ -184,6 +264,7 @@ def _reference_toolchain_contract(
                 "compiler_command_sha256": sha256_json(
                     {"command": command, "environment": {}}
                 ),
+                "compiler_argv_sha256": compiler_argv_sha256,
             }
         )
     common_tool_versions = {
@@ -200,6 +281,9 @@ def _reference_toolchain_contract(
     return {
         "snapshot_sha256": sha256_file(path.resolve(strict=True)),
         "compile_driver_sha256": compile_driver_sha256,
+        "source_adapter_sha256": source_adapter_sha256,
+        "builtin_header_sha256": builtin_header_sha256,
+        "image_id": local_image_id,
         "common_tool_versions": common_tool_versions,
         "accela_jdk_version": accela_jdk,
         "baselines": baselines,
@@ -271,6 +355,7 @@ def build_campaign_plan(
         raise ValidationError("campaign plan requires ablation-matrix.v1")
     if not 1 <= max_workers <= 4:
         raise ConfigurationError("campaign max_workers must be between 1 and 4")
+    run_record_schema_sha256 = _workspace_run_record_schema_sha256(workspace_root)
     measurement_protocols = {
         "standard_proxy": _measurement_protocol_contract(
             measurement_protocol_path, expected_mode="standard_proxy"
@@ -546,6 +631,7 @@ def build_campaign_plan(
             "matrix_sha256": sha256_json(matrix),
             "parent_plan_sha256": None,
             "promotion_status_sha256": None,
+            "run_record_schema_sha256": run_record_schema_sha256,
             "total_budget_seconds": _TOTAL_BUDGET_SECONDS,
             "max_workers": max_workers,
             "measurement_protocols": measurement_protocols,
@@ -599,6 +685,7 @@ def finalize_campaign_plan(
     matrix = load_and_validate(matrix_path)
     if initial["schema_version"] != "campaign-plan.v1":
         raise ValidationError("campaign finalization requires campaign-plan.v1")
+    _require_run_record_schema_binding(initial)
     if initial["parent_plan_sha256"] is not None or initial["final_pair_families"]:
         raise ValidationError("only an unfinalized campaign plan can be finalized")
     initial_digest = sha256_json(initial)
@@ -706,6 +793,8 @@ def finalize_campaign_plan(
         final_pair_families=selected_families,
         tasks=tasks,
     )
+    if finalized["run_record_schema_sha256"] != initial["run_record_schema_sha256"]:
+        raise AssertionError("campaign finalization changed the run-record schema binding")
     return validate_document(finalized)
 
 
@@ -736,7 +825,7 @@ def _require_campaign_correctness(run: Mapping[str, Any]) -> None:
         raise ValidationError("campaign B1 correctness must not claim the performance protocol")
     if not configuration["tool_versions"]:
         raise ValidationError("campaign B1 correctness lacks toolchain version evidence")
-    _require_no_historical_attempts(run, context="campaign B1 correctness")
+    _require_eligible_attempt_history(run, context="campaign B1 correctness")
     for case in run["cases"]:
         if case["status"] != "passed":
             continue
@@ -1183,6 +1272,7 @@ def update_campaign_status(
     plan = load_and_validate(plan_path)
     if plan["schema_version"] != "campaign-plan.v1":
         raise ValidationError("campaign status requires campaign-plan.v1")
+    _require_run_record_schema_binding(plan)
     plan_digest = sha256_json(plan)
     previous = load_and_validate(previous_status_path) if previous_status_path is not None else None
     if previous is not None:
@@ -1382,6 +1472,7 @@ def update_campaign_status(
 
 
 def next_campaign_tasks(plan: Mapping[str, Any], status: Mapping[str, Any]) -> list[dict[str, Any]]:
+    _require_run_record_schema_binding(plan)
     if status["plan_sha256"] != sha256_json(plan) or status["campaign_id"] != plan["campaign_id"]:
         raise ValidationError("campaign status does not belong to the supplied plan")
     if status["remaining_wall_clock_seconds"] <= 0:
@@ -1429,6 +1520,7 @@ def campaign_task(
 ) -> Any:
     if plan.get("schema_version") != "campaign-plan.v1":
         raise ValidationError("campaign task query requires campaign-plan.v1")
+    _require_run_record_schema_binding(plan)
     matches = [task for task in plan["tasks"] if task["task_id"] == task_id]
     if len(matches) != 1:
         raise ConfigurationError(f"campaign task id is not present exactly once: {task_id}")

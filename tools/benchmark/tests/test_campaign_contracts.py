@@ -24,7 +24,11 @@ from tools.benchmark.protocol import (
     capture_measurement_protocol,
     verify_measurement_protocol,
 )
+from tools.benchmark.schema import schema_sha256
 from tools.benchmark.util import sha256_json
+
+
+_RUN_RECORD_SCHEMA_SHA256 = schema_sha256("run-record.v1")
 
 
 def _protocol(mode: str, digit: str) -> dict:
@@ -43,12 +47,16 @@ def _protocol(mode: str, digit: str) -> dict:
 
 def _plan() -> dict:
     return {
+        "run_record_schema_sha256": _RUN_RECORD_SCHEMA_SHA256,
         "measurement_protocols": {
             "standard_proxy": _protocol("standard_proxy", "5"),
             "cache_hotblock": _protocol("cache_hotblock", "6"),
         },
         "reference_toolchain": {
             "snapshot_sha256": "7" * 64,
+            "source_adapter_sha256": "a" * 64,
+            "builtin_header_sha256": "b" * 64,
+            "image_id": "sha256:" + "c" * 64,
             "common_tool_versions": {
                 "qemu-system-riscv64": "11.0.3",
                 "bare-metal-linker": "15.2.0",
@@ -68,7 +76,14 @@ def _task(mode: str = "standard_proxy", compiler: str = "accela_full") -> dict:
     if compiler == "gcc_13_3_o2":
         profile_id = "gcc-13.3-o2"
         profile_sha256 = sha256_json(
-            {"compiler_baseline": compiler, "flags": ["-O2"]}
+            {
+                "schema": "reference-frontend-profile.v1",
+                "compiler_baseline": compiler,
+                "compiler_argv_sha256": "d" * 64,
+                "source_adapter_sha256": "a" * 64,
+                "builtin_header_sha256": "b" * 64,
+                "image_id": "sha256:" + "c" * 64,
+            }
         )
         reference = {
             "compiler_baseline": compiler,
@@ -79,6 +94,7 @@ def _task(mode: str = "standard_proxy", compiler: str = "accela_full") -> dict:
             "optimization": "-O2",
             "compiler_executable": "sh",
             "compiler_command_sha256": "9" * 64,
+            "compiler_argv_sha256": "d" * 64,
         }
     return {
         "task_id": "task-id",
@@ -243,7 +259,7 @@ def test_campaign_b1_rejects_retry_history_even_when_final_attempt_passes() -> N
             "compile_repetitions": 5,
             "reuse_compile_cache": False,
             "compile_storage_contract": "attempt_local_v1",
-            "retry_failures": True,
+            "retry_failures": False,
             "compiler": {"kind": "benchmark-compiler"},
             "pipeline_profile_file_sha256": "1" * 64,
             "remarks_file_sha256": "2" * 64,
@@ -269,10 +285,26 @@ def test_campaign_b1_rejects_retry_history_even_when_final_attempt_passes() -> N
     }
     _require_campaign_correctness(run)
 
+    run["configuration"]["retry_failures"] = True
+    with pytest.raises(ValidationError, match="forbids retry_failures"):
+        _require_campaign_correctness(run)
+    run["configuration"]["retry_failures"] = False
+
     run["cases"][0]["attempts"] = [
         {"attempt_index": 0, "status": "wrong_output"}
     ]
-    with pytest.raises(ValidationError, match="historical failed attempts"):
+    with pytest.raises(ValidationError, match="historical failed attempt"):
+        _require_campaign_correctness(run)
+
+    run["cases"][0]["attempts"] = [
+        {
+            "attempt_index": 0,
+            "status": "cancelled",
+            "failure_summary": "scheduler_cancelled",
+            "cancellation_reason": "infrastructure_failure",
+        }
+    ]
+    with pytest.raises(ValidationError, match="historical failed attempt"):
         _require_campaign_correctness(run)
 
 
@@ -308,6 +340,7 @@ def test_campaign_next_uses_only_running_phase_and_task_query() -> None:
     }
     plan = {
         "schema_version": "campaign-plan.v1", "campaign_id": "campaign", "max_workers": 4,
+        "run_record_schema_sha256": _RUN_RECORD_SCHEMA_SHA256,
         "tasks": [task_a, task_b],
     }
     status = {
@@ -326,6 +359,9 @@ def test_campaign_next_uses_only_running_phase_and_task_query() -> None:
     assert campaign_task(plan, task_id="a", field="run_id") == "run-a"
     with pytest.raises(ConfigurationError, match="unknown campaign task field"):
         campaign_task(plan, task_id="a", field="missing")
+    stale = {**plan, "run_record_schema_sha256": "f" * 64}
+    with pytest.raises(ValidationError, match="run-record schema binding differs"):
+        campaign_task(stale, task_id="a")
 
 
 def test_deadline_closes_awaiting_tasks_and_preserves_intended_run_ids(monkeypatch) -> None:
@@ -350,6 +386,7 @@ def test_deadline_closes_awaiting_tasks_and_preserves_intended_run_ids(monkeypat
     ]
     plan = {
         "schema_version": "campaign-plan.v1", "campaign_id": "deadline", "total_budget_seconds": 259_200,
+        "run_record_schema_sha256": _RUN_RECORD_SCHEMA_SHA256,
         "parent_plan_sha256": None, "phases": phases, "tasks": tasks,
     }
     decisions = {
@@ -484,6 +521,7 @@ def test_failed_singletons_do_not_stop_phase_and_only_correctness_evidence_unloc
     plan = {
         "schema_version": "campaign-plan.v1",
         "campaign_id": "continue-after-failure",
+        "run_record_schema_sha256": _RUN_RECORD_SCHEMA_SHA256,
         "total_budget_seconds": 259_200,
         "max_workers": 4,
         "parent_plan_sha256": None,

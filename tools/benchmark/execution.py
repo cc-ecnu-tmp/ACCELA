@@ -20,6 +20,7 @@ from .cache import (
     compile_storage_contract,
 )
 from .errors import ConfigurationError, ExecutionError, ValidationError
+from .journal import AttemptJournal, JournalSnapshot, durable_create_json
 from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .metrics import ANALYZER_METRICS, rv64gc_qemu_v1
 from .process import ProcessResult, extract_metric, first_mismatch_offset, run_process
@@ -28,6 +29,8 @@ from .schema import load_and_validate, load_and_validate_jsonl, validate_documen
 from .util import (
     atomic_write_json,
     executable_label,
+    raw_attempt_identity,
+    raw_attempt_identity_sha256,
     read_json,
     resolve_manifest_path,
     safe_slug,
@@ -628,7 +631,10 @@ def _new_case(
         "remarks_sha256": None,
         "remarks_event_count": None,
         "analysis_sha256": None,
+        "attempt_journal_sha256": None,
+        "attempt_journal_event_count": None,
         "status": "pending",
+        "cancellation_reason": None,
         "cache_hit": False,
         "compile": None,
         "compile_samples": [],
@@ -647,12 +653,15 @@ def _new_case(
 
 _ATTEMPT_FIELDS = (
     "status",
+    "cancellation_reason",
     "cache_hit",
     "artifact_sha256",
     "binary_sha256",
     "remarks_sha256",
     "remarks_event_count",
     "analysis_sha256",
+    "attempt_journal_sha256",
+    "attempt_journal_event_count",
     "compile",
     "compile_samples",
     "compile_statistics",
@@ -677,8 +686,32 @@ _ATTEMPT_FAILURE_SUMMARIES = {
     "cancelled": "scheduler_cancelled",
 }
 
+_JOURNAL_COMMITMENT_FIELDS = {
+    "attempt_journal_sha256",
+    "attempt_journal_event_count",
+}
 
-def _archive_attempt(case: dict[str, Any]) -> None:
+
+def _terminal_case_payload(case: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the normalized worker result committed by the terminal journal event."""
+    return {
+        key: deepcopy(value)
+        for key, value in case.items()
+        if key not in {"attempts", *_JOURNAL_COMMITMENT_FIELDS}
+    }
+
+
+def _bind_journal_commitment(
+    case: dict[str, Any],
+    snapshot: JournalSnapshot,
+) -> None:
+    if snapshot.terminal_case_result is None:
+        raise ExecutionError("attempt journal lacks a terminal outcome")
+    case["attempt_journal_sha256"] = snapshot.commitment_sha256
+    case["attempt_journal_event_count"] = len(snapshot.events)
+
+
+def _archive_attempt(record: Mapping[str, Any], case: dict[str, Any]) -> None:
     if case["status"] == "pending":
         raise ExecutionError("cannot archive a pending benchmark attempt")
     if case["attempt_index"] != len(case["attempts"]):
@@ -691,12 +724,21 @@ def _archive_attempt(case: dict[str, Any]) -> None:
     if failure_summary is None:
         raise ExecutionError(f"cannot archive non-failure attempt status: {case['status']}")
     attempts = case["attempts"]
+    identity_sha256 = raw_attempt_identity_sha256(
+        run_id=record["run_id"],
+        manifest_sha256=record["manifest_sha256"],
+        case_id=case["case_id"],
+        attempt_index=case["attempt_index"],
+        started_at=started_at,
+        configuration_sha256=configuration_sha256,
+    )
     attempts.append(
         {
             "attempt_index": case["attempt_index"],
             "started_at": started_at,
             "archived_at": utc_now(),
             "configuration_sha256": configuration_sha256,
+            "raw_attempt_identity_sha256": identity_sha256,
             "failure_summary": failure_summary,
             **{field: deepcopy(case[field]) for field in _ATTEMPT_FIELDS},
         }
@@ -710,6 +752,7 @@ def _reset_case_for_pending(case: dict[str, Any], *, advance_attempt: bool) -> N
         attempt_started_at=None,
         attempt_configuration_sha256=None,
         status="pending",
+        cancellation_reason=None,
         cache_hit=False,
         compile=None,
         compile_samples=[],
@@ -719,6 +762,8 @@ def _reset_case_for_pending(case: dict[str, Any], *, advance_attempt: bool) -> N
         remarks_sha256=None,
         remarks_event_count=None,
         analysis_sha256=None,
+        attempt_journal_sha256=None,
+        attempt_journal_event_count=None,
         link=None,
         analyze=None,
         measurements=[],
@@ -1215,15 +1260,7 @@ class BenchmarkRun:
         if record["manifest_sha256"] != self.manifest_sha256:
             raise ConfigurationError("cannot resume: benchmark manifest digest changed")
         if record["configuration_sha256"] != self.configuration_sha256:
-            resume_configuration = deepcopy(record["configuration"])
-            resume_configuration["retry_failures"] = self.configuration["retry_failures"]
-            resume_digest = sha256_json(
-                {"configuration": resume_configuration, "provenance": record["provenance"]}
-            )
-            if resume_digest != self.configuration_sha256:
-                raise ConfigurationError("cannot resume: benchmark configuration digest changed")
-            record["configuration"] = resume_configuration
-            record["configuration_sha256"] = self.configuration_sha256
+            raise ConfigurationError("cannot resume: benchmark configuration digest changed")
         if self.options.run_id is not None and record["run_id"] != self.options.run_id:
             raise ConfigurationError("cannot resume: requested run_id differs from existing record")
         expected_ids = [case["id"] for case in self.manifest["cases"]]
@@ -1285,15 +1322,14 @@ class BenchmarkRun:
         started_at: str,
         configuration_sha256: str,
     ) -> dict[str, Any]:
-        return {
-            "schema_version": "benchmark-raw-attempt.v1",
-            "run_id": record["run_id"],
-            "manifest_sha256": record["manifest_sha256"],
-            "case_id": case_id,
-            "attempt_index": attempt_index,
-            "started_at": started_at,
-            "configuration_sha256": configuration_sha256,
-        }
+        return raw_attempt_identity(
+            run_id=record["run_id"],
+            manifest_sha256=record["manifest_sha256"],
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
 
     def _bind_attempt_directory(
         self,
@@ -1320,6 +1356,14 @@ class BenchmarkRun:
             configuration_sha256=configuration_sha256,
         )
         identity_path = directory / "identity.json"
+        identity_sha256 = raw_attempt_identity_sha256(
+            run_id=record["run_id"],
+            manifest_sha256=record["manifest_sha256"],
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
         if directory.exists():
             if not allow_existing or not directory.is_dir() or not identity_path.is_file():
                 raise ExecutionError(
@@ -1335,23 +1379,231 @@ class BenchmarkRun:
                 raise ExecutionError(
                     f"raw attempt identity differs for case {case_id} attempt {attempt_index}"
                 )
+            AttemptJournal(directory, identity_sha256=identity_sha256).load()
             return directory
         if not create_if_missing:
             raise ExecutionError(
                 f"raw attempt evidence is missing for case {case_id} attempt {attempt_index}"
             )
         directory.mkdir(parents=True, exist_ok=False)
-        atomic_write_json(identity_path, identity)
+        AttemptJournal(directory, identity_sha256=identity_sha256).initialize()
+        durable_create_json(identity_path, identity)
         return directory
+
+    def _physical_attempts(
+        self,
+        record: Mapping[str, Any],
+        run_directory: Path,
+    ) -> dict[tuple[str, int], Path]:
+        expected: dict[tuple[str, int], Path] = {}
+        expected_case_directories: dict[str, str] = {}
+        for case in record["cases"]:
+            case_directory_name = safe_slug(case["case_id"])
+            expected_case_directories[case_directory_name] = case["case_id"]
+            for attempt in case["attempts"]:
+                key = (case["case_id"], attempt["attempt_index"])
+                expected[key] = self._attempt_directory(
+                    run_directory,
+                    case_id=case["case_id"],
+                    attempt_index=attempt["attempt_index"],
+                )
+            if case["attempt_started_at"] is not None:
+                key = (case["case_id"], case["attempt_index"])
+                expected[key] = self._attempt_directory(
+                    run_directory,
+                    case_id=case["case_id"],
+                    attempt_index=case["attempt_index"],
+                )
+
+        cases_root = run_directory / "cases"
+        actual: dict[tuple[str, int], Path] = {}
+        if cases_root.exists():
+            if not cases_root.is_dir() or cases_root.is_symlink():
+                raise ExecutionError("raw attempt cases root is not a regular directory")
+            for case_directory in cases_root.iterdir():
+                case_id = expected_case_directories.get(case_directory.name)
+                if (
+                    case_id is None
+                    or case_directory.is_symlink()
+                    or not case_directory.is_dir()
+                ):
+                    raise ExecutionError("raw attempt state contains an orphan case directory")
+                children = list(case_directory.iterdir())
+                if len(children) != 1 or children[0].name != "attempts":
+                    raise ExecutionError("raw attempt case directory has an invalid layout")
+                attempts_directory = children[0]
+                if attempts_directory.is_symlink() or not attempts_directory.is_dir():
+                    raise ExecutionError("raw attempt container is not a regular directory")
+                for attempt_directory in attempts_directory.iterdir():
+                    match = re.fullmatch(r"attempt-([0-9]{4})", attempt_directory.name)
+                    if (
+                        match is None
+                        or attempt_directory.is_symlink()
+                        or not attempt_directory.is_dir()
+                    ):
+                        raise ExecutionError("raw attempt state contains an invalid attempt entry")
+                    key = (case_id, int(match.group(1)))
+                    if key in actual:
+                        raise ExecutionError("raw attempt state contains duplicate attempt identities")
+                    actual[key] = attempt_directory
+        if set(actual) != set(expected):
+            missing = sorted(set(expected) - set(actual))
+            orphan = sorted(set(actual) - set(expected))
+            detail = (
+                f" missing={missing[0]}" if missing else f" orphan={orphan[0]}"
+            )
+            raise ExecutionError("physical and normalized attempt sets differ:" + detail)
+        if any(actual[key] != path for key, path in expected.items()):
+            raise ExecutionError("raw attempt directory path differs from normalized identity")
+        return actual
+
+    def _attempt_journal(
+        self,
+        record: Mapping[str, Any],
+        directory: Path,
+        *,
+        case_id: str,
+        attempt_index: int,
+        started_at: str,
+        configuration_sha256: str,
+    ) -> AttemptJournal:
+        identity_sha256 = raw_attempt_identity_sha256(
+            run_id=record["run_id"],
+            manifest_sha256=record["manifest_sha256"],
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        return AttemptJournal(directory, identity_sha256=identity_sha256)
+
+    def _recover_current_attempt(
+        self,
+        record: Mapping[str, Any],
+        case: dict[str, Any],
+        directory: Path,
+    ) -> None:
+        started_at = case["attempt_started_at"]
+        configuration_sha256 = case["attempt_configuration_sha256"]
+        assert started_at is not None and configuration_sha256 is not None
+        journal = self._attempt_journal(
+            record,
+            directory,
+            case_id=case["case_id"],
+            attempt_index=case["attempt_index"],
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        snapshot = journal.load()
+        terminal = snapshot.terminal_case_result
+        if terminal is None:
+            if snapshot.has_phase_evidence:
+                raise ExecutionError(
+                    f"raw phase evidence lacks a terminal outcome for case {case['case_id']} "
+                    f"attempt {case['attempt_index']}"
+                )
+            if snapshot.events:
+                raise ExecutionError("raw attempt journal lacks a recognized terminal outcome")
+            journal.assert_no_uncommitted_raw_evidence()
+            if case["status"] != "pending":
+                raise ExecutionError("normalized terminal attempt lacks durable journal evidence")
+            case["status"] = "cancelled"
+            case["cancellation_reason"] = "execution_interrupted"
+            case["diagnostic"] = "interrupted before the worker entered a benchmark phase"
+            snapshot = journal.append_terminal(_terminal_case_payload(case))
+            _bind_journal_commitment(case, snapshot)
+            return
+
+        journal.verify_terminal_raw_files(snapshot)
+
+        self._verify_durable_case_payload_identity(case, terminal)
+
+        if case["status"] == "pending":
+            self._replace_current_case_payload(case, terminal)
+            _bind_journal_commitment(case, snapshot)
+            return
+        if (
+            _terminal_case_payload(case) != terminal
+            or case["attempt_journal_sha256"] != snapshot.commitment_sha256
+            or case["attempt_journal_event_count"] != len(snapshot.events)
+        ):
+            raise ExecutionError("normalized attempt result differs from its durable terminal journal")
+
+    @staticmethod
+    def _verify_durable_case_payload_identity(
+        case: Mapping[str, Any], payload: Mapping[str, Any]
+    ) -> None:
+        if set(payload) != set(_terminal_case_payload(case)):
+            raise ExecutionError("raw durable case payload has an invalid field set")
+        for field, expected in (
+            ("case_id", case["case_id"]),
+            ("attempt_index", case["attempt_index"]),
+            ("attempt_started_at", case["attempt_started_at"]),
+            (
+                "attempt_configuration_sha256",
+                case["attempt_configuration_sha256"],
+            ),
+            ("source_sha256", case["source_sha256"]),
+            ("input_sha256", case["input_sha256"]),
+            ("expected_output_sha256", case["expected_output_sha256"]),
+        ):
+            if payload[field] != expected:
+                raise ExecutionError(f"raw terminal case identity differs: {field}")
+
+    @staticmethod
+    def _replace_current_case_payload(
+        case: dict[str, Any], payload: Mapping[str, Any]
+    ) -> None:
+        attempts = case["attempts"]
+        case.clear()
+        case.update(deepcopy(dict(payload)))
+        case["attempts"] = attempts
+
+    def _verify_archived_attempt(
+        self,
+        record: Mapping[str, Any],
+        case: Mapping[str, Any],
+        attempt: Mapping[str, Any],
+        directory: Path,
+    ) -> None:
+        journal = self._attempt_journal(
+            record,
+            directory,
+            case_id=case["case_id"],
+            attempt_index=attempt["attempt_index"],
+            started_at=attempt["started_at"],
+            configuration_sha256=attempt["configuration_sha256"],
+        )
+        snapshot = journal.load()
+        terminal = snapshot.terminal_case_result
+        if terminal is None:
+            raise ExecutionError("archived attempt lacks a durable terminal journal outcome")
+        journal.verify_terminal_raw_files(snapshot)
+        expected_terminal = _terminal_case_payload(case)
+        expected_terminal["attempt_index"] = attempt["attempt_index"]
+        expected_terminal["attempt_started_at"] = attempt["started_at"]
+        expected_terminal["attempt_configuration_sha256"] = attempt[
+            "configuration_sha256"
+        ]
+        for field in _ATTEMPT_FIELDS:
+            if field not in _JOURNAL_COMMITMENT_FIELDS:
+                expected_terminal[field] = deepcopy(attempt[field])
+        if (
+            terminal != expected_terminal
+            or attempt["attempt_journal_sha256"] != snapshot.commitment_sha256
+            or attempt["attempt_journal_event_count"] != len(snapshot.events)
+        ):
+            raise ExecutionError("archived attempt differs from its durable terminal journal")
 
     def _prepare_record_for_execution(
         self,
         record: dict[str, Any],
         run_directory: Path,
     ) -> None:
+        physical = self._physical_attempts(record, run_directory)
         for case in record["cases"]:
             for attempt in case["attempts"]:
-                self._bind_attempt_directory(
+                directory = self._bind_attempt_directory(
                     record,
                     run_directory,
                     case_id=case["case_id"],
@@ -1361,11 +1613,14 @@ class BenchmarkRun:
                     allow_existing=True,
                     create_if_missing=False,
                 )
+                if physical[(case["case_id"], attempt["attempt_index"])] != directory:
+                    raise ExecutionError("archived raw attempt path changed during verification")
+                self._verify_archived_attempt(record, case, attempt, directory)
             started_at = case["attempt_started_at"]
             configuration_sha256 = case["attempt_configuration_sha256"]
             if started_at is not None:
                 assert configuration_sha256 is not None
-                self._bind_attempt_directory(
+                directory = self._bind_attempt_directory(
                     record,
                     run_directory,
                     case_id=case["case_id"],
@@ -1373,21 +1628,32 @@ class BenchmarkRun:
                     started_at=started_at,
                     configuration_sha256=configuration_sha256,
                     allow_existing=True,
-                    create_if_missing=case["status"] == "pending",
+                    create_if_missing=False,
                 )
-            if case["status"] == "pending" and started_at is not None:
-                case["status"] = "cancelled"
-                case["diagnostic"] = "interrupted before the attempt result was committed"
-                _archive_attempt(case)
-                _reset_case_for_pending(case, advance_attempt=True)
-            elif case["status"] == "cancelled":
+                if physical[(case["case_id"], case["attempt_index"])] != directory:
+                    raise ExecutionError("current raw attempt path changed during verification")
+                self._recover_current_attempt(record, case, directory)
+            if case["status"] == "cancelled":
                 if started_at is None:
+                    if case["cancellation_reason"] != "scheduler_cancelled":
+                        raise ExecutionError(
+                            f"unstarted cancellation has an invalid reason for case {case['case_id']}"
+                    )
                     _reset_case_for_pending(case, advance_attempt=False)
-                else:
-                    _archive_attempt(case)
+                elif case["cancellation_reason"] == "infrastructure_failure":
+                    raise ExecutionError(
+                        "cannot resume infrastructure-failed attempt: "
+                        f"case={case['case_id']}, attempt={case['attempt_index']}, "
+                        f"diagnostic={case['diagnostic']}"
+                    )
+                elif case["cancellation_reason"] in {
+                    "scheduler_cancelled",
+                    "execution_interrupted",
+                } or self.options.retry_failures:
+                    _archive_attempt(record, case)
                     _reset_case_for_pending(case, advance_attempt=True)
-            elif self.options.retry_failures and case["status"] != "passed":
-                _archive_attempt(case)
+            elif self.options.retry_failures and case["status"] not in {"pending", "passed"}:
+                _archive_attempt(record, case)
                 _reset_case_for_pending(case, advance_attempt=True)
         record["state"] = "running"
         record["completed_at"] = None
@@ -1427,6 +1693,70 @@ class BenchmarkRun:
             record["summary"] = _summary(record["cases"])
             validate_document(record)
             atomic_write_json(self.output_path, record)
+
+    def _commit_scheduler_terminal(
+        self,
+        record: Mapping[str, Any],
+        case: dict[str, Any],
+        run_directory: Path,
+        *,
+        reason: str,
+        diagnostic: str,
+    ) -> None:
+        # Recovery and terminal construction are transactional with respect to
+        # the normalized record.  A durable journal publish may fail (or may
+        # publish and then report an I/O error); neither case may expose a
+        # prefix-only case that violates the run-record schema and masks the
+        # original worker/sealing exceptions.
+        working_case = deepcopy(case)
+        started_at = case["attempt_started_at"]
+        configuration_sha256 = case["attempt_configuration_sha256"]
+        if started_at is None or configuration_sha256 is None:
+            raise ExecutionError("cannot commit a terminal outcome for an unreserved attempt")
+        directory = self._attempt_directory(
+            run_directory,
+            case_id=case["case_id"],
+            attempt_index=case["attempt_index"],
+        )
+        journal = self._attempt_journal(
+            record,
+            directory,
+            case_id=case["case_id"],
+            attempt_index=case["attempt_index"],
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        observed = journal.load()
+        if observed.terminal_case_result is not None:
+            journal.verify_terminal_raw_files(observed)
+            self._verify_durable_case_payload_identity(
+                working_case, observed.terminal_case_result
+            )
+            self._replace_current_case_payload(
+                working_case, observed.terminal_case_result
+            )
+            _bind_journal_commitment(working_case, observed)
+            case.clear()
+            case.update(working_case)
+            return
+        committed_prefix = observed.latest_committed_case_prefix
+        if committed_prefix is not None:
+            self._verify_durable_case_payload_identity(working_case, committed_prefix)
+            self._replace_current_case_payload(working_case, committed_prefix)
+        preserve_committed_failure = (
+            reason == "infrastructure_failure" and working_case["status"] != "pending"
+        )
+        # A terminal tool/runtime/correctness failure committed immediately
+        # before an orchestrator exception remains authoritative; only a
+        # still-pending prefix is relabelled as infrastructure failure.
+        if not preserve_committed_failure:
+            working_case["status"] = "cancelled"
+            working_case["cancellation_reason"] = reason
+            working_case["diagnostic"] = diagnostic
+        snapshot = journal.append_terminal(_terminal_case_payload(working_case))
+        _bind_journal_commitment(working_case, snapshot)
+        case.clear()
+        case.update(working_case)
 
     def _context(
         self,
@@ -1571,6 +1901,7 @@ class BenchmarkRun:
         run_id: str,
         run_directory: Path,
         case_directory: Path,
+        journal: AttemptJournal,
         attempt_index: int,
         attempt_started_at: str,
         attempt_configuration_sha256: str,
@@ -1585,6 +1916,19 @@ class BenchmarkRun:
         record["attempt_index"] = attempt_index
         record["attempt_started_at"] = attempt_started_at
         record["attempt_configuration_sha256"] = attempt_configuration_sha256
+
+        def finish() -> dict[str, Any]:
+            snapshot = journal.append_terminal(_terminal_case_payload(record))
+            _bind_journal_commitment(record, snapshot)
+            return record
+
+        def commit_phase(stage: str, details: Mapping[str, Any]) -> JournalSnapshot:
+            return journal.append_phase_result(
+                stage,
+                {**deepcopy(dict(details)), "case_prefix": _terminal_case_payload(record)},
+            )
+
+        journal.append_phase_started("compile")
         source = resolve_manifest_path(self.suite_root, case["source"]["path"])
         expected = resolve_manifest_path(self.suite_root, case["expected_output"]["path"])
         expected_bytes = expected.read_bytes()
@@ -1637,8 +1981,19 @@ class BenchmarkRun:
             record["status"] = (
                 "cancelled" if compile_phase["status"] == "cancelled" else "compile_error"
             )
+            if record["status"] == "cancelled":
+                record["cancellation_reason"] = "scheduler_cancelled"
             record["diagnostic"] = compile_phase["diagnostic"] or "compiler stage failed"
-            return record
+            commit_phase(
+                "compile",
+                {
+                    "compile": record["compile"],
+                    "compile_samples": record["compile_samples"],
+                    "compile_statistics": record["compile_statistics"],
+                    "cache_hit": record["cache_hit"],
+                },
+            )
+            return finish()
         if compile_statistics is None:
             raise ExecutionError("successful compiler stage lacks cold-compile statistics")
         record["artifact_sha256"] = sha256_file(artifact)
@@ -1663,10 +2018,23 @@ class BenchmarkRun:
                 cached_compile=cache_hit,
             )
         )
+        commit_phase(
+            "compile",
+            {
+                "compile": record["compile"],
+                "compile_samples": record["compile_samples"],
+                "compile_statistics": record["compile_statistics"],
+                "cache_hit": record["cache_hit"],
+                "artifact_sha256": record["artifact_sha256"],
+                "remarks_sha256": record["remarks_sha256"],
+                "remarks_event_count": record["remarks_event_count"],
+            },
+        )
         binary = provisional_binary
         if self.options.linker is None:
             shutil.copy2(artifact, binary)
         else:
+            journal.append_phase_started("link")
             paths["artifact"] = artifact
             paths["binary"] = binary
             command, environment = self.renderer.render(
@@ -1691,14 +2059,18 @@ class BenchmarkRun:
                 record["status"] = (
                     "cancelled" if link_result.status == "cancelled" else "link_error"
                 )
+                if record["status"] == "cancelled":
+                    record["cancellation_reason"] = "scheduler_cancelled"
                 record["diagnostic"] = link_result.diagnostic or "linker stage failed"
-                return record
+                commit_phase("link", {"link": record["link"]})
+                return finish()
             if not binary.is_file():
                 record["link"]["status"] = "error"
                 record["link"]["diagnostic"] = "linker exited successfully without creating {binary}"
                 record["status"] = "link_error"
                 record["diagnostic"] = record["link"]["diagnostic"]
-                return record
+                commit_phase("link", {"link": record["link"]})
+                return finish()
 
             record["measurements"].extend(
                 self._collect_case_measurements(
@@ -1720,11 +2092,14 @@ class BenchmarkRun:
                 cached_compile=False,
             )
         )
+        if self.options.linker is not None:
+            commit_phase("link", {"link": record["link"]})
 
         analyzer_specs = {
             spec.metric_id: spec for spec in self.metric_specs if spec.source == "analyzer"
         }
         if self.options.analyzer is not None:
+            journal.append_phase_started("analyze")
             analysis_file = paths["analysis_file"]
             analysis_file.parent.mkdir(parents=True, exist_ok=True)
             analysis_file.unlink(missing_ok=True)
@@ -1750,14 +2125,18 @@ class BenchmarkRun:
                 record["status"] = (
                     "cancelled" if analyze_result.status == "cancelled" else "analyze_error"
                 )
+                if record["status"] == "cancelled":
+                    record["cancellation_reason"] = "scheduler_cancelled"
                 record["diagnostic"] = analyze_result.diagnostic or "post-link analyzer failed"
-                return record
+                commit_phase("analyze", {"analyze": record["analyze"]})
+                return finish()
             if not analysis_file.is_file():
                 record["analyze"]["status"] = "error"
                 record["analyze"]["diagnostic"] = "analyzer exited successfully without creating {analysis_file}"
                 record["status"] = "analyze_error"
                 record["diagnostic"] = record["analyze"]["diagnostic"]
-                return record
+                commit_phase("analyze", {"analyze": record["analyze"]})
+                return finish()
             analysis = load_and_validate(analysis_file)
             if analysis["schema_version"] != "binary-analysis.v1":
                 raise ExecutionError("analyzer output must be binary-analysis.v1")
@@ -1785,6 +2164,13 @@ class BenchmarkRun:
                         "reason": item["reason"],
                     }
                 )
+            commit_phase(
+                "analyze",
+                {
+                    "analyze": record["analyze"],
+                    "analysis_sha256": record["analysis_sha256"],
+                },
+            )
 
         paths["artifact"] = artifact
         paths["binary"] = binary
@@ -1794,6 +2180,8 @@ class BenchmarkRun:
         if record["consistency_selected"]:
             repetitions = max(repetitions, 3)
         for index in range(repetitions):
+            run_stage = f"run-{index:04d}"
+            journal.append_phase_started(run_stage)
             stdout_path = case_directory / f"run-{index:04d}.stdout"
             stderr_path = case_directory / f"run-{index:04d}.stderr"
             if metric_file_path is not None:
@@ -1914,8 +2302,15 @@ class BenchmarkRun:
             record["samples"].append(sample)
             if sample_status != "passed":
                 record["status"] = sample_status
+                if sample_status == "cancelled":
+                    record["cancellation_reason"] = "scheduler_cancelled"
                 record["diagnostic"] = diagnostic
-                return record
+            # The phase result is the durable normalized prefix.  Bind a real
+            # runtime/correctness failure before publishing it so a crash after
+            # journal commit cannot relabel that failure as infrastructure.
+            commit_phase(run_stage, {"sample": sample})
+            if sample_status != "passed":
+                return finish()
         record["status"] = "passed"
         if record["consistency_selected"]:
             deterministic_ids = {
@@ -1948,7 +2343,7 @@ class BenchmarkRun:
                 record["consistency_passed"] = False
             else:
                 record["consistency_passed"] = True
-        return record
+        return finish()
 
     def _execute_locked(
         self,
@@ -1971,7 +2366,7 @@ class BenchmarkRun:
         iterator = iter(pending_ids)
         active: dict[Future[dict[str, Any]], str] = {}
         stop_submitting = False
-        internal_error: BaseException | None = None
+        internal_errors: list[BaseException] = []
         executor = ThreadPoolExecutor(max_workers=self.options.max_workers, thread_name_prefix="benchmark")
 
         def submit(case_id: str) -> None:
@@ -1981,12 +2376,23 @@ class BenchmarkRun:
                 case_record,
                 run_directory,
             )
+            assert case_record["attempt_started_at"] is not None
+            assert case_record["attempt_configuration_sha256"] is not None
+            journal = self._attempt_journal(
+                record,
+                attempt_directory,
+                case_id=case_id,
+                attempt_index=case_record["attempt_index"],
+                started_at=case_record["attempt_started_at"],
+                configuration_sha256=case_record["attempt_configuration_sha256"],
+            )
             future = executor.submit(
                 self._execute_case,
                 manifest_by_id[case_id],
                 record["run_id"],
                 run_directory,
                 attempt_directory,
+                journal,
                 case_record["attempt_index"],
                 case_record["attempt_started_at"],
                 case_record["attempt_configuration_sha256"],
@@ -2008,12 +2414,29 @@ class BenchmarkRun:
                     try:
                         result = future.result()
                     except CancelledError:
-                        records_by_id[case_id]["status"] = "cancelled"
-                        records_by_id[case_id]["diagnostic"] = "cancelled after an earlier failure"
+                        self._commit_scheduler_terminal(
+                            record,
+                            records_by_id[case_id],
+                            run_directory,
+                            reason="scheduler_cancelled",
+                            diagnostic="cancelled after an earlier failure",
+                        )
                     except BaseException as exc:  # preserve the original infrastructure failure
-                        records_by_id[case_id]["status"] = "cancelled"
-                        records_by_id[case_id]["diagnostic"] = "infrastructure failure; rerun required"
-                        internal_error = exc
+                        original_diagnostic = sanitize_text(
+                            f"{type(exc).__name__}: {exc}", self.privacy_roots
+                        )
+                        try:
+                            self._commit_scheduler_terminal(
+                                record,
+                                records_by_id[case_id],
+                                run_directory,
+                                reason="infrastructure_failure",
+                                diagnostic=original_diagnostic,
+                            )
+                        except BaseException as sealing_error:
+                            internal_errors.extend((exc, sealing_error))
+                        else:
+                            internal_errors.append(exc)
                         stop_submitting = True
                         self.cancellation_event.set()
                     else:
@@ -2039,6 +2462,7 @@ class BenchmarkRun:
             if stop_submitting:
                 for case_id in iterator:
                     records_by_id[case_id]["status"] = "cancelled"
+                    records_by_id[case_id]["cancellation_reason"] = "scheduler_cancelled"
                     records_by_id[case_id]["diagnostic"] = "cancelled after an earlier failure"
         except KeyboardInterrupt:
             self.cancellation_event.set()
@@ -2051,13 +2475,27 @@ class BenchmarkRun:
         finally:
             executor.shutdown(wait=True, cancel_futures=True)
 
-        if internal_error is not None:
+        if internal_errors:
             record["state"] = "interrupted"
             record["completed_at"] = None
             self._write_record(record)
+            rendered = "; ".join(
+                sanitize_text(
+                    f"{type(error).__name__}: {error}", self.privacy_roots
+                )
+                for error in internal_errors
+            )
+            cause: BaseException = (
+                internal_errors[0]
+                if len(internal_errors) == 1
+                else BaseExceptionGroup(
+                    "benchmark worker and evidence-sealing failures",
+                    internal_errors,
+                )
+            )
             raise ExecutionError(
-                f"benchmark infrastructure failed: {sanitize_text(str(internal_error), self.privacy_roots)}"
-            ) from internal_error
+                f"benchmark infrastructure failed: {sanitize_text(rendered, self.privacy_roots)}"
+            ) from cause
         record["state"] = "completed" if all(case["status"] == "passed" for case in record["cases"]) else "failed"
         record["completed_at"] = utc_now()
         self._write_record(record)

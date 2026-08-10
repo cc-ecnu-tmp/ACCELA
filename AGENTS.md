@@ -22,6 +22,31 @@
   class. Keep the transformation legality decision and rejection reason
   observable where the pass exposes candidates.
 - A profile with any correctness failure is ineligible for a performance ranking.
+- Started benchmark attempts are immutable, hash-bound physical evidence. Persist
+  ordered phase-start, phase-result, and terminal journal events before merging
+  normalized records; reject missing, orphaned, tampered, or configuration-drifted
+  attempts. Only typed pre-phase/scheduler interruption may resume automatically;
+  never reinterpret a real tool, timeout, runtime, or correctness failure as a retry.
+  An infrastructure terminal may preserve only the journal's read-only successful
+  committed prefix and original exception diagnostic; it remains ineligible for
+  B1 or formal ranking and cannot resume.
+- GCC/Clang reference baselines must use the hash-bound SysY source adapter and
+  C++17 frontend contract recorded in the toolchain snapshot. Preserve SysY
+  int32/float32 literals, additional legal identifiers, physical line numbers,
+  and unmangled `main`/runtime symbols; never compile official SysY directly as C.
+  Formal runs accept only the repository snapshot and fixed `python3 -I` launcher;
+  its normalized `platform.python_version()` must exactly match the snapshot, and
+  ambient snapshot, launcher, or image overrides are invalid provenance, while
+  ambient Python module/home paths must be ignored. Probe native `docker` and
+  then WSL `docker.exe`; fallback is legal
+  only after a classified daemon transport/unreachable failure. The first
+  reachable daemon owns the decision: missing/malformed/mismatched image evidence
+  is terminal, and execution uses the exact frozen image ID. Persist normalized
+  Python mode/version and Docker CLI/server-version stderr metadata. Keep the
+  launcher policy in one production constant and require both the reference
+  loader and campaign loader to match the snapshot exactly. The adapter
+  is a lexical bridge, not a SysY parser, so formal cases must also pass manifest
+  integrity and ACCELA compile/run/output correctness gates.
 
 ## Evidence levels
 
@@ -54,6 +79,10 @@
   clean-room benchmarks, versioned schemas, normalized records, reproducible
   analysis, and reader-facing reports; committed records must not contain local
   absolute paths.
+- Repository text is normalized to LF by `.gitattributes`. Physical SHA-256
+  contracts must be computed from that checkout form; never let host
+  `core.autocrlf` silently rewrite schemas, snapshots, plans, launchers, or
+  source adapters.
 
 ## Change discipline
 

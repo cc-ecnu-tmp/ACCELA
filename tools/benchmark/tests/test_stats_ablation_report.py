@@ -25,6 +25,17 @@ from tools.benchmark.util import atomic_write_json, atomic_write_text, sha256_fi
 SHA = "0" * 64
 
 
+def _rebind_synthetic_run_configuration(run: dict) -> None:
+    configuration_sha256 = sha256_json(
+        {"configuration": run["configuration"], "provenance": run["provenance"]}
+    )
+    run["configuration_sha256"] = configuration_sha256
+    for case in run["cases"]:
+        assert not case["attempts"]
+        if case["attempt_started_at"] is not None:
+            case["attempt_configuration_sha256"] = configuration_sha256
+
+
 def _stage(kind: str) -> dict:
     return {
         "kind": kind,
@@ -195,7 +206,10 @@ def make_run(
                 "remarks_sha256": "6" * 64 if source != "wall_time" else None,
                 "remarks_event_count": 1 if source != "wall_time" else None,
                 "analysis_sha256": "7" * 64 if source != "wall_time" else None,
+                "attempt_journal_sha256": "5" * 64,
+                "attempt_journal_event_count": 1,
                 "status": "passed",
+                "cancellation_reason": None,
                 "cache_hit": False,
                 "compile": _phase_record() if source != "wall_time" else None,
                 "compile_samples": (
@@ -355,9 +369,7 @@ def make_hotblock_run(
             )
     run["provenance"]["measurement_protocol_id"] = "cache-hotblock-test"
     run["provenance"]["measurement_protocol_sha256"] = "5" * 64
-    run["configuration_sha256"] = sha256_json(
-        {"configuration": run["configuration"], "provenance": run["provenance"]}
-    )
+    _rebind_synthetic_run_configuration(run)
     return validate_document(run)
 
 
@@ -407,9 +419,7 @@ def test_comparison_rejects_measurement_protocol_drift() -> None:
     baseline = make_run("protocol-baseline", {"a": ("family-a", 100)})
     candidate = make_run("protocol-candidate", {"a": ("family-a", 90)})
     candidate["provenance"]["measurement_protocol_sha256"] = "5" * 64
-    candidate["configuration_sha256"] = sha256_json({
-        "configuration": candidate["configuration"], "provenance": candidate["provenance"]
-    })
+    _rebind_synthetic_run_configuration(candidate)
     validate_document(candidate)
     with pytest.raises(ValidationError, match="measurement protocol changed"):
         compare_runs(baseline, candidate)
@@ -492,9 +502,7 @@ def test_ablation_interaction_delta_and_report_artifacts(tmp_path: Path) -> None
         record["configuration"]["remarks_file_sha256"] = sha256_json("remarks.jsonl")
         for case in record["cases"]:
             case["remarks_sha256"] = events_sha256
-        record["configuration_sha256"] = sha256_json({
-            "configuration": record["configuration"], "provenance": record["provenance"]
-        })
+        _rebind_synthetic_run_configuration(record)
         atomic_write_json(path, validate_document(record))
 
     output = tmp_path / "report"
@@ -964,12 +972,7 @@ def test_hotblock_report_rejects_incomplete_drifted_or_duplicate_evidence(
         for item in drifted["configuration"]["metrics"]
         if item["metric_id"] == "hotblock_hottest_address"
     )["pattern_sha256"] = "f" * 64
-    drifted["configuration_sha256"] = sha256_json(
-        {
-            "configuration": drifted["configuration"],
-            "provenance": drifted["provenance"],
-        }
-    )
+    _rebind_synthetic_run_configuration(drifted)
     drifted_path = tmp_path / "drifted.json"
     atomic_write_json(drifted_path, validate_document(drifted))
     with pytest.raises(ValidationError, match="specification drift"):

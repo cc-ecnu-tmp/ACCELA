@@ -138,6 +138,13 @@ def test_oracle_plan_expands_verified_clean_room_pairs_without_paths(tmp_path: P
 
 
 def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path, monkeypatch) -> None:
+    run_schema_source = (
+        Path(campaign_module.__file__).resolve().parent / "schemas" / "run-record.v1.json"
+    )
+    run_schema_path = tmp_path / campaign_module._RUN_RECORD_SCHEMA_RELATIVE_PATH
+    run_schema_path.parent.mkdir(parents=True)
+    run_schema_bytes = run_schema_source.read_bytes()
+    run_schema_path.write_bytes(run_schema_bytes)
     registry = {
         "schema_version": "pass-registry.v1",
         "passes": [
@@ -268,18 +275,45 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     compile_driver = tmp_path / "scripts" / "reference-compile.sh"
     compile_driver.parent.mkdir()
     compile_driver.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    source_adapter = tmp_path / "tools" / "benchmark" / "reference_source.py"
+    source_adapter.parent.mkdir(parents=True, exist_ok=True)
+    source_adapter.write_text("# frozen adapter\n", encoding="utf-8")
+    builtin_header = tmp_path / "tools" / "qemu" / "sysy-builtins.h"
+    builtin_header.parent.mkdir(parents=True)
+    builtin_header.write_text("/* frozen header */\n", encoding="utf-8")
     toolchain_path.write_text(json.dumps({
         "schema": "accela-toolchain-snapshot.v1",
         "target": {"isa": "rv64gc", "abi": "lp64d", "code_model": "medany"},
         "reference_frontends": {
             "compile_driver_path": "scripts/reference-compile.sh",
             "compile_driver_sha256": sha256_file(compile_driver),
-            "gcc": {"version": "13.3.0", "optimization": "-O2"},
-            "clang": {"version": "18.1.3", "optimization": "-O3"},
-            "common_semantics": [
-                "-fwrapv", "-fno-fast-math", "-ffp-contract=off",
-                "-ffreestanding", "-fno-builtin",
-            ],
+            "source_adapter_path": "tools/benchmark/reference_source.py",
+            "source_adapter_sha256": sha256_file(source_adapter),
+            "builtin_header_path": "tools/qemu/sysy-builtins.h",
+            "builtin_header_sha256": sha256_file(builtin_header),
+            "frontend_language": "c++17",
+            "launcher_contract": campaign_module.REFERENCE_LAUNCHER_CONTRACT,
+            "local_image_id": "sha256:" + "1" * 64,
+            "gcc": {
+                "version": "13.3.0", "optimization": "-O2",
+                "executable": campaign_module._REFERENCE_BASELINES["gcc_13_3_o2"]["executable"],
+                "package": campaign_module._REFERENCE_BASELINES["gcc_13_3_o2"]["package"],
+                "cxx_package": campaign_module._REFERENCE_BASELINES["gcc_13_3_o2"]["cxx_package"],
+                "compiler_argv": campaign_module._REFERENCE_FRONTEND_ARGV["gcc"],
+                "compiler_argv_sha256": sha256_json(
+                    {"argv": campaign_module._REFERENCE_FRONTEND_ARGV["gcc"]}
+                ),
+            },
+            "clang": {
+                "version": "18.1.3", "optimization": "-O3",
+                "executable": campaign_module._REFERENCE_BASELINES["clang_18_o3"]["executable"],
+                "package": campaign_module._REFERENCE_BASELINES["clang_18_o3"]["package"],
+                "compiler_argv": campaign_module._REFERENCE_FRONTEND_ARGV["clang"],
+                "compiler_argv_sha256": sha256_json(
+                    {"argv": campaign_module._REFERENCE_FRONTEND_ARGV["clang"]}
+                ),
+            },
+            "common_semantics": campaign_module._REFERENCE_COMMON_SEMANTICS,
         },
         "proxy_execution": {
             "qemu_system_riscv64": "11.0.3", "riscv_bare_metal_linker": "15.2.0",
@@ -304,6 +338,29 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
         workspace_root=tmp_path,
         campaign_id="finals-72h", max_workers=4,
     )
+    assert plan["run_record_schema_sha256"] == sha256_file(run_schema_path)
+    with pytest.raises(
+        ValidationError,
+        match="run-record schema binding differs from the active benchmark schema",
+    ):
+        validate_document({**plan, "run_record_schema_sha256": "f" * 64})
+    run_schema_path.write_bytes(b"{}\n")
+    with pytest.raises(
+        ValidationError,
+        match="workspace run-record schema differs from the active benchmark schema",
+    ):
+        build_campaign_plan(
+            matrix_path=matrix_dir / "matrix.json",
+            suite_paths=suite_paths,
+            oracle_plan_path=oracle_plan_path,
+            measurement_protocol_path=protocol_paths["standard_proxy"],
+            hotblock_measurement_protocol_path=protocol_paths["cache_hotblock"],
+            reference_toolchain_path=toolchain_path,
+            workspace_root=tmp_path,
+            campaign_id="finals-72h",
+            max_workers=4,
+        )
+    run_schema_path.write_bytes(run_schema_bytes)
     toolchain_document = json.loads(toolchain_path.read_text(encoding="utf-8"))
     drifted_toolchain = json.loads(json.dumps(toolchain_document))
     drifted_toolchain["proxy_execution"]["measurement_protocols"][
@@ -313,6 +370,27 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     with pytest.raises(
         ValidationError,
         match="reference toolchain protocol binding differs from supplied protocol",
+    ):
+        build_campaign_plan(
+            matrix_path=matrix_dir / "matrix.json",
+            suite_paths=suite_paths,
+            oracle_plan_path=oracle_plan_path,
+            measurement_protocol_path=protocol_paths["standard_proxy"],
+            hotblock_measurement_protocol_path=protocol_paths["cache_hotblock"],
+            reference_toolchain_path=toolchain_path,
+            workspace_root=tmp_path,
+            campaign_id="finals-72h",
+            max_workers=4,
+        )
+    atomic_write_json(toolchain_path, toolchain_document)
+    launcher_drift = json.loads(json.dumps(toolchain_document))
+    launcher_drift["reference_frontends"]["launcher_contract"][
+        "docker_fallback_policy"
+    ] = "any_failure"
+    atomic_write_json(toolchain_path, launcher_drift)
+    with pytest.raises(
+        ValidationError,
+        match="reference toolchain launcher contract has drifted",
     ):
         build_campaign_plan(
             matrix_path=matrix_dir / "matrix.json",
@@ -456,5 +534,9 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     )
     assert finalized["parent_plan_sha256"] is not None
     assert finalized["promotion_status_sha256"] is not None
+    assert (
+        finalized["run_record_schema_sha256"]
+        == plan["run_record_schema_sha256"]
+    )
     assert finalized["final_pair_families"] == [f"ir.family{index}" for index in range(5)]
     assert len([task for task in finalized["tasks"] if task["kind"] == "pair_ablation"]) == 10

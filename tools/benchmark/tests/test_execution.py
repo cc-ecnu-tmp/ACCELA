@@ -16,13 +16,22 @@ from typing import Any
 import pytest
 
 from tools.benchmark import cache as cache_module
-from tools.benchmark.execution import MeasurementSpec, _summary, run_benchmark
+from tools.benchmark.execution import BenchmarkRun, MeasurementSpec, _summary, run_benchmark
 from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
+from tools.benchmark.journal import AttemptJournal
 from tools.benchmark.adapters import StageSpec
 from tools.benchmark.schema import load_and_validate, validate_document
 from tools.benchmark.protocol import capture_measurement_protocol
 from tools.benchmark.process import run_process
 from tools.benchmark.util import atomic_write_json, sha256_file, sha256_json
+
+
+class InjectedCommittedPhaseError(RuntimeError):
+    pass
+
+
+class InjectedTerminalPublishError(RuntimeError):
+    pass
 
 
 def _run_benchmark_in_subprocess(options: Any, result_queue: Any) -> None:
@@ -42,6 +51,43 @@ def _raw_attempt_directory(state_root: Path, case_id: str, attempt_index: int) -
             matches.append(identity_path.parent)
     assert len(matches) == 1
     return matches[0]
+
+
+def _clear_case_to_uncommitted_attempt(case: dict[str, Any]) -> None:
+    case.update(
+        status="pending",
+        cancellation_reason=None,
+        cache_hit=False,
+        artifact_sha256=None,
+        binary_sha256=None,
+        remarks_sha256=None,
+        remarks_event_count=None,
+        analysis_sha256=None,
+        attempt_journal_sha256=None,
+        attempt_journal_event_count=None,
+        compile=None,
+        compile_samples=[],
+        compile_statistics=None,
+        link=None,
+        analyze=None,
+        measurements=[],
+        samples=[],
+        consistency_passed=(False if case["consistency_selected"] else None),
+        diagnostic="simulated interruption",
+    )
+
+
+def _reserve_first_attempt(options: Any) -> tuple[BenchmarkRun, dict[str, Any], Path]:
+    runner = BenchmarkRun(options)
+    record = runner._initial_record()
+    run_directory = runner._run_directory(record)
+    run_directory.mkdir(parents=True)
+    runner._bind_state_identity(record, run_directory)
+    attempt_directory = runner._reserve_attempt(record, record["cases"][0], run_directory)
+    record["state"] = "interrupted"
+    record["completed_at"] = None
+    runner._write_record(record)
+    return runner, record, attempt_directory
 
 
 def _rebind_protocol(options, *, runner=None, assets=None, name: str):
@@ -184,6 +230,7 @@ def test_scheduler_cancellation_is_not_misclassified_by_any_stage(
     assert record["cases"][0]["status"] == failure_status
     cancelled = record["cases"][1]
     assert cancelled["status"] == "cancelled"
+    assert cancelled["cancellation_reason"] == "scheduler_cancelled"
     if stage_name == "run":
         assert cancelled["samples"][0]["status"] == "cancelled"
     else:
@@ -418,7 +465,7 @@ def test_attempt_local_compile_bypasses_cache_publish_eacces_and_cache_mode_fail
     assert list(compile_cache_root.iterdir()) == []
 
 
-def test_resume_only_reexecutes_cancelled_case(benchmark_fixture) -> None:
+def test_resume_recovers_durable_terminal_without_reexecution(benchmark_fixture) -> None:
     tmp_path, _, _, _, make_options = benchmark_fixture
     options = replace(
         make_options(output_name="resume.json", run_id="resume-run"),
@@ -426,50 +473,453 @@ def test_resume_only_reexecutes_cancelled_case(benchmark_fixture) -> None:
     )
     completed = run_benchmark(options)
     resumed_case = completed["cases"][-1]
-    resumed_case.update(
-        status="cancelled",
-        cache_hit=False,
-        compile=None,
-        link=None,
-        measurements=[],
-        samples=[],
-        consistency_passed=(False if resumed_case["consistency_selected"] else None),
-        diagnostic="simulated interruption",
-    )
-    completed["state"] = "failed"
-    completed["completed_at"] = completed["updated_at"]
+    terminal_journal_sha256 = resumed_case["attempt_journal_sha256"]
+    _clear_case_to_uncommitted_attempt(resumed_case)
+    completed["state"] = "interrupted"
+    completed["completed_at"] = None
     completed["summary"] = _summary(completed["cases"])
     atomic_write_json(tmp_path / "resume.json", completed)
     resumed = run_benchmark(options)
     assert resumed["state"] == "completed"
     assert resumed["summary"]["passed_cases"] == 10
-    assert resumed["cases"][-1]["cache_hit"] is True
-    assert resumed["cases"][-1]["attempts"][0]["status"] == "cancelled"
+    assert resumed["cases"][-1]["cache_hit"] is False
+    assert resumed["cases"][-1]["attempt_index"] == 0
+    assert resumed["cases"][-1]["attempts"] == []
+    assert resumed["cases"][-1]["attempt_journal_sha256"] == terminal_journal_sha256
 
 
-def test_retry_failures_preserves_prior_attempt_evidence(benchmark_fixture) -> None:
+def test_resume_fails_fast_when_physical_attempt_identity_was_tampered(
+    benchmark_fixture,
+) -> None:
     tmp_path, _, _, _, make_options = benchmark_fixture
     options = replace(
-        make_options(output_name="retry.json", run_id="retry-run"),
+        make_options(output_name="resume-identity.json", run_id="resume-identity-run"),
         reuse_compile_cache=True,
     )
     completed = run_benchmark(options)
-    failed_case = completed["cases"][0]
-    failed_case.update(status="wrong_output", diagnostic="retained first-attempt failure")
-    completed["state"] = "failed"
-    completed["completed_at"] = completed["updated_at"]
+    interrupted_case = completed["cases"][-1]
+    _clear_case_to_uncommitted_attempt(interrupted_case)
+    completed["state"] = "interrupted"
+    completed["completed_at"] = None
     completed["summary"] = _summary(completed["cases"])
-    atomic_write_json(tmp_path / "retry.json", completed)
+    atomic_write_json(options.output_path, completed)
 
-    retried = run_benchmark(replace(options, retry_failures=True))
-    assert retried["state"] == "completed"
-    assert retried["configuration"]["retry_failures"] is True
-    attempt = retried["cases"][0]["attempts"][0]
-    assert attempt["status"] == "wrong_output"
-    assert attempt["failure_summary"] == "correctness_mismatch"
-    assert attempt["configuration_sha256"] != retried["configuration_sha256"]
-    assert attempt["diagnostic"] == "retained first-attempt failure"
-    assert attempt["samples"]
+    attempt_directory = _raw_attempt_directory(
+        options.state_root,
+        interrupted_case["case_id"],
+        interrupted_case["attempt_index"],
+    )
+    identity_path = attempt_directory / "identity.json"
+    identity = json.loads(identity_path.read_text(encoding="utf-8"))
+    identity["configuration_sha256"] = "f" * 64
+    atomic_write_json(identity_path, identity)
+
+    with pytest.raises(ExecutionError, match="raw attempt identity differs"):
+        run_benchmark(options)
+
+
+def test_resume_retries_only_a_durable_pre_phase_interruption(benchmark_fixture) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="pre-phase-resume.json", run_id="pre-phase-resume"),
+        max_workers=1,
+    )
+    _, reserved, attempt_directory = _reserve_first_attempt(options)
+    assert {path.name for path in attempt_directory.iterdir()} == {"identity.json", "journal"}
+
+    resumed = run_benchmark(options)
+    first = resumed["cases"][0]
+    assert resumed["state"] == "completed"
+    assert first["attempt_index"] == 1
+    assert len(first["attempts"]) == 1
+    interruption = first["attempts"][0]
+    assert interruption["status"] == "cancelled"
+    assert interruption["cancellation_reason"] == "execution_interrupted"
+    assert interruption["attempt_journal_event_count"] == 1
+    assert interruption["configuration_sha256"] == reserved["configuration_sha256"]
+    assert first["attempt_configuration_sha256"] == reserved["configuration_sha256"]
+
+
+@pytest.mark.parametrize(
+    ("corruption", "expected_error"),
+    (
+        ("missing_identity", "raw attempt directory collision"),
+        ("missing_journal_metadata", "journal metadata is missing"),
+        ("orphan_attempt", "physical and normalized attempt sets differ"),
+        ("raw_without_journal", "uncommitted raw phase evidence"),
+        ("phase_without_terminal", "raw phase evidence lacks a terminal outcome"),
+        ("journal_tamper", "journal event content hash differs"),
+    ),
+)
+def test_resume_rejects_unverifiable_physical_crash_windows(
+    benchmark_fixture,
+    corruption: str,
+    expected_error: str,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name=f"crash-{corruption}.json",
+            run_id=f"crash-{corruption}",
+        ),
+        max_workers=1,
+    )
+    runner, record, attempt_directory = _reserve_first_attempt(options)
+    case = record["cases"][0]
+    if corruption == "missing_identity":
+        (attempt_directory / "identity.json").unlink()
+    elif corruption == "missing_journal_metadata":
+        (attempt_directory / "journal" / "metadata.json").unlink()
+    elif corruption == "orphan_attempt":
+        (attempt_directory.parent / "attempt-0001").mkdir()
+    elif corruption == "raw_without_journal":
+        (attempt_directory / "uncommitted.log").write_bytes(b"uncommitted")
+    else:
+        assert case["attempt_started_at"] is not None
+        assert case["attempt_configuration_sha256"] is not None
+        journal = runner._attempt_journal(
+            record,
+            attempt_directory,
+            case_id=case["case_id"],
+            attempt_index=case["attempt_index"],
+            started_at=case["attempt_started_at"],
+            configuration_sha256=case["attempt_configuration_sha256"],
+        )
+        journal.append_phase_started("compile")
+        if corruption == "journal_tamper":
+            event_path = next((attempt_directory / "journal").glob("event-*.json"))
+            event_path.write_bytes(event_path.read_bytes() + b" ")
+
+    with pytest.raises(ExecutionError, match=expected_error):
+        run_benchmark(options)
+
+
+@pytest.mark.parametrize(
+    "committed_stage",
+    ("compile", "link", "analyze", "run-0000"),
+)
+def test_scheduler_seals_committed_phase_prefix_after_worker_infrastructure_failure(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    committed_stage: str,
+) -> None:
+    _, _, _, tool, make_options = benchmark_fixture
+    base = make_options(
+        output_name=f"committed-{committed_stage}-infrastructure.json",
+        run_id=f"committed-{committed_stage}-infrastructure",
+    )
+    options = replace(base, max_workers=1, keep_going=False)
+    if committed_stage == "link":
+        options = replace(
+            options,
+            linker=StageSpec(
+                "external",
+                "host",
+                (
+                    sys.executable,
+                    str(tool),
+                    "compile",
+                    "{artifact}",
+                    "{binary}",
+                ),
+                {},
+            ),
+        )
+    elif committed_stage == "analyze":
+        options = replace(
+            options,
+            analyzer=StageSpec(
+                "analyzer",
+                "host",
+                (
+                    sys.executable,
+                    str(tool),
+                    "analyze-empty",
+                    "{binary}",
+                    "{analysis_file}",
+                ),
+                {},
+            ),
+            analysis_file="analysis/binary.json",
+            additional_metrics=(
+                MeasurementSpec("elf_text_bytes", "analyzer", "bytes"),
+            ),
+        )
+
+    original_append = AttemptJournal.append_phase_result
+    armed = True
+
+    def inject_after_commit(self, stage, result):
+        nonlocal armed
+        snapshot = original_append(self, stage, result)
+        if armed and stage == committed_stage:
+            armed = False
+            raise InjectedCommittedPhaseError(f"injected-after-{committed_stage}")
+        return snapshot
+
+    monkeypatch.setattr(AttemptJournal, "append_phase_result", inject_after_commit)
+    with pytest.raises(
+        ExecutionError,
+        match=rf"InjectedCommittedPhaseError: injected-after-{committed_stage}",
+    ):
+        run_benchmark(options)
+    monkeypatch.setattr(AttemptJournal, "append_phase_result", original_append)
+
+    interrupted = load_and_validate(options.output_path)
+    case = interrupted["cases"][0]
+    assert interrupted["state"] == "interrupted"
+    assert case["status"] == "cancelled"
+    assert case["cancellation_reason"] == "infrastructure_failure"
+    assert case["diagnostic"] == (
+        f"InjectedCommittedPhaseError: injected-after-{committed_stage}"
+    )
+    assert case["compile"]["status"] == "ok"
+    assert case["artifact_sha256"] is not None
+    if committed_stage == "link":
+        assert case["link"]["status"] == "ok"
+        assert case["binary_sha256"] is not None
+    if committed_stage == "analyze":
+        assert case["analyze"]["status"] == "ok"
+        assert case["analysis_sha256"] is not None
+        assert any(
+            measurement["metric_id"] == "elf_text_bytes"
+            for measurement in case["measurements"]
+        )
+    if committed_stage == "run-0000":
+        assert case["binary_sha256"] is not None
+        assert [sample["status"] for sample in case["samples"]] == ["passed"]
+    assert case["attempt_journal_sha256"] is not None
+    assert case["attempt_journal_event_count"] >= 3
+
+    tampered = deepcopy(interrupted)
+    tampered["cases"][0]["compile"]["status"] = "error"
+    with pytest.raises(ValidationError, match="infrastructure failure prefix contains"):
+        validate_document(tampered)
+
+    with pytest.raises(
+        ExecutionError,
+        match=rf"cannot resume infrastructure-failed attempt: .*"
+        rf"InjectedCommittedPhaseError: injected-after-{committed_stage}",
+    ):
+        run_benchmark(options)
+    resumed = load_and_validate(options.output_path)
+    assert resumed["cases"][0]["attempt_index"] == 0
+    assert resumed["cases"][0]["attempts"] == []
+
+
+def test_scheduler_preserves_committed_runtime_failure_after_worker_exception(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name="committed-runtime-failure.json",
+            run_id="committed-runtime-failure",
+            behavior="return-one",
+        ),
+        max_workers=1,
+        keep_going=False,
+    )
+    original_append = AttemptJournal.append_phase_result
+    armed = True
+
+    def inject_after_committed_failure(self, stage, result):
+        nonlocal armed
+        snapshot = original_append(self, stage, result)
+        if armed and stage == "run-0000":
+            armed = False
+            raise InjectedCommittedPhaseError("injected-after-wrong-output")
+        return snapshot
+
+    monkeypatch.setattr(
+        AttemptJournal,
+        "append_phase_result",
+        inject_after_committed_failure,
+    )
+    with pytest.raises(
+        ExecutionError,
+        match="InjectedCommittedPhaseError: injected-after-wrong-output",
+    ):
+        run_benchmark(options)
+    monkeypatch.setattr(AttemptJournal, "append_phase_result", original_append)
+
+    interrupted = load_and_validate(options.output_path)
+    case = interrupted["cases"][0]
+    assert interrupted["state"] == "interrupted"
+    assert case["status"] == "wrong_output"
+    assert case["cancellation_reason"] is None
+    assert case["samples"][-1]["status"] == "wrong_output"
+    assert case["diagnostic"] == case["samples"][-1]["diagnostic"]
+    assert case["attempt_journal_sha256"] is not None
+    assert case["attempt_journal_event_count"] >= 4
+    assert case["attempt_index"] == 0
+    assert case["attempts"] == []
+
+
+@pytest.mark.parametrize("publish_before_error", (False, True))
+def test_scheduler_terminal_publish_failure_keeps_normalized_record_transactional(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    publish_before_error: bool,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name=f"worker-and-terminal-publish-failure-{publish_before_error}.json",
+            run_id=f"worker-and-terminal-publish-failure-{publish_before_error}",
+        ),
+        max_workers=1,
+        keep_going=False,
+    )
+    original_phase_result = AttemptJournal.append_phase_result
+    original_terminal = AttemptJournal.append_terminal
+    phase_armed = True
+
+    def fail_worker_after_phase_commit(self, stage, result):
+        nonlocal phase_armed
+        snapshot = original_phase_result(self, stage, result)
+        if phase_armed and stage == "compile":
+            phase_armed = False
+            raise InjectedCommittedPhaseError("worker-failed-after-compile-commit")
+        return snapshot
+
+    def fail_terminal_publish(self, case_result):
+        if publish_before_error:
+            original_terminal(self, case_result)
+        raise InjectedTerminalPublishError("terminal-create-failed")
+
+    monkeypatch.setattr(
+        AttemptJournal,
+        "append_phase_result",
+        fail_worker_after_phase_commit,
+    )
+    monkeypatch.setattr(
+        AttemptJournal,
+        "append_terminal",
+        fail_terminal_publish,
+    )
+
+    with pytest.raises(ExecutionError) as raised:
+        run_benchmark(options)
+    assert "InjectedCommittedPhaseError: worker-failed-after-compile-commit" in str(
+        raised.value
+    )
+    assert "InjectedTerminalPublishError: terminal-create-failed" in str(raised.value)
+    cause = raised.value.__cause__
+    assert isinstance(cause, BaseExceptionGroup)
+    assert [type(error) for error in cause.exceptions] == [
+        InjectedCommittedPhaseError,
+        InjectedTerminalPublishError,
+    ]
+
+    interrupted = load_and_validate(options.output_path)
+    assert interrupted["state"] == "interrupted"
+    case = interrupted["cases"][0]
+    assert case["status"] == "pending"
+    assert case["cancellation_reason"] is None
+    assert case["attempt_journal_sha256"] is None
+    assert case["attempt_journal_event_count"] is None
+    assert case["compile"] is None
+    assert case["compile_samples"] == []
+
+    attempt_directory = _raw_attempt_directory(
+        options.state_root,
+        case["case_id"],
+        case["attempt_index"],
+    )
+    metadata = json.loads(
+        (attempt_directory / "journal" / "metadata.json").read_text(encoding="utf-8")
+    )
+    journal = AttemptJournal(
+        attempt_directory,
+        identity_sha256=metadata["identity_sha256"],
+    )
+    snapshot = journal.load()
+    assert snapshot.has_phase_evidence
+    assert snapshot.latest_committed_case_prefix is not None
+    assert (snapshot.terminal_case_result is not None) is publish_before_error
+
+    monkeypatch.setattr(AttemptJournal, "append_phase_result", original_phase_result)
+    monkeypatch.setattr(AttemptJournal, "append_terminal", original_terminal)
+    resume_error = (
+        "cannot resume infrastructure-failed attempt"
+        if publish_before_error
+        else "raw phase evidence lacks a terminal outcome"
+    )
+    with pytest.raises(ExecutionError, match=resume_error):
+        run_benchmark(options)
+    unchanged = load_and_validate(options.output_path)
+    assert unchanged["state"] == "interrupted"
+    assert unchanged["cases"][0] == case
+
+
+def test_resume_rejects_success_metric_masquerading_as_the_durable_attempt(
+    benchmark_fixture,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = make_options(output_name="metric-masquerade.json", run_id="metric-masquerade")
+    completed = run_benchmark(options)
+    case = completed["cases"][0]
+    assert case["status"] == "passed"
+    case["samples"][0]["measurements"][0]["value"] += 1
+    atomic_write_json(options.output_path, completed)
+
+    with pytest.raises(ExecutionError, match="normalized attempt result differs"):
+        run_benchmark(options)
+
+
+def test_resume_restores_wrong_output_without_retrying_the_real_failure(
+    benchmark_fixture,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = make_options(
+        output_name="wrong-output-recovery.json",
+        run_id="wrong-output-recovery",
+        behavior="return-one",
+    )
+    failed = run_benchmark(options)
+    recovered_case = failed["cases"][-1]
+    terminal_journal_sha256 = recovered_case["attempt_journal_sha256"]
+    assert recovered_case["status"] == "wrong_output"
+    _clear_case_to_uncommitted_attempt(recovered_case)
+    failed["state"] = "interrupted"
+    failed["completed_at"] = None
+    failed["summary"] = _summary(failed["cases"])
+    atomic_write_json(options.output_path, failed)
+
+    resumed = run_benchmark(options)
+    restored = resumed["cases"][-1]
+    assert resumed["state"] == "failed"
+    assert restored["status"] == "wrong_output"
+    assert restored["attempt_index"] == 0
+    assert restored["attempts"] == []
+    assert restored["attempt_journal_sha256"] == terminal_journal_sha256
+
+
+@pytest.mark.parametrize(("initial_retry", "reopen_retry"), ((False, True), (True, False)))
+def test_retry_policy_cannot_rebind_an_existing_run(
+    benchmark_fixture,
+    initial_retry: bool,
+    reopen_retry: bool,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name=f"retry-binding-{initial_retry}.json",
+            run_id=f"retry-binding-{initial_retry}",
+        ),
+        retry_failures=initial_retry,
+    )
+    completed = run_benchmark(options)
+    original_configuration_sha256 = completed["configuration_sha256"]
+
+    with pytest.raises(ConfigurationError, match="configuration digest changed"):
+        run_benchmark(replace(options, retry_failures=reopen_retry))
+
+    unchanged = run_benchmark(options)
+    assert unchanged["configuration_sha256"] == original_configuration_sha256
+    assert unchanged["configuration"]["retry_failures"] is initial_retry
 
 
 def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
@@ -497,6 +947,7 @@ def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
         ),
         max_workers=1,
         keep_going=False,
+        retry_failures=True,
     )
 
     first = run_benchmark(options)
@@ -516,7 +967,7 @@ def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
     )
     assert first_workspace_stderr.read_bytes() == first_payload
 
-    retried = run_benchmark(replace(options, retry_failures=True))
+    retried = run_benchmark(options)
     assert retried["state"] == "completed"
     current = retried["cases"][0]
     assert current["attempt_index"] == 1
@@ -535,7 +986,8 @@ def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
     ).read_text(encoding="utf-8").splitlines() == ["later-attempt-success"]
     assert (second_directory / "attempt-local-compile" / "artifact.s").is_file()
     assert first_workspace_stderr.read_bytes() == first_payload
-    assert archived["configuration_sha256"] != current["attempt_configuration_sha256"]
+    assert archived["configuration_sha256"] == current["attempt_configuration_sha256"]
+    assert archived["configuration_sha256"] == retried["configuration_sha256"]
     assert all(
         case["attempt_index"] == 0 and not case["attempts"]
         for case in retried["cases"][1:]

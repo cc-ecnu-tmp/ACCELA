@@ -15,7 +15,9 @@
 - 启用了 plugin 支持的 `qemu-system-riscv64`
 - C 编译器、`pkg-config`、GLib 2 和 QEMU 的 `qemu-plugin.h`, `timeout`
 - 运行 GCC 13.3／Clang 18 对照时需要 Docker；WSL 可使用启用集成的
-  `docker`，也可由脚本自动调用可见的 Windows `docker.exe`
+  `docker`，也可在 native daemon transport 不可达时使用 Windows `docker.exe`。
+  首个 reachable daemon 的镜像检查失败不会跨 daemon 回退；reference launcher
+  固定使用与快照版本完全一致的 `python3 -I`
 
 第一次运行前先构建 ACCELA：
 
@@ -90,8 +92,6 @@ riscv64-elf-objdump -d build/qemu-run/NAME/program.elf
 | `QEMU_TIMEOUT`        | `120`                     | 单个测试点的超时秒数                                    |
 | `RISCV_GCC`           | `riscv64-elf-gcc`         | 编译/链接所用的裸机 GCC                                 |
 | `ACCELA_JAVA_HOME`    | `JAVA_HOME`，然后 `PATH`  | JDK 21；只填 JDK 根目录                                  |
-| `ACCELA_REFERENCE_IMAGE` | `accela/reference-toolchain:2026.08.09` | 固定 GCC 13.3／Clang 18 镜像 |
-| `ACCELA_REFERENCE_IMAGE_ID` | `sha256:0973de…18d9` | 与工具链快照一致的不可变镜像 ID；tag 与 ID 不符时立即失败 |
 | `QEMU_PLUGIN_INCLUDE` | 自动发现标准目录          | `qemu-plugin.h` 所在目录                                 |
 | `ACCELA_PIPELINE_PROFILE` | 无                    | `QEMU_COMPILER=benchmark` 时必需的 profile JSON          |
 
