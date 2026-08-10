@@ -24,7 +24,7 @@ from .journal import AttemptJournal, JournalSnapshot, durable_create_json
 from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .metrics import ANALYZER_METRICS, rv64gc_qemu_v1
 from .process import ProcessResult, extract_metric, first_mismatch_offset, run_process
-from .protocol import verify_measurement_protocol
+from .protocol import resolve_measurement_protocol_assets, verify_measurement_protocol
 from .schema import load_and_validate, load_and_validate_jsonl, validate_document
 from .util import (
     atomic_write_json,
@@ -231,6 +231,8 @@ def _require_path_placeholder(stage: StageSpec, logical_name: str, label: str) -
 
 
 def _validate_options(options: RunOptions) -> None:
+    if not options.workspace_root.is_absolute():
+        raise ConfigurationError("workspace_root must be an absolute path")
     if options.compiler.command is None or options.runner.command is None:
         raise ConfigurationError("compiler and runner commands are required")
     if not isinstance(options.reuse_compile_cache, bool):
@@ -281,6 +283,7 @@ def _validate_options(options: RunOptions) -> None:
             raise ConfigurationError("measurement protocol assets contain duplicate keys")
         verify_measurement_protocol(
             protocol,
+            workspace_root=options.workspace_root,
             assets=asset_map,
             runner=options.runner,
             wsl_executable=options.wsl_executable,
@@ -1067,10 +1070,14 @@ class BenchmarkRun:
         )
         self.configuration = _configuration(options)
         self.provenance = options.provenance.as_record()
-        self.measurement_protocol_assets = {
-            key: path.resolve(strict=True)
-            for key, path in options.measurement_protocol_assets
-        }
+        self.measurement_protocol_assets = (
+            resolve_measurement_protocol_assets(
+                dict(options.measurement_protocol_assets),
+                workspace_root=self.workspace_root,
+            )
+            if options.measurement_protocol_assets
+            else {}
+        )
         self.configuration_sha256 = sha256_json(
             {"configuration": self.configuration, "provenance": self.provenance}
         )

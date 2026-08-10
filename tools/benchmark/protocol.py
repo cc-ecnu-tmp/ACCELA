@@ -56,7 +56,23 @@ _PLUGIN_FIELDS = {
 }
 
 
-def _normalized_assets(assets: Mapping[str, Path]) -> dict[str, Path]:
+def _normalized_workspace_root(workspace_root: Path) -> Path:
+    if not workspace_root.is_absolute():
+        raise ConfigurationError("measurement protocol workspace must be an absolute path")
+    try:
+        root = workspace_root.resolve(strict=True)
+    except OSError as exc:
+        raise ConfigurationError("measurement protocol workspace is missing or unreadable") from exc
+    if not root.is_dir():
+        raise ConfigurationError("measurement protocol workspace must be a directory")
+    return root
+
+
+def _normalized_assets(
+    assets: Mapping[str, Path],
+    *,
+    workspace_root: Path,
+) -> dict[str, Path]:
     if set(assets) != set(REQUIRED_ASSETS):
         missing = sorted(set(REQUIRED_ASSETS) - set(assets))
         extra = sorted(set(assets) - set(REQUIRED_ASSETS))
@@ -66,11 +82,29 @@ def _normalized_assets(assets: Mapping[str, Path]) -> dict[str, Path]:
         )
     normalized: dict[str, Path] = {}
     for key in REQUIRED_ASSETS:
-        path = assets[key].resolve(strict=True)
+        declared = assets[key]
+        path = (
+            declared if declared.is_absolute() else workspace_root / declared
+        ).resolve(strict=True)
         if not path.is_file():
             raise ConfigurationError(f"measurement protocol asset is not a regular file: {key}")
         normalized[key] = path
     return normalized
+
+
+def resolve_measurement_protocol_assets(
+    assets: Mapping[str, Path],
+    *,
+    workspace_root: Path,
+) -> dict[str, Path]:
+    """Resolve the exact physical protocol assets against one workspace.
+
+    Verification and execution must consume this same mapping.  Relative
+    declarations are workspace-relative; absolute tool paths remain absolute.
+    """
+
+    root = _normalized_workspace_root(workspace_root)
+    return _normalized_assets(assets, workspace_root=root)
 
 
 def _runner_command_sha256(runner: StageSpec, *, measurement_mode: str) -> str:
@@ -124,6 +158,7 @@ def _runner_command_sha256(runner: StageSpec, *, measurement_mode: str) -> str:
 def _qemu_version(
     binary: Path,
     *,
+    workspace_root: Path,
     runner: StageSpec,
     wsl_executable: str,
     wsl_distribution: str | None,
@@ -132,7 +167,10 @@ def _qemu_version(
         command = [str(binary), "--version"]
     elif runner.adapter == "wsl":
         mapper = WslPathMapper(wsl_executable, wsl_distribution)
-        command = mapper.wrap([mapper.to_wsl(binary), "--version"], cwd=Path.cwd())
+        command = mapper.wrap(
+            [mapper.to_wsl(binary), "--version"],
+            cwd=workspace_root,
+        )
     else:
         raise ConfigurationError("measurement protocol runner adapter must be host or wsl")
     try:
@@ -144,13 +182,17 @@ def _qemu_version(
             check=False,
             timeout=15,
             shell=False,
+            cwd=workspace_root,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ExecutionError("cannot execute QEMU binary for protocol verification") from exc
     if result.returncode != 0:
         raise ExecutionError(
             "QEMU --version failed: "
-            + sanitize_text(result.stderr.decode("utf-8", errors="replace")[-1024:])
+            + sanitize_text(
+                result.stderr.decode("utf-8", errors="replace")[-1024:],
+                (workspace_root,),
+            )
         )
     lines = result.stdout.decode("utf-8", errors="strict").splitlines()
     if not lines or not lines[0].strip():
@@ -161,6 +203,7 @@ def _qemu_version(
 def capture_measurement_protocol(
     *,
     protocol_id: str,
+    workspace_root: Path,
     assets: Mapping[str, Path],
     runner: StageSpec,
     machine: str,
@@ -170,7 +213,11 @@ def capture_measurement_protocol(
     wsl_executable: str = "wsl.exe",
     wsl_distribution: str | None = None,
 ) -> dict[str, Any]:
-    normalized = _normalized_assets(assets)
+    root = _normalized_workspace_root(workspace_root)
+    normalized = resolve_measurement_protocol_assets(
+        assets,
+        workspace_root=root,
+    )
     if not machine or not cpu_model or not memory:
         raise ConfigurationError("QEMU machine, cpu model, and memory must be non-empty")
     if measurement_mode not in {"standard_proxy", "cache_hotblock"}:
@@ -180,6 +227,7 @@ def capture_measurement_protocol(
     )
     qemu_version = _qemu_version(
         normalized["qemu_binary"],
+        workspace_root=root,
         runner=runner,
         wsl_executable=wsl_executable,
         wsl_distribution=wsl_distribution,
@@ -228,18 +276,23 @@ def capture_measurement_protocol(
 def verify_measurement_protocol(
     snapshot: Mapping[str, Any],
     *,
+    workspace_root: Path,
     assets: Mapping[str, Path],
     runner: StageSpec,
     wsl_executable: str = "wsl.exe",
     wsl_distribution: str | None = None,
 ) -> None:
+    root = _normalized_workspace_root(workspace_root)
     validated = validate_document(dict(snapshot))
     if validated["schema_version"] != "measurement-protocol.v1":
         raise ValidationError("measurement protocol must be measurement-protocol.v1")
     runner_command_sha256 = _runner_command_sha256(
         runner, measurement_mode=validated["measurement_mode"]
     )
-    normalized = _normalized_assets(assets)
+    normalized = resolve_measurement_protocol_assets(
+        assets,
+        workspace_root=root,
+    )
     for key, field in _SOURCE_FIELDS.items():
         if sha256_file(normalized[key]) != validated["sources"][field]:
             raise ValidationError(f"measurement protocol source hash drift: {key}")
@@ -255,6 +308,7 @@ def verify_measurement_protocol(
         raise ValidationError("measurement protocol WSL distribution drift")
     if _qemu_version(
         normalized["qemu_binary"],
+        workspace_root=root,
         runner=runner,
         wsl_executable=wsl_executable,
         wsl_distribution=wsl_distribution,

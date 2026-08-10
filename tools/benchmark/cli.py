@@ -28,10 +28,11 @@ from .report import build_report
 from .schema import load_and_validate, load_and_validate_jsonl
 from .util import (
     atomic_write_json,
+    describe_os_error,
     parse_command_json,
     parse_environment,
     read_json,
-    sanitize_text,
+    render_cli_error,
     sha256_artifact,
     sha256_json,
 )
@@ -39,6 +40,23 @@ from .util import (
 
 def _path(value: str) -> Path:
     return Path(value)
+
+
+def _resolve_workspace_root(value: Path | None) -> Path:
+    if value is None:
+        raise ConfigurationError("--workspace-root is required")
+    if not value.is_absolute():
+        raise ConfigurationError("--workspace-root must be an absolute path")
+    try:
+        root = value.resolve(strict=True)
+    except OSError as exc:
+        raise ConfigurationError(
+            "workspace root is missing or unreadable "
+            f"({describe_os_error(exc)})"
+        ) from exc
+    if not root.is_dir():
+        raise ConfigurationError("workspace root must be a directory")
+    return root
 
 
 def _verify_git_provenance(
@@ -371,7 +389,7 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
 def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("manifest", type=_path)
     parser.add_argument("--suite-root", type=_path)
-    parser.add_argument("--workspace-root", type=_path, default=Path.cwd())
+    parser.add_argument("--workspace-root", type=_path, required=True)
     parser.add_argument("--output", type=_path, required=True)
     parser.add_argument("--state-dir", type=_path)
     parser.add_argument("--run-id")
@@ -504,6 +522,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--runner-command-json", required=True)
         command.add_argument("--runner-env", action="append", default=[], metavar="KEY=VALUE")
         command.add_argument("--runner-adapter", choices=("host", "wsl"), default="host")
+        command.add_argument("--workspace-root", type=_path, required=True)
         command.add_argument("--wsl-executable", default="wsl.exe")
         command.add_argument("--wsl-distribution")
 
@@ -622,7 +641,7 @@ def build_parser() -> argparse.ArgumentParser:
     campaign_plan.add_argument("--measurement-protocol", type=_path, required=True)
     campaign_plan.add_argument("--cache-hotblock-protocol", type=_path, required=True)
     campaign_plan.add_argument("--reference-toolchain", type=_path, required=True)
-    campaign_plan.add_argument("--workspace-root", type=_path, default=Path.cwd())
+    campaign_plan.add_argument("--workspace-root", type=_path, required=True)
     campaign_plan.add_argument(
         "--suite", action="append", required=True, metavar="B1|B2|B3|B4|B5|B6|oracle=MANIFEST",
         help="exactly one normalized manifest for every evidence role",
@@ -760,6 +779,8 @@ def _case_ids(arguments: argparse.Namespace) -> list[str]:
 
 
 def dispatch(args: argparse.Namespace) -> int:
+    if hasattr(args, "workspace_root"):
+        args.workspace_root = _resolve_workspace_root(args.workspace_root)
     if args.command == "protocol":
         runner_command = parse_command_json(
             args.runner_command_json, label="runner-command-json", required=True
@@ -772,6 +793,7 @@ def dispatch(args: argparse.Namespace) -> int:
         if args.protocol_command == "capture":
             snapshot = capture_measurement_protocol(
                 protocol_id=args.protocol_id,
+                workspace_root=args.workspace_root,
                 assets=assets,
                 runner=runner,
                 machine=args.machine,
@@ -781,12 +803,23 @@ def dispatch(args: argparse.Namespace) -> int:
                 wsl_executable=args.wsl_executable,
                 wsl_distribution=args.wsl_distribution,
             )
-            atomic_write_json(args.output, snapshot)
+            output_path = (
+                args.output
+                if args.output.is_absolute()
+                else args.workspace_root / args.output
+            )
+            atomic_write_json(output_path, snapshot)
             print(json.dumps({"schema_version": snapshot["schema_version"], "sha256": sha256_json(snapshot)}))
             return 0
-        snapshot = load_and_validate(args.snapshot)
+        snapshot_path = (
+            args.snapshot
+            if args.snapshot.is_absolute()
+            else args.workspace_root / args.snapshot
+        )
+        snapshot = load_and_validate(snapshot_path)
         verify_measurement_protocol(
             snapshot,
+            workspace_root=args.workspace_root,
             assets=assets,
             runner=runner,
             wsl_executable=args.wsl_executable,
@@ -1067,9 +1100,16 @@ def dispatch(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = build_parser()
+    args: argparse.Namespace | None = None
     try:
-        return dispatch(parser.parse_args(argv))
+        parser = build_parser()
+        args = parser.parse_args(argv)
+        return dispatch(args)
     except (BenchmarkError, OSError) as exc:
-        print(f"error: {sanitize_text(str(exc), (Path.cwd(),))}", file=sys.stderr)
+        roots = ()
+        if args is not None:
+            workspace_root = getattr(args, "workspace_root", None)
+            if isinstance(workspace_root, Path):
+                roots = (workspace_root,)
+        print(f"error: {render_cli_error(exc, roots)}", file=sys.stderr)
         return 2

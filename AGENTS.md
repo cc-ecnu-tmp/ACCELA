@@ -79,6 +79,15 @@
   clean-room benchmarks, versioned schemas, normalized records, reproducible
   analysis, and reader-facing reports; committed records must not contain local
   absolute paths.
+- Run formal campaigns from a native WSL Linux filesystem, never from a Windows
+  checkout exposed through DrvFS/9p. While a campaign is active, freeze the
+  Windows checkout as the return target and treat one clean, hash-equivalent WSL
+  checkout as the sole source of compiler builds, raw attempts, status ledgers,
+  and reports. Copy ignored corpora and prior diagnostic evidence with physical
+  hash verification, rebuild location-bound virtual environments and build
+  outputs inside WSL, and never combine evidence across workspace identities,
+  repository revisions, or campaign IDs. Sync results back only after the
+  campaign is terminal and revalidate both canonical and physical hashes.
 - Repository text is normalized to LF by `.gitattributes`. Physical SHA-256
   contracts must be computed from that checkout form; never let host
   `core.autocrlf` silently rewrite schemas, snapshots, plans, launchers, or

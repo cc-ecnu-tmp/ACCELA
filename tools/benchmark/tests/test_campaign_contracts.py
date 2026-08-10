@@ -683,7 +683,8 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
 
     assets["qemu_binary"] = Path(sys.executable)
     protocol = capture_measurement_protocol(
-        protocol_id="cache-hotblock-test", assets=assets, runner=monkeypatch_runner,
+        protocol_id="cache-hotblock-test", workspace_root=tmp_path,
+        assets=assets, runner=monkeypatch_runner,
         machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
     )
     assert protocol["measurement_mode"] == "cache_hotblock"
@@ -707,7 +708,8 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
     )
     with pytest.raises(ConfigurationError, match="hotblocks_plugin_binary"):
         capture_measurement_protocol(
-            protocol_id="invalid-cache-hotblock", assets=assets, runner=missing,
+            protocol_id="invalid-cache-hotblock", workspace_root=tmp_path,
+            assets=assets, runner=missing,
             machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
         )
 
@@ -722,7 +724,8 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
     )
     with pytest.raises(ConfigurationError, match="physical.*input"):
         capture_measurement_protocol(
-            protocol_id="invalid-input-transport", assets=assets, runner=no_input,
+            protocol_id="invalid-input-transport", workspace_root=tmp_path,
+            assets=assets, runner=no_input,
             machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
         )
 
@@ -739,23 +742,29 @@ def test_cache_hotblock_protocol_requires_physical_hotblock_placeholder(tmp_path
         )
         with pytest.raises(ConfigurationError, match=rf"physical.*{missing}"):
             capture_measurement_protocol(
-                protocol_id=f"invalid-{missing}-transport", assets=assets,
+                protocol_id=f"invalid-{missing}-transport", workspace_root=tmp_path,
+                assets=assets,
                 runner=without_physical, machine="virt", cpu_model="rv64",
                 memory="128M", measurement_mode="cache_hotblock",
             )
 
     variants = StageSpec("qemu", "host", complete_command, {})
     capture_measurement_protocol(
-        protocol_id="physical-path-variants", assets=assets, runner=variants,
+        protocol_id="physical-path-variants", workspace_root=tmp_path,
+        assets=assets, runner=variants,
         machine="virt", cpu_model="rv64", memory="128M", measurement_mode="cache_hotblock",
     )
 
     legacy = deepcopy(protocol)
     legacy.pop("input_transport")
     with pytest.raises(ValidationError, match="input_transport.*required property"):
-        verify_measurement_protocol(legacy, assets=assets, runner=runner)
+        verify_measurement_protocol(
+            legacy, workspace_root=tmp_path, assets=assets, runner=runner
+        )
 
     drifted = deepcopy(protocol)
     drifted["input_transport"]["item_name"] = "opt/accela/other"
     with pytest.raises(ValidationError, match="opt/accela/sysy-input"):
-        verify_measurement_protocol(drifted, assets=assets, runner=runner)
+        verify_measurement_protocol(
+            drifted, workspace_root=tmp_path, assets=assets, runner=runner
+        )

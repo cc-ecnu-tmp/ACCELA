@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno as errno_module
 import hashlib
 import json
 import math
@@ -235,6 +236,52 @@ def sanitize_text(value: str, roots: Iterable[Path] = (), limit: int = 4096) -> 
     if len(sanitized) > limit:
         sanitized = sanitized[-limit:]
     return sanitized
+
+
+def describe_os_error(exc: OSError) -> str:
+    """Return path-free, machine-actionable operating-system error identity.
+
+    ``str(OSError)`` commonly includes the affected absolute path and does not
+    always retain the symbolic errno name.  Durable benchmark evidence needs a
+    stable diagnostic that can be compared across hosts without exposing either
+    the checkout or raw-run location.
+    """
+
+    details = [f"class={type(exc).__name__}"]
+    if exc.errno is None:
+        details.extend(("errno_name=UNKNOWN", "errno_code=none"))
+    else:
+        details.extend(
+            (
+                f"errno_name={errno_module.errorcode.get(exc.errno, 'UNKNOWN')}",
+                f"errno_code={exc.errno}",
+            )
+        )
+    winerror = getattr(exc, "winerror", None)
+    if winerror is not None:
+        details.append(f"winerror_code={winerror}")
+    return ", ".join(details)
+
+
+def render_cli_error(exc: BaseException, roots: Iterable[Path] = ()) -> str:
+    """Render an exception without depending on a still-valid process CWD."""
+
+    privacy_roots = list(roots)
+    cwd_error: OSError | None = None
+    try:
+        privacy_roots.append(Path.cwd())
+    except OSError as observed:
+        cwd_error = observed
+
+    rendered = f"{type(exc).__name__}: {sanitize_text(str(exc), privacy_roots)}"
+    if isinstance(exc, OSError):
+        rendered += f" ({describe_os_error(exc)})"
+    if cwd_error is not None:
+        rendered += (
+            "; current_working_directory=unavailable "
+            f"({describe_os_error(cwd_error)})"
+        )
+    return rendered
 
 
 def parse_command_json(raw: str | None, *, label: str, required: bool) -> tuple[str, ...] | None:

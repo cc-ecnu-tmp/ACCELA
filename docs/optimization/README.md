@@ -326,6 +326,7 @@ helper text、rodata 和其他状态仍计入静态 text/rodata/data。动态 pl
 ```sh
 sh scripts/build-qemu-plugins.sh
 
+repo_root=$(git rev-parse --show-toplevel)
 qemu_binary=$(command -v qemu-system-riscv64)
 test -n "$qemu_binary" || {
   echo 'qemu-system-riscv64 is unavailable' >&2
@@ -349,6 +350,7 @@ set -- \
   --asset "qemu_binary=$qemu_binary"
 
 python -m tools.benchmark protocol capture \
+  --workspace-root "$repo_root" \
   --protocol-id rv64gc-qemu-fwcfg-v1-20260810 \
   --measurement-mode standard_proxy \
   --machine virt --cpu-model default --memory 512M \
@@ -360,6 +362,7 @@ python -m tools.benchmark protocol capture \
   --output "$standard_protocol"
 
 python -m tools.benchmark protocol verify "$standard_protocol" \
+  --workspace-root "$repo_root" \
   "$@" --asset runner_executable=scripts/benchmark-qemu.sh \
   --runner-command-json "$runner_command" \
   --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
@@ -367,6 +370,7 @@ python -m tools.benchmark protocol verify "$standard_protocol" \
   --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}'
 
 python -m tools.benchmark protocol capture \
+  --workspace-root "$repo_root" \
   --protocol-id rv64gc-qemu-cache-hotblock-fwcfg-v1-20260810 \
   --measurement-mode cache_hotblock \
   --machine virt --cpu-model default --memory 512M \
@@ -379,6 +383,7 @@ python -m tools.benchmark protocol capture \
   --output "$cache_hotblock_protocol"
 
 python -m tools.benchmark protocol verify "$cache_hotblock_protocol" \
+  --workspace-root "$repo_root" \
   "$@" --asset runner_executable=scripts/benchmark-qemu-hotblocks.sh \
   --runner-command-json "$runner_command" \
   --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
@@ -390,6 +395,18 @@ python -m tools.benchmark protocol verify "$cache_hotblock_protocol" \
 ## 正确性与代理运行
 
 正式运行应从干净提交开始，原始日志和断点状态写入被忽略目录：
+所有 `protocol capture/verify`、`run`、`validate suite`、`oracle run` 和
+`campaign-plan` 正式入口都要求
+显式绝对 `--workspace-root`；脚本启动时只捕获一次仓库根，不能在错误处理阶段
+重新依赖可能已经失效的当前工作目录。
+
+完整正式 campaign 只允许在 WSL 原生 Linux 文件系统中的单一 clean checkout
+运行，不得从 `/mnt/<drive>` 下的 DrvFS/9p checkout 启动。迁移时先冻结原 checkout，
+再建立同一提交的 clean WSL checkout；被忽略的官方语料和历史诊断证据须逐文件或
+按已冻结清单做 SHA-256 复验，虚拟环境、Gradle/build 产物和 QEMU plugin 则在新
+位置重建。一次 campaign 的编译、run journal、status 与报告必须始终来自这一
+workspace identity；不得把迁移前的 formal run 混入新排名。campaign 终态后才将
+提交数据和报告写回，并再次核验 canonical 与物理文件哈希。
 
 ```sh
 test -z "$(git status --porcelain)" || {
@@ -397,6 +414,7 @@ test -z "$(git status --porcelain)" || {
   exit 1
 }
 repo_commit=$(git rev-parse HEAD)
+repo_root=$(git rev-parse --show-toplevel)
 campaign_plan=docs/optimization/data/campaign/initial.plan.json
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json
 cache_hotblock_protocol=docs/optimization/data/measurement-protocol.cache-hotblock.v1.json
@@ -448,6 +466,7 @@ exact-input fw_cfg runtime：
 ```sh
 python -m tools.benchmark validate suite \
   docs/optimization/data/manifests/b1-official-functional-2026.manifest.json \
+  --workspace-root "$repo_root" \
   --suite-root .tmp/official/2026-riscv-functional \
   --output .tmp/runs/b1-full/run.json --state-dir .tmp/runs/state \
   --run-id "$(campaign_run_id 'task:baseline_validation:B1:full-a18b869b2e81:correctness')" \
@@ -474,6 +493,7 @@ protocol capture 完全一致，且 `--measurement-asset` 必须覆盖全部 12 
 ```sh
 python -m tools.benchmark run \
   docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
+  --workspace-root "$repo_root" \
   --suite-root .tmp/official/2026-riscv-performance/performance \
   --output .tmp/runs/b3-full/run.json --state-dir .tmp/runs/state \
   --run-id "$(campaign_run_id 'task:baseline_validation:B3:full-a18b869b2e81:standard_proxy')" \
@@ -534,6 +554,7 @@ clang_profile_sha256=$(campaign_task_field "$clang_task" profile_sha256)
 
 python -m tools.benchmark run \
   docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
+  --workspace-root "$repo_root" \
   --suite-root .tmp/official/2026-riscv-performance/performance \
   --output .tmp/runs/b3-gcc-13.3-o2/run.json --state-dir .tmp/runs/state \
   --run-id "$(campaign_run_id "$gcc_task")" \
@@ -659,6 +680,7 @@ run_b2_task() {
   shift 4
   python -m tools.benchmark run \
     docs/optimization/data/manifests/b2-family-smoke.manifest.json \
+    --workspace-root "$repo_root" \
     --suite-root .tmp/official/2026-riscv-performance/performance \
     --output "$output" --state-dir .tmp/runs/state --run-id "$run_id" \
     --repo-commit "$repo_commit" --repo-dirty false \
@@ -805,6 +827,7 @@ run_cache_hotblock_task() {
   output=$4
   python -m tools.benchmark run \
     docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
+    --workspace-root "$repo_root" \
     --suite-root .tmp/official/2026-riscv-performance/performance \
     --output "$output" --state-dir .tmp/runs/state --run-id "$run_id" \
     --repo-commit "$repo_commit" --repo-dirty false \
@@ -885,7 +908,7 @@ python -m tools.benchmark ablate campaign-plan \
   --measurement-protocol docs/optimization/data/measurement-protocol.v1.json \
   --cache-hotblock-protocol docs/optimization/data/measurement-protocol.cache-hotblock.v1.json \
   --reference-toolchain docs/optimization/data/toolchain-snapshot.json \
-  --workspace-root . \
+  --workspace-root "$repo_root" \
   --suite B1=docs/optimization/data/manifests/b1-official-functional-2026.manifest.json \
   --suite B2=docs/optimization/data/manifests/b2-family-smoke.manifest.json \
   --suite B3=docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
@@ -972,6 +995,7 @@ run_oracle_leg() {
   python -m tools.benchmark oracle run \
     docs/optimization/data/manifests/oracle-cleanroom.manifest.json \
     --plan docs/optimization/data/oracle/cleanroom-full.plan.json --leg "$leg" \
+    --workspace-root "$repo_root" \
     --suite-root benchmarks --output "$output" --state-dir .tmp/runs/state \
     --run-id "$run_id" --repo-commit "$repo_commit" --repo-dirty false \
     --pipeline-profile-id full \

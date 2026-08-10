@@ -11,7 +11,7 @@ from .errors import BenchmarkError, ExecutionError, ValidationError
 from .metrics import ANALYZER_METRICS
 from .protocol import INPUT_TRANSPORT_SECTION, INPUT_TRANSPORT_SECTION_SIZE_BYTES
 from .schema import load_and_validate_jsonl, validate_document
-from .util import atomic_write_json, sanitize_text
+from .util import atomic_write_json, render_cli_error, sanitize_text
 
 _SECTION = re.compile(
     r"^\s*\[\s*\d+\]\s+(?P<name>\S+)\s+(?P<type>\S+)\s+"
@@ -313,7 +313,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         atomic_write_json(args.output, result)
         return 0
     except (BenchmarkError, OSError) as exc:
-        print(f"error: {sanitize_text(str(exc), (Path.cwd(),))}", file=sys.stderr)
+        known_paths = tuple(
+            path
+            for path in (args.binary, args.remarks, args.output)
+            if path is not None
+        )
+        print(f"error: {render_cli_error(exc, known_paths)}", file=sys.stderr)
         return 2
 
 

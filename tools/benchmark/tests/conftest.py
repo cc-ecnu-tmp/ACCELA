@@ -229,6 +229,7 @@ def benchmark_fixture(tmp_path: Path):
         }
         protocol = capture_measurement_protocol(
             protocol_id="fixture-rv64gc-qemu",
+            workspace_root=tmp_path,
             assets=protocol_assets,
             runner=runner,
             machine="virt",

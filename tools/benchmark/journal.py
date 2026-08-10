@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import errno
 import os
 import re
-import tempfile
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from .errors import ExecutionError, ValidationError
-from .util import canonical_json_bytes, read_json, sha256_bytes, sha256_file, sha256_json
+from .util import (
+    canonical_json_bytes,
+    describe_os_error,
+    read_json,
+    sha256_bytes,
+    sha256_file,
+    sha256_json,
+)
 
 _EVENT_FILE = re.compile(r"^event-(?P<sequence>[0-9]{4})-(?P<sha256>[0-9a-f]{64})\.json$")
 _STAGE_ID = re.compile(r"^(?:compile|link|analyze|run-[0-9]{4})$")
@@ -50,23 +58,213 @@ _PREFIX_PROGRESSIVE_OPTIONAL_FIELDS = frozenset(
         "analyze",
     }
 )
+_POSIX_DIRECTORY_FD_CONTRACT_AVAILABLE = (
+    hasattr(os, "O_DIRECTORY")
+    and all(function in os.supports_dir_fd for function in (os.open, os.link, os.unlink))
+    and os.link in os.supports_follow_symlinks
+)
 
 
-def _fsync_directory(directory: Path) -> None:
-    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    directory_fd = os.open(directory, directory_flags)
+def _durable_error(operation: str, exc: OSError) -> ExecutionError:
+    return ExecutionError(
+        "cannot durably create benchmark evidence: "
+        f"operation={operation}, {describe_os_error(exc)}"
+    )
+
+
+def _destination_exists_error(operation: str, exc: OSError) -> ExecutionError:
+    return ExecutionError(
+        "durable evidence destination already exists: "
+        f"operation={operation}, {describe_os_error(exc)}"
+    )
+
+
+def _write_fsync_close(descriptor: int, payload: bytes) -> None:
+    operation = "write"
+    failure: OSError | None = None
+    close_failure: OSError | None = None
     try:
-        os.fsync(directory_fd)
+        view = memoryview(payload)
+        offset = 0
+        while offset < len(view):
+            written = os.write(descriptor, view[offset:])
+            if written <= 0:
+                raise OSError(errno.EIO, "zero-byte durable evidence write")
+            offset += written
+        operation = "file_fsync"
+        os.fsync(descriptor)
+    except OSError as exc:
+        failure = exc
     finally:
-        os.close(directory_fd)
+        try:
+            os.close(descriptor)
+        except OSError as exc:
+            close_failure = exc
+
+    if failure is not None:
+        diagnostic = str(_durable_error(operation, failure))
+        if close_failure is not None:
+            diagnostic += f"; close_failure=({describe_os_error(close_failure)})"
+        raise ExecutionError(diagnostic) from failure
+    if close_failure is not None:
+        raise _durable_error("file_close", close_failure) from close_failure
 
 
-def _publish_posix_no_replace(temporary: Path, destination: Path) -> None:
-    """Atomically publish *temporary* without replacing existing evidence."""
-    os.link(temporary, destination)
-    _fsync_directory(destination.parent)
-    temporary.unlink()
-    _fsync_directory(destination.parent)
+def _partial_name(destination: Path) -> str:
+    return f".{destination.name}.{secrets.token_hex(16)}.partial"
+
+
+def _raise_with_cleanup_failures(
+    primary: BaseException,
+    cleanup_failures: list[tuple[str, OSError]],
+) -> None:
+    if cleanup_failures:
+        rendered = "; ".join(
+            f"operation={operation}, {describe_os_error(error)}"
+            for operation, error in cleanup_failures
+        )
+        raise ExecutionError(f"{primary}; cleanup_failures=({rendered})") from primary
+    raise primary
+
+
+def _durable_create_posix(destination: Path, payload: bytes) -> None:
+    if not _POSIX_DIRECTORY_FD_CONTRACT_AVAILABLE:
+        raise ExecutionError(
+            "cannot durably create benchmark evidence: "
+            "operation=posix_capability_check, class=NotImplementedError, "
+            "errno_name=UNAVAILABLE, errno_code=none"
+        )
+    try:
+        parent = destination.parent.resolve(strict=True)
+        directory_flags = (
+            os.O_RDONLY
+            | getattr(os, "O_DIRECTORY", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        directory_fd = os.open(parent, directory_flags)
+    except OSError as exc:
+        raise _durable_error("directory_open", exc) from exc
+
+    temporary_name: str | None = None
+    temporary_created = False
+    try:
+        temporary_name = _partial_name(destination)
+        create_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        create_flags |= getattr(os, "O_CLOEXEC", 0)
+        try:
+            descriptor = os.open(
+                temporary_name,
+                create_flags,
+                0o600,
+                dir_fd=directory_fd,
+            )
+        except OSError as exc:
+            raise _durable_error("temporary_create", exc) from exc
+        temporary_created = True
+
+        # A process crash naturally leaves this partial inode for fail-fast
+        # audit.  A caught I/O error is cleaned below so the scheduler can seal
+        # the original structured failure into an infrastructure terminal.
+        _write_fsync_close(descriptor, payload)
+        try:
+            os.link(
+                temporary_name,
+                destination.name,
+                src_dir_fd=directory_fd,
+                dst_dir_fd=directory_fd,
+                follow_symlinks=False,
+            )
+        except OSError as exc:
+            if exc.errno == errno.EEXIST:
+                raise _destination_exists_error("publish_linkat", exc) from exc
+            raise _durable_error("publish_linkat", exc) from exc
+        try:
+            os.fsync(directory_fd)
+        except OSError as exc:
+            raise _durable_error("publish_directory_fsync", exc) from exc
+        try:
+            os.unlink(temporary_name, dir_fd=directory_fd)
+        except OSError as exc:
+            raise _durable_error("partial_unlink", exc) from exc
+        temporary_created = False
+        try:
+            os.fsync(directory_fd)
+        except OSError as exc:
+            raise _durable_error("cleanup_directory_fsync", exc) from exc
+    except BaseException as primary:
+        cleanup_failures: list[tuple[str, OSError]] = []
+        if temporary_created and temporary_name is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=directory_fd)
+            except FileNotFoundError:
+                temporary_created = False
+            except OSError as cleanup_error:
+                cleanup_failures.append(("failure_partial_unlink", cleanup_error))
+            else:
+                temporary_created = False
+            try:
+                os.fsync(directory_fd)
+            except OSError as cleanup_error:
+                cleanup_failures.append(
+                    ("failure_cleanup_directory_fsync", cleanup_error)
+                )
+        try:
+            os.close(directory_fd)
+        except OSError as close_error:
+            cleanup_failures.append(("failure_directory_close", close_error))
+        _raise_with_cleanup_failures(primary, cleanup_failures)
+    else:
+        try:
+            os.close(directory_fd)
+        except OSError as exc:
+            raise _durable_error("directory_close", exc) from exc
+
+
+def _durable_create_windows(destination: Path, payload: bytes) -> None:
+    try:
+        parent = destination.parent.resolve(strict=True)
+    except OSError as exc:
+        raise _durable_error("directory_resolve", exc) from exc
+    normalized_destination = parent / destination.name
+    temporary = parent / _partial_name(destination)
+    create_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    create_flags |= getattr(os, "O_NOINHERIT", 0)
+    try:
+        descriptor = os.open(temporary, create_flags, 0o600)
+    except OSError as exc:
+        raise _durable_error("temporary_create", exc) from exc
+    temporary_created = True
+    try:
+        _write_fsync_close(descriptor, payload)
+
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        move_file_ex = kernel32.MoveFileExW
+        move_file_ex.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
+        move_file_ex.restype = ctypes.c_int
+        movefile_write_through = 0x00000008
+        if not move_file_ex(
+            str(temporary),
+            str(normalized_destination),
+            movefile_write_through,
+        ):
+            winerror = ctypes.get_last_error()
+            error = ctypes.WinError(winerror)
+            if winerror in {80, 183}:  # ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS
+                raise _destination_exists_error("publish_movefileex", error) from error
+            raise _durable_error("publish_movefileex", error) from error
+        temporary_created = False
+    except BaseException as primary:
+        cleanup_failures: list[tuple[str, OSError]] = []
+        if temporary_created:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            except OSError as cleanup_error:
+                cleanup_failures.append(("failure_partial_unlink", cleanup_error))
+        _raise_with_cleanup_failures(primary, cleanup_failures)
 
 
 def _validate_phase_result_keys(stage: str, result: Mapping[str, Any]) -> None:
@@ -422,45 +620,20 @@ def _validate_terminal_contract(
 
 
 def _durable_create(destination: Path, payload: bytes) -> None:
-    if destination.exists():
-        raise ExecutionError("durable evidence destination already exists")
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{destination.name}.",
-        suffix=".tmp",
-        dir=destination.parent,
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if os.name == "nt":
-            import ctypes
+    """Publish complete immutable evidence without replacing an existing file.
 
-            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-            move_file_ex = kernel32.MoveFileExW
-            move_file_ex.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
-            move_file_ex.restype = ctypes.c_int
-            movefile_write_through = 0x00000008
-            if not move_file_ex(
-                str(temporary),
-                str(destination),
-                movefile_write_through,
-            ):
-                raise OSError(ctypes.get_last_error(), "MoveFileExW failed")
-        else:
-            # Publishing by rename would overwrite an event created by a
-            # concurrent writer.  A same-filesystem hard link is an atomic
-            # create-if-absent operation: either this exact inode becomes the
-            # destination or EEXIST proves another writer won the sequence.
-            # The temporary is created in destination.parent, so EXDEV is not
-            # possible for a conforming filesystem.
-            _publish_posix_no_replace(temporary, destination)
-    except OSError as exc:
-        raise ExecutionError("cannot durably create benchmark evidence") from exc
-    finally:
-        temporary.unlink(missing_ok=True)
+    Both implementations first make an exclusive same-directory partial inode
+    durable.  A crash before publication therefore leaves explicit partial
+    audit evidence, while readers can never observe a truncated final event.
+    POSIX publication uses ``linkat`` names anchored to one open directory
+    descriptor, avoiding DrvFS path-identity drift.  Windows uses no-replace
+    ``MoveFileExW`` with normalized absolute paths and write-through enabled.
+    """
+
+    if os.name == "nt":
+        _durable_create_windows(destination, payload)
+    else:
+        _durable_create_posix(destination, payload)
 
 
 def durable_create_json(destination: Path, value: Mapping[str, Any]) -> None:

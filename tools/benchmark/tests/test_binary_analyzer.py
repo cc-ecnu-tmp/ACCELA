@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import shutil
 import subprocess
@@ -45,6 +46,38 @@ OBJDUMP = """
    10020:  7139                 c.addi16sp sp,-64
    10022:  117d                 c.addi sp,-1
 """
+
+
+def test_cli_error_rendering_survives_unavailable_cwd_and_redacts_known_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    binary = tmp_path / "private-binary.elf"
+    output = tmp_path / "private-analysis.json"
+
+    def unavailable_cwd(_cls: type[Path]) -> Path:
+        raise FileNotFoundError(errno.ENOENT, "deleted working directory")
+
+    monkeypatch.setattr(Path, "cwd", classmethod(unavailable_cwd))
+    result = binary_analyzer.main(
+        [
+            str(binary),
+            "--toolchain",
+            "accela",
+            "--readelf-command",
+            "accela-test-missing-readelf-command",
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert result == 2
+    diagnostic = capsys.readouterr().err
+    assert "FileNotFoundError:" in diagnostic
+    assert "current_working_directory=unavailable" in diagnostic
+    assert "errno_name=ENOENT" in diagnostic
+    assert str(tmp_path) not in diagnostic
 
 
 def test_binary_analyzer_emits_sections_instruction_classes_and_normalized_unavailable(

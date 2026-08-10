@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from tools.benchmark import cache as cache_module
+from tools.benchmark import journal as journal_module
 from tools.benchmark.execution import BenchmarkRun, MeasurementSpec, _summary, run_benchmark
 from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
 from tools.benchmark.journal import AttemptJournal
@@ -96,6 +97,7 @@ def _rebind_protocol(options, *, runner=None, assets=None, name: str):
     previous = load_and_validate(options.measurement_protocol_path)
     protocol = capture_measurement_protocol(
         protocol_id=previous["protocol_id"],
+        workspace_root=options.workspace_root,
         assets=bound_assets,
         runner=bound_runner,
         machine=previous["qemu"]["machine"],
@@ -705,6 +707,73 @@ def test_scheduler_seals_committed_phase_prefix_after_worker_infrastructure_fail
     resumed = load_and_validate(options.output_path)
     assert resumed["cases"][0]["attempt_index"] == 0
     assert resumed["cases"][0]["attempts"] == []
+
+
+def test_journal_os_error_identity_reaches_normalized_infrastructure_diagnostic(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name="journal-os-error-observability.json",
+            run_id="journal-os-error-observability",
+        ),
+        max_workers=1,
+        keep_going=False,
+    )
+    real_open = journal_module.os.open
+    injected = False
+
+    def inject_exdev(path, flags, mode=0o777, *, dir_fd=None):
+        nonlocal injected
+        path_name = (
+            Path(os.fsdecode(path)).name
+            if isinstance(path, (str, bytes, os.PathLike))
+            else ""
+        )
+        if not injected and path_name.startswith(".event-0002-") and flags & os.O_CREAT:
+            injected = True
+            raise OSError(
+                errno.EXDEV,
+                "injected cross-device journal create",
+                str(tmp_path / "private-raw-evidence"),
+            )
+        if dir_fd is None:
+            return real_open(path, flags, mode)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(journal_module.os, "open", inject_exdev)
+    with pytest.raises(ExecutionError, match="errno_name=EXDEV"):
+        run_benchmark(options)
+
+    assert injected
+    interrupted = load_and_validate(options.output_path)
+    assert interrupted["state"] == "interrupted"
+    case = interrupted["cases"][0]
+    assert case["status"] == "cancelled"
+    assert case["cancellation_reason"] == "infrastructure_failure"
+    assert case["diagnostic"] == (
+        "ExecutionError: cannot durably create benchmark evidence: "
+        "operation=temporary_create, class=OSError, errno_name=EXDEV, "
+        f"errno_code={errno.EXDEV}"
+    )
+    assert str(tmp_path) not in case["diagnostic"]
+
+    attempt_directory = _raw_attempt_directory(
+        options.state_root,
+        case["case_id"],
+        case["attempt_index"],
+    )
+    metadata = json.loads(
+        (attempt_directory / "journal" / "metadata.json").read_text(encoding="utf-8")
+    )
+    snapshot = AttemptJournal(
+        attempt_directory,
+        identity_sha256=metadata["identity_sha256"],
+    ).load()
+    assert snapshot.terminal_case_result is not None
+    assert snapshot.terminal_case_result["diagnostic"] == case["diagnostic"]
 
 
 def test_scheduler_preserves_committed_runtime_failure_after_worker_exception(
@@ -1347,6 +1416,42 @@ def test_qemu_proxy_requires_exact_measurement_protocol_snapshot(benchmark_fixtu
     )
     with pytest.raises(ValidationError, match="source hash drift"):
         run_benchmark(physical_drift)
+
+
+def test_relative_protocol_assets_use_one_workspace_mapping_for_verify_and_execute(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_root, _, _, tool, make_options = benchmark_fixture
+    base = make_options(
+        output_name="relative-protocol-assets.json",
+        run_id="relative-protocol-assets",
+    )
+    relative_assets: list[tuple[str, Path]] = []
+    for key, declared in base.measurement_protocol_assets:
+        try:
+            relative = declared.relative_to(workspace_root)
+        except ValueError:
+            relative = declared
+        relative_assets.append((key, relative))
+    assert dict(relative_assets)["runner_executable"] == tool.relative_to(workspace_root)
+
+    options = replace(
+        base,
+        measurement_protocol_assets=tuple(relative_assets),
+        max_workers=1,
+    )
+    monkeypatch.chdir(workspace_root.parent)
+    assert not Path.cwd().is_relative_to(workspace_root)
+
+    runner = BenchmarkRun(options)
+    expected_runner = tool.resolve(strict=True)
+    assert runner.measurement_protocol_assets["runner_executable"] == expected_runner
+    assert runner.measurement_protocol_assets["profile_plugin_source"] == expected_runner
+
+    record = runner.execute()
+    assert record["state"] == "completed"
+    assert all(case["status"] == "passed" for case in record["cases"])
 
 
 def test_cold_compile_logs_survive_mid_repetition_failure(benchmark_fixture) -> None:
