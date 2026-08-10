@@ -88,10 +88,11 @@
   outputs inside WSL, and never combine evidence across workspace identities,
   repository revisions, or campaign IDs. Sync results back only after the
   campaign is terminal and revalidate both canonical and physical hashes.
-- Repository text is normalized to LF by `.gitattributes`. Physical SHA-256
-  contracts must be computed from that checkout form; never let host
-  `core.autocrlf` silently rewrite schemas, snapshots, plans, launchers, or
-  source adapters.
+- Repository control text is normalized to LF by `.gitattributes`, while the
+  tracked `testsuite` corpus is explicitly byte-preserving because its committed
+  line endings are part of benchmark identity. Physical SHA-256 contracts must
+  be computed from that checkout form; never let host `core.autocrlf` silently
+  rewrite schemas, snapshots, plans, launchers, source adapters, or corpus bytes.
 
 ## Change discipline
 

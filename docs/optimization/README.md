@@ -407,6 +407,8 @@ python -m tools.benchmark protocol verify "$cache_hotblock_protocol" \
 位置重建。一次 campaign 的编译、run journal、status 与报告必须始终来自这一
 workspace identity；不得把迁移前的 formal run 混入新排名。campaign 终态后才将
 提交数据和报告写回，并再次核验 canonical 与物理文件哈希。
+仓库控制文本由 `.gitattributes` 固定为 LF；`testsuite` 是显式 byte-preserving
+语料，既有 CRLF 或 mixed line ending 属于其物理身份，不得在迁移时归一化。
 
 ```sh
 test -z "$(git status --porcelain)" || {
