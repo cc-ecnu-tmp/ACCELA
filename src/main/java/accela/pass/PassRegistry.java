@@ -5,19 +5,19 @@ import static accela.pass.PassDescriptor.Stage.BACKEND_MODULE;
 import static accela.pass.PassDescriptor.Stage.IR_FUNCTION;
 import static accela.pass.PassDescriptor.Stage.IR_MODULE;
 
+import accela.util.StrictJson;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import accela.util.StrictJson;
 
 /** Single source of truth for every transformation scheduled by the full compiler pipeline. */
 public final class PassRegistry {
@@ -110,7 +110,7 @@ public final class PassRegistry {
   public static final String BACKEND_RISCV_STRENGTH_REDUCTION =
       "backend.riscv-strength-reduction";
 
-  public static final String EXPORT_SCHEMA_VERSION = "pass-registry.v1";
+  public static final String EXPORT_SCHEMA_VERSION = "pass-registry.v2";
 
   private static final PassRegistry STANDARD = buildStandard();
 
@@ -122,11 +122,40 @@ public final class PassRegistry {
       PassDescriptor previous = byId.putIfAbsent(descriptor.id(), descriptor);
       if (previous != null) throw new IllegalArgumentException("duplicate pass id: " + descriptor.id());
     }
+    for (PassDescriptor descriptor : byId.values()) {
+      if (!descriptor.candidate()) continue;
+      PassDescriptor.CandidateAnchor anchor = descriptor.candidateAnchor();
+      PassDescriptor anchored = byId.get(anchor.passId());
+      if (anchored == null) {
+        throw new IllegalArgumentException(
+            "candidate '" + descriptor.id() + "' anchors to unknown pass '"
+                + anchor.passId() + "'");
+      }
+      if (anchored.candidate()) {
+        throw new IllegalArgumentException(
+            "candidate '" + descriptor.id() + "' cannot anchor to another candidate");
+      }
+      if (anchored.stage() != descriptor.stage()) {
+        throw new IllegalArgumentException(
+            "candidate '" + descriptor.id() + "' anchor has a different pipeline stage");
+      }
+      if (anchor.occurrence() > anchored.fullPipelineOccurrences()) {
+        throw new IllegalArgumentException(
+            "candidate '" + descriptor.id() + "' anchor occurrence is outside pass '"
+                + anchored.id() + "'");
+      }
+    }
     this.descriptors = Collections.unmodifiableMap(byId);
   }
 
   public static PassRegistry standard() {
     return STANDARD;
+  }
+
+  /** Builds an immutable validated registry, primarily for candidate integration and tests. */
+  public static PassRegistry of(Collection<PassDescriptor> descriptors) {
+    Objects.requireNonNull(descriptors, "descriptors");
+    return new PassRegistry(descriptors);
   }
 
   public PassDescriptor require(String id) {
@@ -141,6 +170,10 @@ public final class PassRegistry {
 
   public List<PassDescriptor> all() {
     return List.copyOf(descriptors.values());
+  }
+
+  public List<PassDescriptor> candidates() {
+    return descriptors.values().stream().filter(PassDescriptor::candidate).toList();
   }
 
   public List<PassDescriptor> forStage(PassDescriptor.Stage stage) {
@@ -170,8 +203,19 @@ public final class PassRegistry {
       pass.put("display_name", descriptor.displayName());
       pass.put("stage", descriptor.stage().name().toLowerCase(Locale.ROOT));
       pass.put("full_pipeline_occurrences", descriptor.fullPipelineOccurrences());
-      pass.put("required", descriptor.required());
+      pass.put("lifecycle", descriptor.lifecycle().name().toLowerCase(Locale.ROOT));
       pass.put("decision_observable", descriptor.decisionObservable());
+      PassDescriptor.CandidateAnchor anchor = descriptor.candidateAnchor();
+      if (anchor == null) {
+        pass.put("candidate_anchor", null);
+      } else {
+        LinkedHashMap<String, Object> serializedAnchor = new LinkedHashMap<>();
+        serializedAnchor.put("pass", anchor.passId());
+        serializedAnchor.put("occurrence", anchor.occurrence());
+        serializedAnchor.put("position", anchor.position().name().toLowerCase(Locale.ROOT));
+        pass.put("candidate_anchor", Collections.unmodifiableMap(serializedAnchor));
+      }
+      pass.put("legality_obligation_ids", descriptor.legalityObligationIds());
       passes.add(Collections.unmodifiableMap(pass));
     }
     root.put("passes", List.copyOf(passes));
@@ -249,16 +293,22 @@ public final class PassRegistry {
 
   private static PassDescriptor pass(
       String id, String family, String displayName, PassDescriptor.Stage stage, int occurrences) {
-    return new PassDescriptor(id, family, displayName, stage, occurrences, false, false);
+    return new PassDescriptor(
+        id, family, displayName, stage, occurrences,
+        PassDescriptor.Lifecycle.PRODUCTION, false, null, List.of());
   }
 
   private static PassDescriptor observablePass(
       String id, String family, String displayName, PassDescriptor.Stage stage, int occurrences) {
-    return new PassDescriptor(id, family, displayName, stage, occurrences, false, true);
+    return new PassDescriptor(
+        id, family, displayName, stage, occurrences,
+        PassDescriptor.Lifecycle.PRODUCTION, true, null, List.of());
   }
 
   private static PassDescriptor required(
       String id, String family, String displayName, PassDescriptor.Stage stage, int occurrences) {
-    return new PassDescriptor(id, family, displayName, stage, occurrences, true, false);
+    return new PassDescriptor(
+        id, family, displayName, stage, occurrences,
+        PassDescriptor.Lifecycle.REQUIRED, false, null, List.of());
   }
 }

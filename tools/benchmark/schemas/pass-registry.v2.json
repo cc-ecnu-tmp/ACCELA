@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/pass-registry.v2.json",
+  "title": "ACCELA production and candidate pass registry snapshot v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "passes"],
+  "properties": {
+    "schema_version": {"const": "pass-registry.v2"},
+    "passes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/pass"}
+    }
+  },
+  "$defs": {
+    "pass_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "production_id": {
+      "allOf": [
+        {"$ref": "#/$defs/pass_id"},
+        {"not": {"pattern": "^candidate\\."}}
+      ]
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^candidate\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "occurrence", "position"],
+      "properties": {
+        "pass": {"$ref": "#/$defs/production_id"},
+        "occurrence": {"type": "integer", "minimum": 1},
+        "position": {"enum": ["before", "after"]}
+      }
+    },
+    "pass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "logical_family_id", "display_name", "stage", "full_pipeline_occurrences",
+        "lifecycle", "decision_observable", "candidate_anchor", "legality_obligation_ids"
+      ],
+      "properties": {
+        "id": {"$ref": "#/$defs/pass_id"},
+        "logical_family_id": {"$ref": "#/$defs/pass_id"},
+        "display_name": {"type": "string", "minLength": 1, "maxLength": 256},
+        "stage": {"enum": ["ir_function", "ir_module", "backend_function", "backend_module"]},
+        "full_pipeline_occurrences": {"type": "integer", "minimum": 1},
+        "lifecycle": {"enum": ["required", "production", "candidate"]},
+        "decision_observable": {"type": "boolean"},
+        "candidate_anchor": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/anchor"}
+          ]
+        },
+        "legality_obligation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/pass_id"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["lifecycle"],
+            "properties": {"lifecycle": {"const": "candidate"}}
+          },
+          "then": {
+            "properties": {
+              "id": {"$ref": "#/$defs/candidate_id"},
+              "logical_family_id": {"$ref": "#/$defs/candidate_id"},
+              "stage": {"enum": ["ir_function", "ir_module", "backend_function"]},
+              "full_pipeline_occurrences": {"const": 1},
+              "decision_observable": {"const": true},
+              "candidate_anchor": {"$ref": "#/$defs/anchor"},
+              "legality_obligation_ids": {"minItems": 1}
+            }
+          },
+          "else": {
+            "properties": {
+              "id": {"$ref": "#/$defs/production_id"},
+              "logical_family_id": {"$ref": "#/$defs/production_id"},
+              "candidate_anchor": {"type": "null"},
+              "legality_obligation_ids": {"maxItems": 0}
+            }
+          }
+        }
+      ]
+    }
+  }
+}

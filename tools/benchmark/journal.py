@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -40,6 +41,7 @@ _COMPILE_RESULT_SUCCESS = frozenset({
     "artifact_sha256",
     "remarks_sha256",
     "remarks_event_count",
+    "candidate_remark_summary",
 })
 _PREFIX_TERMINAL_OVERLAY_FIELDS = frozenset(
     {
@@ -390,6 +392,7 @@ def _bind_phase_results_to_terminal(
                         "artifact_sha256",
                         "remarks_sha256",
                         "remarks_event_count",
+                        "candidate_remark_summary",
                     )
                 }
             )
@@ -668,6 +671,297 @@ class JournalSnapshot:
             if event["event_type"] == "phase_result":
                 return event["payload"]["result"]["case_prefix"]
         return None
+
+
+@dataclass(frozen=True)
+class RunTerminalSnapshot:
+    """Verified append-only terminal observations for one benchmark run."""
+
+    events: tuple[dict[str, Any], ...]
+    event_sha256s: tuple[str, ...]
+    commitment_sha256: str
+
+    @property
+    def latest_terminal(self) -> dict[str, Any] | None:
+        if not self.events:
+            return None
+        return self.events[-1]["payload"]
+
+
+class RunTerminalJournal:
+    """Durable run-level terminal evidence, including zero-attempt interruption.
+
+    A run may be interrupted and safely resumed more than once, so this is an
+    append-only chain rather than a replaceable ``terminal.json``. Completed
+    and failed observations are final; only an interrupted observation may be
+    followed by another terminal event.
+    """
+
+    _IDENTITY_KEYS = {
+        "schema_version",
+        "run_id",
+        "manifest_sha256",
+        "configuration_sha256",
+        "started_at",
+        "output_path_sha256",
+    }
+    _PAYLOAD_KEYS = {
+        "state",
+        "observed_at",
+        "summary_sha256",
+        "case_terminal_commitments_sha256",
+    }
+
+    def __init__(
+        self,
+        run_directory: Path,
+        *,
+        identity: Mapping[str, Any],
+    ) -> None:
+        self.run_directory = run_directory
+        self.directory = run_directory / "run-terminal"
+        self.identity = dict(identity)
+        if (
+            set(self.identity) != self._IDENTITY_KEYS
+            or self.identity.get("schema_version")
+            != "benchmark-run-terminal-identity.v1"
+            or not isinstance(self.identity.get("run_id"), str)
+            or not self.identity["run_id"]
+            or any(
+                not isinstance(self.identity.get(field), str)
+                or _SHA256.fullmatch(self.identity[field]) is None
+                for field in (
+                    "manifest_sha256",
+                    "configuration_sha256",
+                    "output_path_sha256",
+                )
+            )
+            or not isinstance(self.identity.get("started_at"), str)
+        ):
+            raise ExecutionError("run terminal journal identity is invalid")
+        try:
+            started = datetime.fromisoformat(
+                self.identity["started_at"].replace("Z", "+00:00")
+            )
+            if started.utcoffset() is None:
+                raise ValueError("timestamp lacks a UTC offset")
+        except ValueError as exc:
+            raise ExecutionError(
+                "run terminal journal identity timestamp is invalid"
+            ) from exc
+        self.identity_sha256 = sha256_json(self.identity)
+
+    @property
+    def exists(self) -> bool:
+        return self.directory.exists() or self.directory.is_symlink()
+
+    def initialize(self) -> None:
+        if self.exists:
+            raise ExecutionError("run terminal journal already exists")
+        try:
+            self.directory.mkdir(parents=False, exist_ok=False)
+        except OSError as exc:
+            raise ExecutionError("cannot create run terminal journal") from exc
+        durable_create_json(
+            self.directory / "metadata.json",
+            {
+                "schema_version": "benchmark-run-terminal-journal.v1",
+                "identity": self.identity,
+                "identity_sha256": self.identity_sha256,
+                "durability_contract": (
+                    "posix-directory-fsync-or-windows-write-through.v1"
+                ),
+            },
+        )
+
+    def _validate_payload(self, payload: Any) -> None:
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != self._PAYLOAD_KEYS
+            or payload.get("state") not in {"completed", "failed", "interrupted"}
+            or not isinstance(payload.get("observed_at"), str)
+            or any(
+                not isinstance(payload.get(field), str)
+                or _SHA256.fullmatch(payload[field]) is None
+                for field in (
+                    "summary_sha256",
+                    "case_terminal_commitments_sha256",
+                )
+            )
+        ):
+            raise ExecutionError("run terminal journal payload is invalid")
+        try:
+            observed = datetime.fromisoformat(
+                payload["observed_at"].replace("Z", "+00:00")
+            )
+            started = datetime.fromisoformat(
+                self.identity["started_at"].replace("Z", "+00:00")
+            )
+            if observed.utcoffset() is None or started.utcoffset() is None:
+                raise ValueError("timestamp lacks a UTC offset")
+        except ValueError as exc:
+            raise ExecutionError(
+                "run terminal journal payload timestamp is invalid"
+            ) from exc
+        if observed < started:
+            raise ExecutionError(
+                "run terminal journal observation predates the run"
+            )
+
+    def _validate_event(
+        self,
+        event: Any,
+        *,
+        sequence: int,
+        previous_sha256: str | None,
+        previous_payload: Mapping[str, Any] | None,
+    ) -> None:
+        if not isinstance(event, dict) or set(event) != _EVENT_KEYS:
+            raise ExecutionError("run terminal journal event has an invalid object shape")
+        if (
+            event["schema_version"] != "benchmark-run-terminal-event.v1"
+            or event["sequence"] != sequence
+            or event["event_type"] != "terminal"
+            or event["identity_sha256"] != self.identity_sha256
+            or event["previous_event_sha256"] != previous_sha256
+        ):
+            raise ExecutionError("run terminal journal event identity or chain is invalid")
+        self._validate_payload(event["payload"])
+        if previous_payload is not None:
+            if previous_payload["state"] != "interrupted":
+                raise ExecutionError(
+                    "run terminal journal contains evidence after a final outcome"
+                )
+            previous_time = datetime.fromisoformat(
+                previous_payload["observed_at"].replace("Z", "+00:00")
+            )
+            current_time = datetime.fromisoformat(
+                event["payload"]["observed_at"].replace("Z", "+00:00")
+            )
+            if current_time < previous_time:
+                raise ExecutionError(
+                    "run terminal journal observation time regressed"
+                )
+
+    def load(self) -> RunTerminalSnapshot:
+        if not self.directory.is_dir() or self.directory.is_symlink():
+            raise ExecutionError(
+                "run terminal journal is missing or is not a directory"
+            )
+        try:
+            entries = list(self.directory.iterdir())
+        except OSError as exc:
+            raise ExecutionError("cannot enumerate run terminal journal") from exc
+        metadata_path = self.directory / "metadata.json"
+        if metadata_path not in entries:
+            raise ExecutionError("run terminal journal metadata is missing")
+        if metadata_path.is_symlink() or not metadata_path.is_file():
+            raise ExecutionError("run terminal journal metadata is not a regular file")
+        try:
+            metadata = read_json(metadata_path)
+        except ValidationError as exc:
+            raise ExecutionError("run terminal journal metadata is invalid") from exc
+        if metadata != {
+            "schema_version": "benchmark-run-terminal-journal.v1",
+            "identity": self.identity,
+            "identity_sha256": self.identity_sha256,
+            "durability_contract": (
+                "posix-directory-fsync-or-windows-write-through.v1"
+            ),
+        }:
+            raise ExecutionError("run terminal journal metadata identity differs")
+
+        indexed: list[tuple[int, str, Path]] = []
+        for path in entries:
+            if path == metadata_path:
+                continue
+            match = _EVENT_FILE.fullmatch(path.name)
+            if match is None or path.is_symlink() or not path.is_file():
+                raise ExecutionError(
+                    "run terminal journal contains an unexpected entry"
+                )
+            indexed.append((int(match.group("sequence")), match.group("sha256"), path))
+        indexed.sort(key=lambda item: item[0])
+        if [item[0] for item in indexed] != list(range(len(indexed))):
+            raise ExecutionError(
+                "run terminal journal event sequence is not contiguous"
+            )
+
+        events: list[dict[str, Any]] = []
+        hashes: list[str] = []
+        previous_sha256: str | None = None
+        previous_payload: Mapping[str, Any] | None = None
+        for sequence, expected_sha256, path in indexed:
+            try:
+                encoded = path.read_bytes()
+            except OSError as exc:
+                raise ExecutionError("cannot read run terminal journal event") from exc
+            if sha256_bytes(encoded) != expected_sha256:
+                raise ExecutionError(
+                    "run terminal journal event content hash differs"
+                )
+            try:
+                event = read_json(path)
+            except ValidationError as exc:
+                raise ExecutionError(
+                    "run terminal journal event is not valid JSON"
+                ) from exc
+            self._validate_event(
+                event,
+                sequence=sequence,
+                previous_sha256=previous_sha256,
+                previous_payload=previous_payload,
+            )
+            events.append(event)
+            hashes.append(expected_sha256)
+            previous_sha256 = expected_sha256
+            previous_payload = event["payload"]
+
+        commitment = sha256_json(
+            {
+                "schema_version": "benchmark-run-terminal-journal-commitment.v1",
+                "identity_sha256": self.identity_sha256,
+                "event_sha256s": hashes,
+            }
+        )
+        return RunTerminalSnapshot(tuple(events), tuple(hashes), commitment)
+
+    def seal(self, payload: Mapping[str, Any]) -> RunTerminalSnapshot:
+        if not self.exists:
+            self.initialize()
+        snapshot = self.load()
+        normalized_payload = dict(payload)
+        self._validate_payload(normalized_payload)
+        if snapshot.latest_terminal == normalized_payload:
+            return snapshot
+        if snapshot.latest_terminal is not None and snapshot.latest_terminal[
+            "state"
+        ] != "interrupted":
+            raise ExecutionError("cannot append evidence after final run outcome")
+        previous_sha256 = (
+            snapshot.event_sha256s[-1] if snapshot.event_sha256s else None
+        )
+        event = {
+            "schema_version": "benchmark-run-terminal-event.v1",
+            "sequence": len(snapshot.events),
+            "event_type": "terminal",
+            "identity_sha256": self.identity_sha256,
+            "previous_event_sha256": previous_sha256,
+            "payload": normalized_payload,
+        }
+        self._validate_event(
+            event,
+            sequence=len(snapshot.events),
+            previous_sha256=previous_sha256,
+            previous_payload=snapshot.latest_terminal,
+        )
+        encoded = canonical_json_bytes(event) + b"\n"
+        digest = sha256_bytes(encoded)
+        _durable_create(
+            self.directory / f"event-{len(snapshot.events):04d}-{digest}.json",
+            encoded,
+        )
+        return self.load()
 
 
 class AttemptJournal:

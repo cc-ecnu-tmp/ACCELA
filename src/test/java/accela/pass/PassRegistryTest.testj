@@ -1,12 +1,33 @@
 package accela.pass;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Set;
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Type;
+import accela.pass.instrument.DecisionReasonCode;
+import accela.pass.instrument.DecisionRemark;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.instrument.PassRemark;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.FunctionPassManager;
+import accela.pass.ir.ModulePassManager;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.util.StrictJson;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -71,9 +92,343 @@ final class PassRegistryTest {
   }
 
   @Test
-  void checkedInRegistrySnapshotMatchesTheJavaSourceOfTruth() throws Exception {
-    Path snapshot = Path.of("docs", "optimization", "data", "pass-registry.v1.json");
-    assertEquals(PassRegistry.standard().toJson() + "\n",
-        Files.readString(snapshot, StandardCharsets.UTF_8));
+  void exportsDeterministicV2LifecycleAndCandidateContract() throws Exception {
+    PassRegistry registry = PassRegistry.standard();
+    assertEquals(registry.toJson() + "\n", Files.readString(
+        Path.of("docs", "optimization", "data", "pass-registry.v2.json"),
+        StandardCharsets.UTF_8));
+    Map<?, ?> document = (Map<?, ?>) StrictJson.parse(registry.toJson());
+    assertEquals("pass-registry.v2", document.get("schema_version"));
+    List<?> passes = (List<?>) document.get("passes");
+    assertEquals(46, passes.size());
+    assertTrue(passes.stream().map(item -> (Map<?, ?>) item).allMatch(pass ->
+        Set.of("id", "logical_family_id", "display_name", "stage",
+            "full_pipeline_occurrences", "lifecycle", "decision_observable",
+            "candidate_anchor", "legality_obligation_ids").equals(pass.keySet())));
+    assertTrue(passes.stream().map(item -> (Map<?, ?>) item).allMatch(pass ->
+        Set.of("required", "production").contains(pass.get("lifecycle"))
+            && pass.get("candidate_anchor") == null
+            && ((List<?>) pass.get("legality_obligation_ids")).isEmpty()));
+    assertTrue(registry.candidates().isEmpty());
+
+    Map<?, ?> schema = (Map<?, ?>) StrictJson.parse(Files.readString(
+        Path.of("tools", "benchmark", "schemas", "pass-registry.v2.json"),
+        StandardCharsets.UTF_8));
+    Map<?, ?> definitions = (Map<?, ?>) schema.get("$defs");
+    Map<?, ?> passSchema = (Map<?, ?>) definitions.get("pass");
+    Map<?, ?> properties = (Map<?, ?>) passSchema.get("properties");
+    Map<?, ?> displayName = (Map<?, ?>) properties.get("display_name");
+    assertEquals(BigDecimal.valueOf(PassDescriptor.MAX_DISPLAY_NAME_CODE_POINTS),
+        displayName.get("maxLength"));
+    Map<?, ?> lifecycleCondition = (Map<?, ?>) ((List<?>) passSchema.get("allOf")).getFirst();
+    Map<?, ?> candidateContract = (Map<?, ?>) lifecycleCondition.get("then");
+    Map<?, ?> candidateProperties = (Map<?, ?>) candidateContract.get("properties");
+    Map<?, ?> candidateStage = (Map<?, ?>) candidateProperties.get("stage");
+    assertEquals(List.of("ir_function", "ir_module", "backend_function"),
+        candidateStage.get("enum"));
+  }
+
+  @Test
+  void validatesAndExportsDefaultOffCandidateMetadata() {
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.ir.test-fold", "candidate.ir.test-fold", "Test fold",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            PassRegistry.IR_INST_COMBINE, 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.ir.test-fold.no-overflow"));
+    ArrayList<PassDescriptor> descriptors = new ArrayList<>(PassRegistry.standard().all());
+    descriptors.add(candidate);
+    PassRegistry registry = PassRegistry.of(descriptors);
+
+    assertEquals(List.of(candidate), registry.candidates());
+    assertFalse(candidate.defaultEnabled());
+    Map<?, ?> document = (Map<?, ?>) StrictJson.parse(registry.toJson());
+    Map<?, ?> exported = ((List<?>) document.get("passes")).stream()
+        .map(item -> (Map<?, ?>) item)
+        .filter(pass -> candidate.id().equals(pass.get("id")))
+        .findFirst().orElseThrow();
+    assertEquals("candidate", exported.get("lifecycle"));
+    assertEquals(List.of("candidate.ir.test-fold.no-overflow"),
+        exported.get("legality_obligation_ids"));
+    assertEquals(Map.of("pass", PassRegistry.IR_INST_COMBINE, "occurrence", BigDecimal.ONE,
+        "position", "after"), exported.get("candidate_anchor"));
+
+    PassDescriptor badAnchor = new PassDescriptor(
+        "candidate.ir.bad-anchor", "candidate.ir.bad-anchor", "Bad anchor",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            "ir.missing-anchor", 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.ir.bad-anchor.known-shape"));
+    ArrayList<PassDescriptor> invalidDescriptors =
+        new ArrayList<>(PassRegistry.standard().all());
+    invalidDescriptors.add(badAnchor);
+    assertThrows(IllegalArgumentException.class,
+        () -> PassRegistry.of(invalidDescriptors));
+  }
+
+  @Test
+  void rejectsIncompleteOrMisScopedCandidateContracts() {
+    PassDescriptor.CandidateAnchor anchor = new PassDescriptor.CandidateAnchor(
+        PassRegistry.IR_INST_COMBINE, 1, PassDescriptor.AnchorPosition.AFTER);
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "candidate.ir.not-observable", "candidate.ir.not-observable", "Not observable",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, false,
+        anchor, List.of("candidate.ir.not-observable.valid-shape")));
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "candidate.ir.no-anchor", "candidate.ir.no-anchor", "No anchor",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        null, List.of("candidate.ir.no-anchor.valid-shape")));
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "candidate.ir.no-obligation", "candidate.ir.no-obligation", "No obligation",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        anchor, List.of()));
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "candidate.ir.bad-scope", "candidate.ir.bad-scope", "Bad scope",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        anchor, List.of("candidate.ir.other.valid-shape")));
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "ir.production", "ir.production", "Production",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, true,
+        anchor, List.of()));
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "candidate.ir.production", "candidate.ir.production", "Production",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, true,
+        null, List.of()));
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "ir.production", "candidate.ir.production", "Production",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, true,
+        null, List.of()));
+  }
+
+  @Test
+  void displayNameLimitMatchesRegistrySchemaWithoutTruncatingUnicode() {
+    String maximum = "\uD83D\uDE42".repeat(PassDescriptor.MAX_DISPLAY_NAME_CODE_POINTS);
+    PassDescriptor descriptor = new PassDescriptor(
+        "ir.maximum-name", "ir.maximum-name", maximum,
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+        null, List.of());
+
+    assertEquals(maximum, descriptor.displayName());
+    assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+        "ir.excessive-name", "ir.excessive-name", maximum + "x",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+        null, List.of()));
+    for (String malformed : List.of(
+        String.valueOf((char) 0xD800), String.valueOf((char) 0xDC00))) {
+      assertThrows(IllegalArgumentException.class, () -> new PassDescriptor(
+          "ir.malformed-name", "ir.malformed-name", malformed,
+          PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+          null, List.of()));
+    }
+  }
+
+  @Test
+  void irCandidateSchedulingReservesItsOccurrenceWithoutEagerInstantiation() {
+    PassDescriptor anchor = new PassDescriptor(
+        "ir.test-anchor", "ir.test-anchor", "Test anchor",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+        null, List.of());
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.ir.test-pass", "candidate.ir.test-pass", "Test candidate",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.ir.test-pass.valid-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, candidate));
+    AtomicInteger constructions = new AtomicInteger();
+
+    PassBuilder.Schedule disabled = new PassBuilder.Schedule(PipelineProfile.full(registry));
+    FunctionPassManager disabledManager = new FunctionPassManager();
+    disabled.function(disabledManager, anchor.id(), (function, analyses) -> PreservedAnalyses.all());
+    disabled.candidateFunction(disabledManager, candidate.id(), (descriptor, occurrence) -> {
+      constructions.incrementAndGet();
+      return (function, analyses) -> PreservedAnalyses.all();
+    });
+    disabled.verifyComplete();
+    assertEquals(0, constructions.get());
+    assertThrows(IllegalArgumentException.class,
+        () -> disabled.function(disabledManager, candidate.id(),
+            (function, analyses) -> PreservedAnalyses.all()));
+
+    PipelineProfile enabledProfile = PipelineProfile.builder(registry)
+        .enableCandidate(candidate.id()).build();
+    PassBuilder.Schedule enabled = new PassBuilder.Schedule(enabledProfile);
+    FunctionPassManager enabledManager = new FunctionPassManager();
+    enabled.function(enabledManager, anchor.id(), (function, analyses) -> PreservedAnalyses.all());
+    enabled.candidateFunction(enabledManager, candidate.id(), (descriptor, occurrence) -> {
+      constructions.incrementAndGet();
+      return (function, analyses) -> PreservedAnalyses.all();
+    });
+    enabled.verifyComplete();
+    assertEquals(1, constructions.get());
+
+    PassBuilder.Schedule wrongOrder = new PassBuilder.Schedule(PipelineProfile.full(registry));
+    FunctionPassManager wrongOrderManager = new FunctionPassManager();
+    wrongOrder.candidateFunction(wrongOrderManager, candidate.id(),
+        (descriptor, occurrence) -> (function, analyses) -> PreservedAnalyses.all());
+    wrongOrder.function(
+        wrongOrderManager, anchor.id(), (function, analyses) -> PreservedAnalyses.all());
+    assertThrows(IllegalStateException.class, wrongOrder::verifyComplete);
+  }
+
+  @Test
+  void irModuleCandidateSupportsLazyBeforeAnchorScheduling() {
+    PassDescriptor anchor = new PassDescriptor(
+        "ir.test-module-anchor", "ir.test-module-anchor", "Test module anchor",
+        PassDescriptor.Stage.IR_MODULE, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+        null, List.of());
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.ir.test-module-pass", "candidate.ir.test-module-pass",
+        "Test module candidate", PassDescriptor.Stage.IR_MODULE, 1,
+        PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            anchor.id(), 1, PassDescriptor.AnchorPosition.BEFORE),
+        List.of("candidate.ir.test-module-pass.valid-module-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, candidate));
+    AtomicInteger constructions = new AtomicInteger();
+
+    PassBuilder.Schedule disabled = new PassBuilder.Schedule(PipelineProfile.full(registry));
+    ModulePassManager disabledManager = new ModulePassManager();
+    disabled.candidateModule(disabledManager, candidate.id(), (descriptor, occurrence) -> {
+      constructions.incrementAndGet();
+      return (module, mam, fam) -> PreservedAnalyses.all();
+    });
+    disabled.module(disabledManager, anchor.id(),
+        (module, mam, fam) -> PreservedAnalyses.all());
+    disabled.verifyComplete();
+    assertEquals(0, constructions.get());
+
+    PassBuilder.Schedule enabled = new PassBuilder.Schedule(
+        PipelineProfile.builder(registry).enableCandidate(candidate.id()).build());
+    ModulePassManager enabledManager = new ModulePassManager();
+    enabled.candidateModule(enabledManager, candidate.id(), (descriptor, occurrence) -> {
+      constructions.incrementAndGet();
+      return (module, mam, fam) -> PreservedAnalyses.all();
+    });
+    enabled.module(enabledManager, anchor.id(),
+        (module, mam, fam) -> PreservedAnalyses.all());
+    enabled.verifyComplete();
+    assertEquals(1, constructions.get());
+
+    PassBuilder.Schedule wrongOrder = new PassBuilder.Schedule(PipelineProfile.full(registry));
+    ModulePassManager wrongOrderManager = new ModulePassManager();
+    wrongOrder.module(wrongOrderManager, anchor.id(),
+        (module, mam, fam) -> PreservedAnalyses.all());
+    wrongOrder.candidateModule(wrongOrderManager, candidate.id(),
+        (descriptor, occurrence) -> (module, mam, fam) -> PreservedAnalyses.all());
+    assertThrows(IllegalStateException.class, wrongOrder::verifyComplete);
+  }
+
+  @Test
+  void irCandidatesSharingAnAnchorMustFollowRegistryOrder() {
+    PassDescriptor anchor = new PassDescriptor(
+        "ir.test-anchor", "ir.test-anchor", "Test anchor",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+        null, List.of());
+    PassDescriptor.CandidateAnchor placement = new PassDescriptor.CandidateAnchor(
+        anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER);
+    PassDescriptor first = new PassDescriptor(
+        "candidate.ir.first", "candidate.ir.first", "First candidate",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        placement, List.of("candidate.ir.first.valid-shape"));
+    PassDescriptor second = new PassDescriptor(
+        "candidate.ir.second", "candidate.ir.second", "Second candidate",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        placement, List.of("candidate.ir.second.valid-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, first, second));
+    PassBuilder.Schedule schedule = new PassBuilder.Schedule(PipelineProfile.full(registry));
+    FunctionPassManager manager = new FunctionPassManager();
+
+    schedule.function(manager, anchor.id(), (function, analyses) -> PreservedAnalyses.all());
+    schedule.candidateFunction(manager, second.id(),
+        (descriptor, occurrence) -> (function, analyses) -> PreservedAnalyses.all());
+    schedule.candidateFunction(manager, first.id(),
+        (descriptor, occurrence) -> (function, analyses) -> PreservedAnalyses.all());
+
+    IllegalStateException exception =
+        assertThrows(IllegalStateException.class, schedule::verifyComplete);
+    assertTrue(exception.getMessage().contains("must follow registry order"));
+  }
+
+  @Test
+  void enabledIrCandidateExecutesWithPairedDecisionsAndAnObservedSummary() {
+    PassDescriptor anchor = new PassDescriptor(
+        "ir.test-anchor", "ir.test-anchor", "Test anchor",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.PRODUCTION, false,
+        null, List.of());
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.ir.test-pass", "candidate.ir.test-pass", "Test candidate",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.ir.test-pass.valid-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, candidate));
+    PipelineProfile profile = PipelineProfile.builder(registry)
+        .enableCandidate(candidate.id())
+        .build();
+    List<OptimizationRemark> remarks = new ArrayList<>();
+
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      PassBuilder.Schedule schedule = new PassBuilder.Schedule(profile);
+      FunctionPassManager manager = new FunctionPassManager(instrumentation);
+      schedule.function(
+          manager, anchor.id(), (function, analyses) -> PreservedAnalyses.all());
+      schedule.candidateFunction(manager, candidate.id(), (descriptor, occurrence) ->
+          (function, analyses) -> {
+            var decisions = instrumentation.decisionEmitter(
+                descriptor, occurrence, "function", "@" + function.getName());
+            decisions.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+            new IRBuilder(function.getBlocks().getFirst())
+                .createAdd(Constant.intConst(1), Constant.intConst(2));
+            decisions.applied(DecisionReasonCode.APPLIED_CANONICALIZATION);
+            return PreservedAnalyses.none();
+          });
+      schedule.verifyComplete();
+
+      Function function = new Function("candidate", Type.INT);
+      BasicBlock entry = function.addBlock("entry");
+      new IRBuilder(entry).createRet(Constant.intConst(0));
+      manager.run(function, new FunctionAnalysisManager());
+    }
+
+    List<OptimizationRemark> candidateRemarks = remarks.stream()
+        .filter(remark -> candidate.id().equals(remark.passId()))
+        .toList();
+    assertEquals(3, candidateRemarks.size());
+    assertEquals(accela.pass.instrument.DecisionStatus.CANDIDATE,
+        ((DecisionRemark) candidateRemarks.get(0)).decision());
+    assertEquals(accela.pass.instrument.DecisionStatus.APPLIED,
+        ((DecisionRemark) candidateRemarks.get(1)).decision());
+    PassRemark summary = (PassRemark) candidateRemarks.get(2);
+    assertTrue(summary.changed());
+    assertEquals(Long.valueOf(1), summary.delta().get("instructions"));
+    assertEquals(accela.pass.instrument.DecisionObservability.AVAILABLE,
+        summary.decisionObservability());
+  }
+
+  @Test
+  void automaticIrCandidateProviderRejectsUnknownAndMissingEnabledFactories() {
+    PassRegistry registry = SyntheticCandidateRegistry.createCombined();
+    PipelineProfile enabled = PipelineProfile.builder(registry)
+        .enableCandidate(SyntheticCandidateRegistry.IR_CANDIDATE)
+        .build();
+    PassBuilder missing = new PassBuilder(PassBuilder.CandidatePassProvider.empty());
+
+    IllegalStateException missingError = assertThrows(
+        IllegalStateException.class,
+        () -> missing.buildIRO0Pipeline(PassInstrumentation.noop(), enabled));
+    assertTrue(missingError.getMessage().contains("has no registered IR_FUNCTION factory"));
+
+    PassBuilder.CandidatePassProvider unknownProvider = new PassBuilder.CandidatePassProvider(
+        Map.of(
+            "candidate.ir.unknown",
+            (descriptor, occurrence) ->
+                (function, analyses) -> PreservedAnalyses.all()),
+        Map.of());
+    PassBuilder unknown = new PassBuilder(unknownProvider);
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> unknown.buildIRO0Pipeline(PassInstrumentation.noop(), PipelineProfile.full(registry)));
   }
 }

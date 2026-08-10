@@ -5,7 +5,7 @@ import math
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .ablation import _require_eligible_attempt_history, _require_formal_measurement
 from .errors import ConfigurationError, ValidationError
@@ -19,10 +19,61 @@ from .reference_source import (
     REFERENCE_SOURCE_ADAPTER_PATH,
 )
 from .schema import load_and_validate, schema_sha256, validate_document
-from .util import safe_slug, sha256_file, sha256_json, utc_now, validate_relative_path
+from .util import (
+    resolve_without_symlinks,
+    safe_slug,
+    sha256_file,
+    sha256_json,
+    utc_now,
+    validate_relative_path,
+)
 
 
 _SUITE_ROLES = ("B1", "B2", "B3", "B4", "B5", "B6", "oracle")
+_FORMAL_SUITE_CONTRACTS = {
+    "B1": (
+        "official-functional-2026",
+        140,
+        "411b8a25f582895d63e6e378a02948723445e1de0ebdcda9b6acb55fb783746c",
+        "5a91562f22cccf9717610458fc26bca4eef309bb1878d66130625c73b161e2b7",
+    ),
+    "B2": (
+        "official-performance-2026-family-smoke",
+        20,
+        "65b91f35ebbd56a20625a87263751927435a8cd9ba041204d05f726443880a60",
+        "451a4f43f9318b31105980ec00db8aab98790cbfb5187a9121f2d234b4da9bad",
+    ),
+    "B3": (
+        "official-performance-2026",
+        60,
+        "70ad5961d030ac119765a2e275f185794ec22ff593dd11c52fa1bf5153544627",
+        "f644222d0275d66da6cb9b535a55277512cea576fb6f2eaba74898f458f3e2f1",
+    ),
+    "B4": (
+        "official-performance-2025-preliminary",
+        59,
+        "8cde43e1c808458720c2952efa6a14a714b4741bc7b0dee93b193131304955a1",
+        "9e70951def2e750ec06a25694fd012571a01c061330b15cbe0179dfbf57e52e3",
+    ),
+    "B5": (
+        "cleanroom-structural-variants-v1",
+        60,
+        "47e050363dd8c3d647ef1ff3f865e6e601714b7783a0a4baf903c5a9b925cecc",
+        "6ada954a1062f0a3142762cb16629ce315c28a3704ef60db13a29203d68bdc4e",
+    ),
+    "B6": (
+        "cleanroom-mature-benchmarks-v1",
+        88,
+        "f84baf6e1ac563d2acdef3de5e31300dfe7922b44ace61831addb63d31a1cf20",
+        "1579afee716b935049f94a194b997fa13ea97f51f15373c1f9af478e40ca62af",
+    ),
+    "oracle": (
+        "cleanroom-oracle-v1",
+        198,
+        "6bc86f608f76602331dfed4a1a16df9489e9ee0384cf9689b2a9e006d8273cf5",
+        "32d6440c627888a37db6279e07e4ea93c5bad89a5139bf195cfbfc9b09dfb472",
+    ),
+}
 _PHASES = (
     ("baseline_validation", 12 * 60 * 60),
     ("singleton_b2", 24 * 60 * 60),
@@ -48,6 +99,35 @@ _HOTBLOCK_METRIC_SPECS = [
     }
     for item in cache_hotblock_metrics_v1()
 ]
+
+
+def require_formal_suite_contract(
+    *,
+    role: str,
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+) -> None:
+    """Require the one locked canonical and physical manifest for a role."""
+
+    expected = _FORMAL_SUITE_CONTRACTS.get(role)
+    if expected is None:
+        raise ValidationError(f"unknown formal suite role: {role}")
+    physical_path = resolve_without_symlinks(
+        manifest_path, label=f"formal {role} suite manifest"
+    )
+    if not physical_path.is_file():
+        raise ValidationError(f"formal {role} suite manifest must be a regular file")
+    suite_id, case_count, canonical_sha256, physical_sha256 = expected
+    if (
+        manifest.get("suite_id") != suite_id
+        or manifest.get("provenance", {}).get("data_role") != role
+        or len(manifest.get("cases", ())) != case_count
+        or sha256_json(manifest) != canonical_sha256
+        or sha256_file(physical_path) != physical_sha256
+    ):
+        raise ValidationError(
+            f"formal {role} suite differs from the locked canonical/physical manifest"
+        )
 
 
 def _workspace_run_record_schema_sha256(workspace_root: Path) -> str:
@@ -313,6 +393,55 @@ def _measurement_protocol_contract(
     }
 
 
+def build_campaign_environment_contract(
+    *,
+    measurement_protocol_path: Path,
+    hotblock_measurement_protocol_path: Path,
+    reference_toolchain_path: Path,
+    workspace_root: Path,
+) -> dict[str, Any]:
+    """Verify and normalize the shared formal-campaign environment freeze.
+
+    Both the historical ablation scheduler and the candidate campaign use this
+    one implementation so protocol, toolchain, image, launcher, and physical
+    asset validation cannot drift into two state machines.
+    """
+
+    measurement_protocols = {
+        "standard_proxy": _measurement_protocol_contract(
+            measurement_protocol_path, expected_mode="standard_proxy"
+        ),
+        "cache_hotblock": _measurement_protocol_contract(
+            hotblock_measurement_protocol_path, expected_mode="cache_hotblock"
+        ),
+    }
+    if (
+        measurement_protocols["standard_proxy"]["protocol_sha256"]
+        == measurement_protocols["cache_hotblock"]["protocol_sha256"]
+        or measurement_protocols["standard_proxy"]["runner_command_sha256"]
+        == measurement_protocols["cache_hotblock"]["runner_command_sha256"]
+    ):
+        raise ValidationError(
+            "standard and cache-hotblock protocols must be distinct snapshots"
+        )
+    reference_toolchain = _reference_toolchain_contract(
+        reference_toolchain_path,
+        workspace_root=workspace_root,
+        measurement_protocols=measurement_protocols,
+        measurement_protocol_paths={
+            "standard_proxy": measurement_protocol_path,
+            "cache_hotblock": hotblock_measurement_protocol_path,
+        },
+    )
+    return {
+        "run_record_schema_sha256": _workspace_run_record_schema_sha256(
+            workspace_root
+        ),
+        "measurement_protocols": measurement_protocols,
+        "reference_toolchain": reference_toolchain,
+    }
+
+
 def _parse_timestamp(value: str, *, label: str) -> datetime:
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -355,31 +484,15 @@ def build_campaign_plan(
         raise ValidationError("campaign plan requires ablation-matrix.v1")
     if not 1 <= max_workers <= 4:
         raise ConfigurationError("campaign max_workers must be between 1 and 4")
-    run_record_schema_sha256 = _workspace_run_record_schema_sha256(workspace_root)
-    measurement_protocols = {
-        "standard_proxy": _measurement_protocol_contract(
-            measurement_protocol_path, expected_mode="standard_proxy"
-        ),
-        "cache_hotblock": _measurement_protocol_contract(
-            hotblock_measurement_protocol_path, expected_mode="cache_hotblock"
-        ),
-    }
-    if (
-        measurement_protocols["standard_proxy"]["protocol_sha256"]
-        == measurement_protocols["cache_hotblock"]["protocol_sha256"]
-        or measurement_protocols["standard_proxy"]["runner_command_sha256"]
-        == measurement_protocols["cache_hotblock"]["runner_command_sha256"]
-    ):
-        raise ValidationError("standard and cache-hotblock protocols must be distinct snapshots")
-    reference_toolchain = _reference_toolchain_contract(
-        reference_toolchain_path,
+    environment = build_campaign_environment_contract(
+        measurement_protocol_path=measurement_protocol_path,
+        hotblock_measurement_protocol_path=hotblock_measurement_protocol_path,
+        reference_toolchain_path=reference_toolchain_path,
         workspace_root=workspace_root,
-        measurement_protocols=measurement_protocols,
-        measurement_protocol_paths={
-            "standard_proxy": measurement_protocol_path,
-            "cache_hotblock": hotblock_measurement_protocol_path,
-        },
     )
+    run_record_schema_sha256 = environment["run_record_schema_sha256"]
+    measurement_protocols = environment["measurement_protocols"]
+    reference_toolchain = environment["reference_toolchain"]
     if set(suite_paths) != set(_SUITE_ROLES):
         missing = sorted(set(_SUITE_ROLES) - set(suite_paths))
         extra = sorted(set(suite_paths) - set(_SUITE_ROLES))
@@ -398,6 +511,11 @@ def build_campaign_plan(
             or manifest["provenance"]["data_role"] != role
         ):
             raise ValidationError(f"campaign suite {role} has inconsistent target/data_role")
+        require_formal_suite_contract(
+            role=role,
+            manifest=manifest,
+            manifest_path=suite_paths[role],
+        )
         manifests[role] = manifest
         suites.append(
             {
@@ -1260,6 +1378,125 @@ def _failed_run_reason(run: Mapping[str, Any]) -> str:
     return "tool_failure"
 
 
+def campaign_run_status(run: Mapping[str, Any]) -> tuple[str, str | None]:
+    """Map one validated run record to the shared campaign task vocabulary.
+
+    Candidate campaigns and the historical ablation campaign intentionally use
+    the same terminal classification.  A real correctness, timeout, tool, or
+    interruption result stays terminal; callers must never reinterpret it as a
+    retryable pending task.
+    """
+
+    state = run["state"]
+    if state == "completed":
+        return "completed", None
+    if state == "running":
+        return "running", None
+    if state == "interrupted":
+        return "interrupted", "tool_failure"
+    if state == "failed":
+        return "failed", _failed_run_reason(run)
+    raise ValidationError(f"unknown run-record state: {state}")
+
+
+def campaign_status_chain(
+    *,
+    campaign_id: str,
+    plan_sha256: str,
+    previous: Mapping[str, Any] | None,
+    started_at: str | None,
+    as_of: str | None,
+) -> tuple[str, str, str | None]:
+    """Validate and normalize the immutable status-ledger identity and clock."""
+
+    observation = _timestamp(_parse_timestamp(as_of or utc_now(), label="campaign as_of"))
+    if previous is None:
+        if started_at is None:
+            raise ConfigurationError(
+                "campaign started_at is required for the first status record"
+            )
+        chain_start = _timestamp(
+            _parse_timestamp(started_at, label="campaign started_at")
+        )
+        previous_sha256 = None
+    else:
+        if (
+            previous["campaign_id"] != campaign_id
+            or previous["plan_sha256"] != plan_sha256
+        ):
+            raise ValidationError("previous campaign status binds another campaign/plan")
+        chain_start = previous["started_at"]
+        if started_at is not None and _timestamp(
+            _parse_timestamp(started_at, label="campaign started_at")
+        ) != chain_start:
+            raise ValidationError("campaign started_at is immutable")
+        previous_observation = _parse_timestamp(
+            previous["as_of"], label="previous campaign as_of"
+        )
+        if _parse_timestamp(observation, label="campaign as_of") <= previous_observation:
+            raise ValidationError("campaign status as_of must advance monotonically")
+        previous_sha256 = sha256_json(previous)
+    if _parse_timestamp(chain_start, label="campaign started_at") > _parse_timestamp(
+        observation, label="campaign as_of"
+    ):
+        raise ValidationError("campaign started_at cannot follow as_of")
+    return chain_start, observation, previous_sha256
+
+
+def enforce_terminal_task_immutability(
+    *,
+    previous_rows: Sequence[Mapping[str, Any]],
+    current_rows: Sequence[Mapping[str, Any]],
+    label: str,
+) -> None:
+    """Reject disappearance or mutation of already-started physical evidence."""
+
+    prior_by_id = {row["task_id"]: row for row in previous_rows}
+    current_by_id = {row["task_id"]: row for row in current_rows}
+    if set(prior_by_id) != set(current_by_id):
+        raise ValidationError(f"{label} task registry changed across status records")
+    for task_id, prior in prior_by_id.items():
+        current = current_by_id[task_id]
+        if prior["status"] in {"completed", "failed", "interrupted", "ineligible"}:
+            if current != prior:
+                raise ValidationError(f"terminal {label} task is immutable: {task_id}")
+            continue
+        if prior["status"] != "pending" and current["status"] == "pending":
+            raise ValidationError(f"{label} task cannot regress to pending: {task_id}")
+        if prior.get("started_at") is not None and (
+            current.get("started_at") != prior["started_at"]
+        ):
+            raise ValidationError(f"{label} task started_at is immutable: {task_id}")
+
+
+def ready_campaign_task_ids(
+    *,
+    tasks: Sequence[Mapping[str, Any]],
+    statuses: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    """Return the only dependency-safe pending tasks in stable plan order."""
+
+    by_id = {row["task_id"]: row for row in statuses}
+    if set(by_id) != {task["task_id"] for task in tasks}:
+        raise ValidationError("campaign task/status registry differs")
+    ready: list[str] = []
+    for task in tasks:
+        row = by_id[task["task_id"]]
+        if row["status"] != "pending":
+            continue
+        dependency_states = [by_id[item]["status"] for item in task["dependencies"]]
+        terminal_dependency_states = [
+            by_id[item]["status"]
+            for item in task.get("terminal_dependencies", ())
+        ]
+        if all(state == "completed" for state in dependency_states) and all(
+            state in {"completed", "failed", "interrupted", "ineligible"}
+            for state in terminal_dependency_states
+        ):
+            ready.append(task["task_id"])
+    return ready
+
+
 def update_campaign_status(
     *,
     plan_path: Path,
@@ -1324,14 +1561,7 @@ def update_campaign_status(
             run_digest = sha256_json(run)
             run_started = run["started_at"]
             run_completed = run["completed_at"]
-            if run["state"] == "completed":
-                status, missing_reason = "completed", None
-            elif run["state"] == "running":
-                status, missing_reason = "running", None
-            elif run["state"] == "interrupted":
-                status, missing_reason = "interrupted", "tool_failure"
-            else:
-                status, missing_reason = "failed", _failed_run_reason(run)
+            status, missing_reason = campaign_run_status(run)
         rows.append(
             {
                 "task_id": task["task_id"],

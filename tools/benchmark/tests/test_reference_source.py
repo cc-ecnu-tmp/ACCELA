@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import platform
 import shutil
 import subprocess
 from pathlib import Path
@@ -30,6 +29,25 @@ POSIX_SH = shutil.which("sh") if os.name == "posix" else None
 def _write_executable(path: Path, payload: str) -> None:
     path.write_text(payload, encoding="utf-8", newline="\n")
     path.chmod(0o755)
+
+
+def _probe_fixed_reference_python_version() -> str:
+    result = subprocess.run(
+        [
+            *REFERENCE_LAUNCHER_CONTRACT["python_argv_prefix"],
+            "-c",
+            "import platform; print(platform.python_version())",
+        ],
+        env=os.environ.copy(),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    version = result.stdout.strip()
+    assert version and version.count(".") == 2
+    assert all(component.isdecimal() for component in version.split("."))
+    return version
 
 
 @pytest.fixture
@@ -65,7 +83,8 @@ def reference_wrapper_workspace(tmp_path: Path) -> dict[str, Path | str]:
     image_id = "sha256:" + "a" * 64
     frontends["local_image_tag"] = "accela/reference-test:frozen"
     frontends["local_image_id"] = image_id
-    snapshot["proxy_execution"]["python"] = platform.python_version()
+    reference_python_version = _probe_fixed_reference_python_version()
+    snapshot["proxy_execution"]["python"] = reference_python_version
     snapshot_path = workspace / "docs/optimization/data/toolchain-snapshot.json"
     snapshot_path.parent.mkdir(parents=True, exist_ok=True)
     snapshot_path.write_text(
@@ -92,6 +111,7 @@ def reference_wrapper_workspace(tmp_path: Path) -> dict[str, Path | str]:
         "output": output_dir / "artifact.s",
         "fake_bin": fake_bin,
         "image_id": image_id,
+        "python_version": reference_python_version,
     }
 
 
@@ -510,7 +530,8 @@ esac
     )
     assert result.returncode == 0, result.stderr
     assert (
-        f"ACCELA_REFERENCE_PYTHON python_mode=isolated version={platform.python_version()}"
+        "ACCELA_REFERENCE_PYTHON python_mode=isolated "
+        f"version={harness['python_version']}"
         in result.stderr
     )
     assert "PYTHONPATH module was imported" not in result.stderr
@@ -543,7 +564,8 @@ exit 0
     )
     assert result.returncode == 2
     assert (
-        f"reference Python version mismatch: expected 0.0.0, got {platform.python_version()}"
+        "reference Python version mismatch: expected 0.0.0, "
+        f"got {harness['python_version']}"
         in result.stderr
     )
     assert "cannot validate the isolated reference Python launcher" in result.stderr

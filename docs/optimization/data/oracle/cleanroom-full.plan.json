@@ -1,9 +1,9 @@
 {
-  "baseline_run_id": "oracle-baseline:cleanroom-oracle-v1",
+  "baseline_run_id": "candidate-screening-oracle-2026-r1:baseline",
   "evidence_class": "cleanroom",
   "manifest_data_role": "oracle",
   "manifest_sha256": "6bc86f608f76602331dfed4a1a16df9489e9ee0384cf9689b2a9e006d8273cf5",
-  "optimized_run_id": "oracle-optimized:cleanroom-oracle-v1",
+  "optimized_run_id": "candidate-screening-oracle-2026-r1:optimized",
   "pairs": [
     {
       "baseline": {
@@ -1691,7 +1691,7 @@
   ],
   "pipeline_profile": {
     "profile_id": "full",
-    "profile_sha256": "bc254fe031aa621711d197384d14e8d88811f8830163661848b8a1f365b7bee0"
+    "profile_sha256": "9e7ae49f74aaf2fe57afe7b463821b4e346e736b2caf4e5f500b7453855e3efa"
   },
   "schema_version": "oracle-plan.v1",
   "suite_id": "cleanroom-oracle-v1"

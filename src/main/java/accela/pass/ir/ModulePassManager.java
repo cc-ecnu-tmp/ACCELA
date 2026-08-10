@@ -68,6 +68,9 @@ public final class ModulePassManager implements ModulePass {
             scheduled.descriptor(), scheduled.occurrence(), scheduled.pass(), module,
             passPA.isModified(), passPA);
       }
+      // A module transform may change any function. Module-level preserved analyses cannot
+      // safely describe a per-function preservation set, so conservatively drop the FAM cache.
+      if (passPA.isModified()) fam.invalidateAll();
       mam.invalidate(module, passPA);
       preserved = preserved.intersect(passPA);
     }

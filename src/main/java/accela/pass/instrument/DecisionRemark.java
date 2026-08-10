@@ -11,7 +11,8 @@ public record DecisionRemark(
     String targetKind,
     String targetName,
     DecisionStatus decision,
-    DecisionReasonCode reason) implements OptimizationRemark {
+    DecisionReasonCode reason,
+    String legalityObligationId) implements OptimizationRemark {
 
   public DecisionRemark {
     Objects.requireNonNull(passId, "passId");
@@ -24,6 +25,15 @@ public record DecisionRemark(
     if (reason.status() != decision) {
       throw new IllegalArgumentException(
           "reason " + reason + " is not valid for decision " + decision);
+    }
+    if (reason == DecisionReasonCode.REJECTED_LEGALITY) {
+      if (legalityObligationId == null || legalityObligationId.isBlank()) {
+        throw new IllegalArgumentException(
+            "rejected_legality requires a non-empty legality obligation id");
+      }
+    } else if (legalityObligationId != null) {
+      throw new IllegalArgumentException(
+          "legality obligation id is only valid with rejected_legality");
     }
   }
 }

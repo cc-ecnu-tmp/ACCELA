@@ -1,0 +1,44 @@
+package accela.backend;
+
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.pass.PipelineProfile;
+import accela.pass.SyntheticCandidateRegistry;
+import accela.pass.instrument.DecisionReasonCode;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Test-only typed provider for a candidate inserted into the real backend pipeline. */
+public final class SyntheticCandidateBackendCompiler {
+  public static final int MACHINE_CONSTANT_MARKER = 424242;
+
+  private SyntheticCandidateBackendCompiler() {}
+
+  public static BackendCompiler create(
+      PipelineProfile profile,
+      BackendPassInstrumentation instrumentation,
+      AtomicInteger factoryConstructions) {
+    BackendPipeline.CandidatePassProvider provider = new BackendPipeline.CandidatePassProvider(
+        Map.of(
+            SyntheticCandidateRegistry.BACKEND_CANDIDATE,
+            (descriptor, occurrence) -> {
+              factoryConstructions.incrementAndGet();
+              return function -> {
+                var decisions = instrumentation.decisionEmitter(
+                    descriptor, occurrence, "machine_function", "@" + function.getName());
+                decisions.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+                var register = function.createVirtualRegister(MachineType.I32, "synthetic");
+                MachineInstr constant = new MachineInstr(MachineOpcode.CONST_INT, register);
+                constant.setType(MachineType.I32);
+                constant.addOperand(new ImmOperand(MACHINE_CONSTANT_MARKER));
+                function.getEntryBlock().insertBeforeTerminator(constant);
+                decisions.applied(DecisionReasonCode.APPLIED_PROFITABLE);
+                return true;
+              };
+            }));
+    return new BackendCompiler(profile, instrumentation, provider);
+  }
+}

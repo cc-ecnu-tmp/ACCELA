@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-freeze.v1.json",
+  "title": "ACCELA pre-B3 candidate campaign freeze v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "freeze_id", "frozen_at", "campaign_id", "run_namespace",
+    "repository", "snapshots", "base_pipeline_profile", "suites",
+    "measurement_protocols", "reference_toolchain", "gates", "ranking_rule",
+    "frozen_candidate_ids", "frozen_candidate_ids_sha256", "b2_campaign"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-freeze.v1"},
+    "freeze_id": {"$ref": "#/$defs/id"},
+    "frozen_at": {"type": "string", "format": "date-time"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "run_namespace": {"type": "string", "minLength": 2, "maxLength": 512},
+    "repository": {"$ref": "#/$defs/repository"},
+    "snapshots": {"$ref": "#/$defs/snapshots"},
+    "base_pipeline_profile": {"$ref": "#/$defs/profile"},
+    "suites": {
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "items": {"$ref": "#/$defs/suite"}
+    },
+    "measurement_protocols": {
+      "type": "object", "additionalProperties": false,
+      "required": ["standard_proxy", "cache_hotblock"],
+      "properties": {
+        "standard_proxy": {"$ref": "#/$defs/measurement_protocol"},
+        "cache_hotblock": {"$ref": "#/$defs/measurement_protocol"}
+      }
+    },
+    "reference_toolchain": {"$ref": "#/$defs/reference_toolchain"},
+    "gates": {"$ref": "#/$defs/gates"},
+    "ranking_rule": {"$ref": "#/$defs/ranking_rule"},
+    "frozen_candidate_ids": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "frozen_candidate_ids_sha256": {"$ref": "#/$defs/sha256"},
+    "b2_campaign": {"$ref": "#/$defs/b2_campaign"}
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "object_id": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "repository": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "repo_commit", "repo_tree", "repo_dirty", "tracked_diff_sha256",
+        "compiler_artifact"
+      ],
+      "properties": {
+        "repo_commit": {"$ref": "#/$defs/object_id"},
+        "repo_tree": {"$ref": "#/$defs/object_id"},
+        "repo_dirty": {"const": false},
+        "tracked_diff_sha256": {"type": "null"},
+        "compiler_artifact": {"$ref": "#/$defs/binary_artifact"}
+      }
+    },
+    "binary_artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "snapshots": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "candidate_registry", "executable_pass_registry",
+        "screening_base_pass_registry", "matrix",
+        "screening", "oracle_capture", "run_record_schema",
+        "candidate_study_schema", "candidate_evidence_sha256",
+        "screening_spec_sha256", "oracle_plan_sha256"
+      ],
+      "properties": {
+        "candidate_registry": {"$ref": "#/$defs/artifact_digest"},
+        "executable_pass_registry": {"$ref": "#/$defs/artifact_digest"},
+        "screening_base_pass_registry": {"$ref": "#/$defs/artifact_digest"},
+        "matrix": {"$ref": "#/$defs/artifact_digest"},
+        "screening": {"$ref": "#/$defs/artifact_digest"},
+        "oracle_capture": {"$ref": "#/$defs/artifact_digest"},
+        "run_record_schema": {"$ref": "#/$defs/artifact_digest"},
+        "candidate_study_schema": {"$ref": "#/$defs/artifact_digest"},
+        "candidate_evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "screening_spec_sha256": {"$ref": "#/$defs/sha256"},
+        "oracle_plan_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "artifact_digest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_id", "artifact"],
+      "properties": {
+        "profile_id": {"const": "candidate-empty"},
+        "artifact": {"$ref": "#/$defs/artifact_digest"}
+      }
+    },
+    "suite": {
+      "type": "object", "additionalProperties": false,
+      "required": ["data_role", "suite_id", "manifest", "case_count"],
+      "properties": {
+        "data_role": {"enum": ["B1", "B2", "B3", "B4", "B5", "B6"]},
+        "suite_id": {"$ref": "#/$defs/id"},
+        "manifest": {"$ref": "#/$defs/artifact_digest"},
+        "case_count": {"enum": [20, 59, 60, 88, 140]}
+      }
+    },
+    "measurement_protocol": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "protocol_id", "measurement_mode", "protocol_sha256", "runner_command_sha256",
+        "runner_adapter", "profile_plugin_sha256", "cache_plugin_sha256",
+        "hotblocks_plugin_sha256", "cache_model_sha256", "path", "physical_sha256"
+      ],
+      "properties": {
+        "protocol_id": {"$ref": "#/$defs/id"},
+        "measurement_mode": {"enum": ["standard_proxy", "cache_hotblock"]},
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "physical_sha256": {"$ref": "#/$defs/sha256"},
+        "runner_command_sha256": {"$ref": "#/$defs/sha256"},
+        "runner_adapter": {"enum": ["host", "wsl"]},
+        "profile_plugin_sha256": {"$ref": "#/$defs/sha256"},
+        "cache_plugin_sha256": {"$ref": "#/$defs/sha256"},
+        "hotblocks_plugin_sha256": {"$ref": "#/$defs/sha256"},
+        "cache_model_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "tool_versions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["qemu-system-riscv64", "bare-metal-linker", "python", "glib"],
+      "properties": {
+        "qemu-system-riscv64": {"type": "string", "minLength": 1, "maxLength": 256},
+        "bare-metal-linker": {"type": "string", "minLength": 1, "maxLength": 256},
+        "python": {"type": "string", "minLength": 1, "maxLength": 256},
+        "glib": {"type": "string", "minLength": 1, "maxLength": 256}
+      }
+    },
+    "reference_baseline": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "compiler_baseline", "profile_id", "profile_sha256", "tool", "version",
+        "optimization", "compiler_executable", "compiler_command_sha256",
+        "compiler_argv_sha256"
+      ],
+      "properties": {
+        "compiler_baseline": {"enum": ["gcc_13_3_o2", "clang_18_o3"]},
+        "profile_id": {"enum": ["gcc-13.3-o2", "clang-18-o3"]},
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "tool": {"enum": ["riscv-gcc", "clang"]},
+        "version": {"enum": ["13.3.0", "18.1.3"]},
+        "optimization": {"enum": ["-O2", "-O3"]},
+        "compiler_executable": {"const": "sh"},
+        "compiler_command_sha256": {"$ref": "#/$defs/sha256"},
+        "compiler_argv_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "reference_toolchain": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "snapshot", "compile_driver_sha256", "source_adapter_sha256",
+        "builtin_header_sha256", "image_id", "common_tool_versions",
+        "accela_jdk_version", "baselines"
+      ],
+      "properties": {
+        "snapshot": {"$ref": "#/$defs/artifact_digest"},
+        "compile_driver_sha256": {"$ref": "#/$defs/sha256"},
+        "source_adapter_sha256": {"$ref": "#/$defs/sha256"},
+        "builtin_header_sha256": {"$ref": "#/$defs/sha256"},
+        "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "common_tool_versions": {"$ref": "#/$defs/tool_versions"},
+        "accela_jdk_version": {"type": "string", "minLength": 1, "maxLength": 256},
+        "baselines": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": {"$ref": "#/$defs/reference_baseline"}
+        }
+      }
+    },
+    "gates": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "oracle_structure_geometric_mean_minimum", "b3_geometric_mean_strictly_above",
+        "combined_case_count", "evidence_claim"
+      ],
+      "properties": {
+        "oracle_structure_geometric_mean_minimum": {"const": 1.1},
+        "b3_geometric_mean_strictly_above": {"const": 1.0},
+        "combined_case_count": {"const": 267},
+        "evidence_claim": {"const": "qemu_proxy_only"}
+      }
+    },
+    "ranking_rule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["primary", "secondary", "tertiary", "quaternary"],
+      "properties": {
+        "primary": {"const": "combined_geometric_mean_desc"},
+        "secondary": {"const": "b3_geometric_mean_desc"},
+        "tertiary": {"const": "static_text_bytes_asc"},
+        "quaternary": {"const": "stable_candidate_id_asc"}
+      }
+    },
+    "b2_campaign": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "plan_sha256", "status_sha256", "study_id", "study_sha256",
+        "status_ledger_entry_count", "status_ledger_head_sha256", "status_ledger_sha256",
+        "raw_evidence_registry",
+        "b1_full_run_id", "b1_full_run_sha256", "b1_passed_candidate_ids",
+        "b1_failed_candidate_ids"
+      ],
+      "properties": {
+        "plan_sha256": {"$ref": "#/$defs/sha256"},
+        "status_sha256": {"$ref": "#/$defs/sha256"},
+        "status_ledger_entry_count": {"type": "integer", "minimum": 1},
+        "status_ledger_head_sha256": {"$ref": "#/$defs/sha256"},
+        "status_ledger_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_evidence_registry": {"$ref": "#/$defs/artifact_digest"},
+        "study_id": {"$ref": "#/$defs/id"},
+        "study_sha256": {"$ref": "#/$defs/sha256"},
+        "b1_full_run_id": {"$ref": "#/$defs/id"},
+        "b1_full_run_sha256": {"$ref": "#/$defs/sha256"},
+        "b1_passed_candidate_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "b1_failed_candidate_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        }
+      }
+    }
+  }
+}

@@ -4,9 +4,10 @@ import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineModule;
 import accela.backend.regalloc.AllocationResult;
 import accela.pass.PassDescriptor;
+import accela.pass.instrument.DecisionObservability;
+import accela.pass.instrument.PassDecisionEmitter;
 import accela.pass.instrument.PassRemark;
 import accela.pass.instrument.PassRemarkSink;
-import accela.pass.instrument.DecisionObservability;
 import accela.pass.ir.instrument.IRMetrics;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -39,6 +40,21 @@ public final class BackendPassInstrumentation implements AutoCloseable {
   /** Returns whether benchmark observations are active for this compilation. */
   public boolean isEnabled() {
     return enabled;
+  }
+
+  /** Creates a fail-fast decision emitter for one observed backend candidate target. */
+  public PassDecisionEmitter decisionEmitter(
+      PassDescriptor descriptor, int occurrence, String targetKind, String targetName) {
+    if (!enabled) {
+      throw new IllegalStateException("backend pass decision observation is disabled");
+    }
+    checkOwnerAndOpen();
+    validateBackendDescriptor(descriptor, occurrence);
+    if (!descriptor.decisionObservable()) {
+      throw new IllegalArgumentException(
+          "pass '" + descriptor.id() + "' is not registered as decision-observable");
+    }
+    return sink.decisionEmitter(descriptor, occurrence, targetKind, targetName);
   }
 
   static BackendPassInstrumentation observed(
@@ -185,7 +201,22 @@ public final class BackendPassInstrumentation implements AutoCloseable {
       Map<String, Long> details) {
     sink.accept(new PassRemark(descriptor.id(), occurrence, descriptor.stage(), targetKind,
         targetName, elapsedNanos, modified, before, after, details,
-        DecisionObservability.UNAVAILABLE));
+        descriptor.decisionObservable()
+            ? DecisionObservability.AVAILABLE
+            : DecisionObservability.UNAVAILABLE));
+  }
+
+  private static void validateBackendDescriptor(
+      PassDescriptor descriptor, int occurrence) {
+    Objects.requireNonNull(descriptor, "descriptor");
+    if (!descriptor.stage().isBackend()) {
+      throw new IllegalArgumentException(
+          "pass '" + descriptor.id() + "' is not a backend pass");
+    }
+    if (occurrence < 1 || occurrence > descriptor.fullPipelineOccurrences()) {
+      throw new IllegalArgumentException(
+          "invalid occurrence " + occurrence + " for " + descriptor.id());
+    }
   }
 
   private static void validate(

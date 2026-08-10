@@ -16,6 +16,8 @@ def build_oracle_plan(
     suite_root: Path,
     pipeline_profile_id: str,
     pipeline_profile_sha256: str,
+    baseline_run_id: str,
+    optimized_run_id: str,
 ) -> dict[str, Any]:
     """Expand reciprocal clean-room source pairs under one compiler pipeline."""
 
@@ -33,6 +35,16 @@ def build_oracle_plan(
     if evidence_class is None:
         raise ConfigurationError(
             "oracle planning requires a paired oracle/B3/B4/B6 manifest; evidence class is derived from data_role"
+        )
+    legacy_ids = {
+        f"oracle-baseline:{manifest['suite_id']}",
+        f"oracle-optimized:{manifest['suite_id']}",
+    }
+    if baseline_run_id == optimized_run_id:
+        raise ConfigurationError("oracle source legs require distinct explicit run ids")
+    if {baseline_run_id, optimized_run_id} & legacy_ids:
+        raise ConfigurationError(
+            "oracle planning rejects legacy deterministic run ids; declare fresh campaign-bound ids"
         )
 
     grouped: dict[str, dict[str, dict[str, Any]]] = {}
@@ -91,8 +103,8 @@ def build_oracle_plan(
                 "profile_id": pipeline_profile_id,
                 "profile_sha256": pipeline_profile_sha256,
             },
-            "baseline_run_id": f"oracle-baseline:{manifest['suite_id']}",
-            "optimized_run_id": f"oracle-optimized:{manifest['suite_id']}",
+            "baseline_run_id": baseline_run_id,
+            "optimized_run_id": optimized_run_id,
             "pairs": pairs,
         }
     )

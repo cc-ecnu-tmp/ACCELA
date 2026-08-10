@@ -1,9 +1,9 @@
 package accela.benchmark;
 
-import accela.pass.instrument.PassRemark;
-import accela.pass.instrument.PassRemarkSink;
 import accela.pass.instrument.DecisionRemark;
 import accela.pass.instrument.OptimizationRemark;
+import accela.pass.instrument.PassRemark;
+import accela.pass.instrument.PassRemarkSink;
 import accela.util.StrictJson;
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -13,11 +13,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Locale;
 import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /** UTF-8 JSON Lines sink for benchmark pass remarks. */
 public final class JsonlRemarkWriter implements PassRemarkSink, AutoCloseable {
@@ -50,7 +50,7 @@ public final class JsonlRemarkWriter implements PassRemarkSink, AutoCloseable {
       }
     }
     LinkedHashMap<String, Object> json = new LinkedHashMap<>();
-    json.put("schema_version", "optimization-remark.v1");
+    json.put("schema_version", "optimization-remark.v2");
     json.put("sequence", ++sequence);
     json.put("event_type", remark instanceof PassRemark ? "pass_summary" : "decision");
     json.put("pass", remark.passId());
@@ -70,6 +70,7 @@ public final class JsonlRemarkWriter implements PassRemarkSink, AutoCloseable {
     } else if (remark instanceof DecisionRemark decision) {
       json.put("decision", decision.decision().name().toLowerCase(Locale.ROOT));
       json.put("reason", decision.reason().name().toLowerCase(Locale.ROOT));
+      json.put("legality_obligation_id", decision.legalityObligationId());
     } else {
       throw new IllegalArgumentException(
           "unsupported optimization remark type: " + remark.getClass().getName());

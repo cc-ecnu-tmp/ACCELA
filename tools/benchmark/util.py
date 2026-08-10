@@ -53,6 +53,21 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def resolve_without_symlinks(path: Path, *, label: str) -> Path:
+    """Resolve an existing path after rejecting every lexical symlink component."""
+
+    lexical = path.absolute()
+    cursor = Path(lexical.anchor)
+    for component in lexical.parts[1:]:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ValidationError(f"{label} must not traverse a symbolic link")
+    try:
+        return lexical.resolve(strict=True)
+    except OSError as exc:
+        raise ValidationError(f"{label} is missing or unreadable") from exc
+
+
 def sha256_artifact(path: Path) -> str:
     """Hash a compiler binary or class tree without recording its external path.
 
@@ -62,7 +77,7 @@ def sha256_artifact(path: Path) -> str:
     UTF-8 byte order preserves the previous POSIX code-point order, so existing
     Linux/WSL artifact digests remain stable.
     """
-    resolved = path.resolve(strict=True)
+    resolved = resolve_without_symlinks(path, label="compiler artifact")
     if resolved.is_file():
         return sha256_file(resolved)
     if not resolved.is_dir():

@@ -1,0 +1,41 @@
+package accela.pass;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** Test-only registry containing one IR and one backend candidate. */
+public final class SyntheticCandidateRegistry {
+  public static final String IR_CANDIDATE = "candidate.ir.test-development";
+  public static final String BACKEND_CANDIDATE = "candidate.backend.test-development";
+
+  private SyntheticCandidateRegistry() {}
+
+  public static PassRegistry createCombined() {
+    ArrayList<PassDescriptor> combined = new ArrayList<>(PassRegistry.standard().all());
+    combined.addAll(descriptors());
+    return PassRegistry.of(combined);
+  }
+
+  private static List<PassDescriptor> descriptors() {
+    PassDescriptor irCandidate = candidate(
+        IR_CANDIDATE, "Test IR development candidate", PassDescriptor.Stage.IR_FUNCTION,
+        PassRegistry.IR_INST_COMBINE, IR_CANDIDATE + ".valid-ir-shape");
+    PassDescriptor backendCandidate = candidate(
+        BACKEND_CANDIDATE, "Test backend development candidate",
+        PassDescriptor.Stage.BACKEND_FUNCTION, PassRegistry.BACKEND_MACHINE_CSE,
+        BACKEND_CANDIDATE + ".valid-machine-shape");
+    return List.of(irCandidate, backendCandidate);
+  }
+
+  private static PassDescriptor candidate(
+      String id,
+      String displayName,
+      PassDescriptor.Stage stage,
+      String anchor,
+      String obligation) {
+    return new PassDescriptor(
+        id, id, displayName, stage, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(anchor, 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of(obligation));
+  }
+}

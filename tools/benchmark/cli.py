@@ -7,27 +7,35 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from .ablation import build_ablation_remark
 from .audit import build_cross_suite_audit
-from .campaign import (
-    build_campaign_plan,
-    campaign_task,
-    finalize_campaign_plan,
-    next_campaign_tasks,
-    update_campaign_status,
+from .candidates import (
+    build_candidate_campaign_plan,
+    build_candidate_final,
+    build_candidate_raw_evidence_registry,
+    build_candidate_screening,
+    build_candidate_study,
+    capture_candidate_oracle,
+    finalize_candidate_campaign,
+    generate_candidate_profile_matrix,
+    update_candidate_campaign_status,
 )
+from .journal import durable_create_json
 from .adapters import StageSpec
 from .errors import BenchmarkError, ConfigurationError
 from .execution import MeasurementSpec, RunOptions, RunProvenance, ToolVersion, run_benchmark
 from .inventory import inventory_cleanroom_manifest, inventory_suite, subset_manifest
 from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
 from .oracle import build_oracle_plan, prepare_oracle_leg_manifest
-from .profiles import generate_ablation_profiles
 from .protocol import capture_measurement_protocol, verify_measurement_protocol
-from .report import build_report
+from .report import (
+    build_candidate_report,
+    build_candidate_screening_report,
+    build_report,
+)
 from .schema import load_and_validate, load_and_validate_jsonl
 from .util import (
     atomic_write_json,
+    canonical_json_bytes,
     describe_os_error,
     parse_command_json,
     parse_environment,
@@ -57,6 +65,118 @@ def _resolve_workspace_root(value: Path | None) -> Path:
     if not root.is_dir():
         raise ConfigurationError("workspace root must be a directory")
     return root
+
+
+def _workspace_input_path(
+    workspace_root: Path,
+    value: Path | None,
+    *,
+    label: str,
+) -> Path | None:
+    if value is None:
+        return None
+    lexical = value if value.is_absolute() else workspace_root / value
+    lexical = lexical.absolute()
+    try:
+        relative = lexical.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} must be contained by --workspace-root") from exc
+    cursor = workspace_root
+    for component in relative.parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ConfigurationError(f"{label} cannot traverse a symbolic link")
+    path = lexical.resolve(strict=True)
+    try:
+        path.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} resolves outside --workspace-root") from exc
+    if not path.is_file():
+        raise ConfigurationError(f"{label} must be a regular file")
+    return path
+
+
+def _workspace_output_path(
+    workspace_root: Path,
+    value: Path,
+    *,
+    label: str,
+) -> Path:
+    lexical = (value if value.is_absolute() else workspace_root / value).absolute()
+    try:
+        relative = lexical.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} must be contained by --workspace-root") from exc
+    cursor = workspace_root
+    for component in relative.parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ConfigurationError(f"{label} cannot traverse a symbolic link")
+    path = lexical.resolve()
+    try:
+        path.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} resolves outside --workspace-root") from exc
+    return path
+
+
+def _workspace_immutable_output_path(
+    workspace_root: Path,
+    value: Path,
+    *,
+    label: str,
+) -> Path:
+    lexical = (value if value.is_absolute() else workspace_root / value).absolute()
+    try:
+        relative = lexical.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} must be contained by --workspace-root") from exc
+    cursor = workspace_root
+    for component in relative.parent.parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ConfigurationError(f"{label} cannot traverse a symbolic link")
+    parent = lexical.parent.resolve(strict=True)
+    if lexical.exists() and lexical.is_symlink():
+        raise ConfigurationError(f"{label} cannot be a symbolic link")
+    if parent != lexical.parent:
+        raise ConfigurationError(f"{label} parent path identity differs")
+    return lexical
+
+
+def _publish_immutable_json(path: Path, value: Mapping[str, Any], *, label: str) -> None:
+    expected = canonical_json_bytes(value) + b"\n"
+    if path.exists():
+        if not path.is_file() or path.read_bytes() != expected:
+            raise ConfigurationError(f"{label} already exists with different bytes")
+        return
+    try:
+        durable_create_json(path, value)
+    except BenchmarkError:
+        if not path.is_file() or path.read_bytes() != expected:
+            raise
+
+
+def _workspace_artifact_path(
+    workspace_root: Path,
+    value: Path,
+    *,
+    label: str,
+) -> Path:
+    lexical = (value if value.is_absolute() else workspace_root / value).absolute()
+    try:
+        relative = lexical.relative_to(workspace_root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} must be contained by --workspace-root") from exc
+    cursor = workspace_root
+    for component in relative.parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ConfigurationError(f"{label} cannot traverse a symbolic link")
+    path = lexical.resolve(strict=True)
+    if not (path.is_file() or path.is_dir()):
+        raise ConfigurationError(f"{label} must be a file or directory")
+    return path
 
 
 def _verify_git_provenance(
@@ -305,10 +425,25 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
         additional_metrics = _measurement_specs(args.measurement_json)
     if metric_unit is None:
         raise ConfigurationError("--metric-unit is required for stdout/stderr/file primary metrics")
+    pipeline_profile_path = _workspace_input_path(
+        workspace_root,
+        args.pipeline_profile_file,
+        label="pipeline profile",
+    )
+    candidate_registry_path = _workspace_input_path(
+        workspace_root,
+        args.candidate_registry,
+        label="candidate registry",
+    )
+    candidate_pass_registry_path = _workspace_input_path(
+        workspace_root,
+        args.candidate_pass_registry,
+        label="candidate pass registry",
+    )
     pipeline_profile_sha256 = (
         args.pipeline_profile_sha256
         if args.pipeline_profile_sha256 is not None
-        else sha256_artifact(args.pipeline_profile_file)
+        else sha256_artifact(pipeline_profile_path)
     )
     measurement_protocol = (
         load_and_validate(args.measurement_protocol.resolve(strict=True))
@@ -341,7 +476,9 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
         linker=linker,
         runner=runner,
         provenance=provenance,
-        pipeline_profile_path=args.pipeline_profile_file,
+        pipeline_profile_path=pipeline_profile_path,
+        candidate_registry_path=candidate_registry_path,
+        candidate_pass_registry_path=candidate_pass_registry_path,
         measurement_protocol_path=args.measurement_protocol,
         measurement_protocol_assets=tuple(
             (key, Path(value))
@@ -400,6 +537,16 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     profile = parser.add_mutually_exclusive_group(required=True)
     profile.add_argument("--pipeline-profile-sha256")
     profile.add_argument("--pipeline-profile-file", type=_path)
+    parser.add_argument(
+        "--candidate-registry",
+        type=_path,
+        help="candidate-catalog.v1 snapshot bound into the run configuration",
+    )
+    parser.add_argument(
+        "--candidate-pass-registry",
+        type=_path,
+        help="physical pass-registry.v2 snapshot bound by candidate-catalog.v1",
+    )
     parser.add_argument("--compiler-artifact", type=_path, required=True, help="compiler binary or classes directory to hash")
     parser.add_argument(
         "--measurement-protocol", type=_path,
@@ -600,6 +747,8 @@ def build_parser() -> argparse.ArgumentParser:
     oracle_plan.add_argument("--suite-root", type=_path)
     oracle_plan.add_argument("--pipeline-profile-id", required=True)
     oracle_plan.add_argument("--pipeline-profile-sha256", required=True)
+    oracle_plan.add_argument("--baseline-run-id", required=True)
+    oracle_plan.add_argument("--optimized-run-id", required=True)
     oracle_plan.add_argument("--output", type=_path, required=True)
     oracle_run = oracle_commands.add_parser(
         "run", help="execute one trusted oracle pipeline leg from a paired plan"
@@ -609,80 +758,256 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_arguments(oracle_run)
     oracle_run.set_defaults(compiler_kind="benchmark-compiler", runner_kind="qemu")
 
-    ablate = subparsers.add_parser("ablate", help="generate ablation profiles or analyze paired runs")
-    ablate_commands = ablate.add_subparsers(dest="ablate_command", required=True)
-    ablate_profiles = ablate_commands.add_parser(
-        "profiles", help="generate FULL/mandatory/family/Top5-pair canonical profiles and schedule matrix"
+    candidates = subparsers.add_parser(
+        "candidates",
+        help="plan and analyze direct FULL versus FULL+candidate experiments",
     )
-    ablate_profiles.add_argument("--registry", type=_path, required=True)
-    ablate_profiles.add_argument("--pair", action="append", default=[], metavar="FAMILY_A+FAMILY_B")
-    ablate_profiles.add_argument(
-        "--top-family", action="append", default=[], metavar="FAMILY",
-        help="up to five ranked families; all nC2 interaction profiles are generated",
+    candidate_commands = candidates.add_subparsers(
+        dest="candidates_command", required=True
     )
-    ablate_profiles.add_argument("--output-dir", type=_path, required=True)
-    ablate_analyze = ablate_commands.add_parser(
-        "analyze", help="build an ablation-study.v1 from completed paired run records"
+    candidate_profiles = candidate_commands.add_parser(
+        "profiles",
+        help="bind a candidate registry to one physical FULL pipeline profile",
     )
-    ablate_analyze.add_argument("--matrix", type=_path, required=True)
-    ablate_analyze.add_argument("baseline", type=_path)
-    ablate_analyze.add_argument("--variant", action="append", required=True, metavar="ID=RUN_JSON")
-    ablate_analyze.add_argument("--interaction", action="append", default=[], metavar="LEFT+RIGHT=RUN_JSON")
-    ablate_analyze.add_argument("--study-id", required=True)
-    ablate_analyze.add_argument("--title", required=True)
-    ablate_analyze.add_argument("--bootstrap-samples", type=int, default=10_000, choices=(10_000,))
-    ablate_analyze.add_argument("--seed", type=int, default=20260809, choices=(20260809,))
-    ablate_analyze.add_argument("--output", type=_path, required=True)
-    campaign_plan = ablate_commands.add_parser(
-        "campaign-plan", help="build the fixed 12h/24h/24h/12h multi-suite campaign plan"
+    candidate_profiles.add_argument("--registry", type=_path, required=True)
+    candidate_profiles.add_argument(
+        "--pass-registry",
+        type=_path,
+        required=True,
+        help="post-implementation executable PassRegistry export; never the frozen screening base",
     )
-    campaign_plan.add_argument("--matrix", type=_path, required=True)
-    campaign_plan.add_argument("--oracle-plan", type=_path, required=True)
-    campaign_plan.add_argument("--measurement-protocol", type=_path, required=True)
-    campaign_plan.add_argument("--cache-hotblock-protocol", type=_path, required=True)
-    campaign_plan.add_argument("--reference-toolchain", type=_path, required=True)
-    campaign_plan.add_argument("--workspace-root", type=_path, required=True)
-    campaign_plan.add_argument(
-        "--suite", action="append", required=True, metavar="B1|B2|B3|B4|B5|B6|oracle=MANIFEST",
-        help="exactly one normalized manifest for every evidence role",
+    candidate_profiles.add_argument("--workspace-root", type=_path, required=True)
+    candidate_profiles.add_argument("--matrix-id", required=True)
+    candidate_profiles.add_argument(
+        "--pair", action="append", default=[], metavar="CANDIDATE_A+CANDIDATE_B"
     )
-    campaign_plan.add_argument("--campaign-id", required=True)
-    campaign_plan.add_argument("--jobs", type=_worker_count, default=4)
-    campaign_plan.add_argument("--output", type=_path, required=True)
-    campaign_finalize = ablate_commands.add_parser(
-        "campaign-finalize",
-        help="bind measured B3 Top5 status to an extended matrix and schedule all ten pairs",
+    candidate_profiles.add_argument(
+        "--top-candidate",
+        action="append",
+        default=[],
+        metavar="CANDIDATE_ID",
+        help="up to three qualified candidates; generate their explicit pair profiles",
     )
-    campaign_finalize.add_argument("--plan", type=_path, required=True)
-    campaign_finalize.add_argument("--status", type=_path, required=True)
-    campaign_finalize.add_argument("--matrix", type=_path, required=True)
-    campaign_finalize.add_argument("--output", type=_path, required=True)
-    campaign_status = ablate_commands.add_parser(
-        "campaign-status", help="recompute resumable campaign state from completed run records"
+    candidate_profiles.add_argument("--output-dir", type=_path, required=True)
+
+    candidate_screen = candidate_commands.add_parser(
+        "screen",
+        help="qualify all eleven families from one 99-pair structure/size Oracle capture",
     )
-    campaign_status.add_argument("--plan", type=_path, required=True)
-    campaign_status.add_argument("--run", action="append", default=[], metavar="TASK_ID=RUN_JSON")
-    campaign_status.add_argument(
-        "--study", action="append", default=[], metavar="singleton_b2|promotion_b3=ABLATION_STUDY_JSON",
-        help="normalized study evidence used to derive Top8 promotion and final Top5",
+    candidate_screen.add_argument("--workspace-root", type=_path, required=True)
+    candidate_screen.add_argument("--evidence", type=_path, required=True)
+    candidate_screen.add_argument("--spec", type=_path, required=True)
+    candidate_screen.add_argument(
+        "--pass-registry",
+        type=_path,
+        required=True,
+        help="immutable pre-implementation PassRegistry export with zero candidate descriptors",
     )
-    campaign_status.add_argument("--previous-status", type=_path)
-    campaign_status.add_argument(
-        "--started-at", help="RFC3339 campaign start; required for the first status record",
+    candidate_screen.add_argument("--oracle", type=_path, required=True)
+    candidate_screen.add_argument("--screening-id", required=True)
+    candidate_screen.add_argument("--output", type=_path, required=True)
+    candidate_screen.add_argument(
+        "--report",
+        type=_path,
+        required=True,
+        metavar="OUTPUT_DIR",
+        help="write the deterministic CANDIDATE_SCREENING_REPORT.zh-CN.md",
     )
-    campaign_status.add_argument("--as-of", help="RFC3339 observation time; defaults to current UTC")
-    campaign_status.add_argument("--output", type=_path, required=True)
-    campaign_next = ablate_commands.add_parser(
-        "campaign-next", help="emit the next budget/dependency-safe tasks for the existing run executor"
+
+    candidate_study = candidate_commands.add_parser(
+        "analyze",
+        aliases=("study",),
+        help="analyze direct FULL/FULL+candidate run pairs without ratio inversion",
     )
-    campaign_next.add_argument("--plan", type=_path, required=True)
-    campaign_next.add_argument("--status", type=_path, required=True)
-    campaign_task_query = ablate_commands.add_parser(
-        "campaign-task", help="query one immutable task or task field from a campaign plan"
+    candidate_study.add_argument("--registry", type=_path, required=True)
+    candidate_study.add_argument(
+        "--pass-registry",
+        type=_path,
+        required=True,
+        help="post-implementation executable PassRegistry export; never the frozen screening base",
     )
-    campaign_task_query.add_argument("--plan", type=_path, required=True)
-    campaign_task_query.add_argument("--task-id", required=True)
-    campaign_task_query.add_argument("--field")
+    candidate_study.add_argument("--matrix", type=_path, required=True)
+    candidate_study.add_argument("--workspace-root", type=_path, required=True)
+    candidate_study.add_argument("--raw-state-root", type=_path, required=True)
+    candidate_study.add_argument("baseline", type=_path)
+    candidate_study.add_argument(
+        "--candidate", action="append", required=True, metavar="ID=RUN_JSON"
+    )
+    candidate_study.add_argument(
+        "--interaction",
+        action="append",
+        default=[],
+        metavar="CANDIDATE_A+CANDIDATE_B=RUN_JSON",
+        help="exact B3 Top3 pair runs; at most three and diagnostic-only",
+    )
+    candidate_study.add_argument("--study-id", required=True)
+    candidate_study.add_argument("--title", required=True)
+    candidate_study.add_argument(
+        "--bootstrap-samples", type=int, default=10_000, choices=(10_000,)
+    )
+    candidate_study.add_argument("--seed", type=int, default=20260809, choices=(20260809,))
+    candidate_study.add_argument("--output", type=_path, required=True)
+
+    candidate_oracle = candidate_commands.add_parser(
+        "oracle-capture",
+        help="capture candidate-mapped Oracle upper bounds with exact run hashes",
+    )
+    candidate_oracle.add_argument("--evidence", type=_path, required=True)
+    candidate_oracle.add_argument("--workspace-root", type=_path, required=True)
+    candidate_oracle.add_argument("--oracle-plan", type=_path, required=True)
+    candidate_oracle.add_argument("--baseline", type=_path, required=True)
+    candidate_oracle.add_argument("--optimized", type=_path, required=True)
+    candidate_oracle.add_argument("--state-root", type=_path, required=True)
+    candidate_oracle.add_argument("--capture-id", required=True)
+    candidate_oracle.add_argument("--output", type=_path, required=True)
+
+    candidate_campaign_plan = candidate_commands.add_parser(
+        "campaign-plan", help="build an immutable candidate run/study task contract"
+    )
+    candidate_campaign_plan.add_argument("--registry", type=_path, required=True)
+    candidate_campaign_plan.add_argument(
+        "--pass-registry",
+        type=_path,
+        required=True,
+        help="post-implementation executable PassRegistry export; screening reopens its separate base",
+    )
+    candidate_campaign_plan.add_argument("--matrix", type=_path, required=True)
+    candidate_campaign_plan.add_argument("--screening", type=_path, required=True)
+    candidate_campaign_plan.add_argument(
+        "--manifest", action="append", required=True,
+        metavar="B1|B2|B3|B4|B5|B6=MANIFEST_JSON",
+    )
+    candidate_campaign_plan.add_argument("--workspace-root", type=_path, required=True)
+    candidate_campaign_plan.add_argument(
+        "--measurement-protocol", type=_path, required=True
+    )
+    candidate_campaign_plan.add_argument(
+        "--compiler-artifact", type=_path, required=True
+    )
+    candidate_campaign_plan.add_argument(
+        "--raw-state-root", type=_path, required=True
+    )
+    candidate_campaign_plan.add_argument("--campaign-id", required=True)
+    candidate_campaign_plan.add_argument("--output", type=_path, required=True)
+
+    candidate_campaign_status = candidate_commands.add_parser(
+        "campaign-status", help="recompute candidate campaign state from bound evidence"
+    )
+    candidate_campaign_status.add_argument("--plan", type=_path, required=True)
+    candidate_campaign_status.add_argument("--workspace-root", type=_path, required=True)
+    candidate_campaign_status.add_argument(
+        "--run", action="append", default=[], metavar="TASK_ID=RUN_JSON"
+    )
+    candidate_campaign_status.add_argument(
+        "--raw-evidence-registry", type=_path, required=True,
+        help="immutable journal/raw-file replay snapshot for all supplied --run inputs",
+    )
+    candidate_campaign_status.add_argument(
+        "--study", action="append", default=[], metavar="B2|B3|B4|B5|B6=STUDY_JSON"
+    )
+    candidate_campaign_status.add_argument("--freeze", type=_path)
+    candidate_campaign_status.add_argument("--diagnostic-matrix", type=_path)
+    candidate_campaign_status.add_argument("--final", type=_path)
+    candidate_campaign_status.add_argument("--previous-status", type=_path)
+    candidate_campaign_status.add_argument(
+        "--status-ledger",
+        action="append",
+        default=[],
+        type=_path,
+        metavar="STATUS_JSON",
+        help="ordered genesis-through-pre-final ledger; required with --final",
+    )
+    candidate_campaign_status.add_argument(
+        "--started-at", help="RFC3339 campaign start; required for the first status"
+    )
+    candidate_campaign_status.add_argument("--as-of")
+    candidate_campaign_status.add_argument("--output", type=_path, required=True)
+
+    candidate_campaign_finalize = candidate_commands.add_parser(
+        "campaign-finalize", help="seal the completed formal B1/B2 evidence into the pre-B3 freeze"
+    )
+    candidate_campaign_finalize.add_argument("--plan", type=_path, required=True)
+    candidate_campaign_finalize.add_argument("--workspace-root", type=_path, required=True)
+    candidate_campaign_finalize.add_argument("--status", type=_path, required=True)
+    candidate_campaign_finalize.add_argument(
+        "--status-ledger", action="append", type=_path, required=True
+    )
+    candidate_campaign_finalize.add_argument("--study", type=_path, required=True)
+    candidate_campaign_finalize.add_argument("--registry", type=_path, required=True)
+    candidate_campaign_finalize.add_argument(
+        "--pass-registry",
+        type=_path,
+        required=True,
+        help="post-implementation executable PassRegistry export; screening reopens its separate base",
+    )
+    candidate_campaign_finalize.add_argument("--matrix", type=_path, required=True)
+    candidate_campaign_finalize.add_argument("--screening", type=_path, required=True)
+    candidate_campaign_finalize.add_argument("--oracle", type=_path, required=True)
+    candidate_campaign_finalize.add_argument(
+        "--manifest", action="append", required=True, metavar="B1|B2|B3|B4|B5|B6=MANIFEST_JSON"
+    )
+    candidate_campaign_finalize.add_argument(
+        "--measurement-protocol", type=_path, required=True
+    )
+    candidate_campaign_finalize.add_argument(
+        "--hotblock-measurement-protocol", type=_path, required=True
+    )
+    candidate_campaign_finalize.add_argument(
+        "--reference-toolchain", type=_path, required=True
+    )
+    candidate_campaign_finalize.add_argument(
+        "--compiler-artifact", type=_path, required=True
+    )
+    candidate_campaign_finalize.add_argument("--freeze-id", required=True)
+    candidate_campaign_finalize.add_argument("--output", type=_path, required=True)
+
+    candidate_final = candidate_commands.add_parser(
+        "final",
+        help="rank the complete B3/B4/B5/B6 evidence over exactly 267 equal-weight cases",
+    )
+    candidate_final.add_argument("--workspace-root", type=_path, required=True)
+    candidate_final.add_argument("--screening", type=_path, required=True)
+    candidate_final.add_argument("--registry", type=_path, required=True)
+    candidate_final.add_argument("--matrix", type=_path, required=True)
+    candidate_final.add_argument("--campaign-plan", type=_path, required=True)
+    candidate_final.add_argument("--campaign-status", type=_path, required=True)
+    candidate_final.add_argument(
+        "--status-ledger", action="append", type=_path, required=True
+    )
+    candidate_final.add_argument(
+        "--run", action="append", required=True, metavar="TASK_ID=RUN_JSON"
+    )
+    candidate_final.add_argument("--b2-study", type=_path, required=True)
+    candidate_final.add_argument(
+        "--study", action="append", required=True, metavar="B3|B4|B5|B6=STUDY_JSON"
+    )
+    candidate_final.add_argument("--diagnostic-study", type=_path)
+    candidate_final.add_argument("--freeze", type=_path, required=True)
+    candidate_final.add_argument("--final-id", required=True)
+    candidate_final.add_argument("--output", type=_path, required=True)
+    candidate_final.add_argument(
+        "--report-output-dir",
+        type=_path,
+        help=(
+            "after final task registration, write the normalized candidate report "
+            "and deterministic reader artifacts"
+        ),
+    )
+    candidate_final.add_argument(
+        "--report-campaign-status",
+        type=_path,
+        help="post-final completed candidate campaign status",
+    )
+    candidate_final.add_argument(
+        "--report-status-ledger",
+        action="append",
+        type=_path,
+        default=[],
+        help="ordered complete status ledger including the terminal final entry",
+    )
+    candidate_final.add_argument("--r7-freeze", type=_path)
+    candidate_final.add_argument("--r7-campaign-root", type=_path)
+    candidate_final.add_argument("--r7-runs-root", type=_path)
 
     report = subparsers.add_parser("report", help="emit JSON, CSV, Markdown, and SVG benchmark reports")
     report.add_argument("run", type=_path)
@@ -895,7 +1220,8 @@ def dispatch(args: argparse.Namespace) -> int:
         for path in args.documents:
             if path.suffix.lower() == ".jsonl":
                 events = load_and_validate_jsonl(path)
-                versions["optimization-remark.v1"] = versions.get("optimization-remark.v1", 0) + len(events)
+                version = events[0]["schema_version"]
+                versions[version] = versions.get(version, 0) + len(events)
                 continue
             raw = read_json(path)
             version = raw.get("schema_version") if isinstance(raw, dict) else None
@@ -977,16 +1303,25 @@ def dispatch(args: argparse.Namespace) -> int:
             suite_root=suite_root,
             pipeline_profile_id=args.pipeline_profile_id,
             pipeline_profile_sha256=args.pipeline_profile_sha256,
+            baseline_run_id=args.baseline_run_id,
+            optimized_run_id=args.optimized_run_id,
         )
         atomic_write_json(args.output, plan)
         print(json.dumps({"schema_version": plan["schema_version"], "pairs": len(plan["pairs"])}))
         return 0
-    if args.command == "ablate" and args.ablate_command == "profiles":
-        matrix = generate_ablation_profiles(
-            registry_path=args.registry,
+    if args.command == "candidates" and args.candidates_command == "profiles":
+        matrix = generate_candidate_profile_matrix(
+            catalog_path=_workspace_input_path(
+                args.workspace_root, args.registry, label="candidate registry"
+            ),
+            pass_registry_path=_workspace_input_path(
+                args.workspace_root, args.pass_registry, label="pass registry"
+            ),
+            matrix_id=args.matrix_id,
+            workspace_root=args.workspace_root,
             output_directory=args.output_dir,
-            top_pairs=_parse_top_pairs(args.pair),
-            top_families=args.top_family,
+            pairs=tuple(_parse_top_pairs(args.pair)),
+            top_candidates=tuple(args.top_candidate),
         )
         print(
             json.dumps(
@@ -994,76 +1329,594 @@ def dispatch(args: argparse.Namespace) -> int:
                     "schema_version": matrix["schema_version"],
                     "profiles": len(matrix["profiles"]),
                     "scheduled": len(matrix["schedule"]),
-                }
+                },
+                sort_keys=True,
             )
         )
         return 0
-    if args.command == "ablate" and args.ablate_command == "analyze":
-        variants = {key: Path(value) for key, value in _parse_assignments(args.variant, "variant").items()}
-        remark = build_ablation_remark(
-            matrix_path=args.matrix,
-            baseline_path=args.baseline,
-            variant_paths=variants,
-            interaction_paths=_parse_interactions(args.interaction),
+    if args.command == "candidates" and args.candidates_command == "screen":
+        screening = build_candidate_screening(
+            candidate_evidence_path=_workspace_input_path(
+                args.workspace_root, args.evidence, label="candidate evidence"
+            ),
+            screening_spec_path=_workspace_input_path(
+                args.workspace_root, args.spec, label="candidate screening spec"
+            ),
+            pass_registry_path=_workspace_input_path(
+                args.workspace_root,
+                args.pass_registry,
+                label="candidate screening PassRegistry v2",
+            ),
+            oracle_capture_path=_workspace_input_path(
+                args.workspace_root, args.oracle, label="candidate Oracle capture"
+            ),
+            workspace_root=args.workspace_root,
+            screening_id=args.screening_id,
+        )
+        _publish_immutable_json(
+            _workspace_immutable_output_path(
+                args.workspace_root, args.output, label="candidate screening output"
+            ),
+            screening,
+            label="candidate screening output",
+        )
+        report_artifacts = build_candidate_screening_report(
+            screening=screening,
+            output_directory=_workspace_output_path(
+                args.workspace_root,
+                args.report,
+                label="candidate screening report directory",
+            ),
+        )
+        print(
+            json.dumps(
+                {
+                    "schema_version": screening["schema_version"],
+                    "qualified": sum(
+                        item["qualification_status"] == "qualified"
+                        for item in screening["candidates"]
+                    ),
+                    "total": len(screening["candidates"]),
+                    "report": next(iter(report_artifacts)),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "candidates" and args.candidates_command in {"analyze", "study"}:
+        study = build_candidate_study(
+            catalog_path=_workspace_input_path(
+                args.workspace_root, args.registry, label="candidate registry"
+            ),
+            pass_registry_path=_workspace_input_path(
+                args.workspace_root, args.pass_registry, label="pass registry"
+            ),
+            matrix_path=_workspace_input_path(
+                args.workspace_root, args.matrix, label="candidate matrix"
+            ),
+            workspace_root=args.workspace_root,
+            raw_state_root=_workspace_artifact_path(
+                args.workspace_root,
+                args.raw_state_root,
+                label="candidate study raw evidence state root",
+            ),
+            baseline_path=_workspace_input_path(
+                args.workspace_root, args.baseline, label="candidate FULL run"
+            ),
+            candidate_paths={
+                key: _workspace_input_path(
+                    args.workspace_root, Path(value), label=f"candidate run {key}"
+                )
+                for key, value in _parse_assignments(
+                    args.candidate, "candidate run"
+                ).items()
+            },
             study_id=args.study_id,
             title=args.title,
             bootstrap_samples=args.bootstrap_samples,
             seed=args.seed,
+            interaction_paths={
+                pair: _workspace_input_path(
+                    args.workspace_root,
+                    path,
+                    label=f"candidate interaction {pair[0]}+{pair[1]}",
+                )
+                for pair, path in _parse_interactions(args.interaction).items()
+            },
         )
-        atomic_write_json(args.output, remark)
-        print(json.dumps({"schema_version": remark["schema_version"], "variants": len(remark["variants"]), "interactions": len(remark["interactions"])}))
+        _publish_immutable_json(
+            _workspace_immutable_output_path(
+                args.workspace_root, args.output, label="candidate study output"
+            ),
+            study,
+            label="candidate study output",
+        )
+        print(
+            json.dumps(
+                {
+                    "schema_version": study["schema_version"],
+                    "candidates": len(study["candidates"]),
+                    "eligible": sum(
+                        item["eligible_for_ranking"] for item in study["candidates"]
+                    ),
+                },
+                sort_keys=True,
+            )
+        )
         return 0
-    if args.command == "ablate" and args.ablate_command == "campaign-plan":
-        suite_paths = {
-            key: Path(value) for key, value in _parse_assignments(args.suite, "campaign suite").items()
-        }
-        plan = build_campaign_plan(
-            matrix_path=args.matrix, suite_paths=suite_paths,
-            oracle_plan_path=args.oracle_plan,
-            measurement_protocol_path=args.measurement_protocol,
-            hotblock_measurement_protocol_path=args.cache_hotblock_protocol,
-            reference_toolchain_path=args.reference_toolchain,
+    if args.command == "candidates" and args.candidates_command == "oracle-capture":
+        capture = capture_candidate_oracle(
+            candidate_evidence_path=_workspace_input_path(
+                args.workspace_root, args.evidence, label="candidate evidence"
+            ),
+            oracle_plan_path=_workspace_input_path(
+                args.workspace_root, args.oracle_plan, label="Oracle plan"
+            ),
+            baseline_path=_workspace_input_path(
+                args.workspace_root, args.baseline, label="Oracle baseline run"
+            ),
+            optimized_path=_workspace_input_path(
+                args.workspace_root, args.optimized, label="Oracle optimized run"
+            ),
+            state_root=_workspace_artifact_path(
+                args.workspace_root,
+                args.state_root,
+                label="candidate Oracle raw evidence state root",
+            ),
             workspace_root=args.workspace_root,
-            campaign_id=args.campaign_id, max_workers=args.jobs,
+            capture_id=args.capture_id,
         )
-        atomic_write_json(args.output, plan)
-        print(json.dumps({"schema_version": plan["schema_version"], "tasks": len(plan["tasks"]), "budget_seconds": plan["total_budget_seconds"]}))
+        _publish_immutable_json(
+            _workspace_immutable_output_path(
+                args.workspace_root, args.output, label="candidate Oracle capture output"
+            ),
+            capture,
+            label="candidate Oracle capture output",
+        )
+        print(
+            json.dumps(
+                {
+                    "schema_version": capture["schema_version"],
+                    "candidates": len(capture["candidates"]),
+                },
+                sort_keys=True,
+            )
+        )
         return 0
-    if args.command == "ablate" and args.ablate_command == "campaign-status":
-        status = update_campaign_status(
-            plan_path=args.plan,
-            run_paths={key: Path(value) for key, value in _parse_assignments(args.run, "campaign run").items()},
-            study_paths={key: Path(value) for key, value in _parse_assignments(args.study, "campaign study").items()},
-            previous_status_path=args.previous_status,
+    if args.command == "candidates" and args.candidates_command == "campaign-plan":
+        plan = build_candidate_campaign_plan(
+            catalog_path=_workspace_input_path(
+                args.workspace_root, args.registry, label="candidate registry"
+            ),
+            matrix_path=_workspace_input_path(
+                args.workspace_root, args.matrix, label="candidate matrix"
+            ),
+            pass_registry_path=_workspace_input_path(
+                args.workspace_root, args.pass_registry, label="pass registry"
+            ),
+            screening_path=_workspace_input_path(
+                args.workspace_root, args.screening, label="candidate screening"
+            ),
+            suite_paths={
+                role: _workspace_input_path(
+                    args.workspace_root,
+                    Path(path),
+                    label=f"candidate {role} manifest",
+                )
+                for role, path in _parse_assignments(
+                    args.manifest, "candidate campaign manifest"
+                ).items()
+            },
+            measurement_protocol_path=_workspace_input_path(
+                args.workspace_root,
+                args.measurement_protocol,
+                label="candidate standard measurement protocol",
+            ),
+            compiler_artifact_path=_workspace_artifact_path(
+                args.workspace_root,
+                args.compiler_artifact,
+                label="candidate compiler artifact",
+            ),
+            raw_state_root=_workspace_artifact_path(
+                args.workspace_root,
+                args.raw_state_root,
+                label="candidate raw evidence state root",
+            ),
+            workspace_root=args.workspace_root,
+            campaign_id=args.campaign_id,
+        )
+        _publish_immutable_json(
+            _workspace_immutable_output_path(
+                args.workspace_root, args.output, label="candidate campaign plan output"
+            ),
+            plan,
+            label="candidate campaign plan output",
+        )
+        print(
+            json.dumps(
+                {
+                    "schema_version": plan["schema_version"],
+                    "tasks": len(plan["tasks"]),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "candidates" and args.candidates_command == "campaign-status":
+        candidate_plan_path = _workspace_input_path(
+            args.workspace_root, args.plan, label="candidate campaign plan"
+        )
+        candidate_run_paths = {
+            key: _workspace_input_path(
+                args.workspace_root, Path(value), label=f"candidate campaign run {key}"
+            )
+            for key, value in _parse_assignments(
+                args.run, "candidate campaign run"
+            ).items()
+        }
+        raw_registry = build_candidate_raw_evidence_registry(
+            plan_path=candidate_plan_path,
+            run_paths=candidate_run_paths,
+            workspace_root=args.workspace_root,
+        )
+        raw_registry_output = _workspace_immutable_output_path(
+            args.workspace_root,
+            args.raw_evidence_registry,
+            label="candidate raw evidence registry output",
+        )
+        _publish_immutable_json(
+            raw_registry_output,
+            raw_registry,
+            label="candidate raw evidence registry output",
+        )
+        status = update_candidate_campaign_status(
+            plan_path=candidate_plan_path,
+            run_paths=candidate_run_paths,
+            study_paths={
+                role: _workspace_input_path(
+                    args.workspace_root,
+                    Path(path),
+                    label=f"candidate campaign {role} study",
+                )
+                for role, path in _parse_assignments(
+                    args.study, "candidate campaign study"
+                ).items()
+            },
+            freeze_path=_workspace_input_path(
+                args.workspace_root, args.freeze, label="candidate campaign freeze"
+            ),
+            diagnostic_matrix_path=_workspace_input_path(
+                args.workspace_root,
+                args.diagnostic_matrix,
+                label="candidate diagnostic matrix",
+            ),
+            final_path=_workspace_input_path(
+                args.workspace_root, args.final, label="candidate campaign final"
+            ),
+            raw_evidence_registry_path=raw_registry_output,
+            workspace_root=args.workspace_root,
+            previous_status_path=_workspace_input_path(
+                args.workspace_root,
+                args.previous_status,
+                label="previous candidate campaign status",
+            ),
+            status_ledger_paths=[
+                _workspace_input_path(
+                    args.workspace_root,
+                    path,
+                    label="candidate campaign pre-final ledger entry",
+                )
+                for path in args.status_ledger
+            ],
             started_at=args.started_at,
             as_of=args.as_of,
         )
-        atomic_write_json(args.output, status)
-        print(json.dumps({"schema_version": status["schema_version"], "state": status["state"], "remaining_wall_clock_seconds": status["remaining_wall_clock_seconds"]}))
-        return 0
-    if args.command == "ablate" and args.ablate_command == "campaign-finalize":
-        plan = finalize_campaign_plan(
-            plan_path=args.plan,
-            status_path=args.status,
-            matrix_path=args.matrix,
+        _publish_immutable_json(
+            _workspace_immutable_output_path(
+                args.workspace_root,
+                args.output,
+                label="candidate campaign status output",
+            ),
+            status,
+            label="candidate campaign status output",
         )
-        atomic_write_json(args.output, plan)
-        print(json.dumps({
-            "schema_version": plan["schema_version"],
-            "tasks": len(plan["tasks"]),
-            "final_pair_families": plan["final_pair_families"],
-        }))
+        print(
+            json.dumps(
+                {"schema_version": status["schema_version"], "state": status["state"]},
+                sort_keys=True,
+            )
+        )
         return 0
-    if args.command == "ablate" and args.ablate_command == "campaign-next":
-        plan = load_and_validate(args.plan)
-        status = load_and_validate(args.status)
-        tasks = next_campaign_tasks(plan, status)
-        print(json.dumps({"tasks": tasks}, sort_keys=True))
+    if args.command == "candidates" and args.candidates_command == "campaign-finalize":
+        freeze = finalize_candidate_campaign(
+            plan_path=_workspace_input_path(
+                args.workspace_root, args.plan, label="candidate campaign plan"
+            ),
+            status_path=_workspace_input_path(
+                args.workspace_root, args.status, label="candidate campaign status"
+            ),
+            status_ledger_paths=[
+                _workspace_input_path(
+                    args.workspace_root,
+                    path,
+                    label="candidate status ledger entry",
+                )
+                for path in args.status_ledger
+            ],
+            study_path=_workspace_input_path(
+                args.workspace_root, args.study, label="candidate campaign study"
+            ),
+            catalog_path=_workspace_input_path(
+                args.workspace_root, args.registry, label="candidate registry"
+            ),
+            pass_registry_path=_workspace_input_path(
+                args.workspace_root, args.pass_registry, label="pass registry"
+            ),
+            matrix_path=_workspace_input_path(
+                args.workspace_root, args.matrix, label="candidate matrix"
+            ),
+            screening_path=_workspace_input_path(
+                args.workspace_root, args.screening, label="candidate screening"
+            ),
+            oracle_capture_path=_workspace_input_path(
+                args.workspace_root, args.oracle, label="candidate Oracle capture"
+            ),
+            suite_paths={
+                role: _workspace_input_path(
+                    args.workspace_root,
+                    Path(path),
+                    label=f"candidate {role} manifest",
+                )
+                for role, path in _parse_assignments(
+                    args.manifest, "candidate freeze manifest"
+                ).items()
+            },
+            measurement_protocol_path=_workspace_input_path(
+                args.workspace_root,
+                args.measurement_protocol,
+                label="candidate standard measurement protocol",
+            ),
+            hotblock_measurement_protocol_path=_workspace_input_path(
+                args.workspace_root,
+                args.hotblock_measurement_protocol,
+                label="candidate cache-hotblock measurement protocol",
+            ),
+            reference_toolchain_path=_workspace_input_path(
+                args.workspace_root,
+                args.reference_toolchain,
+                label="candidate reference toolchain",
+            ),
+            compiler_artifact_path=_workspace_artifact_path(
+                args.workspace_root,
+                args.compiler_artifact,
+                label="candidate compiler artifact",
+            ),
+            workspace_root=args.workspace_root,
+            freeze_id=args.freeze_id,
+        )
+        _publish_immutable_json(
+            _workspace_immutable_output_path(
+                args.workspace_root, args.output, label="candidate pre-B3 freeze output"
+            ),
+            freeze,
+            label="candidate pre-B3 freeze output",
+        )
+        print(
+            json.dumps(
+                {
+                    "schema_version": freeze["schema_version"],
+                    "frozen_candidates": len(freeze["frozen_candidate_ids"]),
+                },
+                sort_keys=True,
+            )
+        )
         return 0
-    if args.command == "ablate" and args.ablate_command == "campaign-task":
-        plan = load_and_validate(args.plan)
-        result = campaign_task(plan, task_id=args.task_id, field=args.field)
-        print(json.dumps(result, sort_keys=True))
+    if args.command == "candidates" and args.candidates_command == "final":
+        report_only_values = (
+            args.report_campaign_status,
+            args.r7_freeze,
+            args.r7_campaign_root,
+            args.r7_runs_root,
+        )
+        if args.report_output_dir is None and (
+            any(value is not None for value in report_only_values)
+            or args.report_status_ledger
+        ):
+            raise ConfigurationError(
+                "candidate final report inputs require --report-output-dir"
+            )
+        if args.report_output_dir is not None:
+            missing_report_options = [
+                name
+                for name, value in (
+                    ("--report-campaign-status", args.report_campaign_status),
+                    ("--r7-freeze", args.r7_freeze),
+                    ("--r7-campaign-root", args.r7_campaign_root),
+                    ("--r7-runs-root", args.r7_runs_root),
+                )
+                if value is None
+            ]
+            if not args.report_status_ledger:
+                missing_report_options.append("--report-status-ledger")
+            if missing_report_options:
+                raise ConfigurationError(
+                    "candidate final report requires "
+                    + ", ".join(missing_report_options)
+                )
+        study_assignments = _parse_assignments(
+            args.study, "candidate final suite study"
+        )
+        screening_path = _workspace_input_path(
+            args.workspace_root, args.screening, label="candidate screening"
+        )
+        campaign_plan_path = _workspace_input_path(
+            args.workspace_root,
+            args.campaign_plan,
+            label="candidate full-stage campaign plan",
+        )
+        diagnostic_study_path = (
+            None
+            if args.diagnostic_study is None
+            else _workspace_input_path(
+                args.workspace_root,
+                args.diagnostic_study,
+                label="candidate diagnostic interaction study",
+            )
+        )
+        run_paths = {
+            task_id: _workspace_input_path(
+                args.workspace_root,
+                Path(path),
+                label=f"candidate final raw run {task_id}",
+            )
+            for task_id, path in _parse_assignments(
+                args.run, "candidate final raw run"
+            ).items()
+        }
+        final = build_candidate_final(
+            screening_path=screening_path,
+            catalog_path=_workspace_input_path(
+                args.workspace_root, args.registry, label="candidate registry"
+            ),
+            matrix_path=_workspace_input_path(
+                args.workspace_root, args.matrix, label="candidate matrix"
+            ),
+            workspace_root=args.workspace_root,
+            campaign_plan_path=campaign_plan_path,
+            campaign_status_path=_workspace_input_path(
+                args.workspace_root,
+                args.campaign_status,
+                label="candidate full-stage campaign status",
+            ),
+            status_ledger_paths=[
+                _workspace_input_path(
+                    args.workspace_root,
+                    path,
+                    label="candidate final status ledger entry",
+                )
+                for path in args.status_ledger
+            ],
+            run_paths=run_paths,
+            b2_study_path=_workspace_input_path(
+                args.workspace_root, args.b2_study, label="B2 candidate study"
+            ),
+            study_paths={
+                role: _workspace_input_path(
+                    args.workspace_root,
+                    Path(path),
+                    label=f"{role} candidate study",
+                )
+                for role, path in study_assignments.items()
+            },
+            diagnostic_study_path=diagnostic_study_path,
+            freeze_path=_workspace_input_path(
+                args.workspace_root,
+                args.freeze,
+                label="candidate pre-B3 freeze",
+            ),
+            final_id=args.final_id,
+        )
+        final_output_path = _workspace_immutable_output_path(
+            args.workspace_root, args.output, label="candidate final output"
+        )
+        _publish_immutable_json(
+            final_output_path, final, label="candidate final output"
+        )
+        candidate_report = None
+        if args.report_output_dir is not None:
+            top3_ids = final["diagnostics"]["top3_candidate_ids"]
+            report_run_tasks = {
+                "run.B1.full",
+                "run.B3.full",
+                "run.B3.gcc",
+                "run.B3.clang",
+                "diagnostic.cache.full",
+                *(f"diagnostic.cache.{candidate_id}" for candidate_id in top3_ids),
+            }
+            winner_candidate_id = final["winner_candidate_id"]
+            if winner_candidate_id is not None:
+                report_run_tasks.add(f"run.B3.{winner_candidate_id}")
+            missing_run_tasks = sorted(report_run_tasks - set(run_paths))
+            if missing_run_tasks:
+                raise ConfigurationError(
+                    "candidate final report lacks raw runs: "
+                    + ", ".join(missing_run_tasks)
+                )
+
+            assert args.report_campaign_status is not None
+            assert args.r7_freeze is not None
+            assert args.r7_campaign_root is not None
+            assert args.r7_runs_root is not None
+            hotblock_run_paths = {
+                "cache-full": run_paths["diagnostic.cache.full"],
+                **{
+                    f"cache-{candidate_id}": run_paths[
+                        f"diagnostic.cache.{candidate_id}"
+                    ]
+                    for candidate_id in top3_ids
+                },
+            }
+            candidate_report = build_candidate_report(
+                candidate_final_path=final_output_path,
+                campaign_plan_path=campaign_plan_path,
+                completed_campaign_status_path=_workspace_input_path(
+                    args.workspace_root,
+                    args.report_campaign_status,
+                    label="candidate post-final completed campaign status",
+                ),
+                completed_status_ledger_paths=[
+                    _workspace_input_path(
+                        args.workspace_root,
+                        path,
+                        label="candidate report terminal status ledger entry",
+                    )
+                    for path in args.report_status_ledger
+                ],
+                screening_path=screening_path,
+                output_directory=_workspace_output_path(
+                    args.workspace_root,
+                    args.report_output_dir,
+                    label="candidate final report output directory",
+                ),
+                b1_full_run_path=run_paths["run.B1.full"],
+                full_run_path=run_paths["run.B3.full"],
+                diagnostic_study_path=diagnostic_study_path,
+                winner_run_path=(
+                    None
+                    if winner_candidate_id is None
+                    else run_paths[f"run.B3.{winner_candidate_id}"]
+                ),
+                comparison_paths={
+                    "gcc-13.3-o2": run_paths["run.B3.gcc"],
+                    "clang-18-o3": run_paths["run.B3.clang"],
+                },
+                hotblock_run_paths=hotblock_run_paths,
+                r7_freeze_path=_workspace_input_path(
+                    args.workspace_root,
+                    args.r7_freeze,
+                    label="r7 diagnostic freeze",
+                ),
+                workspace_root=args.workspace_root,
+                r7_campaign_root=_workspace_artifact_path(
+                    args.workspace_root,
+                    args.r7_campaign_root,
+                    label="r7 campaign root",
+                ),
+                r7_runs_root=_workspace_artifact_path(
+                    args.workspace_root,
+                    args.r7_runs_root,
+                    label="r7 runs root",
+                ),
+            )
+        receipt = {
+            "schema_version": final["schema_version"],
+            "eligible": len(final["ranking"]),
+        }
+        if candidate_report is not None:
+            receipt["report_schema_version"] = candidate_report["schema_version"]
+        print(
+            json.dumps(receipt, sort_keys=True)
+        )
         return 0
     if args.command == "report":
         hotblock_run_paths = {

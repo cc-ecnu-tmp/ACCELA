@@ -39,13 +39,29 @@ import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 import accela.pass.ir.transform.loop.unroll.LoopUnrollAndJam;
 import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiFunction;
 
 /** Builds the project's registered, reproducible IR pass pipelines. */
 public final class PassBuilder {
+  private final CandidatePassProvider candidatePassProvider;
+
+  /** Constructs the production pipeline with no candidate implementations registered. */
+  public PassBuilder() {
+    this(CandidatePassProvider.empty());
+  }
+
+  /** Explicit candidate-provider seam used by the development compiler and focused tests. */
+  PassBuilder(CandidatePassProvider candidatePassProvider) {
+    this.candidatePassProvider = Objects.requireNonNull(
+        candidatePassProvider, "candidatePassProvider");
+  }
+
   /** Creates pass instrumentation with always-on verification and optional reporting. */
   public PassInstrumentation buildIRInstrumentation(boolean printReports) {
     return PassInstrumentation.enabled(printReports);
@@ -77,7 +93,7 @@ public final class PassBuilder {
       PassInstrumentation instrumentation, PipelineProfile profile) {
     Objects.requireNonNull(instrumentation, "instrumentation");
     Objects.requireNonNull(profile, "profile");
-    Schedule schedule = new Schedule(profile);
+    Schedule schedule = new Schedule(profile, candidatePassProvider);
 
     FunctionPassManager initial = new FunctionPassManager(instrumentation);
     schedule.function(initial, PassRegistry.IR_SIMPLIFY_CFG, new SimplifyCFG.Pass());
@@ -180,46 +196,258 @@ public final class PassBuilder {
     return buildIRO0Pipeline(PassInstrumentation.noop(), PipelineProfile.full());
   }
 
-  private static final class Schedule {
+  private static IllegalStateException missingFactory(PassDescriptor descriptor) {
+    return new IllegalStateException(
+        "enabled candidate '" + descriptor.id() + "' has no registered "
+            + descriptor.stage() + " factory");
+  }
+
+  /** Typed, immutable factories for candidates inserted into the real IR pipeline. */
+  static final class CandidatePassProvider {
+    private final Map<String, BiFunction<PassDescriptor, Integer, FunctionPass>> functionFactories;
+    private final Map<String, BiFunction<PassDescriptor, Integer, ModulePass>> moduleFactories;
+
+    CandidatePassProvider(
+        Map<String, BiFunction<PassDescriptor, Integer, FunctionPass>> functionFactories,
+        Map<String, BiFunction<PassDescriptor, Integer, ModulePass>> moduleFactories) {
+      this.functionFactories = copyFactories(functionFactories, "functionFactories");
+      this.moduleFactories = copyFactories(moduleFactories, "moduleFactories");
+    }
+
+    static CandidatePassProvider empty() {
+      return new CandidatePassProvider(Map.of(), Map.of());
+    }
+
+    BiFunction<PassDescriptor, Integer, FunctionPass> functionFactory(String id) {
+      return functionFactories.get(id);
+    }
+
+    BiFunction<PassDescriptor, Integer, ModulePass> moduleFactory(String id) {
+      return moduleFactories.get(id);
+    }
+
+    void validate(PipelineProfile profile) {
+      PassRegistry registry = profile.registry();
+      validateFactories(registry, functionFactories, PassDescriptor.Stage.IR_FUNCTION);
+      validateFactories(registry, moduleFactories, PassDescriptor.Stage.IR_MODULE);
+      for (String id : profile.enabledCandidates()) {
+        PassDescriptor descriptor = registry.require(id);
+        boolean missing = switch (descriptor.stage()) {
+          case IR_FUNCTION -> !functionFactories.containsKey(id);
+          case IR_MODULE -> !moduleFactories.containsKey(id);
+          case BACKEND_FUNCTION, BACKEND_MODULE -> false;
+        };
+        if (missing) throw missingFactory(descriptor);
+      }
+    }
+
+    private static <T> Map<String, T> copyFactories(Map<String, T> source, String name) {
+      Objects.requireNonNull(source, name);
+      LinkedHashMap<String, T> copy = new LinkedHashMap<>();
+      source.forEach((id, factory) -> {
+        if (id == null || id.isBlank()) {
+          throw new IllegalArgumentException(name + " contains a blank candidate id");
+        }
+        copy.put(id, Objects.requireNonNull(factory, name + "[" + id + "]"));
+      });
+      return Map.copyOf(copy);
+    }
+
+    private static void validateFactories(
+        PassRegistry registry, Map<String, ?> factories, PassDescriptor.Stage stage) {
+      for (String id : factories.keySet()) {
+        PassDescriptor descriptor = registry.require(id);
+        if (!descriptor.candidate()) {
+          throw new IllegalArgumentException(
+              "candidate provider id is not a CANDIDATE descriptor: " + id);
+        }
+        if (descriptor.stage() != stage) {
+          throw new IllegalArgumentException(
+              "candidate provider registered '" + id + "' for " + stage
+                  + " but registry declares " + descriptor.stage());
+        }
+      }
+    }
+  }
+
+  static final class Schedule {
+    private record ScheduledOccurrence(
+        PassDescriptor descriptor,
+        int occurrence) {}
+
     private final PipelineProfile profile;
+    private final CandidatePassProvider candidatePassProvider;
+    private final boolean automaticCandidates;
     private final Map<String, Integer> occurrences = new LinkedHashMap<>();
+    private final Map<Object, List<ScheduledOccurrence>> sequences = new IdentityHashMap<>();
 
     Schedule(PipelineProfile profile) {
-      this.profile = profile;
+      this.profile = Objects.requireNonNull(profile, "profile");
+      this.candidatePassProvider = CandidatePassProvider.empty();
+      this.automaticCandidates = false;
+    }
+
+    Schedule(PipelineProfile profile, CandidatePassProvider candidatePassProvider) {
+      this.profile = Objects.requireNonNull(profile, "profile");
+      this.candidatePassProvider = Objects.requireNonNull(
+          candidatePassProvider, "candidatePassProvider");
+      candidatePassProvider.validate(profile);
+      this.automaticCandidates = true;
     }
 
     void function(FunctionPassManager manager, String passId, FunctionPass pass) {
-      PassDescriptor descriptor = descriptor(passId, PassDescriptor.Stage.IR_FUNCTION);
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_FUNCTION);
       int occurrence = reserve(descriptor);
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
       if (profile.isEnabled(passId, occurrence)) manager.addPass(pass, descriptor, occurrence);
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
     }
 
     void module(ModulePassManager manager, String passId, ModulePass pass) {
-      PassDescriptor descriptor = descriptor(passId, PassDescriptor.Stage.IR_MODULE);
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_MODULE);
       int occurrence = reserve(descriptor);
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
       if (profile.isEnabled(passId, occurrence)) manager.addPass(pass, descriptor, occurrence);
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
+    }
+
+    void candidateFunction(
+        FunctionPassManager manager,
+        String passId,
+        BiFunction<PassDescriptor, Integer, ? extends FunctionPass> factory) {
+      Objects.requireNonNull(factory, "factory");
+      PassDescriptor descriptor = candidate(passId, PassDescriptor.Stage.IR_FUNCTION);
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) {
+        manager.addPass(
+            Objects.requireNonNull(
+                factory.apply(descriptor, occurrence), "candidate function pass factory result"),
+            descriptor,
+            occurrence);
+      }
+    }
+
+    void candidateModule(
+        ModulePassManager manager,
+        String passId,
+        BiFunction<PassDescriptor, Integer, ? extends ModulePass> factory) {
+      Objects.requireNonNull(factory, "factory");
+      PassDescriptor descriptor = candidate(passId, PassDescriptor.Stage.IR_MODULE);
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) {
+        manager.addPass(
+            Objects.requireNonNull(
+                factory.apply(descriptor, occurrence), "candidate module pass factory result"),
+            descriptor,
+            occurrence);
+      }
     }
 
     void functionObserved(
         FunctionPassManager manager,
         String passId,
         BiFunction<PassDescriptor, Integer, FunctionPass> factory) {
-      PassDescriptor descriptor = descriptor(passId, PassDescriptor.Stage.IR_FUNCTION);
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_FUNCTION);
       int occurrence = reserve(descriptor);
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
       if (profile.isEnabled(passId, occurrence)) {
         manager.addPass(factory.apply(descriptor, occurrence), descriptor, occurrence);
       }
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
     }
 
     void moduleObserved(
         ModulePassManager manager,
         String passId,
         BiFunction<PassDescriptor, Integer, ModulePass> factory) {
-      PassDescriptor descriptor = descriptor(passId, PassDescriptor.Stage.IR_MODULE);
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_MODULE);
       int occurrence = reserve(descriptor);
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
       if (profile.isEnabled(passId, occurrence)) {
         manager.addPass(factory.apply(descriptor, occurrence), descriptor, occurrence);
       }
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
+    }
+
+    private void automaticFunctionCandidates(
+        FunctionPassManager manager,
+        PassDescriptor anchorDescriptor,
+        int anchorOccurrence,
+        PassDescriptor.AnchorPosition position) {
+      if (!automaticCandidates) return;
+      for (PassDescriptor candidate : candidatesAt(
+          anchorDescriptor, anchorOccurrence, position, PassDescriptor.Stage.IR_FUNCTION)) {
+        reserveAutomaticFunctionCandidate(manager, candidate);
+      }
+    }
+
+    private void automaticModuleCandidates(
+        ModulePassManager manager,
+        PassDescriptor anchorDescriptor,
+        int anchorOccurrence,
+        PassDescriptor.AnchorPosition position) {
+      if (!automaticCandidates) return;
+      for (PassDescriptor candidate : candidatesAt(
+          anchorDescriptor, anchorOccurrence, position, PassDescriptor.Stage.IR_MODULE)) {
+        reserveAutomaticModuleCandidate(manager, candidate);
+      }
+    }
+
+    private List<PassDescriptor> candidatesAt(
+        PassDescriptor anchorDescriptor,
+        int anchorOccurrence,
+        PassDescriptor.AnchorPosition position,
+        PassDescriptor.Stage stage) {
+      return profile.registry().candidates().stream()
+          .filter(candidate -> candidate.stage() == stage)
+          .filter(candidate -> candidate.candidateAnchor().passId().equals(anchorDescriptor.id()))
+          .filter(candidate -> candidate.candidateAnchor().occurrence() == anchorOccurrence)
+          .filter(candidate -> candidate.candidateAnchor().position() == position)
+          .toList();
+    }
+
+    private void reserveAutomaticFunctionCandidate(
+        FunctionPassManager manager, PassDescriptor descriptor) {
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (!profile.isEnabled(descriptor.id(), occurrence)) return;
+      BiFunction<PassDescriptor, Integer, FunctionPass> factory =
+          candidatePassProvider.functionFactory(descriptor.id());
+      if (factory == null) throw missingFactory(descriptor);
+      manager.addPass(
+          Objects.requireNonNull(
+              factory.apply(descriptor, occurrence), "candidate function pass factory result"),
+          descriptor,
+          occurrence);
+    }
+
+    private void reserveAutomaticModuleCandidate(
+        ModulePassManager manager, PassDescriptor descriptor) {
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (!profile.isEnabled(descriptor.id(), occurrence)) return;
+      BiFunction<PassDescriptor, Integer, ModulePass> factory =
+          candidatePassProvider.moduleFactory(descriptor.id());
+      if (factory == null) throw missingFactory(descriptor);
+      manager.addPass(
+          Objects.requireNonNull(
+              factory.apply(descriptor, occurrence), "candidate module pass factory result"),
+          descriptor,
+          occurrence);
     }
 
     void verifyComplete() {
@@ -231,6 +459,25 @@ public final class PassBuilder {
               + "' is " + descriptor.fullPipelineOccurrences() + ", but pipeline schedules " + actual);
         }
       }
+      verifyCandidateAnchors();
+    }
+
+    private PassDescriptor candidate(String id, PassDescriptor.Stage stage) {
+      PassDescriptor descriptor = descriptor(id, stage);
+      if (!descriptor.candidate()) {
+        throw new IllegalArgumentException(
+            "candidate scheduling requires a CANDIDATE descriptor: " + id);
+      }
+      return descriptor;
+    }
+
+    private PassDescriptor production(String id, PassDescriptor.Stage stage) {
+      PassDescriptor descriptor = descriptor(id, stage);
+      if (descriptor.candidate()) {
+        throw new IllegalArgumentException(
+            "candidate passes must use a lazy candidate scheduling method: " + id);
+      }
+      return descriptor;
     }
 
     private PassDescriptor descriptor(String id, PassDescriptor.Stage stage) {
@@ -249,6 +496,79 @@ public final class PassBuilder {
             + descriptor.id() + "'");
       }
       return occurrence;
+    }
+
+    private void record(Object manager, PassDescriptor descriptor, int occurrence) {
+      sequences.computeIfAbsent(manager, ignored -> new ArrayList<>())
+          .add(new ScheduledOccurrence(descriptor, occurrence));
+    }
+
+    private void verifyCandidateAnchors() {
+      LinkedHashMap<PassDescriptor.CandidateAnchor, List<String>> expectedGroups =
+          new LinkedHashMap<>();
+      for (PassDescriptor descriptor : profile.registry().candidates()) {
+        if (!descriptor.stage().isIr()) continue;
+        expectedGroups.computeIfAbsent(descriptor.candidateAnchor(), ignored -> new ArrayList<>())
+            .add(descriptor.id());
+      }
+      for (Map.Entry<PassDescriptor.CandidateAnchor, List<String>> group
+          : expectedGroups.entrySet()) {
+        PassDescriptor.CandidateAnchor anchor = group.getKey();
+        List<ScheduledOccurrence> anchorSequence = null;
+        int anchorIndex = -1;
+        for (List<ScheduledOccurrence> sequence : sequences.values()) {
+          for (int index = 0; index < sequence.size(); index++) {
+            ScheduledOccurrence scheduled = sequence.get(index);
+            if (scheduled.descriptor().id().equals(anchor.passId())
+                && scheduled.occurrence() == anchor.occurrence()) {
+              if (anchorSequence != null) {
+                throw new IllegalStateException(
+                    "IR candidate anchor is scheduled in more than one pipeline fragment: "
+                        + anchor.passId() + "#" + anchor.occurrence());
+              }
+              anchorSequence = sequence;
+              anchorIndex = index;
+            }
+          }
+        }
+        List<String> actual = anchorSequence == null
+            ? List.of()
+            : candidateGroupAtAnchor(anchorSequence, anchorIndex, anchor);
+        if (!actual.equals(group.getValue())) {
+          throw new IllegalStateException(
+              "IR candidate group at " + anchor.passId() + "#" + anchor.occurrence()
+                  + " " + anchor.position() + " must follow registry order " + group.getValue()
+                  + ", but pipeline schedules " + actual);
+        }
+      }
+    }
+
+    private static List<String> candidateGroupAtAnchor(
+        List<ScheduledOccurrence> sequence,
+        int anchorIndex,
+        PassDescriptor.CandidateAnchor anchor) {
+      if (anchor.position() == PassDescriptor.AnchorPosition.BEFORE) {
+        int start = anchorIndex;
+        while (start > 0 && sharesAnchor(sequence.get(start - 1).descriptor(), anchor)) {
+          start--;
+        }
+        return sequence.subList(start, anchorIndex).stream()
+            .map(item -> item.descriptor().id())
+            .toList();
+      }
+      int end = anchorIndex + 1;
+      while (end < sequence.size() && sharesAnchor(sequence.get(end).descriptor(), anchor)) {
+        end++;
+      }
+      return sequence.subList(anchorIndex + 1, end).stream()
+          .map(item -> item.descriptor().id())
+          .toList();
+    }
+
+    private static boolean sharesAnchor(
+        PassDescriptor descriptor,
+        PassDescriptor.CandidateAnchor anchor) {
+      return descriptor.candidate() && descriptor.candidateAnchor().equals(anchor);
     }
   }
 }

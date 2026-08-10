@@ -84,6 +84,43 @@
         }
       }
     },
+    "candidate_remark_candidate_summary": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "candidate_id", "paired_candidate_count", "applied_count",
+        "rejected_count"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "paired_candidate_count": {"type": "integer", "minimum": 0},
+        "applied_count": {"type": "integer", "minimum": 0},
+        "rejected_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "candidate_remark_summary": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "event_count", "summary_count", "paired_candidate_count",
+        "applied_count", "rejected_count", "candidates"
+      ],
+      "properties": {
+        "event_count": {"type": "integer", "minimum": 1},
+        "summary_count": {"type": "integer", "minimum": 0},
+        "paired_candidate_count": {"type": "integer", "minimum": 0},
+        "applied_count": {"type": "integer", "minimum": 0},
+        "rejected_count": {"type": "integer", "minimum": 0},
+        "candidates": {
+          "type": "array", "uniqueItems": true,
+          "items": {"$ref": "#/$defs/candidate_remark_candidate_summary"}
+        }
+      }
+    },
+    "nullable_candidate_remark_summary": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/candidate_remark_summary"}
+      ]
+    },
     "stage": {
       "type": "object",
       "additionalProperties": false,
@@ -151,6 +188,11 @@
       "properties": {
         "compiler": {"$ref": "#/$defs/stage"},
         "pipeline_profile_file_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "candidate_registry_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "candidate_pass_registry_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "enabled_candidate_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
         "linker": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stage"}]},
         "analyzer": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stage"}]},
         "runner": {"$ref": "#/$defs/stage"},
@@ -339,6 +381,7 @@
         "remarks_event_count": {
           "oneOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]
         },
+        "candidate_remark_summary": {"$ref": "#/$defs/nullable_candidate_remark_summary"},
         "analysis_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "attempt_journal_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "attempt_journal_event_count": {
@@ -409,6 +452,7 @@
         "remarks_event_count": {
           "oneOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]
         },
+        "candidate_remark_summary": {"$ref": "#/$defs/nullable_candidate_remark_summary"},
         "analysis_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "attempt_journal_sha256": {"$ref": "#/$defs/sha256"},
         "attempt_journal_event_count": {"type": "integer", "minimum": 1},

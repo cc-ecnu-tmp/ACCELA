@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/optimization-remark.v2.json",
+  "title": "ACCELA lifecycle-aware optimization remark event v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "sequence", "event_type", "pass", "occurrence",
+    "stage", "target_kind", "target_name"
+  ],
+  "properties": {
+    "schema_version": {"const": "optimization-remark.v2"},
+    "sequence": {"type": "integer", "minimum": 1},
+    "event_type": {"enum": ["pass_summary", "decision"]},
+    "pass": {"$ref": "#/$defs/pass_id"},
+    "occurrence": {"type": "integer", "minimum": 1},
+    "stage": {"enum": ["ir_function", "ir_module", "backend_function", "backend_module"]},
+    "target_kind": {"type": "string", "minLength": 1, "maxLength": 128},
+    "target_name": {"type": "string", "minLength": 1},
+    "elapsed_ns": {"type": "integer", "minimum": 0},
+    "changed": {"type": "boolean"},
+    "before": {"$ref": "#/$defs/counters"},
+    "after": {"$ref": "#/$defs/counters"},
+    "delta": {"$ref": "#/$defs/counters"},
+    "details": {"$ref": "#/$defs/counters"},
+    "decision_observability": {"enum": ["available", "unavailable"]},
+    "decision": {"enum": ["candidate", "applied", "rejected"]},
+    "reason": {
+      "enum": [
+        "candidate_matched", "applied_profitable", "applied_canonicalization",
+        "rejected_legality", "rejected_profitability", "rejected_unsupported_shape",
+        "rejected_resource_limit", "rejected_no_benefit"
+      ]
+    },
+    "legality_obligation_id": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/pass_id"}
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["event_type"],
+        "properties": {"event_type": {"const": "pass_summary"}}
+      },
+      "then": {
+        "required": [
+          "elapsed_ns", "changed", "before", "after", "delta", "details",
+          "decision_observability"
+        ],
+        "not": {
+          "anyOf": [
+            {"required": ["decision"]},
+            {"required": ["reason"]},
+            {"required": ["legality_obligation_id"]}
+          ]
+        }
+      },
+      "else": {
+        "required": ["decision", "reason", "legality_obligation_id"],
+        "not": {
+          "anyOf": [
+            {"required": ["elapsed_ns"]},
+            {"required": ["changed"]},
+            {"required": ["before"]},
+            {"required": ["after"]},
+            {"required": ["delta"]},
+            {"required": ["details"]},
+            {"required": ["decision_observability"]}
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["event_type", "decision"],
+        "properties": {
+          "event_type": {"const": "decision"},
+          "decision": {"const": "candidate"}
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {"const": "candidate_matched"},
+          "legality_obligation_id": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["event_type", "decision"],
+        "properties": {
+          "event_type": {"const": "decision"},
+          "decision": {"const": "applied"}
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {"enum": ["applied_profitable", "applied_canonicalization"]},
+          "legality_obligation_id": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["event_type", "decision"],
+        "properties": {
+          "event_type": {"const": "decision"},
+          "decision": {"const": "rejected"}
+        }
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "enum": [
+              "rejected_legality", "rejected_profitability", "rejected_unsupported_shape",
+              "rejected_resource_limit", "rejected_no_benefit"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": ["reason"],
+              "properties": {"reason": {"const": "rejected_legality"}}
+            },
+            "then": {
+              "properties": {
+                "legality_obligation_id": {"$ref": "#/$defs/pass_id"}
+              }
+            },
+            "else": {
+              "properties": {
+                "legality_obligation_id": {"type": "null"}
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "pass_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "counters": {
+      "type": "object",
+      "propertyNames": {"type": "string", "minLength": 1, "maxLength": 128},
+      "additionalProperties": {"type": "integer"}
+    }
+  }
+}

@@ -19,9 +19,10 @@ def _profile_bytes(profile: dict[str, Any]) -> bytes:
 
 def _profile(base: str, disabled_passes: Sequence[str]) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "base": base,
         "disable": [{"pass": pass_id} for pass_id in disabled_passes],
+        "enable_candidates": [],
     }
 
 
@@ -33,15 +34,15 @@ def generate_ablation_profiles(
     top_families: Sequence[str] = (),
 ) -> dict[str, Any]:
     registry = load_and_validate(registry_path)
-    if registry["schema_version"] != "pass-registry.v1":
-        raise ValidationError("ablation profiles require a pass-registry.v1 snapshot")
+    if registry["schema_version"] != "pass-registry.v2":
+        raise ValidationError("ablation profiles require a pass-registry.v2 snapshot")
     if len(top_families) > 5 or len(set(top_families)) != len(top_families):
         raise ConfigurationError("Top-family selection must contain at most five unique families")
     requested_pairs = [*top_pairs, *combinations(top_families, 2)]
     if len(requested_pairs) > 10:
         raise ConfigurationError("at most ten two-way interaction profiles may be scheduled")
 
-    passes = registry["passes"]
+    passes = [item for item in registry["passes"] if item["lifecycle"] != "candidate"]
     family_order: list[str] = []
     family_passes: dict[str, list[dict[str, Any]]] = {}
     for descriptor in passes:
@@ -51,7 +52,11 @@ def generate_ablation_profiles(
             family_passes[family] = []
         family_passes[family].append(descriptor)
     optional_by_family = {
-        family: [item["id"] for item in family_passes[family] if not item["required"]]
+        family: [
+            item["id"]
+            for item in family_passes[family]
+            if item["lifecycle"] != "required"
+        ]
         for family in family_order
     }
     unschedulable = [family for family in family_order if not optional_by_family[family]]
@@ -100,7 +105,8 @@ def generate_ablation_profiles(
         disabled = [
             item["id"]
             for item in passes
-            if item["logical_family_id"] in {left, right} and not item["required"]
+            if item["logical_family_id"] in {left, right}
+            and item["lifecycle"] != "required"
         ]
         add_profile(
             f"without.{left}+{right}",

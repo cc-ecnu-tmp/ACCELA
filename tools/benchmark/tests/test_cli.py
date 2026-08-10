@@ -19,13 +19,8 @@ def test_all_public_commands_are_registered() -> None:
         action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
     )
     assert set(subparsers.choices) == {
-        "inventory", "validate", "run", "ablate", "oracle", "report", "audit", "protocol"
+        "inventory", "validate", "run", "oracle", "candidates", "report", "audit", "protocol"
     }
-    ablate_subparsers = next(
-        action
-        for action in subparsers.choices["ablate"]._actions
-        if isinstance(action, argparse._SubParsersAction)
-    )
     oracle_subparsers = next(
         action
         for action in subparsers.choices["oracle"]._actions
@@ -44,12 +39,10 @@ def test_all_public_commands_are_registered() -> None:
     run_parser = subparsers.choices["run"]
     oracle_run_parser = oracle_subparsers.choices["run"]
     validate_suite_parser = validate_subparsers.choices["suite"]
-    campaign_plan_parser = ablate_subparsers.choices["campaign-plan"]
     for formal_parser in (
         run_parser,
         oracle_run_parser,
         validate_suite_parser,
-        campaign_plan_parser,
         protocol_subparsers.choices["capture"],
         protocol_subparsers.choices["verify"],
     ):
@@ -59,10 +52,6 @@ def test_all_public_commands_are_registered() -> None:
             if action.dest == "workspace_root"
         )
         assert workspace_action.required
-    assert set(ablate_subparsers.choices) == {
-        "profiles", "analyze", "campaign-plan", "campaign-finalize", "campaign-status",
-        "campaign-next", "campaign-task"
-    }
     assert set(oracle_subparsers.choices) == {"plan", "run"}
     assert set(validate_subparsers.choices) == {"schema", "suite"}
 
@@ -123,26 +112,18 @@ def test_parser_and_explicit_workspace_do_not_require_a_valid_cwd(
     parser = build_parser()
     args = parser.parse_args(
         [
-            "ablate",
-            "campaign-plan",
-            "--matrix",
-            str(tmp_path / "matrix.json"),
-            "--oracle-plan",
-            str(tmp_path / "oracle.json"),
-            "--measurement-protocol",
-            str(tmp_path / "protocol.json"),
-            "--cache-hotblock-protocol",
-            str(tmp_path / "hotblocks.json"),
-            "--reference-toolchain",
-            str(tmp_path / "toolchain.json"),
+            "candidates",
+            "profiles",
+            "--registry",
+            str(tmp_path / "catalog.json"),
+            "--pass-registry",
+            str(tmp_path / "pass-registry.json"),
             "--workspace-root",
             str(expected_root),
-            "--suite",
-            f"B1={tmp_path / 'b1.json'}",
-            "--campaign-id",
+            "--matrix-id",
             "cwd-independent-parser",
-            "--output",
-            str(tmp_path / "plan.json"),
+            "--output-dir",
+            str(tmp_path / "profiles"),
         ]
     )
     assert _resolve_workspace_root(args.workspace_root) == expected_root

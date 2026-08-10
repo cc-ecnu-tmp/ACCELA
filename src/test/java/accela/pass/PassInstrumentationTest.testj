@@ -2,22 +2,23 @@ package accela.pass;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineType;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Type;
-import accela.pass.instrument.PassRemark;
+import accela.pass.instrument.DecisionRemark;
 import accela.pass.instrument.OptimizationRemark;
+import accela.pass.instrument.PassRemark;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPassManager;
 import accela.pass.ir.instrument.PassInstrumentation;
-import accela.backend.instrument.BackendPassInstrumentation;
-import accela.backend.machine.MachineFunction;
-import accela.backend.machine.MachineType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -107,5 +108,46 @@ final class PassInstrumentationTest {
         IllegalStateException.class,
         () -> PassInstrumentation.noop().decisionEmitter(
             descriptor, 1, "function", "@production"));
+  }
+
+  @Test
+  void candidateLegalityRejectionRequiresADeclaredObligation() {
+    String obligation = "candidate.ir.test-pass.no-overflow";
+    PassDescriptor descriptor = new PassDescriptor(
+        "candidate.ir.test-pass", "candidate.ir.test-pass", "Test candidate",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            PassRegistry.IR_INST_COMBINE, 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of(obligation));
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    PassInstrumentation instrumentation = PassInstrumentation.observed(false, remarks::add);
+    var decisions = instrumentation.decisionEmitter(descriptor, 1, "function", "@candidate");
+    decisions.candidate(accela.pass.instrument.DecisionReasonCode.CANDIDATE_MATCHED);
+
+    assertThrows(IllegalArgumentException.class,
+        () -> decisions.rejected(accela.pass.instrument.DecisionReasonCode.REJECTED_LEGALITY));
+    assertThrows(IllegalArgumentException.class,
+        () -> decisions.rejectedLegality("candidate.ir.test-pass.unknown-obligation"));
+    decisions.rejectedLegality(obligation);
+    instrumentation.close();
+
+    assertEquals(2, remarks.size());
+    DecisionRemark terminal = (DecisionRemark) remarks.getLast();
+    assertEquals(accela.pass.instrument.DecisionReasonCode.REJECTED_LEGALITY,
+        terminal.reason());
+    assertEquals(obligation, terminal.legalityObligationId());
+  }
+
+  @Test
+  void decisionRemarkBindsLegalityObligationsOnlyToLegalityRejections() {
+    assertThrows(IllegalArgumentException.class, () -> new DecisionRemark(
+        "candidate.ir.test-pass", 1, PassDescriptor.Stage.IR_FUNCTION,
+        "function", "@candidate", accela.pass.instrument.DecisionStatus.REJECTED,
+        accela.pass.instrument.DecisionReasonCode.REJECTED_LEGALITY, null));
+    assertThrows(IllegalArgumentException.class, () -> new DecisionRemark(
+        "candidate.ir.test-pass", 1, PassDescriptor.Stage.IR_FUNCTION,
+        "function", "@candidate", accela.pass.instrument.DecisionStatus.CANDIDATE,
+        accela.pass.instrument.DecisionReasonCode.CANDIDATE_MATCHED,
+        "candidate.ir.test-pass.no-overflow"));
   }
 }

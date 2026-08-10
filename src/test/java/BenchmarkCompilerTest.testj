@@ -1,26 +1,44 @@
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
-import accela.util.StrictJson;
+import accela.backend.BackendCompiler;
+import accela.backend.SyntheticCandidateBackendCompiler;
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.benchmark.JsonlRemarkWriter;
+import accela.pass.PassBuilder;
+import accela.pass.PassDescriptor;
 import accela.pass.PassRegistry;
 import accela.pass.PipelineProfile;
-import accela.benchmark.JsonlRemarkWriter;
+import accela.pass.SyntheticCandidatePassBuilder;
+import accela.pass.SyntheticCandidateRegistry;
 import accela.pass.instrument.DecisionReasonCode;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.util.StrictJson;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class BenchmarkCompilerTest {
+  private static final String CANDIDATE_EMPTY_BASELINE_REVISION =
+      "0c957676856e7209deb15d1fefa3f10429c9d277";
+
   @TempDir Path tempDirectory;
 
   @Test
@@ -32,12 +50,13 @@ final class BenchmarkCompilerTest {
     Files.writeString(input, "int main() { return 0; }", StandardCharsets.UTF_8);
     Files.writeString(profile, """
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "base": "FULL",
           "disable": [
             {"pass": "ir.loop-interchange"},
             {"pass": "backend.machine-licm"}
-          ]
+          ],
+          "enable_candidates": []
         }
         """, StandardCharsets.UTF_8);
 
@@ -69,7 +88,7 @@ final class BenchmarkCompilerTest {
         .map(record -> ((BigDecimal) record.get("occurrence")).intValueExact())
         .toList());
     assertTrue(records.stream().allMatch(record ->
-        "optimization-remark.v1".equals(record.get("schema_version"))
+        "optimization-remark.v2".equals(record.get("schema_version"))
             && "pass_summary".equals(record.get("event_type"))));
     assertTrue(records.stream().filter(record -> Set.of(
             PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
@@ -105,6 +124,10 @@ final class BenchmarkCompilerTest {
     });
 
     assertArrayEquals(Files.readAllBytes(production), Files.readAllBytes(benchmark));
+    assertTrue(Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .map(value -> (Map<?, ?>) value)
+        .noneMatch(record -> ((String) record.get("pass")).startsWith("candidate.")));
   }
 
   @Test
@@ -134,6 +157,26 @@ final class BenchmarkCompilerTest {
     });
 
     assertArrayEquals(Files.readAllBytes(production), Files.readAllBytes(benchmark));
+    assertTrue(Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .map(value -> (Map<?, ?>) value)
+        .noneMatch(record -> ((String) record.get("pass")).startsWith("candidate.")));
+  }
+
+  @Test
+  void candidateEmptyIntegerAndFloatingAssemblyMatchFrozenBaselineRevision() throws Exception {
+    assertEquals(
+        CANDIDATE_EMPTY_BASELINE_REVISION + "\n",
+        new String(baselineResource("REVISION"), StandardCharsets.UTF_8));
+    Map<String, String> checksums = new HashMap<>();
+    for (String line : new String(
+        baselineResource("SHA256SUMS"), StandardCharsets.UTF_8).lines().toList()) {
+      String[] fields = line.split("\\s+", 2);
+      checksums.put(fields[1], fields[0]);
+    }
+
+    assertBaselineFixture("integer", checksums);
+    assertBaselineFixture("floating", checksums);
   }
 
   @Test
@@ -153,7 +196,7 @@ final class BenchmarkCompilerTest {
     assertEquals(PassRegistry.standard().toJson() + "\n",
         Files.readString(registry, StandardCharsets.UTF_8));
     Map<?, ?> document = (Map<?, ?>) StrictJson.parse(Files.readString(registry));
-    assertEquals("pass-registry.v1", document.get("schema_version"));
+    assertEquals("pass-registry.v2", document.get("schema_version"));
     assertEquals(PassRegistry.standard().all().size(), ((List<?>) document.get("passes")).size());
     assertThrows(IllegalArgumentException.class,
         () -> BenchmarkCompiler.parseRegistryExport(
@@ -208,8 +251,34 @@ final class BenchmarkCompilerTest {
     assertEquals(List.of("candidate", "rejected"),
         events.stream().map(event -> event.get("decision")).toList());
     assertTrue(events.stream().allMatch(event ->
-        "optimization-remark.v1".equals(event.get("schema_version"))
-            && "decision".equals(event.get("event_type"))));
+        "optimization-remark.v2".equals(event.get("schema_version"))
+            && "decision".equals(event.get("event_type"))
+            && event.containsKey("legality_obligation_id")
+            && event.get("legality_obligation_id") == null));
+  }
+
+  @Test
+  void writesDeclaredCandidateLegalityObligation() throws Exception {
+    Path output = tempDirectory.resolve("candidate-legality.jsonl");
+    String obligation = "candidate.ir.test-pass.no-overflow";
+    PassDescriptor descriptor = new PassDescriptor(
+        "candidate.ir.test-pass", "candidate.ir.test-pass", "Test candidate",
+        PassDescriptor.Stage.IR_FUNCTION, 1, PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            PassRegistry.IR_INST_COMBINE, 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of(obligation));
+    try (JsonlRemarkWriter writer = new JsonlRemarkWriter(output)) {
+      var decision = writer.decisionEmitter(descriptor, 1, "function", "@candidate");
+      decision.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+      decision.rejectedLegality(obligation);
+    }
+
+    List<Map<?, ?>> events = Files.readAllLines(output).stream()
+        .map(StrictJson::parse).<Map<?, ?>>map(value -> (Map<?, ?>) value).toList();
+    assertEquals(2, events.size());
+    assertEquals("optimization-remark.v2", events.getLast().get("schema_version"));
+    assertEquals("rejected_legality", events.getLast().get("reason"));
+    assertEquals(obligation, events.getLast().get("legality_obligation_id"));
   }
 
   @Test
@@ -222,5 +291,204 @@ final class BenchmarkCompilerTest {
 
     IllegalStateException exception = assertThrows(IllegalStateException.class, writer::close);
     assertTrue(exception.getMessage().contains("unterminated optimization candidate"));
+  }
+
+  @Test
+  void fullDevelopmentEntryExecutesSyntheticIrAndBackendCandidates() throws Exception {
+    Path input = tempDirectory.resolve("candidate-enabled.sy");
+    Path profilePath = tempDirectory.resolve("candidate-enabled.json");
+    Path assembly = tempDirectory.resolve("candidate-enabled.s");
+    Path judgeAssembly = tempDirectory.resolve("candidate-enabled-judge.s");
+    Path remarks = tempDirectory.resolve("candidate-enabled.jsonl");
+    Files.writeString(input, "int main() { return 0; }", StandardCharsets.UTF_8);
+    PassRegistry registry = SyntheticCandidateRegistry.createCombined();
+    PipelineProfile.builder(registry)
+        .enableCandidate(SyntheticCandidateRegistry.IR_CANDIDATE)
+        .enableCandidate(SyntheticCandidateRegistry.BACKEND_CANDIDATE)
+        .build()
+        .writeJson(profilePath);
+    SyntheticDevelopmentPipeline pipeline = new SyntheticDevelopmentPipeline(registry);
+
+    BenchmarkCompiler.runForTesting(new String[] {
+        input.toString(), "-o", assembly.toString(), "--profile", profilePath.toString(),
+        "--remarks", remarks.toString()
+    }, pipeline);
+    Compiler.main(new String[] {
+        input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
+    });
+
+    assertTrue(PassRegistry.standard().candidates().isEmpty());
+    assertEquals(1, pipeline.irFactoryConstructions.get());
+    assertEquals(1, pipeline.backendFactoryConstructions.get());
+    String assemblyText = Files.readString(assembly);
+    assertTrue(assemblyText.contains("main:"));
+    assertTrue(hasLoadImmediate(assemblyText, SyntheticCandidatePassBuilder.IR_RETURN_MARKER));
+    assertTrue(hasLoadImmediate(
+        assemblyText, SyntheticCandidateBackendCompiler.MACHINE_CONSTANT_MARKER));
+    assertNotEquals(Files.readString(judgeAssembly), assemblyText);
+    List<Map<?, ?>> events = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse).<Map<?, ?>>map(value -> (Map<?, ?>) value).toList();
+    assertTrue(events.stream().allMatch(
+        event -> registry.find((String) event.get("pass")) != null));
+    assertCandidateLifecycle(events, SyntheticCandidateRegistry.IR_CANDIDATE);
+    assertCandidateLifecycle(events, SyntheticCandidateRegistry.BACKEND_CANDIDATE);
+  }
+
+  @Test
+  void fullDevelopmentEntryDoesNotInstantiateDisabledCandidateFactories() throws Exception {
+    Path input = tempDirectory.resolve("candidate-disabled.sy");
+    Path profilePath = tempDirectory.resolve("candidate-disabled.json");
+    Path assembly = tempDirectory.resolve("candidate-disabled.s");
+    Path judgeAssembly = tempDirectory.resolve("candidate-disabled-judge.s");
+    Path remarks = tempDirectory.resolve("candidate-disabled.jsonl");
+    Files.writeString(input, "int main() { return 0; }", StandardCharsets.UTF_8);
+    PassRegistry registry = SyntheticCandidateRegistry.createCombined();
+    PipelineProfile.full(registry).writeJson(profilePath);
+    SyntheticDevelopmentPipeline pipeline = new SyntheticDevelopmentPipeline(registry);
+
+    BenchmarkCompiler.runForTesting(new String[] {
+        input.toString(), "-o", assembly.toString(), "--profile", profilePath.toString(),
+        "--remarks", remarks.toString()
+    }, pipeline);
+    Compiler.main(new String[] {
+        input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
+    });
+
+    assertEquals(0, pipeline.irFactoryConstructions.get());
+    assertEquals(0, pipeline.backendFactoryConstructions.get());
+    assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(assembly));
+    assertTrue(Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .map(value -> (Map<?, ?>) value)
+        .noneMatch(event -> ((String) event.get("pass")).startsWith("candidate.")));
+  }
+
+  @Test
+  void fullDevelopmentEntryRejectsMissingEnabledFactoryBeforeAnyPassRuns() throws Exception {
+    Path input = tempDirectory.resolve("candidate-missing.sy");
+    Path profilePath = tempDirectory.resolve("candidate-missing.json");
+    Path assembly = tempDirectory.resolve("candidate-missing.s");
+    Path remarks = tempDirectory.resolve("candidate-missing.jsonl");
+    Files.writeString(input, "int main() { return 0; }", StandardCharsets.UTF_8);
+    PassRegistry registry = SyntheticCandidateRegistry.createCombined();
+    PipelineProfile.builder(registry)
+        .enableCandidate(SyntheticCandidateRegistry.BACKEND_CANDIDATE)
+        .build()
+        .writeJson(profilePath);
+    BenchmarkCompiler.DevelopmentPipeline missingProvider =
+        new BenchmarkCompiler.DevelopmentPipeline() {
+          @Override
+          public PassRegistry registry() {
+            return registry;
+          }
+
+          @Override
+          public PassBuilder passBuilder(PassInstrumentation instrumentation) {
+            return new PassBuilder();
+          }
+
+          @Override
+          public BackendCompiler backendCompiler(
+              PipelineProfile profile, BackendPassInstrumentation instrumentation) {
+            return new BackendCompiler(profile, instrumentation);
+          }
+        };
+
+    IllegalStateException error = assertThrows(
+        IllegalStateException.class,
+        () -> BenchmarkCompiler.runForTesting(new String[] {
+            input.toString(), "-o", assembly.toString(), "--profile", profilePath.toString(),
+            "--remarks", remarks.toString()
+        }, missingProvider));
+
+    assertTrue(error.getMessage().contains("has no registered BACKEND_FUNCTION factory"));
+    assertFalse(Files.exists(assembly));
+    assertEquals("", Files.readString(remarks));
+  }
+
+  private static void assertCandidateLifecycle(
+      List<Map<?, ?>> events, String candidateId) {
+    List<Map<?, ?>> candidateEvents = events.stream()
+        .filter(event -> candidateId.equals(event.get("pass")))
+        .toList();
+    assertEquals(3, candidateEvents.size());
+    assertEquals(List.of("candidate", "applied"), candidateEvents.subList(0, 2).stream()
+        .map(event -> event.get("decision"))
+        .toList());
+    assertEquals("pass_summary", candidateEvents.get(2).get("event_type"));
+    assertEquals(Boolean.TRUE, candidateEvents.get(2).get("changed"));
+    assertEquals("available", candidateEvents.get(2).get("decision_observability"));
+  }
+
+  private static boolean hasLoadImmediate(String assembly, int value) {
+    String suffix = ", " + value;
+    return assembly.lines().anyMatch(line -> line.stripLeading().startsWith("li ")
+        && line.endsWith(suffix));
+  }
+
+  private void assertBaselineFixture(String fixture, Map<String, String> checksums)
+      throws Exception {
+    Path input = tempDirectory.resolve(fixture + ".sy");
+    Path profile = tempDirectory.resolve(fixture + "-baseline-profile.json");
+    Path judgeAssembly = tempDirectory.resolve(fixture + "-judge.s");
+    Path developmentAssembly = tempDirectory.resolve(fixture + "-development.s");
+    Path remarks = tempDirectory.resolve(fixture + "-baseline.jsonl");
+    Files.write(input, baselineResource(fixture + ".sy"));
+    PipelineProfile.full().writeJson(profile);
+
+    Compiler.main(new String[] {
+        input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
+    });
+    BenchmarkCompiler.main(new String[] {
+        input.toString(), "-o", developmentAssembly.toString(), "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    byte[] expected = baselineResource(fixture + ".s");
+    String digest = HexFormat.of().formatHex(
+        MessageDigest.getInstance("SHA-256").digest(expected));
+    assertEquals(checksums.get(fixture + ".s"), digest);
+    assertArrayEquals(expected, Files.readAllBytes(judgeAssembly));
+    assertArrayEquals(expected, Files.readAllBytes(developmentAssembly));
+    assertTrue(Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .map(value -> (Map<?, ?>) value)
+        .noneMatch(event -> ((String) event.get("pass")).startsWith("candidate.")));
+  }
+
+  private static byte[] baselineResource(String name) throws IOException {
+    String resource = "/candidate-empty-baseline/" + name;
+    try (InputStream stream = BenchmarkCompilerTest.class.getResourceAsStream(resource)) {
+      if (stream == null) throw new IOException("missing test resource " + resource);
+      return stream.readAllBytes();
+    }
+  }
+
+  private static final class SyntheticDevelopmentPipeline
+      implements BenchmarkCompiler.DevelopmentPipeline {
+    private final PassRegistry registry;
+    private final AtomicInteger irFactoryConstructions = new AtomicInteger();
+    private final AtomicInteger backendFactoryConstructions = new AtomicInteger();
+
+    private SyntheticDevelopmentPipeline(PassRegistry registry) {
+      this.registry = registry;
+    }
+
+    @Override
+    public PassRegistry registry() {
+      return registry;
+    }
+
+    @Override
+    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
+      return SyntheticCandidatePassBuilder.create(instrumentation, irFactoryConstructions);
+    }
+
+    @Override
+    public BackendCompiler backendCompiler(
+        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
+      return SyntheticCandidateBackendCompiler.create(
+          profile, instrumentation, backendFactoryConstructions);
+    }
   }
 }

@@ -20,23 +20,52 @@ import java.nio.file.Path;
 import java.io.IOException;
 import java.util.List;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 /** Evaluation-only compiler entry point with strict pass ablation and JSONL observations. */
 public final class BenchmarkCompiler {
+  private static final DevelopmentPipeline PRODUCTION_PIPELINE = new DevelopmentPipeline() {
+    @Override
+    public PassRegistry registry() {
+      return PassRegistry.standard();
+    }
+
+    @Override
+    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
+      return new PassBuilder();
+    }
+
+    @Override
+    public BackendCompiler backendCompiler(
+        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
+      return new BackendCompiler(profile, instrumentation);
+    }
+  };
+
   private BenchmarkCompiler() {}
 
   public static void main(String[] args) throws Exception {
+    run(args, PRODUCTION_PIPELINE);
+  }
+
+  /** Package-private explicit injection seam for full development-entry tests only. */
+  static void runForTesting(String[] args, DevelopmentPipeline pipeline) throws Exception {
+    run(args, Objects.requireNonNull(pipeline, "pipeline"));
+  }
+
+  private static void run(String[] args, DevelopmentPipeline pipeline) throws Exception {
+    PassRegistry registry = Objects.requireNonNull(pipeline.registry(), "pipeline registry");
     if (args.length > 0 && "--export-registry".equals(args[0])) {
       Path output = parseRegistryExport(args);
       requireExistingParent(output, "registry output");
       rejectNonFileOutput(output, "registry output");
-      PassRegistry.standard().writeJson(output);
+      registry.writeJson(output);
       return;
     }
     Arguments arguments = parseArguments(args);
     validatePaths(arguments);
-    PipelineProfile profile = PipelineProfile.fromJson(arguments.profile());
+    PipelineProfile profile = PipelineProfile.fromJson(arguments.profile(), registry);
     Node unit = parseSource(arguments.input());
     accela.ir.Module module = new AST2IR().convert(unit);
     IRVerifier.verifyModule(module);
@@ -45,16 +74,29 @@ public final class BenchmarkCompiler {
         PassInstrumentation irInstrumentation = PassInstrumentation.observed(false, remarks);
         BackendPassInstrumentation backendInstrumentation =
             BackendPassInstrumentation.observed(remarks)) {
-      PassBuilder passBuilder = new PassBuilder();
+      PassBuilder passBuilder = Objects.requireNonNull(
+          pipeline.passBuilder(irInstrumentation), "development IR pass builder");
+      BackendCompiler backendCompiler = Objects.requireNonNull(
+          pipeline.backendCompiler(profile, backendInstrumentation),
+          "development backend compiler");
       ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
       FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
-      ModulePassManager pipeline = passBuilder.buildIRO0Pipeline(irInstrumentation, profile);
-      pipeline.run(module, mam, fam);
+      ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline(irInstrumentation, profile);
+      irPipeline.run(module, mam, fam);
       IRVerifier.verifyModule(module);
-      String assembly = new BackendCompiler(profile, backendInstrumentation)
-          .compileToAssembly(module);
+      String assembly = Objects.requireNonNull(
+          backendCompiler.compileToAssembly(module), "development pipeline assembly");
       Files.writeString(arguments.output(), assembly, StandardCharsets.UTF_8);
     }
+  }
+
+  interface DevelopmentPipeline {
+    PassRegistry registry();
+
+    PassBuilder passBuilder(PassInstrumentation instrumentation);
+
+    BackendCompiler backendCompiler(
+        PipelineProfile profile, BackendPassInstrumentation instrumentation);
   }
 
   static Path parseRegistryExport(String[] args) {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,7 @@ from tools.benchmark.campaign import (
     update_campaign_status,
 )
 from tools.benchmark.errors import ValidationError
-from tools.benchmark.inventory import inventory_cleanroom_manifest, inventory_suite, subset_manifest
+from tools.benchmark.inventory import inventory_cleanroom_manifest
 from tools.benchmark.oracle import build_oracle_plan
 from tools.benchmark.profiles import generate_ablation_profiles
 from tools.benchmark.schema import load_and_validate, validate_document
@@ -22,7 +23,7 @@ from tools.benchmark.util import atomic_write_json, sha256_file, sha256_json
 
 def test_ablate_profiles_generates_canonical_family_pair_matrix(tmp_path: Path) -> None:
     registry = {
-        "schema_version": "pass-registry.v1",
+        "schema_version": "pass-registry.v2",
         "passes": [
             {
                 "id": "ir.alpha",
@@ -30,8 +31,10 @@ def test_ablate_profiles_generates_canonical_family_pair_matrix(tmp_path: Path) 
                 "display_name": "Alpha",
                 "stage": "ir_function",
                 "full_pipeline_occurrences": 2,
-                "required": False,
+                "lifecycle": "production",
                 "decision_observable": True,
+                "candidate_anchor": None,
+                "legality_obligation_ids": [],
             },
             {
                 "id": "ir.required",
@@ -39,8 +42,10 @@ def test_ablate_profiles_generates_canonical_family_pair_matrix(tmp_path: Path) 
                 "display_name": "Required",
                 "stage": "ir_function",
                 "full_pipeline_occurrences": 1,
-                "required": True,
+                "lifecycle": "required",
                 "decision_observable": False,
+                "candidate_anchor": None,
+                "legality_obligation_ids": [],
             },
             {
                 "id": "backend.beta",
@@ -48,8 +53,10 @@ def test_ablate_profiles_generates_canonical_family_pair_matrix(tmp_path: Path) 
                 "display_name": "Beta",
                 "stage": "backend_function",
                 "full_pipeline_occurrences": 3,
-                "required": False,
+                "lifecycle": "production",
                 "decision_observable": False,
+                "candidate_anchor": None,
+                "legality_obligation_ids": [],
             },
         ],
     }
@@ -71,7 +78,7 @@ def test_ablate_profiles_generates_canonical_family_pair_matrix(tmp_path: Path) 
     }
     family_profile = next(item for item in matrix["profiles"] if item["profile_id"] == "without.ir.family-a")
     profile_bytes = (output / family_profile["path"]).read_bytes()
-    assert profile_bytes == b'{"schema_version":1,"base":"FULL","disable":[{"pass":"ir.alpha"}]}\n'
+    assert profile_bytes == b'{"schema_version":2,"base":"FULL","disable":[{"pass":"ir.alpha"}],"enable_candidates":[]}\n'
     assert sha256_file(output / family_profile["path"]) == family_profile["profile_sha256"]
     first_matrix = (output / "matrix.json").read_bytes()
     second = generate_ablation_profiles(
@@ -127,6 +134,8 @@ def test_oracle_plan_expands_verified_clean_room_pairs_without_paths(tmp_path: P
         suite_root=suite,
         pipeline_profile_id="full",
         pipeline_profile_sha256="b" * 64,
+        baseline_run_id="campaign-new-oracle-baseline",
+        optimized_run_id="campaign-new-oracle-optimized",
     )
     assert plan["schema_version"] == "oracle-plan.v1"
     assert len(plan["pairs"]) == 1
@@ -146,13 +155,14 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     run_schema_bytes = run_schema_source.read_bytes()
     run_schema_path.write_bytes(run_schema_bytes)
     registry = {
-        "schema_version": "pass-registry.v1",
+        "schema_version": "pass-registry.v2",
         "passes": [
             {
                 "id": f"ir.pass{index}", "logical_family_id": f"ir.family{index}",
                 "display_name": f"Family {index}", "stage": "ir_function",
-                "full_pipeline_occurrences": 1, "required": False,
+                "full_pipeline_occurrences": 1, "lifecycle": "production",
                 "decision_observable": True,
+                "candidate_anchor": None, "legality_obligation_ids": [],
             }
             for index in range(8)
         ],
@@ -163,30 +173,22 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     generate_ablation_profiles(
         registry_path=registry_path, output_directory=matrix_dir,
     )
-    suite = tmp_path / "suite"
-    suite.mkdir()
-    for index in range(8):
-        (suite / f"family{index}_case.sy").write_bytes(f"source-{index}".encode())
-        (suite / f"family{index}_case.out").write_bytes(b"0\n")
+    repository_root = Path(__file__).resolve().parents[3]
+    manifest_root = repository_root / "docs/optimization/data/manifests"
+    manifest_names = {
+        "B1": "b1-official-functional-2026.manifest.json",
+        "B2": "b2-family-smoke.manifest.json",
+        "B3": "b3-official-performance-2026.manifest.json",
+        "B4": "b4-official-performance-2025-preliminary.manifest.json",
+        "B5": "b5-structural-variants.manifest.json",
+        "B6": "b6-mature-benchmarks.manifest.json",
+        "oracle": "oracle-cleanroom.manifest.json",
+    }
     suite_paths = {}
-    for role in ("B1", "B3", "B4", "B5", "B6", "oracle"):
-        manifest = inventory_suite(
-            suite, suite_id=f"campaign-{role}", target="rv64gc", data_role=role,
-            origin_source=f"campaign-{role}-corpus", origin_snapshot_sha256=f"{len(suite_paths) + 1:064x}",
-            license_expression="NOASSERTION",
-        )
+    for role, name in manifest_names.items():
         path = tmp_path / f"{role}.json"
-        atomic_write_json(path, manifest)
+        shutil.copyfile(manifest_root / name, path)
         suite_paths[role] = path
-    b3 = load_and_validate(suite_paths["B3"])
-    b2 = subset_manifest(
-        suite_paths["B3"], suite_root=suite, suite_id="campaign-B2",
-        case_ids=[case["id"] for case in b3["cases"]], data_role="B2",
-        origin_source="campaign-B3-selector", require_one_per_family=True,
-    )
-    b2_path = tmp_path / "B2.json"
-    atomic_write_json(b2_path, b2)
-    suite_paths["B2"] = b2_path
     oracle_manifest = load_and_validate(suite_paths["oracle"])
     oracle_cases = oracle_manifest["cases"][:2]
     matrix = load_and_validate(matrix_dir / "matrix.json")

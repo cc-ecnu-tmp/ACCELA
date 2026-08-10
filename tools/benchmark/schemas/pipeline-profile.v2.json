@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/pipeline-profile.v2.json",
+  "title": "ACCELA PipelineProfile v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "base", "disable", "enable_candidates"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "base": {"enum": ["FULL", "MANDATORY_ONLY"]},
+    "disable": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/pass_disable"},
+          {"$ref": "#/$defs/family_disable"}
+        ]
+      }
+    },
+    "enable_candidates": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/candidate_id"}
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["base"],
+        "properties": {"base": {"const": "MANDATORY_ONLY"}}
+      },
+      "then": {
+        "properties": {
+          "disable": {"maxItems": 0},
+          "enable_candidates": {"maxItems": 0}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "pass_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "production_id": {
+      "allOf": [
+        {"$ref": "#/$defs/pass_id"},
+        {"not": {"pattern": "^candidate\\."}}
+      ]
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^candidate\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+    },
+    "pass_disable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass"],
+      "properties": {
+        "pass": {"$ref": "#/$defs/production_id"},
+        "occurrence": {"type": "integer", "minimum": 1}
+      }
+    },
+    "family_disable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family"],
+      "properties": {
+        "family": {"$ref": "#/$defs/production_id"}
+      }
+    }
+  }
+}

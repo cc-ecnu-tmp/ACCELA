@@ -1,16 +1,19 @@
 # ACCELA 2026 RISC-V 优化评测手册
 
-本目录是 ACCELA 决赛优化评测的可复现入口。目标固定为 RISC-V
-RV64GC、LP64D、`medany`，最终评价平台是 BOOM v3。当前提交只建立语料、
-消融、Oracle、测量和报告基础设施，不新增编译器优化，也不改变评测接口：
+本目录是 ACCELA 决赛候选优化的可复现评测入口。目标固定为 RISC-V RV64GC、
+LP64D、`medany`，最终评价平台是 BOOM v3。正式主线是“新增一个明确候选，和
+冻结基线做同配置配对评测，再组合已合格候选”；允许在独立实验分支实现新的
+或实质变更的优化，但不改变 judge-facing 接口：
 
 ```sh
 java -cp build/classes/java/main Compiler testcase.sy -S -o testcase.s -O1
 ```
 
-`Compiler` 始终运行完整正式 pipeline，默认不产生评测日志。只有开发入口
-`BenchmarkCompiler` 接受 pipeline profile 和 JSONL remark；未知 pass、非法依赖、
-profile 漂移或输出文件缺失都会立即失败。
+`Compiler` 始终运行当前获准的完整正式 pipeline，默认不产生评测日志。只有开发
+入口 `BenchmarkCompiler` 接受实验 profile 和 JSONL remark；未知 pass、非法依赖、
+profile 漂移或输出文件缺失都会立即失败。候选在完成全部门禁前保持默认关闭；
+关闭既有 pass 的 `without.*` profile 只能进入隔离诊断附录，不能代替新增候选、
+决定实现优先级或进入正式收益榜。
 
 ## 证据边界
 
@@ -41,9 +44,9 @@ EOF。程序不必消费到 EOF，未读尾部仍完整保留。任何错误输�
 | 角色 | 清单 | 计数与用途 |
 |---|---|---|
 | B1 | `data/manifests/b1-official-functional-2026.manifest.json` | 140 个唯一功能程序，作为 correctness gate |
-| B2 | `data/manifests/b2-family-smoke.manifest.json` | 20 个 family 各 1 例，运行全部单项消融 |
-| B3 | `data/manifests/b3-official-performance-2026.manifest.json` | 60 个有效 triplet、20 个 family、22 个唯一源码组；另登记 6 个 orphan sidecar |
-| B4 | `data/manifests/b4-official-performance-2025-preliminary.manifest.json` | 2025 年 5 月 59 例历史 holdout，冻结前不用于阈值调参 |
+| B2 | `data/manifests/b2-family-smoke.manifest.json` | 20 个 family 各 1 例；所有 B1 正确的候选都运行并允许据此调优，但它不是晋级、淘汰或排名门 |
+| B3 | `data/manifests/b3-official-performance-2026.manifest.json` | 60 个有效 triplet、20 个 family、22 个唯一源码组；所有完成 B2 调优并冻结的候选都运行，另登记 6 个 orphan sidecar |
+| B4 | `data/manifests/b4-official-performance-2025-preliminary.manifest.json` | 2025 年 5 月 59 例历史 holdout；仅 B3 单项 GM 严格大于 1 的冻结候选运行 |
 | B5 | `data/manifests/b5-structural-variants.manifest.json` | 20 个 family 各 3 个独立结构/规模变体，共 60 例 |
 | B6 | `data/manifests/b6-mature-benchmarks.manifest.json` | 22 个清洁室 workload 的 correctness、small、medium、large，共 88 例 |
 | Oracle | `data/manifests/oracle-cleanroom.manifest.json` | 11 个候选族、每族 3 个结构、3 档输入、两条语义等价源码腿，共 99 对/198 例 |
@@ -234,7 +237,6 @@ python -m tools.benchmark validate schema \
   docs/optimization/data/manifests/*.manifest.json \
   docs/optimization/data/audits/*.audit.json \
   docs/optimization/data/ablation/matrix.json \
-  docs/optimization/data/campaign/*.plan.json \
   docs/optimization/data/oracle/*.plan.json \
   docs/optimization/data/measurement-protocol.v1.json \
   docs/optimization/data/measurement-protocol.cache-hotblock.v1.json
@@ -254,76 +256,152 @@ python -m tools.benchmark validate schema --verify-files --suite-root benchmarks
   docs/optimization/data/manifests/oracle-cleanroom.manifest.json
 ```
 
-## Pipeline profile 与消融
+冻结的 `data/campaign/initial.plan.json` 仍绑定当时的 run-record schema hash；当前
+语义 validator 会有意拒绝它与 active schema 的漂移，不能把这个拒绝改成执行兼容
+层。历史格式只允许用其 `campaign-plan.v1` JSON Schema 做只读结构校验，绝不调用已
+移除的旧调度入口，也不刷新原计划中的 schema hash。
 
-`data/pass-registry.v1.json` 是 46 个 pass、28 个逻辑族和 pipeline occurrence 的
-快照。必需 lowering、SSA 构造/销毁、寄存器分配和汇编输出只能测成本，不能
-作为可关闭优化排名。单项消融默认一次关闭逻辑族的全部 occurrence。
+## 候选新增主线
 
-手工入口 `profiles/full.json` 和 `profiles/mandatory-only.json` 便于单例诊断；
-正式矩阵从 registry 生成，包含 FULL、mandatory control 和全部 23 个可消融
-逻辑族，共 25 个 profile：
+Java `PassRegistry.standard()` 是其所在提交中正式 pipeline 的 pass、候选标记、
+逻辑族和 occurrence 的唯一事实源。候选筛选基线提交将它冻结导出为
+`data/pass-registry.v2.json`；候选实现完成后，当前 standard export 只对应另行命名
+和冻结的 executable artifact，不再要求与筛选基线 golden 相等。候选筛选与候选
+执行使用两份不同、均不可变的 v2 快照：`screening_base_pass_registry` 是实现候选前
+且 candidate lifecycle 数量严格为零的 production pass 集，
+`executable_pass_registry` 是筛选合格项实现后、包含 candidate lifecycle 条目的
+可执行集合。当前 `data/pass-registry.v2.json` 永久作为 screening base golden
+只读保留，不得被候选实现后的 `PassRegistry.standard()` export 覆盖；实现分支必须
+把 executable export 写入该 campaign 独立冻结的另一路径。后者过滤掉 candidate
+条目后必须与前者按序逐字段一致；新增 candidate 条目必须与 catalog、筛选合格
+implementation ID、anchor 和 obligation 完全一致。
+两份快照的 canonical SHA-256 预期不同，screening/freeze/final/report 必须分别保留
+各自的路径、canonical hash 和 physical hash，禁止用一份 registry 冒充两个阶段。
+物理 pipeline profile 使用 `schema_version=2`，以
+`enable_candidates` 显式区分 candidate-empty、单候选和双候选 profile。旧
+pass-registry/profile v1 只属于冻结历史证据，不得作为当前 candidate campaign
+输入。候选主线不再把“关闭哪个既有 pass”当作优化实施路线。
+`data/ablation/matrix.json`、`data/campaign/initial.plan.json` 及生成的
+`without.*` profile 只保留为历史诊断资产；它们不得启动新的正式 campaign，
+也不得产生候选 Top N、晋级决定或默认 pipeline 变更。公开 CLI 已移除旧
+`ablate` 生成、调度和执行入口；旧模块与 schema 仅供冻结资产的只读校验。
 
-```sh
-python -m tools.benchmark ablate profiles \
-  --registry docs/optimization/data/pass-registry.v1.json \
-  --output-dir docs/optimization/data/ablation
+### 候选身份与实现合同
+
+每个候选必须是一项可审查的编译器变更，而不是 profile 重命名。候选有两个明确
+阶段：B2 调优阶段的每次尝试都绑定自己的提交、tree、artifact、profile 和 trial
+ID，允许继续修改实现但不得覆盖旧尝试；B2 完成后才冻结用于 B3 的正式 candidate
+identity。正式 identity 的以下任一项漂移，都要终止该 campaign 并生成新的冻结
+identity，不能复用旧 run：
+
+- 全局唯一的 `candidate_id`、人类可读名称、责任 pass/阶段和实验分支；
+- 候选提交、父基线提交、Git tree、compiler artifact tree hash；
+- `schema_version=2` 的 candidate-empty profile 和 candidate profile 的物理及
+  canonical SHA-256；两者只允许在 `enable_candidates` 上有预期差异；
+- 目标语义、适用 IR 形状、合法性前提、拒绝原因和预期受益结构；
+- manifest、toolchain、standard/cache-hotblock protocol、runner 和 schema 的
+  物理及 canonical 哈希；
+- 候选之间的依赖、冲突和组合次序；隐式依赖或按 benchmark 身份分派一律拒绝。
+
+候选代码在本轮始终默认关闭，judge-facing `Compiler ... -O1` 只使用已接受
+pipeline。本轮没有 BOOM 实测，因此任何候选都不会因 QEMU 结果自动进入默认
+pipeline。开发入口必须为每个候选输出稳定的 considered/applied/rejected 计数和
+结构化拒绝原因；不允许吞掉异常、静默改回基线、用文件名/hash/case ID 触发，或
+在失败后生成看似成功的空记录。
+
+候选分支上的 baseline profile 必须证明未启用候选时行为没有漂移：B1 汇编与执行
+正确，配置哈希匹配，且任何与父基线不一致的 artifact/remark 都有明确解释。
+不能用“代码路径理论上没走到”代替实测基线。
+
+### 锁定门禁与唯一收益口径
+
+所有配对使用相同 case、输入字节、编译重复、QEMU 协议、timeout policy 和统计
+方法。任一 correctness failure、右删失、缺失 case、配置漂移或不完整 metric 都
+使对应候选失去该阶段资格；不能把失败 case 排除后继续计算 GM。
+
+| 阶段 | 必须完成的证据 | 锁定决策 |
+|---|---|---|
+| Oracle 资格 | 实现前各执行一次覆盖固定 99 pair 的 FULL baseline/optimized run，生成一份按 family/structure/size 索引的 capture；至少一个映射 structure 的 small/medium/large 三档全部完整且正确，并且这三档 speedup 的等权 GM `>= 1.10` | 不满足就不进入实现队列；Oracle 是资格门，不是事后 backlog 注释 |
+| 实现与 B1 | 合法性说明、拒绝可观测性、受影响单元测试、整数/浮点 RV64GC E2E、B1 140 例 `qemu_correctness` | 任一失败即停止该 trial 并保留真实失败 |
+| B2 调优 | 所有 B1 通过候选都运行 20-family candidate-empty/candidate 配对 | 不设收益阈值，不晋级、不淘汰；允许调优，修改后重跑受影响正确性与 B2，并保留各 trial 身份 |
+| 正式冻结 | 固定候选提交/tree、artifact、catalog、筛选基线与可执行两份 pass-registry v2、profile v2、B1--B6 manifest、协议、工具链和 run namespace | 冻结后任何实现或配置变化都必须新建正式 candidate/campaign identity |
+| B3 单项 | 所有冻结候选都运行 60 个 official case | 全部正确且单项 B3 GM 严格 `> 1` 才运行 B4--B6 |
+| B4--B6 | 合格候选运行 59 + 60 + 88 个 case | 与 B3 合并为 267-case 等权冠军数据集 |
+| Top3 诊断 | 按 B3 单候选 GM 取 Top3（不足 3 个则全取），在 B3 最多运行 `C(3,2)=3` 个 pair | pair 只报告交互，不进入 267-case 单候选冠军榜 |
+| cache/hotblock | candidate-empty FULL baseline 一次，加 B3 Top3 单候选各一次 | 只作解释；不跑 pair，不进入任何收益 GM |
+
+唯一收益定义是动态指令数的 baseline-over-candidate：
+
+```text
+speedup_case = baseline_dynamic_instructions / candidate_dynamic_instructions
 ```
 
-不能在尚无实测结果时预选 Top 5。B2 与晋级后的 B3 消融完成后，才可按实测
-排序把五个稳定 family 传给新的输出目录；工具会生成全部 `5 choose 2 = 10`
-个双消融 profile：
+`speedup > 1` 才是正收益，`speedup = 1` 是持平，`speedup < 1` 是回归。B2、B3、
+B4--B6、Oracle 和 pair 必须沿用这个方向；不得再发布 candidate-over-baseline
+ratio、反向 `delta_ln` 或另一个“主收益”口径。阶段 GM 只对已冻结清单中的全部
+合格 case 等权计算：`GM = exp(mean(ln(speedup_case)))`。load/store、cache miss、
+静态 ELF 和 host wall-clock 只能作诊断或 tie-break 中明确列出的静态 text 项，
+不能替代动态指令 speedup。
 
-```sh
-python -m tools.benchmark ablate profiles \
-  --registry docs/optimization/data/pass-registry.v1.json \
-  --top-family FAMILY_1 --top-family FAMILY_2 --top-family FAMILY_3 \
-  --top-family FAMILY_4 --top-family FAMILY_5 \
-  --output-dir .tmp/campaign/ablation-top5
+B3--B6 的冠军规则固定且不可在看到结果后调整。只有完成全部 267 case 且全部
+正确的单候选可参选；主排序键是 267-case 等权 combined GM。完全相同时依次使用：
+
+1. B3 60-case 等权 GM 较高；
+2. 267 个 candidate 二进制的静态 `text` bytes 合计较小；
+3. 稳定 `candidate_id` 的字典序较小。
+
+即完整四级顺序为：combined GM、B3 GM、static text bytes、candidate ID。固定
+种子 bootstrap 区间、family 聚合、唯一源码组视图和最坏回归仍必须报告，但不
+改变这四级冠军规则。QEMU host wall-clock 不进入收益计算。
+
+### 候选交互
+
+Top3 按 B3 单候选 GM 从高到低选择；不足三个时使用全部候选，GM 完全相同则按
+稳定 `candidate_id` 字典序。只生成这组候选的两两 profile，所以 B3 最多增加三
+个 pair。A+B profile 必须显式列出两个 candidate ID、各自 profile hash、组合
+次序和冲突检查。交互沿用唯一 speedup 方向：
+
+```text
+interaction_delta_ln =
+  ln(speedup_A+B) - ln(speedup_A) - ln(speedup_B)
 ```
 
-`metric_without / metric_full` 大于 1 才表示该优化有正贡献。报告使用官方
-60-case GM、20-family 聚合、22 个唯一源码组去重结果，以及固定种子
-`20260809` 的 10,000 次 family bootstrap。双消融交互定义为双消融的
-`delta ln(GM)` 减去两个单消融 `delta ln(GM)` 之和。
+该值描述已实现候选的组合偏离，不等于两个 `without.*` profile 的旧双消融。
+pair 仅运行 B3；任何 correctness 或完整性失败都使该 pair 报告为不合格，但 A、
+B 的单项记录保持各自结论。pair 不运行 B4--B6 或 cache/hotblock，也不进入单候选
+冠军排序。
 
-## 锁定 QEMU 测量协议
+## 锁定测量协议
 
-QEMU 代理证据使用两份严格分离的实物快照：
+QEMU 代理证据继续使用两份严格分离的实物快照：
 
-- `data/measurement-protocol.v1.json` 是排名用 `standard_proxy` 协议，只运行
-  profile 与 cache plugin；
-- `data/measurement-protocol.cache-hotblock.v1.json` 是诊断用
-  `cache_hotblock` 协议，另外运行 hotblocks plugin，不参与收益排名。
+- `data/measurement-protocol.v1.json` 是候选排名使用的 `standard_proxy`，
+  只运行 profile 与 cache plugin；
+- `data/measurement-protocol.cache-hotblock.v1.json` 是候选解释使用的
+  `cache_hotblock`，额外运行 hotblocks plugin，永不进入收益 GM。
 
-每份快照都绑定 7 个源文件、3 个 plugin 二进制、QEMU 二进制及版本、自己的
-runner 脚本、runner command/environment、输入传输契约，以及 32 KiB、8-way、
-64 B line、cold-per-region、LRU 模型。两份快照的 protocol hash 和 runner
-command hash 必须不同。每次 `qemu_proxy` run 都重新核验所选协议的全部实物；
-任一漂移立即失败。runner 只能通过已核验 asset 占位符取得 QEMU、脚本和
-plugin，不能再次从不受控 PATH 或其他目录选取实物。
+每份协议都绑定源文件、plugin 二进制、QEMU、runner、command/environment、
+fw_cfg 输入契约和固定 L1D 模型。正式 run 在启动前重新核验全部物理资产；任何
+漂移立即失败。候选与 baseline 必须引用同一个 standard protocol canonical hash。
+cache/hotblock 只有在对应 standard run 完整且正确后才可调度，并且只能进入热点
+诊断。
 
-输入传输遵循 QEMU 官方的
-[`fw_cfg` file directory 与 DMA 接口](https://www.qemu.org/docs/master/specs/fw_cfg.html)：
-runner 把当前 case 的物理 `{input}` 作为 `opt/accela/sysy-input` file item，
-guest 以 4 KiB 分块读取 directory 中记录的无符号 32 位长度，并据此提供精确
-EOF；最大输入为 `4294967295` 字节。ELF 只保留固定 4112 B 的
-`.sysy_input_transport` NOBITS scratch（16 B DMA descriptor + 4096 B buffer），
-不嵌入输入内容。规范化静态 ELF 指标只排除这个固定 scratch；共享 runtime 的
-helper text、rodata 和其他状态仍计入静态 text/rodata/data。动态 plugin 则按
-精确 allowlist 过滤固定 SysY I/O runtime/helper 基名及其编译器点号后缀，不使用
-用户可匹配的宽泛前缀；同前缀的用户函数仍会计数。输入字节数不会通过可变 ELF
-嵌入量伪造静态收益，
-也不会通过 runtime I/O 开销伪造动态收益。
+输入文件通过长度定界的 `opt/accela/sysy-input` fw_cfg item 原样传入。runner
+不得追加分隔符、文本规范化或改用 UART stdin；零输入也必须是显式零字节 item。
+静态 ELF 只允许排除固定 4112-byte `.sysy_input_transport` NOBITS scratch；
+动态 runtime I/O 只按审计 helper allowlist 排除，不能使用用户可匹配前缀。
 
-`data/toolchain-snapshot.json` 的 `measurement_protocols` 同时记录两份协议的
-逻辑 mode、相对 path、ID 和 canonical SHA-256。campaign plan 会把这些字段与
-实际传入的两份协议逐项交叉核验；字段缺失、路径不一致或哈希漂移都会失败。
+正式执行必须先重建 QEMU plugin，再由 candidate driver 用 versioned plan 中的
+完整 asset、runner command 和 environment 调用 `protocol verify`。协议要求的
+实物一项也不能省略；不得把旧 campaign 的生成参数或 run ID 复制进新脚本。
+手工缩写的 verify 命令不构成正式 preflight 证据。
 
-以下 POSIX `sh` 命令从最终源文件构建 plugin，然后分别 capture 与 verify 两份
-协议。`set --` 中恰好列出协议要求的 12 个实物；不要手填或复制臆测哈希：
+以下 POSIX `sh` 合同是两份协议的可复现 capture/verify 入口。`set --` 与随后各自
+添加的 runner 合计恰好覆盖协议要求的 12 个实物；hash 由工具从实物计算，不能
+手填：
 
 ```sh
+set -eu
 sh scripts/build-qemu-plugins.sh
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -333,6 +411,7 @@ test -n "$qemu_binary" || {
   exit 1
 }
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json
+toolchain_snapshot=docs/optimization/data/toolchain-snapshot.json
 cache_hotblock_protocol=docs/optimization/data/measurement-protocol.cache-hotblock.v1.json
 runner_command='["sh","{runner_executable}","{binary}","{metric_file}","{input}"]'
 
@@ -392,50 +471,406 @@ python -m tools.benchmark protocol verify "$cache_hotblock_protocol" \
   --runner-env 'QEMU_HOTBLOCK_PLUGIN={hotblocks_plugin_binary}'
 ```
 
-## 正确性与代理运行
+## Candidate campaign 与运行生命周期
 
-正式运行应从干净提交开始，原始日志和断点状态写入被忽略目录：
-所有 `protocol capture/verify`、`run`、`validate suite`、`oracle run` 和
-`campaign-plan` 正式入口都要求
-显式绝对 `--workspace-root`；脚本启动时只捕获一次仓库根，不能在错误处理阶段
-重新依赖可能已经失效的当前工作目录。
+每个 candidate campaign 必须使用从未出现过的 campaign ID、plan hash 和 run ID
+namespace。plan 至少绑定 candidate metadata、baseline/candidate profile、B1--B6
+manifest、两份协议、toolchain snapshot、run-record schema、Oracle `1.10` 资格门、
+B3 `>1` 门和四级冠军规则。B2 trial 允许在自己的身份下调优；正式冻结后候选实现
+发生任何变化时必须终止旧 campaign 并重建计划。
 
-完整正式 campaign 只允许在 WSL 原生 Linux 文件系统中的单一 clean checkout
-运行，不得从 `/mnt/<drive>` 下的 DrvFS/9p checkout 启动。迁移时先冻结原 checkout，
-再建立同一提交的 clean WSL checkout；被忽略的官方语料和历史诊断证据须逐文件或
-按已冻结清单做 SHA-256 复验，虚拟环境、Gradle/build 产物和 QEMU plugin 则在新
-位置重建。一次 campaign 的编译、run journal、status 与报告必须始终来自这一
-workspace identity；不得把迁移前的 formal run 混入新排名。campaign 终态后才将
-提交数据和报告写回，并再次核验 canonical 与物理文件哈希。
-仓库控制文本由 `.gitattributes` 固定为 LF；`testsuite` 是显式 byte-preserving
-语料，既有 CRLF 或 mixed line ending 属于其物理身份，不得在迁移时归一化。
+正式 campaign 只允许在 WSL 原生 Linux 文件系统的一份 clean checkout 中执行，
+不得从 DrvFS/9p 启动。一次 campaign 的 compiler build、raw attempt、status、
+normalized record 和报告必须保持同一 workspace identity。虚拟环境、Gradle
+输出和 QEMU plugin 在该 checkout 中重建；corpus 迁移必须完成物理 hash 校验。
+迁移校验没有完成时只能写明 provenance limitation，不能把 tar 成功等同于证据
+等价。
+
+建议顺序是：
+
+1. 对固定 99 pair 各执行一次 FULL baseline/optimized run，形成一份按
+   family/structure/size 索引的 Oracle capture；仅让至少一个映射 structure 的
+   small/medium/large 三档全部完整且正确、三档 speedup 等权 GM `>=1.10` 的候选
+   进入实现；
+2. 为实现 trial 生成 candidate-empty/单候选 profile v2，执行 baseline drift 和 B1；
+3. 所有 B1 通过候选运行 B2；允许调优，但每次改动保留新 trial 身份并重跑门禁；
+4. B2 调优结束后冻结全部候选、规则、语料、工具链、profile 和 campaign identity；
+5. 对全部冻结候选运行 B3；仅 B3 GM 严格 `>1` 者运行 B4/B5/B6；
+6. 以 267-case 等权 combined GM 和固定 tie-break 选单候选冠军；
+7. 对 B3 Top3 最多运行三个 B3 pair；cache/hotblock 只运行 FULL baseline 与 Top3
+   单候选各一次；
+8. 生成规范化数据、SVG 和中文报告。本轮不运行 BOOM，也不默认启用候选。
+
+### 首份 Oracle 的可复制 terminal run
+
+首次筛选必须先在 clean、已提交的 WSL 原生检出中生成两条 terminal run。下面的
+POSIX `sh` 模板把所有公共配置集中在一个函数中；两腿只能改变 `leg`、plan 锁定的
+`run_id` 和 normalized output。它不激活虚拟环境：benchmark driver 固定直接调用
+`.venv/bin/python`，而 analyzer command 中的 `python` 仍表示 toolchain snapshot
+锁定的系统 Python。CLI 没有不落盘的 `--dry-run`；调用 `oracle run` 就会建立不可变
+raw evidence，因此所有检查必须先完成。
 
 ```sh
+set -eu
+
+benchmark_python=.venv/bin/python
+test -x "$benchmark_python"
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+test -z "$(git status --porcelain=v1)" || {
+  echo 'formal Oracle run requires a clean committed worktree' >&2
+  exit 1
+}
+git diff --check
+repo_commit=$(git rev-parse --verify HEAD)
+
+oracle_manifest=docs/optimization/data/manifests/oracle-cleanroom.manifest.json
+oracle_suite_root=benchmarks
+oracle_plan=docs/optimization/data/oracle/cleanroom-full.plan.json
+candidate_evidence=docs/optimization/data/candidates/candidate-evidence.v1.json
+candidate_screening_spec=docs/optimization/data/candidates/candidate-screening-spec.v1.json
+screening_base_pass_registry=docs/optimization/data/pass-registry.v2.json
+full_profile=docs/optimization/profiles/full.json
+standard_protocol=docs/optimization/data/measurement-protocol.v1.json
+
+oracle_root=.tmp/runs/candidate-screening-oracle-2026-r1
+oracle_raw_state_root=$oracle_root/state
+oracle_baseline_run=$oracle_root/baseline.run.json
+oracle_optimized_run=$oracle_root/optimized.run.json
+oracle_capture_id=candidate-screening-oracle-2026-r1:capture
+oracle_capture=docs/optimization/data/candidates/candidate-oracle-capture.v1.json
+candidate_screening_id=candidate-screening-2026-r1
+candidate_screening=docs/optimization/data/candidates/candidate-screening.v1.json
+candidate_screening_report_dir=docs/optimization/data/candidates/screening-report-r1
+
+"$benchmark_python" -m tools.benchmark oracle run --help >/dev/null
+"$benchmark_python" -m tools.benchmark validate schema \
+  "$oracle_manifest" \
+  "$oracle_plan" \
+  "$candidate_evidence" \
+  "$candidate_screening_spec" \
+  "$screening_base_pass_registry" \
+  "$standard_protocol" \
+  --suite-root "$oracle_suite_root" \
+  --verify-files
+
+PYTHONDONTWRITEBYTECODE=1 "$benchmark_python" -B - <<'PY'
+from pathlib import Path
+
+from tools.benchmark.schema import load_and_validate, load_pipeline_profile_v2
+from tools.benchmark.util import read_json, sha256_file, sha256_json
+
+manifest_path = Path("docs/optimization/data/manifests/oracle-cleanroom.manifest.json")
+plan_path = Path("docs/optimization/data/oracle/cleanroom-full.plan.json")
+profile_path = Path("docs/optimization/profiles/full.json")
+spec_path = Path("docs/optimization/data/candidates/candidate-screening-spec.v1.json")
+registry_path = Path("docs/optimization/data/pass-registry.v2.json")
+protocol_path = Path("docs/optimization/data/measurement-protocol.v1.json")
+snapshot_path = Path("docs/optimization/data/toolchain-snapshot.json")
+
+manifest = load_and_validate(
+    manifest_path,
+    suite_root=Path("benchmarks"),
+    verify_files=True,
+)
+plan = load_and_validate(plan_path)
+profile = load_pipeline_profile_v2(profile_path)
+spec = load_and_validate(spec_path)
+registry = load_and_validate(registry_path)
+protocol = load_and_validate(protocol_path)
+snapshot = read_json(snapshot_path)
+
+assert len(manifest["cases"]) == 198
+assert len(plan["pairs"]) == 99
+assert len({row["family"] for row in plan["pairs"]}) == 11
+assert plan["manifest_sha256"] == sha256_json(manifest)
+assert plan["baseline_run_id"] == "candidate-screening-oracle-2026-r1:baseline"
+assert plan["optimized_run_id"] == "candidate-screening-oracle-2026-r1:optimized"
+assert profile == {
+    "schema_version": 2,
+    "base": "FULL",
+    "disable": [],
+    "enable_candidates": [],
+}
+assert plan["pipeline_profile"] == {
+    "profile_id": "full",
+    "profile_sha256": sha256_file(profile_path),
+}
+assert spec["pass_registry_sha256"] == sha256_json(registry)
+assert not any(row["lifecycle"] == "candidate" for row in registry["passes"])
+proxy = snapshot["proxy_execution"]
+assert proxy["qemu_system_riscv64"] == "11.0.3"
+assert proxy["riscv_bare_metal_linker"] == "15.2.0"
+assert proxy["python"] == "3.14.6"
+assert proxy["glib"] == "2.88.3"
+assert proxy["jdk"] == "21.0.11"
+assert (
+    proxy["measurement_protocols"]["standard_proxy"]["protocol_sha256"]
+    == sha256_json(protocol)
+)
+PY
+
+sh gradlew clean classes --no-daemon
+sh scripts/build-qemu-plugins.sh
+test -d build/classes/java/main
+test -f build/benchmark/qemu-plugins/profile.so
+test -f build/benchmark/qemu-plugins/cache.so
+test -f build/benchmark/qemu-plugins/hotblocks.so
+test -z "$(git status --porcelain=v1)"
+
+qemu_binary=$(command -v qemu-system-riscv64)
+test -n "$qemu_binary"
+qemu_version=$("$qemu_binary" --version | awk 'NR == 1 { print $4 }')
+linker_version=$(riscv64-elf-gcc -dumpfullversion)
+python_version=$(python -c 'import platform; print(platform.python_version())')
+glib_version=$(pkg-config --modversion glib-2.0)
+jdk_version=$(java -XshowSettings:properties -version 2>&1 |
+  awk -F'= ' '/^[[:space:]]*java.version =/ { print $2; exit }')
+test "$qemu_version" = 11.0.3
+test "$linker_version" = 15.2.0
+test "$python_version" = 3.14.6
+test "$glib_version" = 2.88.3
+test "$jdk_version" = 21.0.11
+
+compiler_command='["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]'
+link_command='["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]'
+analyzer_command='["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]'
+runner_command='["sh","{runner_executable}","{binary}","{metric_file}","{input}"]'
+
+"$benchmark_python" -m tools.benchmark protocol verify "$standard_protocol" \
+  --workspace-root "$repo_root" \
+  --asset profile_plugin_source=tools/qemu/profile.c \
+  --asset cache_plugin_source=tools/qemu/cache.c \
+  --asset hotblocks_plugin_source=tools/qemu/hotblocks.c \
+  --asset runtime_filter_source=tools/qemu/runtime-filter.h \
+  --asset runtime_source=tools/qemu/runtime.c \
+  --asset crt_source=tools/qemu/crt.S \
+  --asset linker_script_source=tools/qemu/linker.ld \
+  --asset profile_plugin_binary=build/benchmark/qemu-plugins/profile.so \
+  --asset cache_plugin_binary=build/benchmark/qemu-plugins/cache.so \
+  --asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
+  --asset "qemu_binary=$qemu_binary" \
+  --asset runner_executable=scripts/benchmark-qemu.sh \
+  --runner-command-json "$runner_command" \
+  --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
+  --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
+  --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}'
+
+test ! -e "$oracle_root"
+mkdir -p "$oracle_root"
+
+run_oracle_leg() {
+  "$benchmark_python" -m tools.benchmark oracle run \
+    --plan "$oracle_plan" \
+    --leg "$1" \
+    "$oracle_manifest" \
+    --suite-root "$oracle_suite_root" \
+    --workspace-root "$repo_root" \
+    --output "$2" \
+    --state-dir "$oracle_raw_state_root" \
+    --run-id "$3" \
+    --repo-commit "$repo_commit" \
+    --repo-dirty false \
+    --pipeline-profile-id full \
+    --pipeline-profile-file "$full_profile" \
+    --compiler-artifact build/classes/java/main \
+    --measurement-protocol "$standard_protocol" \
+    --measurement-asset profile_plugin_source=tools/qemu/profile.c \
+    --measurement-asset cache_plugin_source=tools/qemu/cache.c \
+    --measurement-asset hotblocks_plugin_source=tools/qemu/hotblocks.c \
+    --measurement-asset runtime_filter_source=tools/qemu/runtime-filter.h \
+    --measurement-asset runtime_source=tools/qemu/runtime.c \
+    --measurement-asset crt_source=tools/qemu/crt.S \
+    --measurement-asset linker_script_source=tools/qemu/linker.ld \
+    --measurement-asset profile_plugin_binary=build/benchmark/qemu-plugins/profile.so \
+    --measurement-asset cache_plugin_binary=build/benchmark/qemu-plugins/cache.so \
+    --measurement-asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
+    --measurement-asset "qemu_binary=$qemu_binary" \
+    --measurement-asset runner_executable=scripts/benchmark-qemu.sh \
+    --compiler-kind benchmark-compiler \
+    --compiler-adapter host \
+    --compiler-command-json "$compiler_command" \
+    --remarks-file optimization-remarks.jsonl \
+    --link-adapter host \
+    --link-command-json "$link_command" \
+    --analyzer-adapter host \
+    --analyzer-command-json "$analyzer_command" \
+    --analysis-file binary-analysis.json \
+    --runner-kind qemu \
+    --runner-adapter host \
+    --runner-command-json "$runner_command" \
+    --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
+    --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
+    --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
+    --metric-profile rv64gc-qemu-v1 \
+    --metric-file metrics.log \
+    --compile-timeout 120 \
+    --compile-repetitions 5 \
+    --link-timeout 120 \
+    --analyze-timeout 120 \
+    --run-timeout 1800 \
+    --timeout-policy initial \
+    --timeout-minimum 120 \
+    --timeout-multiplier 3 \
+    --timeout-cap 1800 \
+    --repetitions 1 \
+    --jobs 4 \
+    --seed 20260809 \
+    --artifact-suffix .s \
+    --binary-suffix .elf \
+    --output-contract lf_return_trailer \
+    --environment-label proxy \
+    --evidence-level qemu_proxy \
+    --tool-version "qemu-system-riscv64=$qemu_version" \
+    --tool-version "bare-metal-linker=$linker_version" \
+    --tool-version "python=$python_version" \
+    --tool-version "glib=$glib_version" \
+    --tool-version "accela-jdk=$jdk_version"
+}
+
+run_oracle_leg \
+  baseline \
+  "$oracle_baseline_run" \
+  candidate-screening-oracle-2026-r1:baseline
+run_oracle_leg \
+  optimized \
+  "$oracle_optimized_run" \
+  candidate-screening-oracle-2026-r1:optimized
+```
+
+不得向这两条 pre-implementation Oracle run 传 candidate catalog 或
+`--candidate-pass-registry`，也不得加入 `--baseline-timeout-run`、
+`baseline_derived`、`--reuse-compile-cache` 或 `--retry-failures`。若正式启动后出现
+真实编译、工具、timeout、runtime 或 correctness failure，该 terminal 证据不得删除、
+覆盖或重试；只有 execution contract 明确允许的 pre-phase／scheduler interruption
+才可继续同一 immutable run。
+
+Oracle capture 和 profile 生成必须走 versioned candidate 入口。下列变量代表冻结
+plan 中的 artifact key；调用者先解析并核验对应 physical/canonical hash，不能把
+本机绝对路径或临时 run ID 写入提交文件：
+
+```sh
+benchmark_python=${benchmark_python:-.venv/bin/python}
+test -x "$benchmark_python"
+repo_root=$(git rev-parse --show-toplevel)
+: "${candidate_evidence:?resolve candidate-evidence.v1}"
+: "${candidate_screening_spec:?resolve candidate-screening-spec.v1}"
+: "${screening_base_pass_registry:?resolve the pre-implementation registry artifact}"
+: "${oracle_plan:?resolve the fixed 99-pair Oracle plan}"
+: "${oracle_baseline_run:?resolve the terminal baseline run record}"
+: "${oracle_optimized_run:?resolve the terminal optimized run record}"
+: "${oracle_raw_state_root:?resolve the shared physical Oracle state root}"
+: "${oracle_capture_id:?declare a new Oracle capture identity}"
+: "${oracle_capture:?resolve an immutable capture output path}"
+: "${candidate_screening_id:?declare a new screening identity}"
+: "${candidate_screening:?resolve an immutable screening output path}"
+: "${candidate_screening_report_dir:?resolve the first-report output directory}"
+
+"$benchmark_python" -m tools.benchmark candidates oracle-capture \
+  --workspace-root "$repo_root" \
+  --evidence "$candidate_evidence" \
+  --oracle-plan "$oracle_plan" \
+  --baseline "$oracle_baseline_run" \
+  --optimized "$oracle_optimized_run" \
+  --state-root "$oracle_raw_state_root" \
+  --capture-id "$oracle_capture_id" \
+  --output "$oracle_capture"
+
+"$benchmark_python" -m tools.benchmark candidates screen \
+  --workspace-root "$repo_root" \
+  --evidence "$candidate_evidence" \
+  --spec "$candidate_screening_spec" \
+  --pass-registry "$screening_base_pass_registry" \
+  --oracle "$oracle_capture" \
+  --screening-id "$candidate_screening_id" \
+  --output "$candidate_screening" \
+  --report "$candidate_screening_report_dir"
+```
+
+只有筛选产生非空合格项、且这些项都已实现并导出新的 executable PassRegistry 后，
+才运行 profile 生成；第一份筛选报告不依赖下列后实现输入：
+
+```sh
+benchmark_python=${benchmark_python:-.venv/bin/python}
+test -x "$benchmark_python"
+repo_root=$(git rev-parse --show-toplevel)
+: "${candidate_registry:?resolve the implemented candidate catalog}"
+: "${executable_pass_registry:?resolve the implemented candidate registry artifact}"
+: "${candidate_matrix_id:?declare a new candidate matrix identity}"
+: "${candidate_profile_directory:?resolve the immutable profile output directory}"
+
+"$benchmark_python" -m tools.benchmark candidates profiles \
+  --registry "$candidate_registry" \
+  --pass-registry "$executable_pass_registry" \
+  --workspace-root "$repo_root" \
+  --matrix-id "$candidate_matrix_id" \
+  --output-dir "$candidate_profile_directory"
+```
+
+profiles 入口直接生成 candidate-empty、单候选及显式请求的 pair pipeline profile
+v2；candidate-empty 的 `enable_candidates=[]`，单候选必须恰好启用自身，pair 必须
+恰好启用两个计划候选。screen 入口在登记 implemented candidate 之前核验覆盖固定
+99 pair 的单份 Oracle capture 及其完整 11-family pool。capture 按
+family/structure/size 索引；至少一个映射 structure 的 small/medium/large 三档必须
+全部完整且正确，并且三档 speedup 的等权 GM `>=1.10`。
+
+筛选映射使用 `eligible_oracle_structure_refs` 的全限定
+`{oracle_family_id, structure_id}` 身份，不能仅凭同名 structure 猜测归属或改写
+物理 pair。唯一的跨 family 映射是将 `boom_ilp/independent_chains` 用于
+`candidate.same-domain-loop-fusion` 资格；它不参与 integer reduction expansion，
+但仍以原始 `boom_ilp` family 留在 generator、manifest、plan 与 capture 中。这样
+固定 99 对和 11 个物理 Oracle 家族保持不变，也不会产生第 12 类。
+
+Oracle capture 不只读取 normalized run JSON：`--state-root` 必须指向两条 run 共用
+的原始 execution-state 根，capture 与后续 screen/freeze 都会在持有既有 lease 时
+重放 attempt journal、terminal raw files 和 run record 的 canonical/physical
+identity。任一 raw 文件、run 路径、配置或派生 speedup 漂移都使筛选失败，不能靠
+重新计算一份内部自洽 JSON 绕过资格门。
+
+实现后的正式调度由 `candidates campaign-plan` 一次绑定六份 manifest、筛选结果、
+candidate catalog、筛选基线与可执行两份 pass registry、profile matrix、standard
+protocol、clean commit/tree、compiler artifact 和唯一的相对 `raw_state_root`。每次
+`candidates campaign-status` 都必须同时给出当时已知的 `--run TASK=RUN_JSON` 和一个
+从这些物理 run/state 即时重放生成的唯一 `--raw-evidence-registry` 输出；status 中的
+`ready_tasks` 是唯一可执行任务集合。study、freeze、final、status 和 raw registry
+均采用 create-or-existing-exact：相同字节可安全重试，不同字节、普通旧文件、父目录
+或最终分量 symlink 一律拒绝，不能覆盖既有 campaign 证据。
+
+`candidates analyze` 同样要求 `--raw-state-root`，并从 journal/remark 原件重算 study，
+不接受调用者手工提供 remark 摘要。B2 完成后用 `campaign-finalize` 生成 pre-B3
+freeze；其输入必须包含从 genesis 到当前 status 的有序完整 ledger。最终报告使用
+两阶段闭环：先从 pre-final status 生成 immutable `candidate-final.v1`，再把该 final
+作为 `campaign-status --final` 的证据登记出 terminal completed status，最后以完全
+相同的 final 输入加上 `--report-output-dir`、terminal
+`--report-campaign-status`、完整 `--report-status-ledger` 和 r7 三个只读 root 重放
+一次。报告生成器会重新构建整个 final 并要求全文一致；不能用一份未登记进 terminal
+ledger 的 JSON 直接发布报告。
+
+正式 B1 和代理 run 的完整候选参数不能省略。candidate driver 从冻结 plan/matrix
+解析下列变量后，先做 clean-tree、协议和工具版本 preflight：
+
+```sh
+set -eu
 test -z "$(git status --porcelain)" || {
-  echo 'formal benchmark requires a clean worktree' >&2
+  echo 'formal candidate run requires a clean worktree' >&2
   exit 1
 }
 repo_commit=$(git rev-parse HEAD)
 repo_root=$(git rev-parse --show-toplevel)
-campaign_plan=docs/optimization/data/campaign/initial.plan.json
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json
-cache_hotblock_protocol=docs/optimization/data/measurement-protocol.cache-hotblock.v1.json
-campaign_task_field() {
-  task_id=$1
-  field=$2
-  python -m tools.benchmark ablate campaign-task \
-    --plan "$campaign_plan" --task-id "$task_id" --field "$field" |
-    python -c 'import json, sys
-value = json.load(sys.stdin)
-if not isinstance(value, str) or not value:
-    raise SystemExit("campaign task field is not a non-empty string")
-print(value)'
-}
-campaign_run_id() {
-  campaign_task_field "$1" run_id
-}
 
-# Record live observations instead of copying version strings into run records.
+: "${candidate_id:?resolve candidate_id from the frozen plan}"
+: "${candidate_run_id:?resolve run_id from the frozen plan}"
+: "${candidate_profile_id:?resolve profile_id from the frozen matrix}"
+: "${candidate_pipeline_profile:?resolve pipeline profile v2 from the frozen matrix}"
+: "${candidate_registry:?resolve candidate registry from the frozen plan}"
+: "${candidate_pass_registry:?resolve executable PassRegistry v2 from the frozen plan}"
+: "${candidate_output:?resolve output from the frozen plan}"
+: "${baseline_run:?resolve the same-stage candidate-empty run from the frozen plan}"
+: "${candidate_manifest:?resolve manifest from the frozen plan}"
+: "${candidate_suite_root:?resolve suite root for the frozen manifest}"
+
 qemu_binary=$(command -v qemu-system-riscv64)
 test -n "$qemu_binary" || {
   echo 'qemu-system-riscv64 is unavailable' >&2
@@ -457,24 +892,22 @@ do
 done
 ```
 
-四条性能基线必须使用相同的 QEMU、裸机链接器、Python analyzer 和 GLib
-观测值；只有编译器身份可以变化。`--tool-version` 记录实测值，固定容器中的
-GCC/Clang 另用 `--official-version` 要求精确匹配。测量协议仍负责逐字节核验
-QEMU 与 runtime/plugin 实物，版本字符串不能替代 artifact hash。
-
-B1 correctness gate 不采集排名指标，使用未插 plugin、但与代理协议相同的
-exact-input fw_cfg runtime：
+B1 candidate correctness 不采集排名指标，但仍绑定 candidate catalog、物理
+pipeline profile v2 和 optimization-remark v2；candidate-empty baseline 使用同一
+命令，改用 `enable_candidates=[]` 的 empty profile 和自己的 frozen run ID：
 
 ```sh
 python -m tools.benchmark validate suite \
   docs/optimization/data/manifests/b1-official-functional-2026.manifest.json \
   --workspace-root "$repo_root" \
   --suite-root .tmp/official/2026-riscv-functional \
-  --output .tmp/runs/b1-full/run.json --state-dir .tmp/runs/state \
-  --run-id "$(campaign_run_id 'task:baseline_validation:B1:full-a18b869b2e81:correctness')" \
+  --output "$candidate_output" --state-dir .tmp/runs/state \
+  --run-id "$candidate_run_id" \
   --repo-commit "$repo_commit" --repo-dirty false \
-  --pipeline-profile-id full \
-  --pipeline-profile-file docs/optimization/data/ablation/profiles/full-a18b869b2e81.json \
+  --pipeline-profile-id "$candidate_profile_id" \
+  --pipeline-profile-file "$candidate_pipeline_profile" \
+  --candidate-registry "$candidate_registry" \
+  --candidate-pass-registry "$candidate_pass_registry" \
   --compiler-artifact build/classes/java/main \
   --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
   --remarks-file optimization-remarks.jsonl \
@@ -489,19 +922,21 @@ python -m tools.benchmark validate suite \
   --tool-version "accela-jdk=$jdk_version"
 ```
 
-代理 run 使用固定 metric preset。下例中的 runner command/environment 必须与
-protocol capture 完全一致，且 `--measurement-asset` 必须覆盖全部 12 个实物：
+standard proxy run 必须完整列出 12 个 measurement asset，并引用同阶段已完成且全
+正确的 candidate-empty baseline 来派生 timeout：
 
 ```sh
 python -m tools.benchmark run \
-  docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
+  "$candidate_manifest" \
   --workspace-root "$repo_root" \
-  --suite-root .tmp/official/2026-riscv-performance/performance \
-  --output .tmp/runs/b3-full/run.json --state-dir .tmp/runs/state \
-  --run-id "$(campaign_run_id 'task:baseline_validation:B3:full-a18b869b2e81:standard_proxy')" \
+  --suite-root "$candidate_suite_root" \
+  --output "$candidate_output" --state-dir .tmp/runs/state \
+  --run-id "$candidate_run_id" \
   --repo-commit "$repo_commit" --repo-dirty false \
-  --pipeline-profile-id full \
-  --pipeline-profile-file docs/optimization/data/ablation/profiles/full-a18b869b2e81.json \
+  --pipeline-profile-id "$candidate_profile_id" \
+  --pipeline-profile-file "$candidate_pipeline_profile" \
+  --candidate-registry "$candidate_registry" \
+  --candidate-pass-registry "$candidate_pass_registry" \
   --compiler-artifact build/classes/java/main \
   --measurement-protocol "$standard_protocol" \
   --measurement-asset profile_plugin_source=tools/qemu/profile.c \
@@ -516,6 +951,7 @@ python -m tools.benchmark run \
   --measurement-asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
   --measurement-asset "qemu_binary=$qemu_binary" \
   --measurement-asset runner_executable=scripts/benchmark-qemu.sh \
+  --compiler-kind benchmark-compiler \
   --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
   --remarks-file optimization-remarks.jsonl \
   --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
@@ -525,7 +961,8 @@ python -m tools.benchmark run \
   --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
   --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
   --runner-kind qemu --metric-profile rv64gc-qemu-v1 \
-  --timeout-policy initial --run-timeout 1800 --jobs 4 \
+  --run-timeout 1800 --jobs 4 \
+  --timeout-policy baseline_derived --baseline-timeout-run "$baseline_run" \
   --environment-label proxy --evidence-level qemu_proxy \
   --tool-version "qemu-system-riscv64=$qemu_version" \
   --tool-version "bare-metal-linker=$linker_version" \
@@ -534,581 +971,127 @@ python -m tools.benchmark run \
   --tool-version "accela-jdk=$jdk_version"
 ```
 
-这条命令是四基线中的 ACCELA FULL。ACCELA mandatory-only 使用同一命令和
-同一 standard measurement protocol，只替换以下四项：
+对 B2/B3/B4/B5/B6 只替换 plan 绑定的 manifest、suite root、run ID、output 和同
+阶段 baseline；不得缩写 protocol/assets/configuration。B3 pair 使用
+`enable_candidates` 恰含两个 Top3 ID 的物理 pipeline profile v2；不存在另一个
+命令行 enablement 来源。cache/hotblock 使用独立协议与 runner，只调度
+candidate-empty 和 B3 Top3 单候选，绝不调度 pair。
 
-- `--output .tmp/runs/b3-mandatory/run.json`
-- `--run-id "$(campaign_run_id 'task:baseline_validation:B3:mandatory-3e80c8f14208:standard_proxy')"`
-- `--pipeline-profile-id mandatory`
-- `--pipeline-profile-file docs/optimization/data/ablation/profiles/mandatory-3e80c8f14208.json`
+正式 run 默认使用 attempt-local 冷编译，不读取共享编译缓存。五次编译记录
+median/MAD；动态确定性抽样、最大四个 QEMU worker 和 timeout derivation 必须
+在 plan 中冻结。baseline-derived timeout 只能引用同协议、同 case 的合格 baseline。
+`--retry-failures`、共享 cache 和临时环境覆盖均不得进入正式候选排名。
 
-外部参考前端不读取 ACCELA profile。campaign 为固定 flags 生成逻辑 profile
-hash，toolchain snapshot 作为 compiler artifact 绑定 compile driver、镜像和
-编译器版本；run configuration 同时记录 external compiler command，所以 GCC
-和 Clang 身份不会混淆。reference profile hash 和 run ID 必须在执行时逐字读取
-当前 campaign plan，不得把生成值复制进文档或自行另造 ID：
+每个 attempt 依次持久化 phase-start、phase-result 和 terminal journal，再合并
+normalized record。已经启动的 attempt 不得补造 identity/journal；真实
+compile/link/analyze/runtime/correctness/timeout/measurement failure 永远保留。
+run 终态另写入 `run-terminal` append-only hash chain，绑定 run/config/manifest/output、
+终态时间、summary 和逐 case commitment，并在 normalized terminal 写入前持久化；
+因此零 attempt interruption 也有物理终态来源。缺失、被改写或与 run JSON 不一致的
+run-terminal 使 raw verifier 失败，不能从 normalized record 懒补。
+只有协议定义的 typed pre-phase/scheduler interruption 才可能在仍活动且方向有效的
+candidate campaign 内恢复。若 campaign 因方向错误被冻结，freeze contract 优先：
+即使旧 journal 形状在通用 runner 中可恢复，也绝不 resume。
 
-```sh
-gcc_task='task:baseline_validation:B3:gcc-13.3-o2-0e6a1017b8f7:standard_proxy'
-clang_task='task:baseline_validation:B3:clang-18-o3-bf83309b138c:standard_proxy'
-gcc_profile_sha256=$(campaign_task_field "$gcc_task" profile_sha256)
-clang_profile_sha256=$(campaign_task_field "$clang_task" profile_sha256)
+## Oracle、排名与报告
 
-python -m tools.benchmark run \
-  docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
-  --workspace-root "$repo_root" \
-  --suite-root .tmp/official/2026-riscv-performance/performance \
-  --output .tmp/runs/b3-gcc-13.3-o2/run.json --state-dir .tmp/runs/state \
-  --run-id "$(campaign_run_id "$gcc_task")" \
-  --repo-commit "$repo_commit" --repo-dirty false \
-  --pipeline-profile-id gcc-13.3-o2 \
-  --pipeline-profile-sha256 "$gcc_profile_sha256" \
-  --compiler-artifact docs/optimization/data/toolchain-snapshot.json \
-  --measurement-protocol "$standard_protocol" \
-  --measurement-asset profile_plugin_source=tools/qemu/profile.c \
-  --measurement-asset cache_plugin_source=tools/qemu/cache.c \
-  --measurement-asset hotblocks_plugin_source=tools/qemu/hotblocks.c \
-  --measurement-asset runtime_filter_source=tools/qemu/runtime-filter.h \
-  --measurement-asset runtime_source=tools/qemu/runtime.c \
-  --measurement-asset crt_source=tools/qemu/crt.S \
-  --measurement-asset linker_script_source=tools/qemu/linker.ld \
-  --measurement-asset profile_plugin_binary=build/benchmark/qemu-plugins/profile.so \
-  --measurement-asset cache_plugin_binary=build/benchmark/qemu-plugins/cache.so \
-  --measurement-asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
-  --measurement-asset "qemu_binary=$qemu_binary" \
-  --measurement-asset runner_executable=scripts/benchmark-qemu.sh \
-  --compiler-kind external \
-  --compiler-command-json '["sh","scripts/reference-compile.sh","gcc","{source}","{artifact}"]' \
-  --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
-  --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","gcc","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--output","{analysis_file}"]' \
-  --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
-  --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
-  --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
-  --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
-  --runner-kind qemu --metric-profile rv64gc-qemu-v1 \
-  --timeout-policy initial --run-timeout 1800 --jobs 4 \
-  --environment-label proxy --evidence-level qemu_proxy \
-  --tool-version "qemu-system-riscv64=$qemu_version" \
-  --tool-version "bare-metal-linker=$linker_version" \
-  --tool-version "python=$python_version" \
-  --tool-version "glib=$glib_version" \
-  --tool-version riscv-gcc=13.3.0 \
-  --official-version riscv-gcc=13.3.0
-```
+Oracle 是实现前资格门，同时回答“如果某类结构被理想变换，理论上可能有多少
+上界”。`data/oracle/cleanroom-full.plan.json` 的两条语义等价源码腿使用完全相同
+的 ACCELA pipeline/runtime/metric 配置，并通过 versioned candidate Oracle capture
+绑定 run/configuration hash。固定 99 pair 只执行一次 FULL baseline run 和一次
+FULL optimized run，形成一份按 family/structure/size 索引的 capture。候选至少有
+一个映射 structure 的 small、medium、large 三档全部正确且完整，并按唯一 speedup
+方向对这三档计算等权 GM `>=1.10`，才可登记为 qualified 并进入实现。Oracle 仍不能
+替代实现后的 B1--B6 配对实测，也不能计入 267-case 冠军 GM。
 
-Clang 基线完整复用上面的 manifest、protocol、assets、link、runner、timeout 和
-并发参数，只做以下确定替换；不得把两者并入同一个 run record：
+报告必须严格分开四类结果：
 
-- `--output .tmp/runs/b3-clang-18-o3/run.json`
-- `--run-id "$(campaign_run_id "$clang_task")"`
-- `--pipeline-profile-id clang-18-o3`
-- `--pipeline-profile-sha256 "$clang_profile_sha256"`
-- `--compiler-command-json '["sh","scripts/reference-compile.sh","clang","{source}","{artifact}"]'`
-- `--analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","clang","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--output","{analysis_file}"]'`
-- 把 `--tool-version riscv-gcc=13.3.0 --official-version riscv-gcc=13.3.0`
-  替换为 `--tool-version clang=18.1.3 --official-version clang=18.1.3`。
+1. 已实现候选冠军榜：只含 B3 GM `>1` 且 B3--B6 共 267 case 完整正确的单候选，
+   按固定四级规则排序，并列 official/holdout/结构/成熟 workload 视图、区间、最坏
+   回归、代码成本和证据 hash；
+2. B3 Top3 pair 交互榜：最多三个 pair，不与单候选 GM 相加，也不参加冠军排序；
+3. 候选 Oracle capture 与实现资格：明确标为上界和资格证据，不写成实测提速；
+4. 隔离诊断附录：包含旧消融、失败、停止 campaign 和热点解释，不参与任何榜单。
 
-正常动态指标每例运行一次；固定种子随机选中的 10% case 自动运行三次并要求
-确定性指标完全一致。冷进程编译运行五次，记录 median/MAD。初始单例超时
-1800 秒；后续 profile 使用 `min(1800, max(120, 3 * baseline median))`，通过
-`--timeout-policy baseline_derived --baseline-timeout-run RUN.json` 绑定基线。
-最多并行四个 QEMU 任务。正式运行默认使用 `attempt_local_v1`：五次冷编译及
-最终 artifact、remarks、stdout/stderr 都保存在本次 attempt 目录，直接用于
-链接，既不读取也不发布共享编译缓存。`--reuse-compile-cache` 仅用于非正式的
-`reusable_cache_v2` 调试；其键绑定源码、输入、编译器、profile、工具链和测量
-协议哈希，启用后不得进入正式收益排名。`--retry-failures` 是非正式诊断能力，
-在 B1 与正式收益门中始终禁止；它会保留 attempt history，不能吞掉原错误。
-retry policy 属于不可变 measurement configuration，必须在首次创建 run 时声明；
-已有 run 不能通过切换该开关重绑配置或重新解释历史 attempt。
+P0/P1/P2/Blocked 可用于尚未实现但已过 Oracle 资格门的实施队列，必须引用 Oracle
+plan/capture、三档结构覆盖和合法性证明。已实现候选另按实测 gate 排序，不把
+Oracle 上界重复计分。本轮没有 BOOM run；标题和结论只能写 `qemu_proxy`，不得写
+“决赛提速”，任何候选都保持默认关闭。
 
-GCC 13.3 `-O2` 和 Clang 18 `-O3` 对照通过 `scripts/reference-compile.sh`，共享
-RV64GC、LP64D、medany、显式整数 wrap 和严格 FP 选项。SysY 的 file-scope
-`const int` 是合法数组维度，不能直接交给 C frontend；固定 adapter 因此把
-源码送入 C++17 frontend，并在轻量词法边界内完成三项 SysY 语义适配：无碰撞
-重命名 C++17 额外保留词、把 `IntConst` 规范化为有符号 32 位常量表达式、把
-`FloatConst`（含十六进制浮点）规范化为 binary32。它不是第二个 SysY parser：
-只识别标识符、数值、注释及规范允许的运算符/分隔符，并拒绝引号、预处理指令、
-条件/位运算、递增递减、复合赋值、shift 和未知标点。注释字节与物理行数不变；
-越出 32 位 bit-pattern 范围或词法不完整的常量立即失败。所有正式语料必须先通过
-manifest 完整性检查与 ACCELA 的编译、执行、逐字节输出 correctness gate；adapter
-及 GCC/Clang 成功编译本身不构成 SysY 合法性证明。强制 header
-用 C linkage 固定 `main` 和 runtime 符号；数组 I/O 参数使用 ABI 等价的
-`void *`，保留 SysY 多维数组首地址语义。每次编译在 stderr 写入 frontend argv、
-adapter 与 header 的 SHA-256；完整 argv 同时冻结在 toolchain snapshot 中。
-wrapper 从已重算哈希且与内置 SSOT 一致的 snapshot argv 逐参数执行，不会执行
-仅有声明哈希的另一条命令。adapter 使用固定临时文件名；正式 runner 的每次冷
-编译都有私有 output directory。直接调用 wrapper 时，同一 output directory
-不得并发运行两个编译；冲突会 fail-fast，不会覆盖另一任务的临时源码或 argv。
-reference raw stderr 中的 `ACCELA_REFERENCE_PYTHON`、
-`ACCELA_REFERENCE_DOCKER_CANDIDATE`、`ACCELA_REFERENCE_DOCKER` 和
-`ACCELA_REFERENCE_COMMAND` 是 launcher 选择与身份的审计记录；性能排名不得把
-某个 daemon 的失败替换成另一 daemon 上同 tag 但不同 ID 的产物。
-它们仍是本地代理，不是官方平台分数。二进制静态/ELF 指标包含共享代理 runtime，
-比较时必须使用同一 runtime 与链接协议。
+规范化输出至少包括候选/基线 identity、每例和每 suite 指标、正确性、配置与
+artifact hash、缺失原因、bootstrap 参数、ranking eligibility。确定性生成的七类
+SVG 固定为：单项收益与区间、分 suite 结果、combined 排名、候选交互热力图、
+Oracle/捕获率、cache/hotblock、收益/代码大小/风险 Pareto。GCC/Clang gap 进入
+独立表格和解释，不伪装成第八类图。每个图中数字都要能追溯到 normalized run ID。
 
-### B2 全量单项消融
+BOOM 仍是未来声称决赛平台提速所需的独立证据级别，但不属于本轮 campaign，也
+没有预设一个可由 QEMU 结果替代的默认启用阈值。自动化绿色不能替代项目要求的
+人工审查或保护规则。
 
-B2 必须先运行 FULL，再按 plan 中的 23 个 singleton task 顺序运行；每个 task
-的 run ID、profile ID 和 profile 路径都从冻结 plan 读取，不能由脚本另造。
-下面的 POSIX `sh` 流程一次只调度一个 profile，而每个 profile 内由 runner
-并行最多四个 QEMU，因此全局并发不会超过四。FULL 使用 1800 秒初始上限；
-singleton 逐 case 绑定 B2 FULL，使用 `min(1800, max(120, 3 * baseline))`。
+## 隔离诊断附录：r7 freeze
+
+旧 campaign `accela-rv64gc-finals-2026-r7-0c95767` 因评估方向错误在运行中停止。
+它不是候选新增 campaign，分类固定为
+`diagnostic_aborted_direction_mismatch`。版本化边界位于：
+
+- `data/diagnostics/diagnostic-freeze.v1.schema.json`
+- `data/diagnostics/accela-rv64gc-finals-2026-r7-0c95767.freeze.json`
+
+freeze manifest 物理绑定源提交/tree、r7 plan、两份协议、B1/B3-B2 controller、
+status `000..027`、21 行 registry、21 个注册终态 run，以及未注册 partial run
+的 16 个成功 case 和 4 个 pending compile journal prefix。四个 pending case
+只有已提交的 `phase_started(stage=compile)`，没有 phase-result 或 terminal；
+raw compile work product 不扩展 committed prefix。
+
+该 campaign 的固定规则是：
+
+- `diagnostic_only=true`，ranking/promotion/report eligibility 全为 false；
+- 自动和手动 resume 均禁止，不追加 `028`，不为 partial run 合成 terminal；
+- 不把任何 r7 measurement、study、profile promotion 或 run ID 导入新 campaign；
+- 原始目录、持久 lease/output lock 文件和 journal 原位保留；这些文件不是活动
+  controller lock，也不得为了“清理状态”而删除；
+- 新候选 campaign 必须使用新 ID、plan、run IDs 和 candidate identities；
+- 只允许独立重验 hash 后复用 corpus、measurement protocol 和 toolchain；
+- 最终报告只能在“隔离诊断附录”提到 r7，不能进入候选收益、交互或 Oracle 榜。
+
+迁移到 WSL 时，完整 ignored-tree 内容 hash 校验曾按用户指示跳过。freeze
+manifest 因而只证明其中逐项枚举的当前 WSL artifact，不证明迁移源与整个目标树
+完全相同；该限制已经作为 versioned provenance limitation 固化，不能在报告中
+省略。
+
+schema 校验不读取或修改 ignored 证据：
 
 ```sh
-mkdir -p .tmp/campaign .tmp/runs/b2-singletons
-python - "$campaign_plan" > .tmp/campaign/b2-tasks.tsv <<'PY'
+python -I - <<'PY'
 import json
-import sys
+from pathlib import Path
 
-with open(sys.argv[1], encoding="utf-8") as stream:
-    plan = json.load(stream)
-tasks = [task for task in plan["tasks"] if task["phase_id"] == "singleton_b2"]
-if len(tasks) != 24 or tasks[0]["kind"] != "full":
-    raise SystemExit("campaign plan must contain B2 FULL followed by 23 singleton tasks")
-for task in tasks:
-    fields = (
-        task["task_id"], task["run_id"], task["profile_id"], task["profile_path"]
-    )
-    if any(value is None or "\t" in value or "\n" in value for value in fields):
-        raise SystemExit("campaign task cannot be represented safely")
-    print("\t".join(fields))
+from jsonschema import Draft202012Validator, FormatChecker
+
+root = Path("docs/optimization/data/diagnostics")
+schema = json.loads((root / "diagnostic-freeze.v1.schema.json").read_text())
+instance = json.loads(
+    (root / "accela-rv64gc-finals-2026-r7-0c95767.freeze.json").read_text()
+)
+Draft202012Validator.check_schema(schema)
+Draft202012Validator(schema, format_checker=FormatChecker()).validate(instance)
 PY
-
-run_b2_task() {
-  profile_id=$1
-  profile_path=$2
-  run_id=$3
-  output=$4
-  shift 4
-  python -m tools.benchmark run \
-    docs/optimization/data/manifests/b2-family-smoke.manifest.json \
-    --workspace-root "$repo_root" \
-    --suite-root .tmp/official/2026-riscv-performance/performance \
-    --output "$output" --state-dir .tmp/runs/state --run-id "$run_id" \
-    --repo-commit "$repo_commit" --repo-dirty false \
-    --pipeline-profile-id "$profile_id" \
-    --pipeline-profile-file "docs/optimization/data/ablation/$profile_path" \
-    --compiler-artifact build/classes/java/main \
-    --measurement-protocol "$standard_protocol" \
-    --measurement-asset profile_plugin_source=tools/qemu/profile.c \
-    --measurement-asset cache_plugin_source=tools/qemu/cache.c \
-    --measurement-asset hotblocks_plugin_source=tools/qemu/hotblocks.c \
-    --measurement-asset runtime_filter_source=tools/qemu/runtime-filter.h \
-    --measurement-asset runtime_source=tools/qemu/runtime.c \
-    --measurement-asset crt_source=tools/qemu/crt.S \
-    --measurement-asset linker_script_source=tools/qemu/linker.ld \
-    --measurement-asset profile_plugin_binary=build/benchmark/qemu-plugins/profile.so \
-    --measurement-asset cache_plugin_binary=build/benchmark/qemu-plugins/cache.so \
-    --measurement-asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
-    --measurement-asset "qemu_binary=$qemu_binary" \
-    --measurement-asset runner_executable=scripts/benchmark-qemu.sh \
-    --compiler-kind benchmark-compiler \
-    --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
-    --remarks-file optimization-remarks.jsonl \
-    --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
-    --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
-    --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
-    --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
-    --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
-    --runner-kind qemu --metric-profile rv64gc-qemu-v1 \
-    --run-timeout 1800 --jobs 4 \
-    --environment-label proxy --evidence-level qemu_proxy \
-    --tool-version "qemu-system-riscv64=$qemu_version" \
-    --tool-version "bare-metal-linker=$linker_version" \
-    --tool-version "python=$python_version" \
-    --tool-version "glib=$glib_version" \
-    --tool-version "accela-jdk=$jdk_version" \
-    "$@"
-}
-
-b2_baseline=.tmp/runs/b2-full/run.json
-while IFS="$(printf '\t')" read -r task_id run_id profile_id profile_path
-do
-  if test "$profile_id" = full
-  then
-    run_b2_task "$profile_id" "$profile_path" "$run_id" "$b2_baseline" \
-      --timeout-policy initial
-  else
-    test -f "$b2_baseline" || {
-      echo 'B2 FULL baseline is missing' >&2
-      exit 1
-    }
-    run_b2_task "$profile_id" "$profile_path" "$run_id" \
-      ".tmp/runs/b2-singletons/$profile_id/run.json" \
-      --timeout-policy baseline_derived --baseline-timeout-run "$b2_baseline"
-  fi
-done < .tmp/campaign/b2-tasks.tsv
 ```
 
-失败记录保留在对应 run ID 下；不要通过 `--retry-failures` 把曾经发生过的
-correctness、tool 或 timeout 失败洗成可排名结果。修复根因后应创建新的明确
-run，而不是覆盖历史证据。
+物理复核必须由调用者显式提供 frozen Git tree 和 ignored r7 evidence root，并按
+manifest 的 `artifact_namespace.resolution_rule` 解析。不得把本地绝对路径写入
+manifest、报告或提交日志。复核失败时保持 freeze 不动并报告具体 artifact key；
+不得重新运行旧任务来“修复”哈希。
 
-每个 run 会同时持有 output target 与共享 state identity 的非等待 OS 独占锁；
-重复 orchestrator 必须立即失败，不能并发改写同一规范化记录或原始目录。上述
-run 锁文件永久保留，存活性只由 OS 锁判断，不按 mtime 或 PID 删除所谓 stale lock。每个已
-启动 attempt 的原始文件写入独立的 `attempt-XXXX` 目录；每个 compile、link、
-analyze、`run-N` 都必须按顺序先持久化 phase-start，再执行子进程，并在合并
-normalized record 前写入 hash-chained phase-result。terminal event 绑定完整 case
-结果以及所有 raw 文件的相对路径、SHA-256 和字节数。事件采用 create-if-absent
-原子发布；POSIX 同时 fsync 文件和目录，Windows 使用 write-through 发布，竞态
-写入不能覆盖已有证据。resume/retry 只能创建下一编号；规范化 attempt 通过编号、
-开始时间、不可变配置哈希、journal commitment 和 `raw_attempt_identity_sha256`
-与原始 identity 对应。resume 会精确枚举 normalized 与 physical attempts，并逐项
-核验 identity、journal hash chain、stage 顺序和 terminal/raw inventory；missing、
-orphan、碰撞或篡改立即失败。已经启动的 attempt 绝不补造 identity 或 journal。
-只有 journal 为空且目录除 identity/journal metadata 外无任何 raw evidence，才可
-归类为 typed `execution_interrupted`。任何 phase/raw evidence 没有可验证 terminal
-都属于不可恢复的 infrastructure failure。若 worker 在 phase-result 已持久化、但结果
-返回 scheduler 前异常，scheduler 必须从 journal 的最后一个已提交 case prefix 构造
-`infrastructure_failure` terminal：只允许保留该 prefix 中已成功阶段的只读证据，完整
-绑定 raw inventory，并记录原始异常类型与脱敏诊断；不得从内存中的空 skeleton 补造、
-扩展或重分类证据。此 terminal 可用于定位 crash window，但不能 resume，且 B1/正式
-收益门始终拒绝该 history。断点续跑不会把所有历史一概视为重试：正式
-门仅接受同一配置下、identity 可追溯的 `scheduler_cancelled` 或
-`execution_interrupted` 历史。前者必须由 typed process/stage cancellation 证明，
-或明确表示尚未进入任何 stage；后者不得携带已提交的执行或 metric 证据。诊断
-字符串不参与分类。compile/link/analyze/runtime/correctness/timeout/确定性失败，
-以及 `infrastructure_failure`，都永久取消该 run 的正式排名资格；不得用后续成功
-attempt 洗掉。
-同一 run 只允许从一个 OS 环境启动；Windows host 与 WSL 对同一文件的跨内核锁
-互操作尚未形成验收证据。
+## Handoff 检查
 
-### Top 5 cache/hotblock 诊断
+候选或评测基础设施交付前，逐项确认：
 
-cache/hotblock 只在 B3 promotion study 已产生五个合格 profile 后调度。它使用
-独立 runner 与协议，并通过 `cache-hotblock-v1` 扩展采集最热块地址、执行次数和
-动态指令数。三项规范化值都只接受 `hotblock_rank=1`；原始 Top 20 留在忽略目录，
-不进入提交数据。该证据用于解释热点和 pipeline 次序，不进入任何收益 GM。
-
-下面先把 promotion status 中的 Top 5 与冻结 plan 交叉核验，再顺序执行五个
-profile。独立协议没有同配置 FULL timeout 基线，因此每个诊断任务使用明确的
-initial 1800 秒上限，不把 standard runner 的时间冒充同协议基线：
-
-```sh
-test -f .tmp/campaign/status.json || {
-  echo 'promotion status is missing' >&2
-  exit 1
-}
-mkdir -p .tmp/campaign .tmp/runs/b3-cache-hotblock
-python - "$campaign_plan" .tmp/campaign/status.json \
-  > .tmp/campaign/cache-hotblock-tasks.tsv <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    plan = json.load(stream)
-with open(sys.argv[2], encoding="utf-8") as stream:
-    status = json.load(stream)
-selected = set(status["promotion_decisions"]["final_profile_ids"])
-if len(selected) != 5:
-    raise SystemExit("promotion status must select exactly five profiles")
-tasks = [
-    task for task in plan["tasks"]
-    if task["phase_id"] == "final_validation"
-    and task["suite_role"] == "B3"
-    and task["measurement_mode"] == "cache_hotblock"
-    and task["profile_id"] in selected
-]
-if len(tasks) != 5 or {task["profile_id"] for task in tasks} != selected:
-    raise SystemExit("campaign plan lacks the exact Top 5 cache-hotblock tasks")
-for task in sorted(tasks, key=lambda item: item["profile_id"]):
-    fields = (
-        task["task_id"], task["run_id"], task["profile_id"], task["profile_path"]
-    )
-    if any(value is None or "\t" in value or "\n" in value for value in fields):
-        raise SystemExit("campaign task cannot be represented safely")
-    print("\t".join(fields))
-PY
-
-run_cache_hotblock_task() {
-  profile_id=$1
-  profile_path=$2
-  run_id=$3
-  output=$4
-  python -m tools.benchmark run \
-    docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
-    --workspace-root "$repo_root" \
-    --suite-root .tmp/official/2026-riscv-performance/performance \
-    --output "$output" --state-dir .tmp/runs/state --run-id "$run_id" \
-    --repo-commit "$repo_commit" --repo-dirty false \
-    --pipeline-profile-id "$profile_id" \
-    --pipeline-profile-file "docs/optimization/data/ablation/$profile_path" \
-    --compiler-artifact build/classes/java/main \
-    --measurement-protocol "$cache_hotblock_protocol" \
-    --measurement-asset profile_plugin_source=tools/qemu/profile.c \
-    --measurement-asset cache_plugin_source=tools/qemu/cache.c \
-    --measurement-asset hotblocks_plugin_source=tools/qemu/hotblocks.c \
-    --measurement-asset runtime_filter_source=tools/qemu/runtime-filter.h \
-    --measurement-asset runtime_source=tools/qemu/runtime.c \
-    --measurement-asset crt_source=tools/qemu/crt.S \
-    --measurement-asset linker_script_source=tools/qemu/linker.ld \
-    --measurement-asset profile_plugin_binary=build/benchmark/qemu-plugins/profile.so \
-    --measurement-asset cache_plugin_binary=build/benchmark/qemu-plugins/cache.so \
-    --measurement-asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
-    --measurement-asset "qemu_binary=$qemu_binary" \
-    --measurement-asset runner_executable=scripts/benchmark-qemu-hotblocks.sh \
-    --compiler-kind benchmark-compiler \
-    --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
-    --remarks-file optimization-remarks.jsonl \
-    --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
-    --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
-    --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
-    --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
-    --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
-    --runner-env 'QEMU_HOTBLOCK_PLUGIN={hotblocks_plugin_binary}' \
-    --runner-kind qemu --metric-profile rv64gc-qemu-v1 \
-    --metric-extension cache-hotblock-v1 \
-    --timeout-policy initial --run-timeout 1800 --jobs 4 \
-    --environment-label proxy --evidence-level qemu_proxy \
-    --tool-version "qemu-system-riscv64=$qemu_version" \
-    --tool-version "bare-metal-linker=$linker_version" \
-    --tool-version "python=$python_version" \
-    --tool-version "glib=$glib_version" \
-    --tool-version "accela-jdk=$jdk_version"
-}
-
-while IFS="$(printf '\t')" read -r task_id run_id profile_id profile_path
-do
-  output=".tmp/runs/b3-cache-hotblock/$profile_id/run.json"
-  mkdir -p "$(dirname "$output")"
-  run_cache_hotblock_task "$profile_id" "$profile_path" "$run_id" "$output"
-done < .tmp/campaign/cache-hotblock-tasks.tsv
-```
-
-## 72 小时调度
-
-固定窗口按 wall-clock 计算，最多四并发：
-
-1. 前 12 小时冻结规则与语料、工具链自检、B1 140 例，以及 B3 60 例的
-   ACCELA FULL、mandatory-only、GCC 13.3 `-O2`、Clang 18 `-O3` 四基线；
-2. 接着 24 小时在 B2 运行全部 23 个可消融逻辑族；
-3. 接着 24 小时把 B2 GM 改善至少 0.5%、任一 case 改善至少 10%、出现超过
-   3% 回归或 correctness 异常的族提升到 B3，并至少覆盖实测 Top 8；
-4. 最后 12 小时运行实测 Top 5 的 10 个双消融、cache/hotblock、B4、B5、
-   B6 和 Oracle。前序未用预算只转入最后阶段。
-
-初始 campaign 不允许预设 Top 5；双消融任务必须等 promotion study 产生实测
-Top 5 后才扩展。72 小时截止时，每个缺失项必须保留 run/task ID，并分类为
-`not_scheduled`、`timeout`、`tool_failure`、`correctness_failure` 或更具体的
-依赖/晋级原因，不能静默删除。
-
-初始计划绑定全部七类 manifest、singleton matrix、paired Oracle plan、两份测量
-协议、reference toolchain snapshot，以及 workspace 中实际
-`tools/benchmark/schemas/run-record.v1.json` 的 SHA-256。生成、finalize、status、
-next/task query 和 schema semantic gate 都会将该值与当前 active schema 交叉核验；
-schema 漂移必须重生计划，不能让旧 run-record contract 静默延续。它会
-产生 149 个 task：前 12 小时 5 个、B2 阶段 24 个、B3 晋级阶段 23 个、最终
-阶段 97 个；`final_pair_families` 初始为空。
-
-```sh
-python -m tools.benchmark ablate campaign-plan \
-  --matrix docs/optimization/data/ablation/matrix.json \
-  --oracle-plan docs/optimization/data/oracle/cleanroom-full.plan.json \
-  --measurement-protocol docs/optimization/data/measurement-protocol.v1.json \
-  --cache-hotblock-protocol docs/optimization/data/measurement-protocol.cache-hotblock.v1.json \
-  --reference-toolchain docs/optimization/data/toolchain-snapshot.json \
-  --workspace-root "$repo_root" \
-  --suite B1=docs/optimization/data/manifests/b1-official-functional-2026.manifest.json \
-  --suite B2=docs/optimization/data/manifests/b2-family-smoke.manifest.json \
-  --suite B3=docs/optimization/data/manifests/b3-official-performance-2026.manifest.json \
-  --suite B4=docs/optimization/data/manifests/b4-official-performance-2025-preliminary.manifest.json \
-  --suite B5=docs/optimization/data/manifests/b5-structural-variants.manifest.json \
-  --suite B6=docs/optimization/data/manifests/b6-mature-benchmarks.manifest.json \
-  --suite oracle=docs/optimization/data/manifests/oracle-cleanroom.manifest.json \
-  --campaign-id accela-rv64gc-finals-2026 --jobs 4 \
-  --output docs/optimization/data/campaign/initial.plan.json
-
-started_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-python -m tools.benchmark ablate campaign-status \
-  --plan docs/optimization/data/campaign/initial.plan.json \
-  --started-at "$started_at" --output .tmp/campaign/status.json
-
-python -m tools.benchmark ablate campaign-next \
-  --plan docs/optimization/data/campaign/initial.plan.json \
-  --status .tmp/campaign/status.json
-
-python -m tools.benchmark ablate campaign-task \
-  --plan docs/optimization/data/campaign/initial.plan.json \
-  --task-id task:baseline_validation:B1:full-a18b869b2e81:correctness \
-  --field run_id
-```
-
-每次状态刷新用重复的 `--run TASK_ID=RUN.json` 和
-`--study singleton_b2|promotion_b3=STUDY.json` 绑定证据，并通过
-`--previous-status` 保留 wall-clock 历史。promotion study 选出实测 Top 5 后，
-先按上一节生成包含 10 个 pair 的新 matrix，再把 plan、status 和该 matrix
-一起 finalize；final plan 会绑定父计划和 promotion status 的哈希：
-`campaign-next` 只返回当前 `running` phase 中依赖已满足的任务，不会提前泄露
-后续 phase；`campaign-task` 用于逐字段读取冻结身份，找不到或重复时立即失败。
-
-```sh
-python -m tools.benchmark ablate campaign-finalize \
-  --plan docs/optimization/data/campaign/initial.plan.json \
-  --status .tmp/campaign/status.json \
-  --matrix .tmp/campaign/ablation-top5/matrix.json \
-  --output .tmp/campaign/final.plan.json
-```
-
-## Oracle 与报告
-
-Oracle 的 baseline/optimized 两条源码腿都用同一 ACCELA FULL pipeline 编译。
-`data/oracle/cleanroom-full.plan.json` 绑定 99 对清洁室证据。Oracle 是候选优化
-可达上界，不是 compiler pass 的实测收益；常数 div/rem、现有
-`AffineLoopSummarization` 和现有 RRT 只能进入“已实现消融”榜，不能重复列为
-新增候选。Oracle plan 的 evidence class 由 manifest data role 推导，不能用
-命令行把清洁室证据改标为 official 或 holdout。
-
-最终报告必须严格分开三张榜：已实现优化净贡献、未实现候选 Oracle GM 上界、
-决赛后续实施优先级。P0/P1/P2/Blocked 只按公开确定规则排序；候选必须引用
-plan hash、run ID、family/pair ID 和明确的合法性证明路径，不能手填收益或把
-“证明路径明确”写成“已经证明”。没有 official Oracle 证据的算法候选最多为
-P2；依赖未公布 SIMD/ABI/runtime/BOOM 信息的项目为 Blocked。
-
-- P0：official Oracle GM 上界至少 1.02，命中至少两个 official family，在至少
-  两个 holdout/成熟 workload 出现相同结构，且合法性证明路径明确。
-- P1：official 上界为 1.005--1.02；或者单个 official family 上界至少 1.25，
-  且有 holdout 泛化证据。
-- P2：低于上述收益、证据不完整、只命中清洁室/公开样例、高风险或工作量过大。
-- Blocked：只用于确实依赖未公布 SIMD/ABI/runtime 或 BOOM 实机信息的候选。
-
-同一等级内依次按 official `delta ln(GM)`、holdout 覆盖、实现成本、正确性风险
-排序，不使用不可解释的综合分。
-
-```sh
-python -m tools.benchmark oracle plan \
-  docs/optimization/data/manifests/oracle-cleanroom.manifest.json \
-  --suite-root benchmarks --pipeline-profile-id full \
-  --pipeline-profile-sha256 bc254fe031aa621711d197384d14e8d88811f8830163661848b8a1f365b7bee0 \
-  --output docs/optimization/data/oracle/cleanroom-full.plan.json
-```
-
-两条 Oracle 腿必须使用完全相同的 FULL compiler/runtime/metric 配置。下面的
-函数按 plan 固定的 run ID 分别执行 99 个 baseline 和 99 个 optimized case；
-两侧均使用 initial 1800 秒，避免用一条源码腿的运行时间改变另一条腿的配置。
-
-```sh
-run_oracle_leg() {
-  leg=$1
-  run_id=$2
-  output=$3
-  python -m tools.benchmark oracle run \
-    docs/optimization/data/manifests/oracle-cleanroom.manifest.json \
-    --plan docs/optimization/data/oracle/cleanroom-full.plan.json --leg "$leg" \
-    --workspace-root "$repo_root" \
-    --suite-root benchmarks --output "$output" --state-dir .tmp/runs/state \
-    --run-id "$run_id" --repo-commit "$repo_commit" --repo-dirty false \
-    --pipeline-profile-id full \
-    --pipeline-profile-file docs/optimization/data/ablation/profiles/full-a18b869b2e81.json \
-    --compiler-artifact build/classes/java/main \
-    --measurement-protocol "$standard_protocol" \
-    --measurement-asset profile_plugin_source=tools/qemu/profile.c \
-    --measurement-asset cache_plugin_source=tools/qemu/cache.c \
-    --measurement-asset hotblocks_plugin_source=tools/qemu/hotblocks.c \
-    --measurement-asset runtime_filter_source=tools/qemu/runtime-filter.h \
-    --measurement-asset runtime_source=tools/qemu/runtime.c \
-    --measurement-asset crt_source=tools/qemu/crt.S \
-    --measurement-asset linker_script_source=tools/qemu/linker.ld \
-    --measurement-asset profile_plugin_binary=build/benchmark/qemu-plugins/profile.so \
-    --measurement-asset cache_plugin_binary=build/benchmark/qemu-plugins/cache.so \
-    --measurement-asset hotblocks_plugin_binary=build/benchmark/qemu-plugins/hotblocks.so \
-    --measurement-asset "qemu_binary=$qemu_binary" \
-    --measurement-asset runner_executable=scripts/benchmark-qemu.sh \
-    --compiler-kind benchmark-compiler \
-    --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
-    --remarks-file optimization-remarks.jsonl \
-    --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
-    --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
-    --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
-    --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
-    --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
-    --runner-env 'QEMU_CACHE_PLUGIN={cache_plugin_binary}' \
-    --runner-kind qemu --metric-profile rv64gc-qemu-v1 \
-    --timeout-policy initial --run-timeout 1800 --jobs 4 \
-    --environment-label proxy --evidence-level qemu_proxy \
-    --tool-version "qemu-system-riscv64=$qemu_version" \
-    --tool-version "bare-metal-linker=$linker_version" \
-    --tool-version "python=$python_version" \
-    --tool-version "glib=$glib_version" \
-    --tool-version "accela-jdk=$jdk_version"
-}
-
-run_oracle_leg baseline oracle-baseline:cleanroom-oracle-v1 \
-  .tmp/runs/oracle-baseline/run.json
-run_oracle_leg optimized oracle-optimized:cleanroom-oracle-v1 \
-  .tmp/runs/oracle-optimized/run.json
-```
-
-Oracle 分析把 baseline 作为分母侧、optimized 作为候选侧：
-
-```sh
-python -m tools.benchmark report .tmp/runs/oracle-optimized/run.json \
-  --baseline .tmp/runs/oracle-baseline/run.json \
-  --baseline-mode pipeline_ablation \
-  --oracle-plan docs/optimization/data/oracle/cleanroom-full.plan.json \
-  --bootstrap-samples 10000 --seed 20260809 \
-  --output-dir .tmp/report/oracle
-
-set -- python -m tools.benchmark report RUN.json \
-  --baseline FULL-RUN.json --baseline-mode pipeline_ablation \
-  --ablation ABLATION-STUDY.json \
-  --oracle-plan docs/optimization/data/oracle/cleanroom-full.plan.json \
-  --candidate-evidence CANDIDATE-EVIDENCE.json \
-  --candidate-plan CANDIDATE-ORACLE-PLAN.json \
-  --candidate-run CANDIDATE-BASELINE-RUN.json \
-  --candidate-run CANDIDATE-OPTIMIZED-RUN.json \
-  --bootstrap-samples 10000 --seed 20260809 \
-  --output-dir .tmp/report
-
-hotblock_count=0
-if test -f .tmp/campaign/cache-hotblock-tasks.tsv
-then
-  while IFS="$(printf '\t')" read -r task_id run_id profile_id profile_path
-  do
-    hotblock_run=".tmp/runs/b3-cache-hotblock/$profile_id/run.json"
-    if test -f "$hotblock_run" &&
-      python - "$hotblock_run" "$run_id" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as stream:
-    run = json.load(stream)
-if (
-    run.get("run_id") != sys.argv[2]
-    or run.get("state") != "completed"
-    or not run.get("cases")
-    or any(case.get("status") != "passed" for case in run["cases"])
-):
-    raise SystemExit(1)
-PY
-    then
-      set -- "$@" --hotblock-run "$profile_id=$hotblock_run"
-      hotblock_count=$((hotblock_count + 1))
-    elif test -f "$hotblock_run"
-    then
-      printf 'omit unsuccessful cache-hotblock run: %s\n' "$run_id" >&2
-    fi
-  done < .tmp/campaign/cache-hotblock-tasks.tsv
-fi
-if test "$hotblock_count" -eq 0
-then
-  printf '%s\n' 'no successful cache-hotblock run; omit hotspot diagnostics' >&2
-fi
-"$@"
-```
-
-报告输出 Markdown、CSV/JSON、总览 `speedups.svg`，以及 waterfall、热图、
-toolchain gap、Oracle scaling、收益/成本/风险 Pareto 五张专题 SVG。每个数字
-和结论都必须能追溯到
-规范化 run ID；未跑完的工作保持显式缺失分类。未来候选从本次审计提交分叉到
-`codex/exp-<rank>-<optimization>`，实验实现默认关闭，只有功能、holdout、
-QEMU 和最终 BOOM 门全部通过后才进入竞赛配置。真实 BOOM 默认启用门为：
-功能全过、官方 GM 至少提升 0.5%、holdout 非负，并且没有超过 5% 的未解释
-family 回归。
-
-上面的 `--hotblock-run PROFILE_ID=RUN.json` 只会为实际完成且全 case 正确的 Top 5
-诊断逐项追加。至少追加一项时，`summary.json` 的 `hotblock_diagnostics`、
-`hotblocks.csv` 和中文 Markdown“热点诊断（不参与收益排名）”共同记录证据；一项
-都没有时不生成 `hotblocks.csv`，也不伪造热点数字。
+- 当前分支、commit/tree、工作树范围和 candidate/campaign ID；
+- candidate baseline drift、B1、B2、B3、B4/B5/B6、交互与 BOOM 各自的真实状态；
+- 所有 run/schema/manifest/protocol 的 physical 与 canonical SHA-256；
+- registry/status 是否 append-only，失败与 partial journal 是否保持原身份；
+- 报告榜单是否严格分开 measured candidate、interaction、Oracle 和 diagnostic；
+- 提交内容不含 corpus payload、本地绝对路径、secret、临时环境或 raw run；
+- 文档描述与实际验证范围一致；没有用局部测试、QEMU 或 running process 冒充
+  BOOM、完整 campaign 或 Release 结论。

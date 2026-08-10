@@ -1,8 +1,8 @@
 package accela.pass.instrument;
 
 import accela.pass.PassDescriptor;
-import java.util.Objects;
 import java.util.Locale;
+import java.util.Objects;
 
 /** Fail-fast stateful emitter for one concrete optimization candidate. */
 public final class PassDecisionEmitter {
@@ -36,18 +36,30 @@ public final class PassDecisionEmitter {
     if (candidateEmitted) throw new IllegalStateException("candidate was already emitted");
     if (terminalEmitted) throw new IllegalStateException("candidate is already terminal");
     candidateEmitted = true;
-    emit(DecisionStatus.CANDIDATE, reason);
+    emit(DecisionStatus.CANDIDATE, reason, null);
   }
 
   public void applied(DecisionReasonCode reason) {
-    terminal(DecisionStatus.APPLIED, reason);
+    terminal(DecisionStatus.APPLIED, reason, null);
   }
 
   public void rejected(DecisionReasonCode reason) {
-    terminal(DecisionStatus.REJECTED, reason);
+    if (reason == DecisionReasonCode.REJECTED_LEGALITY) {
+      throw new IllegalArgumentException(
+          "rejected_legality requires rejectedLegality(obligationId)");
+    }
+    terminal(DecisionStatus.REJECTED, reason, null);
   }
 
-  private void terminal(DecisionStatus status, DecisionReasonCode reason) {
+  public void rejectedLegality(String obligationId) {
+    descriptor.requireLegalityObligation(obligationId);
+    terminal(DecisionStatus.REJECTED, DecisionReasonCode.REJECTED_LEGALITY, obligationId);
+  }
+
+  private void terminal(
+      DecisionStatus status,
+      DecisionReasonCode reason,
+      String legalityObligationId) {
     requireReason(reason, status);
     if (!candidateEmitted) {
       throw new IllegalStateException(
@@ -55,12 +67,15 @@ public final class PassDecisionEmitter {
     }
     if (terminalEmitted) throw new IllegalStateException("candidate already has a terminal decision");
     terminalEmitted = true;
-    emit(status, reason);
+    emit(status, reason, legalityObligationId);
   }
 
-  private void emit(DecisionStatus status, DecisionReasonCode reason) {
+  private void emit(
+      DecisionStatus status,
+      DecisionReasonCode reason,
+      String legalityObligationId) {
     sink.accept(new DecisionRemark(descriptor.id(), occurrence, descriptor.stage(), targetKind,
-        targetName, status, reason));
+        targetName, status, reason, legalityObligationId));
   }
 
   private static void requireReason(DecisionReasonCode reason, DecisionStatus status) {

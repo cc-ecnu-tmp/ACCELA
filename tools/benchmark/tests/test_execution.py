@@ -17,9 +17,16 @@ import pytest
 
 from tools.benchmark import cache as cache_module
 from tools.benchmark import journal as journal_module
-from tools.benchmark.execution import BenchmarkRun, MeasurementSpec, _summary, run_benchmark
+from tools.benchmark.execution import (
+    BenchmarkRun,
+    MeasurementSpec,
+    _summary,
+    run_benchmark,
+    verify_run_raw_evidence,
+)
 from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
 from tools.benchmark.journal import AttemptJournal
+from tools.benchmark.lease import ExclusiveFileLease, output_lease_path
 from tools.benchmark.adapters import StageSpec
 from tools.benchmark.schema import load_and_validate, validate_document
 from tools.benchmark.protocol import capture_measurement_protocol
@@ -63,6 +70,7 @@ def _clear_case_to_uncommitted_attempt(case: dict[str, Any]) -> None:
         binary_sha256=None,
         remarks_sha256=None,
         remarks_event_count=None,
+        candidate_remark_summary=None,
         analysis_sha256=None,
         attempt_journal_sha256=None,
         attempt_journal_event_count=None,
@@ -85,10 +93,15 @@ def _reserve_first_attempt(options: Any) -> tuple[BenchmarkRun, dict[str, Any], 
     run_directory.mkdir(parents=True)
     runner._bind_state_identity(record, run_directory)
     attempt_directory = runner._reserve_attempt(record, record["cases"][0], run_directory)
-    record["state"] = "interrupted"
-    record["completed_at"] = None
-    runner._write_record(record)
+    runner._seal_run_terminal(record, run_directory, state="interrupted")
     return runner, record, attempt_directory
+
+
+def _ensure_execution_leases(options: Any, run_directory: Path) -> None:
+    output_lock = output_lease_path(options.output_path)
+    output_lock.parent.mkdir(parents=True, exist_ok=True)
+    output_lock.touch(exist_ok=True)
+    (run_directory / ".run.lock").touch(exist_ok=True)
 
 
 def _rebind_protocol(options, *, runner=None, assets=None, name: str):
@@ -467,20 +480,277 @@ def test_attempt_local_compile_bypasses_cache_publish_eacces_and_cache_mode_fail
     assert list(compile_cache_root.iterdir()) == []
 
 
-def test_resume_recovers_durable_terminal_without_reexecution(benchmark_fixture) -> None:
+def test_raw_evidence_verifier_recomputes_a_path_free_terminal_closure(
+    benchmark_fixture,
+) -> None:
     tmp_path, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-verify.json", run_id="raw-verify"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+
+    first = verify_run_raw_evidence(options.output_path, options.state_root)
+    second = verify_run_raw_evidence(options.output_path, options.state_root)
+
+    assert first.document == second.document
+    assert first.document["schema_version"] == "benchmark-run-raw-evidence.v1"
+    assert first.document["run_canonical_sha256"] == sha256_json(completed)
+    assert first.document["run_physical_sha256"] == sha256_file(options.output_path)
+    assert len(first.document["terminal_journal_sha256"]) == 64
+    assert first.document["terminal_journal_event_count"] == 1
+    assert first.document["terminal_observed_at"] == completed["completed_at"]
+    assert first.document["attempt_count"] == len(completed["cases"])
+    assert first.document["terminal_attempt_count"] == len(completed["cases"])
+    assert [item["case_id"] for item in first.document["cases"]] == [
+        case["case_id"] for case in completed["cases"]
+    ]
+    assert all(
+        item["current_attempt_index"] == 0 and len(item["attempts"]) == 1
+        for item in first.document["cases"]
+    )
+    assert all(path is None for path in first.current_remark_paths.values())
+    assert str(tmp_path) not in json.dumps(first.document, sort_keys=True)
+
+
+def test_raw_evidence_verifier_rejects_an_internally_valid_normalized_fake(
+    benchmark_fixture,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-normalized-fake.json", run_id="raw-normalized-fake"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    completed["cases"][0]["weight"] *= 2
+    validate_document(completed)
+    atomic_write_json(options.output_path, completed)
+
+    with pytest.raises(ExecutionError, match="normalized run terminal differs"):
+        verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+def test_raw_evidence_verifier_rejects_normalized_terminal_time_tamper(
+    benchmark_fixture,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-time-fake.json", run_id="raw-time-fake"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    completed["completed_at"] = completed["started_at"]
+    completed["updated_at"] = completed["started_at"]
+    validate_document(completed)
+    atomic_write_json(options.output_path, completed)
+
+    with pytest.raises(ExecutionError, match="normalized run terminal differs"):
+        verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+def test_terminal_run_without_physical_observation_is_not_supplemented(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-old-terminal.json", run_id="raw-old-terminal"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    runner = BenchmarkRun(options)
+    run_directory = runner._run_directory(completed)
+    terminal_directory = run_directory / "run-terminal"
+    saved_terminal = tmp_path / "saved-run-terminal"
+    terminal_directory.rename(saved_terminal)
+
+    assert load_and_validate(options.output_path) == completed
+    with pytest.raises(ExecutionError, match="lacks a physical run terminal journal"):
+        run_benchmark(options)
+    assert not terminal_directory.exists()
+    with pytest.raises(ExecutionError, match="run terminal journal is missing"):
+        verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+@pytest.mark.parametrize("corruption", ("event", "symlink"))
+def test_raw_evidence_verifier_rejects_run_terminal_physical_tamper(
+    benchmark_fixture,
+    corruption: str,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name=f"run-terminal-{corruption}.json",
+            run_id=f"run-terminal-{corruption}",
+        ),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    run_directory = BenchmarkRun(options)._run_directory(completed)
+    terminal_directory = run_directory / "run-terminal"
+    if corruption == "event":
+        event_path = next(terminal_directory.glob("event-*.json"))
+        event_path.write_bytes(event_path.read_bytes() + b"tamper")
+        expected = "run terminal journal event content hash differs"
+    else:
+        physical = tmp_path / "physical-run-terminal"
+        terminal_directory.rename(physical)
+        terminal_directory.symlink_to(physical, target_is_directory=True)
+        expected = "run terminal journal is not a regular directory"
+
+    with pytest.raises(ExecutionError, match=expected):
+        verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+@pytest.mark.parametrize("corruption", ("journal", "raw"))
+def test_raw_evidence_verifier_rejects_physical_terminal_tamper(
+    benchmark_fixture,
+    corruption: str,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name=f"raw-{corruption}-tamper.json",
+            run_id=f"raw-{corruption}-tamper",
+        ),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    case = completed["cases"][0]
+    attempt_directory = _raw_attempt_directory(
+        options.state_root, case["case_id"], case["attempt_index"]
+    )
+    if corruption == "journal":
+        target = sorted((attempt_directory / "journal").glob("event-*.json"))[-1]
+    else:
+        target = attempt_directory / "compile-repetition-0000.stdout"
+        assert target.is_file()
+    target.write_bytes(target.read_bytes() + b"tamper")
+
+    expected = (
+        "journal event content hash differs"
+        if corruption == "journal"
+        else "raw attempt files differ"
+    )
+    with pytest.raises(ExecutionError, match=expected):
+        verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+def test_raw_evidence_verifier_rejects_lexical_and_physical_symlinks(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-symlink.json", run_id="raw-symlink"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    record_link = tmp_path / "run-link.json"
+    record_link.symlink_to(options.output_path)
+    state_link = tmp_path / "state-link"
+    state_link.symlink_to(options.state_root, target_is_directory=True)
+
+    with pytest.raises(ValidationError, match="must not traverse a symbolic link"):
+        verify_run_raw_evidence(record_link, options.state_root)
+    with pytest.raises(ValidationError, match="must not traverse a symbolic link"):
+        verify_run_raw_evidence(options.output_path, state_link)
+
+    case = completed["cases"][0]
+    attempt_directory = _raw_attempt_directory(
+        options.state_root, case["case_id"], case["attempt_index"]
+    )
+    raw_path = attempt_directory / "compile-repetition-0000.stdout"
+    physical = raw_path.with_suffix(".physical")
+    raw_path.rename(physical)
+    raw_path.symlink_to(physical.name)
+    with pytest.raises(ExecutionError, match="non-regular entry|symbolic link"):
+        verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+def test_raw_evidence_verifier_accepts_interrupted_unstarted_cases_and_rejects_started_prefix(
+    benchmark_fixture,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    pending_options = replace(
+        make_options(output_name="raw-pending.json", run_id="raw-pending"),
+        max_workers=1,
+    )
+    pending_runner = BenchmarkRun(pending_options)
+    pending_record = pending_runner._initial_record()
+    pending_directory = pending_runner._run_directory(pending_record)
+    pending_directory.mkdir(parents=True)
+    pending_runner._bind_state_identity(pending_record, pending_directory)
+    pending_runner._seal_run_terminal(
+        pending_record,
+        pending_directory,
+        state="interrupted",
+    )
+    _ensure_execution_leases(pending_options, pending_directory)
+
+    verified = verify_run_raw_evidence(
+        pending_options.output_path, pending_options.state_root
+    )
+    assert verified.document["attempt_count"] == 0
+    assert verified.document["terminal_attempt_count"] == 0
+    assert all(
+        item["current_attempt_index"] is None and item["attempts"] == []
+        for item in verified.document["cases"]
+    )
+
+    started_options = replace(
+        make_options(output_name="raw-started.json", run_id="raw-started"),
+        max_workers=1,
+    )
+    started_runner, _, attempt_directory = _reserve_first_attempt(started_options)
+    started_directory = started_runner._run_directory(
+        load_and_validate(started_options.output_path)
+    )
+    _ensure_execution_leases(started_options, started_directory)
+    assert {path.name for path in attempt_directory.iterdir()} == {
+        "identity.json",
+        "journal",
+    }
+    with pytest.raises(ExecutionError, match="started attempt lacks a durable terminal"):
+        verify_run_raw_evidence(started_options.output_path, started_options.state_root)
+
+
+def test_raw_evidence_verifier_obeys_the_executor_run_lease(
+    benchmark_fixture,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-lease.json", run_id="raw-lease"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    runner = BenchmarkRun(options)
+    run_directory = runner._run_directory(completed)
+    with ExclusiveFileLease(run_directory / ".run.lock", "execution state", {}):
+        with pytest.raises(ExecutionError, match="execution state is already owned"):
+            verify_run_raw_evidence(options.output_path, options.state_root)
+
+
+def test_resume_recovers_durable_terminal_without_reexecution(
+    benchmark_fixture,
+    monkeypatch,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
     options = replace(
         make_options(output_name="resume.json", run_id="resume-run"),
         reuse_compile_cache=True,
     )
-    completed = run_benchmark(options)
-    resumed_case = completed["cases"][-1]
-    terminal_journal_sha256 = resumed_case["attempt_journal_sha256"]
-    _clear_case_to_uncommitted_attempt(resumed_case)
-    completed["state"] = "interrupted"
-    completed["completed_at"] = None
-    completed["summary"] = _summary(completed["cases"])
-    atomic_write_json(tmp_path / "resume.json", completed)
+    original_seal = BenchmarkRun._seal_run_terminal
+
+    def fail_before_run_terminal(*_args, **_kwargs):
+        raise ExecutionError("simulated crash before run terminal seal")
+
+    monkeypatch.setattr(BenchmarkRun, "_seal_run_terminal", fail_before_run_terminal)
+    with pytest.raises(ExecutionError, match="simulated crash"):
+        run_benchmark(options)
+    crashed = load_and_validate(options.output_path)
+    assert crashed["state"] == "running"
+    terminal_journal_sha256 = crashed["cases"][-1]["attempt_journal_sha256"]
+
+    monkeypatch.setattr(BenchmarkRun, "_seal_run_terminal", original_seal)
     resumed = run_benchmark(options)
     assert resumed["state"] == "completed"
     assert resumed["summary"]["passed_cases"] == 10
@@ -493,18 +763,13 @@ def test_resume_recovers_durable_terminal_without_reexecution(benchmark_fixture)
 def test_resume_fails_fast_when_physical_attempt_identity_was_tampered(
     benchmark_fixture,
 ) -> None:
-    tmp_path, _, _, _, make_options = benchmark_fixture
+    _, _, _, _, make_options = benchmark_fixture
     options = replace(
         make_options(output_name="resume-identity.json", run_id="resume-identity-run"),
         reuse_compile_cache=True,
     )
     completed = run_benchmark(options)
     interrupted_case = completed["cases"][-1]
-    _clear_case_to_uncommitted_attempt(interrupted_case)
-    completed["state"] = "interrupted"
-    completed["completed_at"] = None
-    completed["summary"] = _summary(completed["cases"])
-    atomic_write_json(options.output_path, completed)
 
     attempt_directory = _raw_attempt_directory(
         options.state_root,
@@ -517,7 +782,7 @@ def test_resume_fails_fast_when_physical_attempt_identity_was_tampered(
     atomic_write_json(identity_path, identity)
 
     with pytest.raises(ExecutionError, match="raw attempt identity differs"):
-        run_benchmark(options)
+        verify_run_raw_evidence(options.output_path, options.state_root)
 
 
 def test_resume_retries_only_a_durable_pre_phase_interruption(benchmark_fixture) -> None:
@@ -540,6 +805,8 @@ def test_resume_retries_only_a_durable_pre_phase_interruption(benchmark_fixture)
     assert interruption["attempt_journal_event_count"] == 1
     assert interruption["configuration_sha256"] == reserved["configuration_sha256"]
     assert first["attempt_configuration_sha256"] == reserved["configuration_sha256"]
+    evidence = verify_run_raw_evidence(options.output_path, options.state_root)
+    assert evidence.document["terminal_journal_event_count"] == 2
 
 
 @pytest.mark.parametrize(
@@ -934,12 +1201,13 @@ def test_resume_rejects_success_metric_masquerading_as_the_durable_attempt(
     case["samples"][0]["measurements"][0]["value"] += 1
     atomic_write_json(options.output_path, completed)
 
-    with pytest.raises(ExecutionError, match="normalized attempt result differs"):
+    with pytest.raises(ExecutionError, match="normalized run terminal differs"):
         run_benchmark(options)
 
 
 def test_resume_restores_wrong_output_without_retrying_the_real_failure(
     benchmark_fixture,
+    monkeypatch,
 ) -> None:
     _, _, _, _, make_options = benchmark_fixture
     options = make_options(
@@ -947,16 +1215,21 @@ def test_resume_restores_wrong_output_without_retrying_the_real_failure(
         run_id="wrong-output-recovery",
         behavior="return-one",
     )
-    failed = run_benchmark(options)
-    recovered_case = failed["cases"][-1]
+    original_seal = BenchmarkRun._seal_run_terminal
+
+    def fail_before_run_terminal(*_args, **_kwargs):
+        raise ExecutionError("simulated crash before failed run terminal seal")
+
+    monkeypatch.setattr(BenchmarkRun, "_seal_run_terminal", fail_before_run_terminal)
+    with pytest.raises(ExecutionError, match="simulated crash"):
+        run_benchmark(options)
+    crashed = load_and_validate(options.output_path)
+    assert crashed["state"] == "running"
+    recovered_case = crashed["cases"][-1]
     terminal_journal_sha256 = recovered_case["attempt_journal_sha256"]
     assert recovered_case["status"] == "wrong_output"
-    _clear_case_to_uncommitted_attempt(recovered_case)
-    failed["state"] = "interrupted"
-    failed["completed_at"] = None
-    failed["summary"] = _summary(failed["cases"])
-    atomic_write_json(options.output_path, failed)
 
+    monkeypatch.setattr(BenchmarkRun, "_seal_run_terminal", original_seal)
     resumed = run_benchmark(options)
     restored = resumed["cases"][-1]
     assert resumed["state"] == "failed"
@@ -964,6 +1237,9 @@ def test_resume_restores_wrong_output_without_retrying_the_real_failure(
     assert restored["attempt_index"] == 0
     assert restored["attempts"] == []
     assert restored["attempt_journal_sha256"] == terminal_journal_sha256
+    failed_evidence = verify_run_raw_evidence(options.output_path, options.state_root)
+    assert failed_evidence.document["attempt_count"] == len(resumed["cases"])
+    assert failed_evidence.document["terminal_attempt_count"] == len(resumed["cases"])
 
 
 @pytest.mark.parametrize(("initial_retry", "reopen_retry"), ((False, True), (True, False)))
@@ -991,7 +1267,7 @@ def test_retry_policy_cannot_rebind_an_existing_run(
     assert unchanged["configuration"]["retry_failures"] is initial_retry
 
 
-def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
+def test_failed_run_is_terminal_even_when_retry_failures_was_configured(
     benchmark_fixture,
 ) -> None:
     tmp_path, _, _, tool, make_options = benchmark_fixture
@@ -1036,37 +1312,28 @@ def test_retry_uses_new_attempt_directory_and_preserves_failed_raw_evidence(
     )
     assert first_workspace_stderr.read_bytes() == first_payload
 
-    retried = run_benchmark(options)
-    assert retried["state"] == "completed"
-    current = retried["cases"][0]
-    assert current["attempt_index"] == 1
-    assert len(current["attempts"]) == 1
-    archived = current["attempts"][0]
-    assert archived["attempt_index"] == 0
-    assert archived["status"] == "compile_error"
-    assert archived["started_at"] == failed["attempt_started_at"]
+    reopened = run_benchmark(options)
+    assert reopened == first
+    current = reopened["cases"][0]
+    assert current["attempt_index"] == 0
+    assert current["attempts"] == []
     assert first_stderr.read_bytes() == first_payload
-    assert sha256_file(first_stderr) == archived["compile_samples"][0]["stderr"]["sha256"]
-
-    second_directory = _raw_attempt_directory(options.state_root, failed["case_id"], 1)
-    assert second_directory != first_directory
-    assert (
-        second_directory / "compile-repetition-0000.stderr"
-    ).read_text(encoding="utf-8").splitlines() == ["later-attempt-success"]
-    assert (second_directory / "attempt-local-compile" / "artifact.s").is_file()
+    assert sha256_file(first_stderr) == current["compile_samples"][0]["stderr"]["sha256"]
+    assert not (first_directory.parent / "attempt-0001").exists()
     assert first_workspace_stderr.read_bytes() == first_payload
-    assert archived["configuration_sha256"] == current["attempt_configuration_sha256"]
-    assert archived["configuration_sha256"] == retried["configuration_sha256"]
-    assert all(
-        case["attempt_index"] == 0 and not case["attempts"]
-        for case in retried["cases"][1:]
-    )
+    retry_evidence = verify_run_raw_evidence(options.output_path, options.state_root)
+    assert retry_evidence.document["attempt_count"] == 1
+    assert retry_evidence.document["terminal_attempt_count"] == 1
+    assert [
+        attempt["attempt_index"]
+        for attempt in retry_evidence.document["cases"][0]["attempts"]
+    ] == [0]
 
-    non_contiguous = deepcopy(retried)
-    non_contiguous["cases"][0]["attempt_index"] = 0
+    non_contiguous = deepcopy(reopened)
+    non_contiguous["cases"][0]["attempt_index"] = 1
     with pytest.raises(ValidationError, match="current attempt index is not contiguous"):
         validate_document(non_contiguous)
-    unbound = deepcopy(retried)
+    unbound = deepcopy(reopened)
     unbound["cases"][0]["attempt_started_at"] = None
     with pytest.raises(ValidationError, match="start/configuration binding is inconsistent"):
         validate_document(unbound)
@@ -1099,6 +1366,21 @@ def test_cache_v2_recomputes_cold_sample_remark_event_count(benchmark_fixture) -
     )
     first = run_benchmark(options)
     assert first["state"] == "completed"
+    observed_remarks: list[tuple[str, Path]] = []
+    verified = verify_run_raw_evidence(
+        options.output_path,
+        options.state_root,
+        remark_validator=lambda path, case: observed_remarks.append(
+            (case["case_id"], path)
+        ),
+    )
+    assert len(observed_remarks) == len(first["cases"])
+    assert all(path.is_file() for _, path in observed_remarks)
+    assert all(path is not None for path in verified.current_remark_paths.values())
+    assert all(
+        item["attempts"][-1]["remark_files_sha256"] is not None
+        for item in verified.document["cases"]
+    )
 
     metadata_path = next((options.state_root / "cache" / "compile").glob("*/metadata.json"))
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))

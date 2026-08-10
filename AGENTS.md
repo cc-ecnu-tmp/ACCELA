@@ -21,6 +21,31 @@
   profile, benchmark hashes, tool versions, correctness result, and evidence
   class. Keep the transformation legality decision and rejection reason
   observable where the pass exposes candidates.
+- Candidate addition is the primary optimization path: evaluate one named,
+  reviewable compiler change against a hash-bound unchanged baseline before
+  composing qualified candidates. A disable-profile or `without.*` run is
+  diagnostic evidence about existing code only; it cannot select, rank, or
+  stand in for a newly implemented candidate.
+- Candidate execution and campaign evidence must bind pass-registry v2 and
+  pipeline-profile v2; the static candidate-evidence inventory alone does not.
+  Preserve two distinct immutable registry identities: screening binds the
+  pre-implementation zero-candidate base export, while profiles and campaigns bind a
+  separately named post-implementation executable export. The executable
+  non-candidate projection must equal the base in full and in order; its candidate IDs
+  and legality obligations must exactly equal the qualified screening/catalog set.
+  Before implementation, run one FULL baseline and one FULL optimized execution
+  over the frozen 99-pair Oracle plan and produce one capture indexed by
+  family, structure, and size. At least one mapped structure must have complete,
+  correct small/medium/large observations whose equal-weight three-size
+  geometric-mean speedup is at least 1.10.
+  Define speedup only as baseline dynamic instructions divided by candidate
+  dynamic instructions. B2 is a tuning pass for every B1-correct candidate, not
+  an elimination gate; freeze all tuned candidates before B3. Only a B3
+  geometric mean strictly greater than 1 advances to B4--B6. Rank eligible
+  single candidates by the equal-weight combined geometric mean over all 267
+  B3--B6 cases, then B3 geometric mean, smaller static text bytes, and stable
+  candidate ID. The current campaign has no BOOM run and cannot enable a
+  candidate by default.
 - A profile with any correctness failure is ineligible for a performance ranking.
 - Started benchmark attempts are immutable, hash-bound physical evidence. Persist
   ordered phase-start, phase-result, and terminal journal events before merging
@@ -93,13 +118,20 @@
   line endings are part of benchmark identity. Physical SHA-256 contracts must
   be computed from that checkout form; never let host `core.autocrlf` silently
   rewrite schemas, snapshots, plans, launchers, source adapters, or corpus bytes.
+- A campaign stopped because its evaluation direction is invalid must be frozen
+  under a versioned, hash-bound diagnostic manifest. Preserve its registered
+  terminal records and committed journal prefix, but never resume it, append a
+  synthetic terminal, promote from it, or import any of its measurements into a
+  candidate campaign. A replacement campaign requires a new campaign ID, plan,
+  run IDs, and candidate identities; only independently hash-verified corpus,
+  protocol, and toolchain assets may be reused.
 
 ## Change discipline
 
 - Use a dedicated branch for performance experiments and keep unrelated changes
-  out of it. New optimization algorithms belong on separate experimental
-  branches and remain disabled until all correctness, holdout, QEMU, and hardware
-  gates pass.
+  out of it. Each new or materially changed optimization candidate belongs on a
+  separate experimental branch and remains disabled until its baseline-paired
+  correctness, holdout, QEMU, and hardware gates pass.
 - Prefer the existing IR, analysis managers, pass manager, backend pipeline, and
   QEMU plugins over parallel frameworks. Remove obsolete experimental switches
   when the central pipeline-profile contract replaces them.

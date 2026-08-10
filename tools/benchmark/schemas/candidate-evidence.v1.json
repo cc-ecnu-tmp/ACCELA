@@ -82,7 +82,8 @@
         },
         "legality_proof_path": {"enum": ["clear", "unclear"]},
         "legality_obligation_ids": {
-          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
         },
         "implementation_cost": {"enum": ["low", "medium", "high", "unknown"]},
         "risk": {"enum": ["low", "medium", "high", "unknown"]},

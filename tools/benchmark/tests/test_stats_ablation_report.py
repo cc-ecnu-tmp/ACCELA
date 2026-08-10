@@ -205,6 +205,7 @@ def make_run(
                 "binary_sha256": "9" * 64,
                 "remarks_sha256": "6" * 64 if source != "wall_time" else None,
                 "remarks_event_count": 1 if source != "wall_time" else None,
+                "candidate_remark_summary": None,
                 "analysis_sha256": "7" * 64 if source != "wall_time" else None,
                 "attempt_journal_sha256": "5" * 64,
                 "attempt_journal_event_count": 1,

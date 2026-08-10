@@ -22,9 +22,10 @@ public final class PipelineProfile {
     MANDATORY_ONLY
   }
 
-  public static final int SCHEMA_VERSION = 1;
+  public static final int SCHEMA_VERSION = 2;
   private static final long MAX_PROFILE_BYTES = 1L << 20;
-  private static final Set<String> TOP_LEVEL_KEYS = Set.of("schema_version", "base", "disable");
+  private static final Set<String> TOP_LEVEL_KEYS =
+      Set.of("schema_version", "base", "disable", "enable_candidates");
   private static final Set<String> DISABLE_KEYS = Set.of("pass", "family", "occurrence");
 
   private final PassRegistry registry;
@@ -32,13 +33,15 @@ public final class PipelineProfile {
   private final Set<String> disabledFamilies;
   private final Set<String> disabledPasses;
   private final Map<String, Set<Integer>> disabledOccurrences;
+  private final List<String> enabledCandidates;
 
   private PipelineProfile(
       PassRegistry registry,
       Base base,
       Set<String> disabledFamilies,
       Set<String> disabledPasses,
-      Map<String, Set<Integer>> disabledOccurrences) {
+      Map<String, Set<Integer>> disabledOccurrences,
+      List<String> enabledCandidates) {
     this.registry = Objects.requireNonNull(registry, "registry");
     this.base = Objects.requireNonNull(base, "base");
     this.disabledFamilies = immutableSet(disabledFamilies);
@@ -47,6 +50,7 @@ public final class PipelineProfile {
     disabledOccurrences.forEach(
         (pass, occurrences) -> copied.put(pass, immutableSet(occurrences)));
     this.disabledOccurrences = Collections.unmodifiableMap(copied);
+    this.enabledCandidates = List.copyOf(enabledCandidates);
   }
 
   public static PipelineProfile full() {
@@ -54,7 +58,7 @@ public final class PipelineProfile {
   }
 
   public static PipelineProfile full(PassRegistry registry) {
-    return new PipelineProfile(registry, Base.FULL, Set.of(), Set.of(), Map.of());
+    return new PipelineProfile(registry, Base.FULL, Set.of(), Set.of(), Map.of(), List.of());
   }
 
   public static PipelineProfile mandatoryOnly() {
@@ -62,7 +66,8 @@ public final class PipelineProfile {
   }
 
   public static PipelineProfile mandatoryOnly(PassRegistry registry) {
-    return new PipelineProfile(registry, Base.MANDATORY_ONLY, Set.of(), Set.of(), Map.of());
+    return new PipelineProfile(
+        registry, Base.MANDATORY_ONLY, Set.of(), Set.of(), Map.of(), List.of());
   }
 
   public static PipelineProfile fromJson(Path path) throws IOException {
@@ -92,6 +97,10 @@ public final class PipelineProfile {
     if (!(disabledValue instanceof List<?> disabled)) {
       throw new IllegalArgumentException("disable must be an array");
     }
+    Object enabledValue = root.get("enable_candidates");
+    if (!(enabledValue instanceof List<?> enabledCandidates)) {
+      throw new IllegalArgumentException("enable_candidates must be an array");
+    }
 
     Builder builder = builder(registry, base);
     for (int index = 0; index < disabled.size(); index++) {
@@ -119,6 +128,10 @@ public final class PipelineProfile {
         }
       }
     }
+    for (int index = 0; index < enabledCandidates.size(); index++) {
+      builder.enableCandidate(
+          string(enabledCandidates.get(index), "enable_candidates[" + index + "]"));
+    }
     return builder.build();
   }
 
@@ -141,6 +154,7 @@ public final class PipelineProfile {
   public boolean isEnabled(String passId, int occurrence) {
     PassDescriptor descriptor = registry.require(passId);
     validateOccurrence(descriptor, occurrence);
+    if (descriptor.candidate()) return enabledCandidates.contains(passId);
     if (descriptor.required()) return true;
     if (base == Base.MANDATORY_ONLY) return false;
     return !disabledFamilies.contains(descriptor.logicalFamilyId())
@@ -150,6 +164,7 @@ public final class PipelineProfile {
 
   public boolean disablesAll(String passId) {
     PassDescriptor descriptor = registry.require(passId);
+    if (descriptor.candidate()) return !enabledCandidates.contains(passId);
     return !descriptor.required() && (base == Base.MANDATORY_ONLY
         || disabledFamilies.contains(descriptor.logicalFamilyId())
         || disabledPasses.contains(passId)
@@ -164,6 +179,11 @@ public final class PipelineProfile {
 
   public Set<String> disabledFamilies() {
     return disabledFamilies;
+  }
+
+  /** Candidate pass ids in their canonical PassRegistry scheduling order. */
+  public List<String> enabledCandidates() {
+    return enabledCandidates;
   }
 
   public Base base() {
@@ -197,6 +217,7 @@ public final class PipelineProfile {
       }
     }
     root.put("disable", disabled);
+    root.put("enable_candidates", enabledCandidates);
     return StrictJson.stringify(root);
   }
 
@@ -275,6 +296,7 @@ public final class PipelineProfile {
     private final Set<String> disabledFamilies = new LinkedHashSet<>();
     private final Set<String> disabledPasses = new LinkedHashSet<>();
     private final Map<String, Set<Integer>> disabledOccurrences = new LinkedHashMap<>();
+    private final Set<String> enabledCandidates = new LinkedHashSet<>();
 
     private Builder(PassRegistry registry, Base base) {
       this.registry = Objects.requireNonNull(registry, "registry");
@@ -284,6 +306,10 @@ public final class PipelineProfile {
     public Builder disableFamily(String familyId) {
       requireFullBase();
       List<PassDescriptor> family = registry.forFamily(familyId);
+      if (family.stream().anyMatch(PassDescriptor::candidate)) {
+        throw new IllegalArgumentException(
+            "candidate pass families cannot be disabled: '" + familyId + "'");
+      }
       if (family.stream().anyMatch(PassDescriptor::required)) {
         throw new IllegalArgumentException(
             "pass family '" + familyId + "' contains a required pass and cannot be disabled");
@@ -331,15 +357,44 @@ public final class PipelineProfile {
       return this;
     }
 
+    public Builder enableCandidate(String passId) {
+      requireFullBase();
+      PassDescriptor descriptor = registry.require(passId);
+      if (!descriptor.candidate()) {
+        throw new IllegalArgumentException(
+            "only candidate passes may be explicitly enabled: '" + passId + "'");
+      }
+      if (!enabledCandidates.add(passId)) {
+        throw new IllegalArgumentException(
+            "duplicate enable entry for candidate pass '" + passId + "'");
+      }
+      return this;
+    }
+
     public PipelineProfile build() {
+      List<String> requestedOrder = List.copyOf(enabledCandidates);
+      List<String> registryOrder = registry.candidates().stream()
+          .map(PassDescriptor::id)
+          .filter(enabledCandidates::contains)
+          .toList();
+      if (!requestedOrder.equals(registryOrder)) {
+        throw new IllegalArgumentException(
+            "candidate enable entries must follow PassRegistry order; expected "
+                + registryOrder + ", but found " + requestedOrder);
+      }
       return new PipelineProfile(
-          registry, base, disabledFamilies, disabledPasses, disabledOccurrences);
+          registry, base, disabledFamilies, disabledPasses, disabledOccurrences,
+          registryOrder);
     }
 
     private PassDescriptor configurable(String passId) {
       PassDescriptor descriptor = registry.require(passId);
       if (descriptor.required()) {
         throw new IllegalArgumentException("required pass '" + passId + "' cannot be disabled");
+      }
+      if (descriptor.candidate()) {
+        throw new IllegalArgumentException(
+            "candidate pass '" + passId + "' is default-off and cannot be disabled");
       }
       return descriptor;
     }

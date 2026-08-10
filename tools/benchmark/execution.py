@@ -11,7 +11,7 @@ from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, ThreadPo
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .adapters import CommandRenderer, StageSpec, WslPathMapper
 from .cache import (
@@ -20,18 +20,31 @@ from .cache import (
     compile_storage_contract,
 )
 from .errors import ConfigurationError, ExecutionError, ValidationError
-from .journal import AttemptJournal, JournalSnapshot, durable_create_json
+from .journal import (
+    AttemptJournal,
+    JournalSnapshot,
+    RunTerminalJournal,
+    RunTerminalSnapshot,
+    durable_create_json,
+)
 from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .metrics import ANALYZER_METRICS, rv64gc_qemu_v1
 from .process import ProcessResult, extract_metric, first_mismatch_offset, run_process
 from .protocol import resolve_measurement_protocol_assets, verify_measurement_protocol
-from .schema import load_and_validate, load_and_validate_jsonl, validate_document
+from .schema import (
+    load_and_validate,
+    load_and_validate_jsonl,
+    load_pipeline_profile_v2,
+    validate_candidate_remark_jsonl,
+    validate_document,
+)
 from .util import (
     atomic_write_json,
     executable_label,
     raw_attempt_identity,
     raw_attempt_identity_sha256,
     read_json,
+    resolve_without_symlinks,
     resolve_manifest_path,
     safe_slug,
     sanitize_text,
@@ -149,6 +162,8 @@ class RunOptions:
     runner: StageSpec
     provenance: RunProvenance
     pipeline_profile_path: Path | None = None
+    candidate_registry_path: Path | None = None
+    candidate_pass_registry_path: Path | None = None
     measurement_protocol_path: Path | None = None
     measurement_protocol_assets: tuple[tuple[str, Path], ...] = ()
     analyzer: StageSpec | None = None
@@ -230,11 +245,123 @@ def _require_path_placeholder(stage: StageSpec, logical_name: str, label: str) -
         raise ConfigurationError(f"{label} must reference {{{logical_name}}} (or an explicit host/WSL variant)")
 
 
+def _workspace_bound_file(
+    workspace_root: Path,
+    path: Path,
+    *,
+    label: str,
+) -> Path:
+    root = workspace_root.resolve(strict=True)
+    resolved = (path if path.is_absolute() else root / path).resolve(strict=True)
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ConfigurationError(f"{label} must stay within workspace_root") from exc
+    if not resolved.is_file():
+        raise ConfigurationError(f"{label} must be a regular file")
+    return resolved
+
+
+def _pipeline_profile_candidate_ids(
+    path: Path | None,
+    *,
+    workspace_root: Path,
+    require_v2: bool,
+    candidate_order: list[str] | None = None,
+) -> list[str]:
+    if path is None:
+        if require_v2:
+            raise ConfigurationError(
+                "candidate registry requires a physical PipelineProfile v2"
+            )
+        return []
+    if require_v2:
+        profile = load_pipeline_profile_v2(
+            _workspace_bound_file(
+                workspace_root, path, label="pipeline profile"
+            ),
+            candidate_order=candidate_order,
+        )
+        return list(profile["enable_candidates"])
+    profile = read_json(
+        _workspace_bound_file(workspace_root, path, label="pipeline profile")
+    )
+    if (
+        isinstance(profile, dict)
+        and profile.get("schema_version") == 2
+        and profile.get("enable_candidates")
+    ):
+        raise ConfigurationError(
+            "PipelineProfile v2 candidate enablement requires --candidate-registry"
+        )
+    return []
+
+
 def _validate_options(options: RunOptions) -> None:
     if not options.workspace_root.is_absolute():
         raise ConfigurationError("workspace_root must be an absolute path")
     if options.compiler.command is None or options.runner.command is None:
         raise ConfigurationError("compiler and runner commands are required")
+    if options.candidate_registry_path is not None:
+        if options.candidate_pass_registry_path is None:
+            raise ConfigurationError(
+                "candidate registry requires a physical PassRegistry v2 snapshot"
+            )
+        catalog = load_and_validate(
+            _workspace_bound_file(
+                options.workspace_root,
+                options.candidate_registry_path,
+                label="candidate registry",
+            )
+        )
+        pass_registry = load_and_validate(
+            _workspace_bound_file(
+                options.workspace_root,
+                options.candidate_pass_registry_path,
+                label="candidate pass registry",
+            )
+        )
+        if catalog["schema_version"] != "candidate-catalog.v1":
+            raise ConfigurationError("candidate registry must be candidate-catalog.v1")
+        if pass_registry["schema_version"] != "pass-registry.v2":
+            raise ConfigurationError("candidate pass registry must be pass-registry.v2")
+        if catalog["pass_registry_sha256"] != sha256_json(pass_registry):
+            raise ConfigurationError("candidate catalog/pass registry binding differs")
+        descriptors = {item["candidate_id"]: item for item in catalog["candidates"]}
+        enabled_candidate_ids = _pipeline_profile_candidate_ids(
+            options.pipeline_profile_path,
+            workspace_root=options.workspace_root,
+            require_v2=True,
+            candidate_order=list(descriptors),
+        )
+        unknown = sorted(set(enabled_candidate_ids) - set(descriptors))
+        if unknown:
+            raise ConfigurationError(
+                "unknown enabled candidate: " + ", ".join(unknown)
+            )
+        unavailable = sorted(
+            candidate_id
+            for candidate_id in enabled_candidate_ids
+            if descriptors[candidate_id]["implementation_status"] != "implemented"
+        )
+        if unavailable:
+            raise ConfigurationError(
+                "enabled candidate is not implemented: " + ", ".join(unavailable)
+            )
+        if options.remarks_file is None:
+            raise ConfigurationError(
+                "candidate campaign runs require optimization-remark.v2 output"
+            )
+    else:
+        if options.candidate_pass_registry_path is not None:
+            raise ConfigurationError(
+                "candidate pass registry cannot be supplied without candidate registry"
+            )
+        _pipeline_profile_candidate_ids(
+            options.pipeline_profile_path,
+            workspace_root=options.workspace_root,
+            require_v2=False,
+        )
     if not isinstance(options.reuse_compile_cache, bool):
         raise ConfigurationError("reuse_compile_cache must be a boolean")
     if (
@@ -256,7 +383,11 @@ def _validate_options(options: RunOptions) -> None:
     if uses_profile_path != (options.pipeline_profile_path is not None):
         raise ConfigurationError("compiler {profile} placeholder and pipeline_profile_path must be configured together")
     if options.pipeline_profile_path is not None:
-        profile_path = options.pipeline_profile_path.resolve(strict=True)
+        profile_path = _workspace_bound_file(
+            options.workspace_root,
+            options.pipeline_profile_path,
+            label="pipeline profile",
+        )
         if not profile_path.is_file() or sha256_file(profile_path) != options.provenance.pipeline_profile_sha256:
             raise ConfigurationError("pipeline profile file does not match provenance SHA-256")
     if options.measurement_protocol_path is None:
@@ -527,13 +658,60 @@ def _configuration(options: RunOptions) -> dict[str, Any]:
             for metric in options.additional_metrics
         ],
     ]
+    candidate_registry = (
+        load_and_validate(
+            _workspace_bound_file(
+                options.workspace_root,
+                options.candidate_registry_path,
+                label="candidate registry",
+            )
+        )
+        if options.candidate_registry_path is not None
+        else None
+    )
+    candidate_pass_registry = (
+        load_and_validate(
+            _workspace_bound_file(
+                options.workspace_root,
+                options.candidate_pass_registry_path,
+                label="candidate pass registry",
+            )
+        )
+        if options.candidate_pass_registry_path is not None
+        else None
+    )
+    enabled_candidate_ids = _pipeline_profile_candidate_ids(
+        options.pipeline_profile_path,
+        workspace_root=options.workspace_root,
+        require_v2=options.candidate_registry_path is not None,
+        candidate_order=(
+            None
+            if candidate_registry is None
+            else [item["candidate_id"] for item in candidate_registry["candidates"]]
+        ),
+    )
     return {
         "compiler": _stage_record(options.compiler),
         "pipeline_profile_file_sha256": (
-            sha256_file(options.pipeline_profile_path.resolve(strict=True))
+            sha256_file(
+                _workspace_bound_file(
+                    options.workspace_root,
+                    options.pipeline_profile_path,
+                    label="pipeline profile",
+                )
+            )
             if options.pipeline_profile_path is not None
             else None
         ),
+        "candidate_registry_sha256": (
+            sha256_json(candidate_registry) if candidate_registry is not None else None
+        ),
+        "candidate_pass_registry_sha256": (
+            sha256_json(candidate_pass_registry)
+            if candidate_pass_registry is not None
+            else None
+        ),
+        "enabled_candidate_ids": enabled_candidate_ids,
         "linker": _stage_record(options.linker),
         "analyzer": _stage_record(options.analyzer),
         "runner": _stage_record(options.runner),
@@ -633,6 +811,7 @@ def _new_case(
         "binary_sha256": None,
         "remarks_sha256": None,
         "remarks_event_count": None,
+        "candidate_remark_summary": None,
         "analysis_sha256": None,
         "attempt_journal_sha256": None,
         "attempt_journal_event_count": None,
@@ -662,6 +841,7 @@ _ATTEMPT_FIELDS = (
     "binary_sha256",
     "remarks_sha256",
     "remarks_event_count",
+    "candidate_remark_summary",
     "analysis_sha256",
     "attempt_journal_sha256",
     "attempt_journal_event_count",
@@ -676,6 +856,27 @@ _ATTEMPT_FIELDS = (
     "consistency_mismatched_metrics",
     "diagnostic",
 )
+
+
+def _normalized_candidate_remark_summary(
+    summary: Mapping[str, Any],
+    *,
+    enabled_candidate_ids: list[str],
+) -> dict[str, Any]:
+    return {
+        "event_count": summary["event_count"],
+        "summary_count": summary["summary_count"],
+        "paired_candidate_count": summary["paired_candidate_count"],
+        "applied_count": summary["applied_count"],
+        "rejected_count": summary["rejected_count"],
+        "candidates": [
+            {
+                "candidate_id": candidate_id,
+                **summary["by_candidate"][candidate_id],
+            }
+            for candidate_id in enabled_candidate_ids
+        ],
+    }
 
 
 _ATTEMPT_FAILURE_SUMMARIES = {
@@ -712,6 +913,802 @@ def _bind_journal_commitment(
         raise ExecutionError("attempt journal lacks a terminal outcome")
     case["attempt_journal_sha256"] = snapshot.commitment_sha256
     case["attempt_journal_event_count"] = len(snapshot.events)
+
+
+RemarkEvidenceValidator = Callable[[Path, Mapping[str, Any]], None]
+
+
+@dataclass(frozen=True)
+class VerifiedRunRawEvidence:
+    """Canonical commitments plus process-local access to verified current remarks.
+
+    ``document`` is deliberately path-free and safe to embed in normalized campaign
+    evidence.  ``current_remark_paths`` is an in-process capability for callers that
+    must re-validate the semantic contents of the exact physical remark file; it must
+    never be serialized.
+    """
+
+    document: dict[str, Any]
+    current_remark_paths: Mapping[str, Path | None]
+
+
+def _run_terminal_identity(
+    record: Mapping[str, Any],
+    output_path: Path,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "benchmark-run-terminal-identity.v1",
+        "run_id": record["run_id"],
+        "manifest_sha256": record["manifest_sha256"],
+        "configuration_sha256": record["configuration_sha256"],
+        "started_at": record["started_at"],
+        "output_path_sha256": path_identity(output_path),
+    }
+
+
+def _case_terminal_commitments_sha256(record: Mapping[str, Any]) -> str:
+    return sha256_json(
+        {
+            "schema_version": "benchmark-run-case-terminal-commitments.v1",
+            "cases": [
+                {
+                    "case_id": case["case_id"],
+                    "case_sha256": sha256_json(case),
+                }
+                for case in record["cases"]
+            ],
+        }
+    )
+
+
+def _run_terminal_content(record: Mapping[str, Any]) -> dict[str, str]:
+    expected_summary = _summary(record["cases"])
+    if record["summary"] != expected_summary:
+        raise ExecutionError("benchmark run summary differs from its case outcomes")
+    return {
+        "summary_sha256": sha256_json(expected_summary),
+        "case_terminal_commitments_sha256": (
+            _case_terminal_commitments_sha256(record)
+        ),
+    }
+
+
+def _run_terminal_payload(record: Mapping[str, Any]) -> dict[str, str]:
+    state = record["state"]
+    if state not in {"completed", "failed", "interrupted"}:
+        raise ExecutionError("run terminal payload requires a terminal state")
+    completed_at = record["completed_at"]
+    if state in {"completed", "failed"}:
+        if not isinstance(completed_at, str):
+            raise ExecutionError("final benchmark run lacks completed_at")
+        observed_at = completed_at
+    else:
+        if completed_at is not None:
+            raise ExecutionError("interrupted benchmark run cannot have completed_at")
+        observed_at = record["updated_at"]
+    if not isinstance(observed_at, str):
+        raise ExecutionError("terminal benchmark run lacks an observation timestamp")
+    return {
+        "state": state,
+        "observed_at": observed_at,
+        **_run_terminal_content(record),
+    }
+
+
+def _run_terminal_journal(
+    record: Mapping[str, Any],
+    output_path: Path,
+    run_directory: Path,
+) -> RunTerminalJournal:
+    return RunTerminalJournal(
+        run_directory,
+        identity=_run_terminal_identity(record, output_path),
+    )
+
+
+class _RawAttemptStore:
+    """Single implementation of the run-state and raw-attempt identity contract."""
+
+    def __init__(self, *, output_path: Path, state_root: Path) -> None:
+        self.output_path = output_path
+        self.state_root = state_root
+
+    def run_directory(self, record: Mapping[str, Any]) -> Path:
+        identity = f"{record['run_id']}:{record['manifest_sha256']}"
+        return self.state_root / "runs" / safe_slug(identity)
+
+    def state_identity(self, record: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "schema_version": "benchmark-run-state.v1",
+            "run_id": record["run_id"],
+            "manifest_sha256": record["manifest_sha256"],
+            "started_at": record["started_at"],
+            "output_path_sha256": path_identity(self.output_path),
+        }
+
+    def bind_state_identity(
+        self,
+        record: Mapping[str, Any],
+        run_directory: Path,
+        *,
+        create_if_missing: bool,
+    ) -> None:
+        if run_directory.is_symlink() or not run_directory.is_dir():
+            raise ExecutionError("benchmark execution-state directory is missing or invalid")
+        identity = self.state_identity(record)
+        identity_path = run_directory / "identity.json"
+        if identity_path.exists() or identity_path.is_symlink():
+            if identity_path.is_symlink() or not identity_path.is_file():
+                raise ExecutionError(
+                    "benchmark execution-state identity is not a regular file"
+                )
+            try:
+                observed = read_json(identity_path)
+            except ValidationError as exc:
+                raise ExecutionError("benchmark execution-state identity is unreadable") from exc
+            if observed != identity:
+                raise ExecutionError(
+                    "benchmark execution state is already bound to another output or run record"
+                )
+            return
+        if not create_if_missing:
+            raise ExecutionError("benchmark execution-state identity is missing")
+        atomic_write_json(identity_path, identity)
+
+    @staticmethod
+    def attempt_directory(
+        run_directory: Path,
+        *,
+        case_id: str,
+        attempt_index: int,
+    ) -> Path:
+        return (
+            run_directory
+            / "cases"
+            / safe_slug(case_id)
+            / "attempts"
+            / f"attempt-{attempt_index:04d}"
+        )
+
+    @staticmethod
+    def attempt_identity(
+        record: Mapping[str, Any],
+        *,
+        case_id: str,
+        attempt_index: int,
+        started_at: str,
+        configuration_sha256: str,
+    ) -> dict[str, Any]:
+        return raw_attempt_identity(
+            run_id=record["run_id"],
+            manifest_sha256=record["manifest_sha256"],
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+
+    def bind_attempt_directory(
+        self,
+        record: Mapping[str, Any],
+        run_directory: Path,
+        *,
+        case_id: str,
+        attempt_index: int,
+        started_at: str,
+        configuration_sha256: str,
+        allow_existing: bool,
+        create_if_missing: bool,
+    ) -> Path:
+        directory = self.attempt_directory(
+            run_directory,
+            case_id=case_id,
+            attempt_index=attempt_index,
+        )
+        identity = self.attempt_identity(
+            record,
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        identity_path = directory / "identity.json"
+        identity_sha256 = raw_attempt_identity_sha256(
+            run_id=record["run_id"],
+            manifest_sha256=record["manifest_sha256"],
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        if directory.exists() or directory.is_symlink():
+            if (
+                not allow_existing
+                or directory.is_symlink()
+                or not directory.is_dir()
+                or identity_path.is_symlink()
+                or not identity_path.is_file()
+            ):
+                raise ExecutionError(
+                    f"raw attempt directory collision for case {case_id} attempt {attempt_index}"
+                )
+            try:
+                observed = read_json(identity_path)
+            except ValidationError as exc:
+                raise ExecutionError(
+                    f"raw attempt identity is unreadable for case {case_id} attempt {attempt_index}"
+                ) from exc
+            if observed != identity:
+                raise ExecutionError(
+                    f"raw attempt identity differs for case {case_id} attempt {attempt_index}"
+                )
+            AttemptJournal(directory, identity_sha256=identity_sha256).load()
+            return directory
+        if not create_if_missing:
+            raise ExecutionError(
+                f"raw attempt evidence is missing for case {case_id} attempt {attempt_index}"
+            )
+        directory.mkdir(parents=True, exist_ok=False)
+        AttemptJournal(directory, identity_sha256=identity_sha256).initialize()
+        durable_create_json(identity_path, identity)
+        return directory
+
+    def physical_attempts(
+        self,
+        record: Mapping[str, Any],
+        run_directory: Path,
+    ) -> dict[tuple[str, int], Path]:
+        expected: dict[tuple[str, int], Path] = {}
+        expected_case_directories: dict[str, str] = {}
+        for case in record["cases"]:
+            case_directory_name = safe_slug(case["case_id"])
+            expected_case_directories[case_directory_name] = case["case_id"]
+            for attempt in case["attempts"]:
+                key = (case["case_id"], attempt["attempt_index"])
+                expected[key] = self.attempt_directory(
+                    run_directory,
+                    case_id=case["case_id"],
+                    attempt_index=attempt["attempt_index"],
+                )
+            if case["attempt_started_at"] is not None:
+                key = (case["case_id"], case["attempt_index"])
+                expected[key] = self.attempt_directory(
+                    run_directory,
+                    case_id=case["case_id"],
+                    attempt_index=case["attempt_index"],
+                )
+
+        cases_root = run_directory / "cases"
+        actual: dict[tuple[str, int], Path] = {}
+        if cases_root.exists() or cases_root.is_symlink():
+            if not cases_root.is_dir() or cases_root.is_symlink():
+                raise ExecutionError("raw attempt cases root is not a regular directory")
+            for case_directory in cases_root.iterdir():
+                case_id = expected_case_directories.get(case_directory.name)
+                if (
+                    case_id is None
+                    or case_directory.is_symlink()
+                    or not case_directory.is_dir()
+                ):
+                    raise ExecutionError("raw attempt state contains an orphan case directory")
+                children = list(case_directory.iterdir())
+                if len(children) != 1 or children[0].name != "attempts":
+                    raise ExecutionError("raw attempt case directory has an invalid layout")
+                attempts_directory = children[0]
+                if attempts_directory.is_symlink() or not attempts_directory.is_dir():
+                    raise ExecutionError("raw attempt container is not a regular directory")
+                for attempt_directory in attempts_directory.iterdir():
+                    match = re.fullmatch(r"attempt-([0-9]{4})", attempt_directory.name)
+                    if (
+                        match is None
+                        or attempt_directory.is_symlink()
+                        or not attempt_directory.is_dir()
+                    ):
+                        raise ExecutionError("raw attempt state contains an invalid attempt entry")
+                    key = (case_id, int(match.group(1)))
+                    if key in actual:
+                        raise ExecutionError("raw attempt state contains duplicate attempt identities")
+                    actual[key] = attempt_directory
+        if set(actual) != set(expected):
+            missing = sorted(set(expected) - set(actual))
+            orphan = sorted(set(actual) - set(expected))
+            detail = f" missing={missing[0]}" if missing else f" orphan={orphan[0]}"
+            raise ExecutionError("physical and normalized attempt sets differ:" + detail)
+        if any(actual[key] != path for key, path in expected.items()):
+            raise ExecutionError("raw attempt directory path differs from normalized identity")
+        return actual
+
+    @staticmethod
+    def attempt_journal(
+        record: Mapping[str, Any],
+        directory: Path,
+        *,
+        case_id: str,
+        attempt_index: int,
+        started_at: str,
+        configuration_sha256: str,
+    ) -> AttemptJournal:
+        identity_sha256 = raw_attempt_identity_sha256(
+            run_id=record["run_id"],
+            manifest_sha256=record["manifest_sha256"],
+            case_id=case_id,
+            attempt_index=attempt_index,
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        return AttemptJournal(directory, identity_sha256=identity_sha256)
+
+    @staticmethod
+    def verify_durable_case_payload_identity(
+        case: Mapping[str, Any], payload: Mapping[str, Any]
+    ) -> None:
+        if set(payload) != set(_terminal_case_payload(case)):
+            raise ExecutionError("raw durable case payload has an invalid field set")
+        for field, expected in (
+            ("case_id", case["case_id"]),
+            ("attempt_index", case["attempt_index"]),
+            ("attempt_started_at", case["attempt_started_at"]),
+            (
+                "attempt_configuration_sha256",
+                case["attempt_configuration_sha256"],
+            ),
+            ("source_sha256", case["source_sha256"]),
+            ("input_sha256", case["input_sha256"]),
+            ("expected_output_sha256", case["expected_output_sha256"]),
+        ):
+            if payload[field] != expected:
+                raise ExecutionError(f"raw terminal case identity differs: {field}")
+
+    @staticmethod
+    def replace_current_case_payload(
+        case: dict[str, Any], payload: Mapping[str, Any]
+    ) -> None:
+        attempts = case["attempts"]
+        case.clear()
+        case.update(deepcopy(dict(payload)))
+        case["attempts"] = attempts
+
+    def verify_archived_attempt(
+        self,
+        record: Mapping[str, Any],
+        case: Mapping[str, Any],
+        attempt: Mapping[str, Any],
+        directory: Path,
+    ) -> JournalSnapshot:
+        journal = self.attempt_journal(
+            record,
+            directory,
+            case_id=case["case_id"],
+            attempt_index=attempt["attempt_index"],
+            started_at=attempt["started_at"],
+            configuration_sha256=attempt["configuration_sha256"],
+        )
+        snapshot = journal.load()
+        terminal = snapshot.terminal_case_result
+        if terminal is None:
+            raise ExecutionError("archived attempt lacks a durable terminal journal outcome")
+        journal.verify_terminal_raw_files(snapshot)
+        expected_terminal = _terminal_case_payload(case)
+        expected_terminal["attempt_index"] = attempt["attempt_index"]
+        expected_terminal["attempt_started_at"] = attempt["started_at"]
+        expected_terminal["attempt_configuration_sha256"] = attempt[
+            "configuration_sha256"
+        ]
+        for field in _ATTEMPT_FIELDS:
+            if field not in _JOURNAL_COMMITMENT_FIELDS:
+                expected_terminal[field] = deepcopy(attempt[field])
+        if (
+            terminal != expected_terminal
+            or attempt["attempt_journal_sha256"] != snapshot.commitment_sha256
+            or attempt["attempt_journal_event_count"] != len(snapshot.events)
+        ):
+            raise ExecutionError("archived attempt differs from its durable terminal journal")
+        return snapshot
+
+    def verify_current_attempt(
+        self,
+        record: Mapping[str, Any],
+        case: Mapping[str, Any],
+        directory: Path,
+    ) -> JournalSnapshot:
+        started_at = case["attempt_started_at"]
+        configuration_sha256 = case["attempt_configuration_sha256"]
+        if started_at is None or configuration_sha256 is None:
+            raise ExecutionError("cannot verify an unstarted current attempt")
+        journal = self.attempt_journal(
+            record,
+            directory,
+            case_id=case["case_id"],
+            attempt_index=case["attempt_index"],
+            started_at=started_at,
+            configuration_sha256=configuration_sha256,
+        )
+        snapshot = journal.load()
+        terminal = snapshot.terminal_case_result
+        if terminal is None:
+            raise ExecutionError("started attempt lacks a durable terminal journal outcome")
+        journal.verify_terminal_raw_files(snapshot)
+        self.verify_durable_case_payload_identity(case, terminal)
+        if (
+            terminal != _terminal_case_payload(case)
+            or case["attempt_journal_sha256"] != snapshot.commitment_sha256
+            or case["attempt_journal_event_count"] != len(snapshot.events)
+        ):
+            raise ExecutionError("normalized attempt result differs from its durable terminal journal")
+        return snapshot
+
+
+def _verified_remark_binding(
+    *,
+    record: Mapping[str, Any],
+    terminal_payload: Mapping[str, Any],
+    snapshot: JournalSnapshot,
+    attempt_directory: Path,
+) -> tuple[str | None, Path | None]:
+    configured_path_sha256 = record["configuration"]["remarks_file_sha256"]
+    normalized_sha256 = terminal_payload["remarks_sha256"]
+    raw_files = snapshot.terminal_raw_files
+    if raw_files is None:
+        raise ExecutionError("terminal attempt lacks a raw file inventory")
+    if configured_path_sha256 is None:
+        if normalized_sha256 is not None:
+            raise ExecutionError("normalized remarks exist without a configured remark path")
+        return None, None
+
+    matching = [
+        item for item in raw_files if sha256_json(item["path"]) == configured_path_sha256
+    ]
+    if normalized_sha256 is None:
+        if matching:
+            raise ExecutionError(
+                "physical configured remarks exist without normalized remark evidence"
+            )
+        return None, None
+    if len(matching) != 1 or matching[0]["sha256"] != normalized_sha256:
+        raise ExecutionError(
+            "normalized remarks differ from the configured physical raw file"
+        )
+    item = matching[0]
+    relative = validate_relative_path(item["path"], label="raw remark file")
+    path = attempt_directory.joinpath(*relative.parts)
+    if path.is_symlink() or not path.is_file():
+        raise ExecutionError("verified raw remark path is not a regular file")
+    if sha256_file(path) != item["sha256"] or path.stat().st_size != item["size_bytes"]:
+        raise ExecutionError("verified raw remark file changed after journal validation")
+    return sha256_json([item]), path
+
+
+def _validate_read_only_run_layout(run_directory: Path) -> None:
+    try:
+        entries = {entry.name: entry for entry in run_directory.iterdir()}
+    except OSError as exc:
+        raise ExecutionError("cannot enumerate benchmark execution state") from exc
+    if "identity.json" not in entries:
+        raise ExecutionError("benchmark execution-state identity is missing")
+    if ".run.lock" not in entries:
+        raise ExecutionError("benchmark execution-state lease is missing")
+    unknown = set(entries) - {
+        "identity.json",
+        "cases",
+        ".run.lock",
+        "run-terminal",
+    }
+    if unknown:
+        raise ExecutionError("benchmark execution state contains an unexpected root entry")
+    lock = entries.get(".run.lock")
+    if lock is not None and (lock.is_symlink() or not lock.is_file()):
+        raise ExecutionError("benchmark execution-state lease is not a regular file")
+    cases = entries.get("cases")
+    if cases is not None and (cases.is_symlink() or not cases.is_dir()):
+        raise ExecutionError("raw attempt cases root is not a regular directory")
+    terminal = entries.get("run-terminal")
+    if terminal is None:
+        raise ExecutionError("run terminal journal is missing")
+    if terminal.is_symlink() or not terminal.is_dir():
+        raise ExecutionError("run terminal journal is not a regular directory")
+
+
+def _state_tree_sha256(run_directory: Path) -> str:
+    files: list[dict[str, Any]] = []
+    pending = [run_directory]
+    while pending:
+        directory = pending.pop()
+        try:
+            entries = list(directory.iterdir())
+        except OSError as exc:
+            raise ExecutionError("cannot enumerate benchmark raw evidence tree") from exc
+        for entry in entries:
+            relative = entry.relative_to(run_directory).as_posix()
+            if relative == ".run.lock":
+                if entry.is_symlink() or not entry.is_file():
+                    raise ExecutionError("benchmark execution-state lease is not a regular file")
+                continue
+            if entry.is_symlink():
+                raise ExecutionError("benchmark raw evidence tree contains a symbolic link")
+            if entry.is_dir():
+                pending.append(entry)
+                continue
+            if not entry.is_file():
+                raise ExecutionError("benchmark raw evidence tree contains a non-regular entry")
+            try:
+                files.append(
+                    {
+                        "path": relative,
+                        "sha256": sha256_file(entry),
+                        "size_bytes": entry.stat().st_size,
+                    }
+                )
+            except OSError as exc:
+                raise ExecutionError("cannot hash benchmark raw evidence tree") from exc
+    files.sort(key=lambda item: item["path"].encode("utf-8"))
+    return sha256_json(
+        {
+            "schema_version": "benchmark-run-state-tree.v1",
+            "files": files,
+        }
+    )
+
+
+def _verify_run_raw_evidence_locked(
+    run_record_path: Path,
+    state_root: Path,
+    *,
+    remark_validator: RemarkEvidenceValidator | None = None,
+) -> VerifiedRunRawEvidence:
+    """Recompute a terminal run's normalized and physical raw-evidence closure."""
+
+    resolved_record = resolve_without_symlinks(
+        run_record_path, label="benchmark run record"
+    )
+    if not resolved_record.is_file():
+        raise ValidationError("benchmark run record must be a regular file")
+    physical_before = sha256_file(resolved_record)
+    record = load_and_validate(resolved_record)
+    if record["schema_version"] != "run-record.v1":
+        raise ValidationError("raw evidence verifier requires run-record.v1")
+    physical_after = sha256_file(resolved_record)
+    if physical_before != physical_after:
+        raise ExecutionError("benchmark run record changed during raw evidence verification")
+    if record["state"] not in {"completed", "failed", "interrupted"}:
+        raise ExecutionError("raw evidence verification requires a terminal run state")
+
+    resolved_state_root = resolve_without_symlinks(
+        state_root, label="benchmark state root"
+    )
+    if not resolved_state_root.is_dir():
+        raise ValidationError("benchmark state root must be a regular directory")
+    store = _RawAttemptStore(
+        output_path=resolved_record,
+        state_root=resolved_state_root,
+    )
+    lexical_run_directory = store.run_directory(record)
+    run_directory = resolve_without_symlinks(
+        lexical_run_directory, label="benchmark run state"
+    )
+    if run_directory != lexical_run_directory.absolute():
+        raise ValidationError("benchmark run state path identity differs")
+    _validate_read_only_run_layout(run_directory)
+    store.bind_state_identity(
+        record,
+        run_directory,
+        create_if_missing=False,
+    )
+    terminal_snapshot = _run_terminal_journal(
+        record,
+        resolved_record,
+        run_directory,
+    ).load()
+    terminal_payload = terminal_snapshot.latest_terminal
+    if terminal_payload is None:
+        raise ExecutionError("run terminal journal lacks a terminal observation")
+    if terminal_payload != _run_terminal_payload(record):
+        raise ExecutionError(
+            "normalized run terminal differs from its durable journal observation"
+        )
+    physical_attempts = store.physical_attempts(record, run_directory)
+    state_tree_before = _state_tree_sha256(run_directory)
+
+    cases_document: list[dict[str, Any]] = []
+    current_remark_paths: dict[str, Path | None] = {}
+    attempt_count = 0
+    terminal_attempt_count = 0
+    for case in record["cases"]:
+        attempts_document: list[dict[str, Any]] = []
+        current_remark_paths[case["case_id"]] = None
+        for attempt in case["attempts"]:
+            key = (case["case_id"], attempt["attempt_index"])
+            directory = store.bind_attempt_directory(
+                record,
+                run_directory,
+                case_id=case["case_id"],
+                attempt_index=attempt["attempt_index"],
+                started_at=attempt["started_at"],
+                configuration_sha256=attempt["configuration_sha256"],
+                allow_existing=True,
+                create_if_missing=False,
+            )
+            if physical_attempts[key] != directory:
+                raise ExecutionError("archived raw attempt path changed during verification")
+            snapshot = store.verify_archived_attempt(record, case, attempt, directory)
+            remark_files_sha256, _ = _verified_remark_binding(
+                record=record,
+                terminal_payload=snapshot.terminal_case_result or {},
+                snapshot=snapshot,
+                attempt_directory=directory,
+            )
+            attempts_document.append(
+                {
+                    "attempt_index": attempt["attempt_index"],
+                    "identity_sha256": attempt["raw_attempt_identity_sha256"],
+                    "journal_commitment_sha256": snapshot.commitment_sha256,
+                    "journal_event_count": len(snapshot.events),
+                    "raw_files_sha256": sha256_json(snapshot.terminal_raw_files),
+                    "remark_files_sha256": remark_files_sha256,
+                }
+            )
+            attempt_count += 1
+            terminal_attempt_count += 1
+
+        current_attempt_index: int | None = None
+        if case["attempt_started_at"] is not None:
+            current_attempt_index = case["attempt_index"]
+            key = (case["case_id"], current_attempt_index)
+            configuration_sha256 = case["attempt_configuration_sha256"]
+            assert configuration_sha256 is not None
+            directory = store.bind_attempt_directory(
+                record,
+                run_directory,
+                case_id=case["case_id"],
+                attempt_index=current_attempt_index,
+                started_at=case["attempt_started_at"],
+                configuration_sha256=configuration_sha256,
+                allow_existing=True,
+                create_if_missing=False,
+            )
+            if physical_attempts[key] != directory:
+                raise ExecutionError("current raw attempt path changed during verification")
+            snapshot = store.verify_current_attempt(record, case, directory)
+            remark_files_sha256, remark_path = _verified_remark_binding(
+                record=record,
+                terminal_payload=snapshot.terminal_case_result or {},
+                snapshot=snapshot,
+                attempt_directory=directory,
+            )
+            identity_sha256 = raw_attempt_identity_sha256(
+                run_id=record["run_id"],
+                manifest_sha256=record["manifest_sha256"],
+                case_id=case["case_id"],
+                attempt_index=current_attempt_index,
+                started_at=case["attempt_started_at"],
+                configuration_sha256=configuration_sha256,
+            )
+            attempts_document.append(
+                {
+                    "attempt_index": current_attempt_index,
+                    "identity_sha256": identity_sha256,
+                    "journal_commitment_sha256": snapshot.commitment_sha256,
+                    "journal_event_count": len(snapshot.events),
+                    "raw_files_sha256": sha256_json(snapshot.terminal_raw_files),
+                    "remark_files_sha256": remark_files_sha256,
+                }
+            )
+            current_remark_paths[case["case_id"]] = remark_path
+            if remark_path is not None and remark_validator is not None:
+                remark_validator(remark_path, deepcopy(case))
+            attempt_count += 1
+            terminal_attempt_count += 1
+
+        cases_document.append(
+            {
+                "case_id": case["case_id"],
+                "attempts": attempts_document,
+                "current_attempt_index": current_attempt_index,
+            }
+        )
+
+    if attempt_count != len(physical_attempts):
+        raise ExecutionError("verified and physical raw attempt counts differ")
+    state_tree_after = _state_tree_sha256(run_directory)
+    if state_tree_before != state_tree_after:
+        raise ExecutionError("benchmark raw evidence tree changed during verification")
+    if sha256_file(resolved_record) != physical_after:
+        raise ExecutionError("benchmark run record changed during raw evidence verification")
+    document = {
+        "schema_version": "benchmark-run-raw-evidence.v1",
+        "run_id": record["run_id"],
+        "run_canonical_sha256": sha256_json(record),
+        "run_physical_sha256": physical_after,
+        "terminal_observed_at": terminal_payload["observed_at"],
+        "terminal_journal_sha256": terminal_snapshot.commitment_sha256,
+        "terminal_journal_event_count": len(terminal_snapshot.events),
+        "state_tree_sha256": state_tree_after,
+        "attempt_count": attempt_count,
+        "terminal_attempt_count": terminal_attempt_count,
+        "cases": cases_document,
+    }
+    document["raw_evidence_sha256"] = sha256_json(
+        {
+            "schema_version": "benchmark-run-raw-evidence-commitment.v1",
+            "document": document,
+        }
+    )
+    return VerifiedRunRawEvidence(
+        document=document,
+        current_remark_paths=current_remark_paths,
+    )
+
+
+def verify_run_raw_evidence(
+    run_record_path: Path,
+    state_root: Path,
+    *,
+    remark_validator: RemarkEvidenceValidator | None = None,
+) -> VerifiedRunRawEvidence:
+    """Verify raw evidence while holding the executor's output and run leases.
+
+    Both lease files must already exist.  This verifier never synthesizes missing
+    execution state and holds the locks in the same order as ``BenchmarkRun``.
+    """
+
+    resolved_record = resolve_without_symlinks(
+        run_record_path, label="benchmark run record"
+    )
+    if not resolved_record.is_file():
+        raise ValidationError("benchmark run record must be a regular file")
+    preliminary_physical_sha256 = sha256_file(resolved_record)
+    preliminary = load_and_validate(resolved_record)
+    if preliminary["schema_version"] != "run-record.v1":
+        raise ValidationError("raw evidence verifier requires run-record.v1")
+    resolved_state_root = resolve_without_symlinks(
+        state_root, label="benchmark state root"
+    )
+    if not resolved_state_root.is_dir():
+        raise ValidationError("benchmark state root must be a regular directory")
+    store = _RawAttemptStore(
+        output_path=resolved_record,
+        state_root=resolved_state_root,
+    )
+    run_directory = resolve_without_symlinks(
+        store.run_directory(preliminary), label="benchmark run state"
+    )
+    output_lock = resolve_without_symlinks(
+        output_lease_path(resolved_record), label="benchmark output lease"
+    )
+    run_lock = resolve_without_symlinks(
+        run_directory / ".run.lock", label="benchmark execution-state lease"
+    )
+    if not output_lock.is_file() or not run_lock.is_file():
+        raise ValidationError("benchmark execution leases must be regular files")
+    lease_metadata = {
+        "run_id": preliminary["run_id"],
+        "manifest_sha256": preliminary["manifest_sha256"],
+        "configuration_sha256": preliminary["configuration_sha256"],
+        "output_path_sha256": path_identity(resolved_record),
+        "state_root_sha256": path_identity(resolved_state_root),
+    }
+    with ExclusiveFileLease(
+        output_lock,
+        "output target",
+        lease_metadata,
+    ):
+        if sha256_file(resolved_record) != preliminary_physical_sha256:
+            raise ExecutionError("benchmark run record changed before lease acquisition")
+        locked_record = load_and_validate(resolved_record)
+        if locked_record != preliminary:
+            raise ExecutionError("benchmark run identity changed before lease acquisition")
+        locked_run_directory = store.run_directory(locked_record)
+        if locked_run_directory != run_directory:
+            raise ExecutionError("benchmark run state changed before lease acquisition")
+        with ExclusiveFileLease(
+            run_lock,
+            "execution state",
+            lease_metadata,
+        ):
+            return _verify_run_raw_evidence_locked(
+                resolved_record,
+                resolved_state_root,
+                remark_validator=remark_validator,
+            )
 
 
 def _archive_attempt(record: Mapping[str, Any], case: dict[str, Any]) -> None:
@@ -799,6 +1796,7 @@ class BenchmarkCompiler:
         repetitions: int,
         reuse_cache: bool,
         cancellation_event: threading.Event,
+        candidate_remark_contract: Mapping[str, Any] | None,
     ) -> None:
         self.cache = cache
         self.renderer = renderer
@@ -811,6 +1809,7 @@ class BenchmarkCompiler:
         self.repetitions = repetitions
         self.reuse_cache = reuse_cache
         self.cancellation_event = cancellation_event
+        self.candidate_remark_contract = candidate_remark_contract
         if self.reuse_cache != (self.cache is not None):
             raise ConfigurationError(
                 "compile storage contract requires a cache only in reusable_cache_v2 mode"
@@ -903,7 +1902,13 @@ class BenchmarkCompiler:
                         )
                     if result.status == "ok":
                         try:
-                            load_and_validate_jsonl(preserved_remarks)
+                            if self.candidate_remark_contract is None:
+                                load_and_validate_jsonl(preserved_remarks)
+                            else:
+                                validate_candidate_remark_jsonl(
+                                    preserved_remarks,
+                                    **self.candidate_remark_contract,
+                                )
                         except ValidationError as exc:
                             phase["status"] = "error"
                             phase["diagnostic"] = sanitize_text(
@@ -1070,6 +2075,38 @@ class BenchmarkRun:
         )
         self.configuration = _configuration(options)
         self.provenance = options.provenance.as_record()
+        if options.candidate_registry_path is None:
+            self.candidate_remark_contract: dict[str, Any] | None = None
+        else:
+            assert options.candidate_pass_registry_path is not None
+            candidate_catalog = load_and_validate(
+                _workspace_bound_file(
+                    self.workspace_root,
+                    options.candidate_registry_path,
+                    label="candidate registry",
+                )
+            )
+            candidate_pass_registry = load_and_validate(
+                _workspace_bound_file(
+                    self.workspace_root,
+                    options.candidate_pass_registry_path,
+                    label="candidate pass registry",
+                )
+            )
+            self.candidate_remark_contract = {
+                "catalog": candidate_catalog,
+                "pass_registry": candidate_pass_registry,
+                "enabled_candidate_ids": self.configuration[
+                    "enabled_candidate_ids"
+                ],
+                "candidate_registry_sha256": self.configuration[
+                    "candidate_registry_sha256"
+                ],
+                "pipeline_profile_id": self.provenance["pipeline_profile_id"],
+                "pipeline_profile_sha256": self.provenance[
+                    "pipeline_profile_sha256"
+                ],
+            }
         self.measurement_protocol_assets = (
             resolve_measurement_protocol_assets(
                 dict(options.measurement_protocol_assets),
@@ -1132,6 +2169,12 @@ class BenchmarkRun:
                     "stage": compiler_record,
                     "compiler_artifact_sha256": self.provenance["compiler_artifact_sha256"],
                     "pipeline_profile_sha256": self.provenance["pipeline_profile_sha256"],
+                    "candidate_registry_sha256": self.configuration[
+                        "candidate_registry_sha256"
+                    ],
+                    "candidate_pass_registry_sha256": self.configuration[
+                        "candidate_pass_registry_sha256"
+                    ],
                     "measurement_protocol_sha256": self.provenance["measurement_protocol_sha256"],
                     "tool_versions": self.configuration["tool_versions"],
                 }
@@ -1139,6 +2182,7 @@ class BenchmarkRun:
             repetitions=options.compile_repetitions,
             reuse_cache=options.reuse_compile_cache,
             cancellation_event=self.cancellation_event,
+            candidate_remark_contract=self.candidate_remark_contract,
         )
 
     def _case_timeout_plan(
@@ -1277,33 +2321,20 @@ class BenchmarkRun:
         return record
 
     def _run_directory(self, record: Mapping[str, Any]) -> Path:
-        identity = f"{record['run_id']}:{record['manifest_sha256']}"
-        return self.state_root / "runs" / safe_slug(identity)
+        return _RawAttemptStore(
+            output_path=self.output_path,
+            state_root=self.state_root,
+        ).run_directory(record)
 
     def _bind_state_identity(
         self,
         record: Mapping[str, Any],
         run_directory: Path,
     ) -> None:
-        identity = {
-            "schema_version": "benchmark-run-state.v1",
-            "run_id": record["run_id"],
-            "manifest_sha256": record["manifest_sha256"],
-            "started_at": record["started_at"],
-            "output_path_sha256": path_identity(self.output_path),
-        }
-        identity_path = run_directory / "identity.json"
-        if identity_path.exists():
-            try:
-                observed = read_json(identity_path)
-            except ValidationError as exc:
-                raise ExecutionError("benchmark execution-state identity is unreadable") from exc
-            if observed != identity:
-                raise ExecutionError(
-                    "benchmark execution state is already bound to another output or run record"
-                )
-            return
-        atomic_write_json(identity_path, identity)
+        _RawAttemptStore(
+            output_path=self.output_path,
+            state_root=self.state_root,
+        ).bind_state_identity(record, run_directory, create_if_missing=True)
 
     def _attempt_directory(
         self,
@@ -1312,12 +2343,10 @@ class BenchmarkRun:
         case_id: str,
         attempt_index: int,
     ) -> Path:
-        return (
-            run_directory
-            / "cases"
-            / safe_slug(case_id)
-            / "attempts"
-            / f"attempt-{attempt_index:04d}"
+        return _RawAttemptStore.attempt_directory(
+            run_directory,
+            case_id=case_id,
+            attempt_index=attempt_index,
         )
 
     def _attempt_identity(
@@ -1329,9 +2358,8 @@ class BenchmarkRun:
         started_at: str,
         configuration_sha256: str,
     ) -> dict[str, Any]:
-        return raw_attempt_identity(
-            run_id=record["run_id"],
-            manifest_sha256=record["manifest_sha256"],
+        return _RawAttemptStore.attempt_identity(
+            record,
             case_id=case_id,
             attempt_index=attempt_index,
             started_at=started_at,
@@ -1350,119 +2378,29 @@ class BenchmarkRun:
         allow_existing: bool,
         create_if_missing: bool,
     ) -> Path:
-        directory = self._attempt_directory(
+        return _RawAttemptStore(
+            output_path=self.output_path,
+            state_root=self.state_root,
+        ).bind_attempt_directory(
+            record,
             run_directory,
             case_id=case_id,
             attempt_index=attempt_index,
-        )
-        identity = self._attempt_identity(
-            record,
-            case_id=case_id,
-            attempt_index=attempt_index,
             started_at=started_at,
             configuration_sha256=configuration_sha256,
+            allow_existing=allow_existing,
+            create_if_missing=create_if_missing,
         )
-        identity_path = directory / "identity.json"
-        identity_sha256 = raw_attempt_identity_sha256(
-            run_id=record["run_id"],
-            manifest_sha256=record["manifest_sha256"],
-            case_id=case_id,
-            attempt_index=attempt_index,
-            started_at=started_at,
-            configuration_sha256=configuration_sha256,
-        )
-        if directory.exists():
-            if not allow_existing or not directory.is_dir() or not identity_path.is_file():
-                raise ExecutionError(
-                    f"raw attempt directory collision for case {case_id} attempt {attempt_index}"
-                )
-            try:
-                observed = read_json(identity_path)
-            except ValidationError as exc:
-                raise ExecutionError(
-                    f"raw attempt identity is unreadable for case {case_id} attempt {attempt_index}"
-                ) from exc
-            if observed != identity:
-                raise ExecutionError(
-                    f"raw attempt identity differs for case {case_id} attempt {attempt_index}"
-                )
-            AttemptJournal(directory, identity_sha256=identity_sha256).load()
-            return directory
-        if not create_if_missing:
-            raise ExecutionError(
-                f"raw attempt evidence is missing for case {case_id} attempt {attempt_index}"
-            )
-        directory.mkdir(parents=True, exist_ok=False)
-        AttemptJournal(directory, identity_sha256=identity_sha256).initialize()
-        durable_create_json(identity_path, identity)
-        return directory
 
     def _physical_attempts(
         self,
         record: Mapping[str, Any],
         run_directory: Path,
     ) -> dict[tuple[str, int], Path]:
-        expected: dict[tuple[str, int], Path] = {}
-        expected_case_directories: dict[str, str] = {}
-        for case in record["cases"]:
-            case_directory_name = safe_slug(case["case_id"])
-            expected_case_directories[case_directory_name] = case["case_id"]
-            for attempt in case["attempts"]:
-                key = (case["case_id"], attempt["attempt_index"])
-                expected[key] = self._attempt_directory(
-                    run_directory,
-                    case_id=case["case_id"],
-                    attempt_index=attempt["attempt_index"],
-                )
-            if case["attempt_started_at"] is not None:
-                key = (case["case_id"], case["attempt_index"])
-                expected[key] = self._attempt_directory(
-                    run_directory,
-                    case_id=case["case_id"],
-                    attempt_index=case["attempt_index"],
-                )
-
-        cases_root = run_directory / "cases"
-        actual: dict[tuple[str, int], Path] = {}
-        if cases_root.exists():
-            if not cases_root.is_dir() or cases_root.is_symlink():
-                raise ExecutionError("raw attempt cases root is not a regular directory")
-            for case_directory in cases_root.iterdir():
-                case_id = expected_case_directories.get(case_directory.name)
-                if (
-                    case_id is None
-                    or case_directory.is_symlink()
-                    or not case_directory.is_dir()
-                ):
-                    raise ExecutionError("raw attempt state contains an orphan case directory")
-                children = list(case_directory.iterdir())
-                if len(children) != 1 or children[0].name != "attempts":
-                    raise ExecutionError("raw attempt case directory has an invalid layout")
-                attempts_directory = children[0]
-                if attempts_directory.is_symlink() or not attempts_directory.is_dir():
-                    raise ExecutionError("raw attempt container is not a regular directory")
-                for attempt_directory in attempts_directory.iterdir():
-                    match = re.fullmatch(r"attempt-([0-9]{4})", attempt_directory.name)
-                    if (
-                        match is None
-                        or attempt_directory.is_symlink()
-                        or not attempt_directory.is_dir()
-                    ):
-                        raise ExecutionError("raw attempt state contains an invalid attempt entry")
-                    key = (case_id, int(match.group(1)))
-                    if key in actual:
-                        raise ExecutionError("raw attempt state contains duplicate attempt identities")
-                    actual[key] = attempt_directory
-        if set(actual) != set(expected):
-            missing = sorted(set(expected) - set(actual))
-            orphan = sorted(set(actual) - set(expected))
-            detail = (
-                f" missing={missing[0]}" if missing else f" orphan={orphan[0]}"
-            )
-            raise ExecutionError("physical and normalized attempt sets differ:" + detail)
-        if any(actual[key] != path for key, path in expected.items()):
-            raise ExecutionError("raw attempt directory path differs from normalized identity")
-        return actual
+        return _RawAttemptStore(
+            output_path=self.output_path,
+            state_root=self.state_root,
+        ).physical_attempts(record, run_directory)
 
     def _attempt_journal(
         self,
@@ -1474,15 +2412,14 @@ class BenchmarkRun:
         started_at: str,
         configuration_sha256: str,
     ) -> AttemptJournal:
-        identity_sha256 = raw_attempt_identity_sha256(
-            run_id=record["run_id"],
-            manifest_sha256=record["manifest_sha256"],
+        return _RawAttemptStore.attempt_journal(
+            record,
+            directory,
             case_id=case_id,
             attempt_index=attempt_index,
             started_at=started_at,
             configuration_sha256=configuration_sha256,
         )
-        return AttemptJournal(directory, identity_sha256=identity_sha256)
 
     def _recover_current_attempt(
         self,
@@ -1540,31 +2477,13 @@ class BenchmarkRun:
     def _verify_durable_case_payload_identity(
         case: Mapping[str, Any], payload: Mapping[str, Any]
     ) -> None:
-        if set(payload) != set(_terminal_case_payload(case)):
-            raise ExecutionError("raw durable case payload has an invalid field set")
-        for field, expected in (
-            ("case_id", case["case_id"]),
-            ("attempt_index", case["attempt_index"]),
-            ("attempt_started_at", case["attempt_started_at"]),
-            (
-                "attempt_configuration_sha256",
-                case["attempt_configuration_sha256"],
-            ),
-            ("source_sha256", case["source_sha256"]),
-            ("input_sha256", case["input_sha256"]),
-            ("expected_output_sha256", case["expected_output_sha256"]),
-        ):
-            if payload[field] != expected:
-                raise ExecutionError(f"raw terminal case identity differs: {field}")
+        _RawAttemptStore.verify_durable_case_payload_identity(case, payload)
 
     @staticmethod
     def _replace_current_case_payload(
         case: dict[str, Any], payload: Mapping[str, Any]
     ) -> None:
-        attempts = case["attempts"]
-        case.clear()
-        case.update(deepcopy(dict(payload)))
-        case["attempts"] = attempts
+        _RawAttemptStore.replace_current_case_payload(case, payload)
 
     def _verify_archived_attempt(
         self,
@@ -1573,34 +2492,10 @@ class BenchmarkRun:
         attempt: Mapping[str, Any],
         directory: Path,
     ) -> None:
-        journal = self._attempt_journal(
-            record,
-            directory,
-            case_id=case["case_id"],
-            attempt_index=attempt["attempt_index"],
-            started_at=attempt["started_at"],
-            configuration_sha256=attempt["configuration_sha256"],
-        )
-        snapshot = journal.load()
-        terminal = snapshot.terminal_case_result
-        if terminal is None:
-            raise ExecutionError("archived attempt lacks a durable terminal journal outcome")
-        journal.verify_terminal_raw_files(snapshot)
-        expected_terminal = _terminal_case_payload(case)
-        expected_terminal["attempt_index"] = attempt["attempt_index"]
-        expected_terminal["attempt_started_at"] = attempt["started_at"]
-        expected_terminal["attempt_configuration_sha256"] = attempt[
-            "configuration_sha256"
-        ]
-        for field in _ATTEMPT_FIELDS:
-            if field not in _JOURNAL_COMMITMENT_FIELDS:
-                expected_terminal[field] = deepcopy(attempt[field])
-        if (
-            terminal != expected_terminal
-            or attempt["attempt_journal_sha256"] != snapshot.commitment_sha256
-            or attempt["attempt_journal_event_count"] != len(snapshot.events)
-        ):
-            raise ExecutionError("archived attempt differs from its durable terminal journal")
+        _RawAttemptStore(
+            output_path=self.output_path,
+            state_root=self.state_root,
+        ).verify_archived_attempt(record, case, attempt, directory)
 
     def _prepare_record_for_execution(
         self,
@@ -1694,12 +2589,101 @@ class BenchmarkRun:
             create_if_missing=True,
         )
 
-    def _write_record(self, record: dict[str, Any]) -> None:
+    def _write_record(
+        self,
+        record: dict[str, Any],
+        *,
+        updated_at: str | None = None,
+    ) -> None:
         with self._write_lock:
-            record["updated_at"] = utc_now()
+            record["updated_at"] = updated_at or utc_now()
             record["summary"] = _summary(record["cases"])
             validate_document(record)
             atomic_write_json(self.output_path, record)
+
+    def _reconcile_run_terminal(
+        self,
+        record: dict[str, Any],
+        run_directory: Path,
+    ) -> RunTerminalSnapshot | None:
+        journal = _run_terminal_journal(record, self.output_path, run_directory)
+        if not journal.exists:
+            if record["state"] in {"completed", "failed", "interrupted"}:
+                raise ExecutionError(
+                    "terminal benchmark run lacks a physical run terminal journal"
+                )
+            return None
+
+        snapshot = journal.load()
+        terminal = snapshot.latest_terminal
+        if terminal is None:
+            if record["state"] in {"completed", "failed", "interrupted"}:
+                raise ExecutionError(
+                    "terminal benchmark run lacks a physical terminal observation"
+                )
+            return snapshot
+
+        if record["state"] in {"completed", "failed", "interrupted"}:
+            if terminal != _run_terminal_payload(record):
+                raise ExecutionError(
+                    "normalized run terminal differs from its durable journal observation"
+                )
+            return snapshot
+
+        current_content = _run_terminal_content(record)
+        terminal_content = {
+            "summary_sha256": terminal["summary_sha256"],
+            "case_terminal_commitments_sha256": terminal[
+                "case_terminal_commitments_sha256"
+            ],
+        }
+        if current_content == terminal_content:
+            record["state"] = terminal["state"]
+            record["completed_at"] = (
+                terminal["observed_at"]
+                if terminal["state"] in {"completed", "failed"}
+                else None
+            )
+            self._write_record(record, updated_at=terminal["observed_at"])
+            return snapshot
+        if terminal["state"] != "interrupted":
+            raise ExecutionError(
+                "running benchmark record diverges from a final run terminal observation"
+            )
+        return snapshot
+
+    def _seal_run_terminal(
+        self,
+        record: dict[str, Any],
+        run_directory: Path,
+        *,
+        state: str,
+    ) -> RunTerminalSnapshot:
+        if state not in {"completed", "failed", "interrupted"}:
+            raise ExecutionError("cannot seal a non-terminal benchmark run state")
+        if record["state"] != "running":
+            raise ExecutionError("cannot seal a benchmark run that is not running")
+
+        # Persist the exact case/summary prefix first. If the process stops after
+        # the append-only terminal event but before the normalized terminal
+        # write, the next invocation can recover that write without inventing
+        # evidence or changing the observation time.
+        self._write_record(record)
+        observed_at = utc_now()
+        record["state"] = state
+        record["completed_at"] = (
+            observed_at if state in {"completed", "failed"} else None
+        )
+        record["updated_at"] = observed_at
+        record["summary"] = _summary(record["cases"])
+        payload = _run_terminal_payload(record)
+        snapshot = _run_terminal_journal(
+            record,
+            self.output_path,
+            run_directory,
+        ).seal(payload)
+        self._write_record(record, updated_at=observed_at)
+        return snapshot
 
     def _commit_scheduler_terminal(
         self,
@@ -1792,7 +2776,11 @@ class BenchmarkRun:
             **self.measurement_protocol_assets,
         }
         if self.options.pipeline_profile_path is not None:
-            paths["profile"] = self.options.pipeline_profile_path.resolve(strict=True)
+            paths["profile"] = _workspace_bound_file(
+                self.workspace_root,
+                self.options.pipeline_profile_path,
+                label="pipeline profile",
+            )
         if self.options.metric_file is not None:
             relative_metric = validate_relative_path(self.options.metric_file, label="metric file")
             metric_file = case_directory.joinpath(*relative_metric.parts).resolve()
@@ -2008,9 +2996,25 @@ class BenchmarkRun:
         if remarks_path is not None:
             if not remarks_path.is_file():
                 raise ExecutionError("successful compiler stage lacks configured optimization remarks")
-            remark_events = load_and_validate_jsonl(remarks_path)
+            if self.candidate_remark_contract is None:
+                remark_events = load_and_validate_jsonl(remarks_path)
+                remark_event_count = len(remark_events)
+                normalized_candidate_summary = None
+            else:
+                remark_summary = validate_candidate_remark_jsonl(
+                    remarks_path,
+                    **self.candidate_remark_contract,
+                )
+                remark_event_count = remark_summary["event_count"]
+                normalized_candidate_summary = _normalized_candidate_remark_summary(
+                    remark_summary,
+                    enabled_candidate_ids=self.candidate_remark_contract[
+                        "enabled_candidate_ids"
+                    ],
+                )
             record["remarks_sha256"] = sha256_file(remarks_path)
-            record["remarks_event_count"] = len(remark_events)
+            record["remarks_event_count"] = remark_event_count
+            record["candidate_remark_summary"] = normalized_candidate_summary
 
         record["measurements"].extend(
             self._collect_case_measurements(
@@ -2035,6 +3039,9 @@ class BenchmarkRun:
                 "artifact_sha256": record["artifact_sha256"],
                 "remarks_sha256": record["remarks_sha256"],
                 "remarks_event_count": record["remarks_event_count"],
+                "candidate_remark_summary": record[
+                    "candidate_remark_summary"
+                ],
             },
         )
         binary = provisional_binary
@@ -2357,6 +3364,9 @@ class BenchmarkRun:
         record: dict[str, Any],
         run_directory: Path,
     ) -> dict[str, Any]:
+        self._reconcile_run_terminal(record, run_directory)
+        if record["state"] in {"completed", "failed"}:
+            return record
         self._prepare_record_for_execution(record, run_directory)
         self._write_record(record)
         manifest_by_id = {case["id"]: case for case in self.manifest["cases"]}
@@ -2365,9 +3375,10 @@ class BenchmarkRun:
             case["case_id"] for case in record["cases"] if case["status"] == "pending"
         ]
         if not pending_ids:
-            record["state"] = "completed" if record["summary"]["failed_cases"] == 0 else "failed"
-            record["completed_at"] = utc_now()
-            self._write_record(record)
+            state = (
+                "completed" if record["summary"]["failed_cases"] == 0 else "failed"
+            )
+            self._seal_run_terminal(record, run_directory, state=state)
             return record
 
         iterator = iter(pending_ids)
@@ -2475,17 +3486,24 @@ class BenchmarkRun:
             self.cancellation_event.set()
             for future in active:
                 future.cancel()
-            record["state"] = "interrupted"
-            record["completed_at"] = None
-            self._write_record(record)
+            executor.shutdown(wait=True, cancel_futures=True)
+            for case_id in sorted(set(active.values())):
+                case = records_by_id[case_id]
+                if case["attempt_started_at"] is None:
+                    continue
+                directory = self._attempt_directory(
+                    run_directory,
+                    case_id=case_id,
+                    attempt_index=case["attempt_index"],
+                )
+                self._recover_current_attempt(record, case, directory)
+            self._seal_run_terminal(record, run_directory, state="interrupted")
             raise
         finally:
             executor.shutdown(wait=True, cancel_futures=True)
 
         if internal_errors:
-            record["state"] = "interrupted"
-            record["completed_at"] = None
-            self._write_record(record)
+            self._seal_run_terminal(record, run_directory, state="interrupted")
             rendered = "; ".join(
                 sanitize_text(
                     f"{type(error).__name__}: {error}", self.privacy_roots
@@ -2503,9 +3521,12 @@ class BenchmarkRun:
             raise ExecutionError(
                 f"benchmark infrastructure failed: {sanitize_text(rendered, self.privacy_roots)}"
             ) from cause
-        record["state"] = "completed" if all(case["status"] == "passed" for case in record["cases"]) else "failed"
-        record["completed_at"] = utc_now()
-        self._write_record(record)
+        state = (
+            "completed"
+            if all(case["status"] == "passed" for case in record["cases"])
+            else "failed"
+        )
+        self._seal_run_terminal(record, run_directory, state=state)
         return record
 
     def execute(self) -> dict[str, Any]:
