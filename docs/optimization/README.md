@@ -98,12 +98,16 @@ Windows checkout、DrvFS/9p 和 Windows bind-mounted workspace 都不能承载�
 GCC 13.3/Clang 18 对照还需要 Docker。
 
 ```sh
-python -m venv .tmp/venv
-. .tmp/venv/bin/activate
-python -m pip install -e '.[test]'
-sh gradlew classes --no-daemon
-sh scripts/build-qemu-plugins.sh
+sh scripts/bootstrap-candidate-workspace.sh
 ```
+
+候选 campaign 的 bootstrap 只接受 CPython 3.14.6/Linux x86_64。预先将 hash
+匹配 `tools/benchmark/requirements-linux-x86_64-py314.lock` 的 wheel 放入 ignored
+的 `.tmp/wheelhouse`，并将已救援的 Gradle cache 放入 ignored 的
+`.tmp/gradle-home`。脚本以 `--no-index --require-hashes --only-binary` 重建唯一的
+`.venv`，核对规范化 installed-distribution inventory，再以 Gradle strict
+dependency verification、dependency lock 和 offline mode 构建 compiler，最后重建
+QEMU plugins；任一缺失、额外 distribution 或 hash 漂移均失败。
 
 参考前端镜像由 `tools/benchmark/reference-toolchain.Dockerfile` 构建，并在
 `data/toolchain-snapshot.json` 中固定 image tag 和 ID。`scripts/reference-compile.sh`
@@ -131,7 +135,10 @@ container 必须使用相同 name 与 hostname，默认 ID hostname 也受支持
 `tools/benchmark/candidate-toolchain.Dockerfile` 在救援 rootfs 基础镜像上嵌入快照
 固定的 Linux Docker CLI；`scripts/build-candidate-toolchain.sh` 对 base/final image
 ID、layers、Dockerfile 及 CLI hash/version 逐项验证。冻结后的不同 image ID 不能
-冒充原镜像。
+冒充原镜像。相同 snapshot 还绑定 bootstrap 脚本、Python requirements
+lock/installed inventory、精确 setuptools backend、Gradle wrapper distribution/JAR、
+strict verification metadata、dependency lock、build file 和 QEMU plugin builder；
+这些内容不是可替换的宿主 cache identity。
 目录型 compiler artifact 先把每个文件名规范化为 POSIX 相对路径，再按该路径的
 UTF-8 字节序排序后计算 tree hash；该顺序不依赖 Windows 路径大小写折叠，并与
 既有 Linux/WSL Unicode code-point 顺序一致。目录中出现符号链接或非常规文件会

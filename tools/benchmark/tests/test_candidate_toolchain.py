@@ -7,15 +7,40 @@ from pathlib import Path
 import pytest
 
 from tools.benchmark.candidate_toolchain import (
+    build_workspace_bootstrap_contract,
     load_candidate_toolchain_contract,
     verify_candidate_toolchain_image,
 )
-from tools.benchmark.errors import ValidationError
+from tools.benchmark.errors import ConfigurationError, ValidationError
 from tools.benchmark.util import sha256_file
 
 
 ROOT = Path(__file__).resolve().parents[3]
 SNAPSHOT = ROOT / "docs" / "optimization" / "data" / "toolchain-snapshot.json"
+
+BOOTSTRAP_FILES = (
+    "build.gradle.kts",
+    "gradle.lockfile",
+    "gradle/verification-metadata.xml",
+    "gradle/wrapper/gradle-wrapper.jar",
+    "gradle/wrapper/gradle-wrapper.properties",
+    "pyproject.toml",
+    "scripts/bootstrap-candidate-workspace.sh",
+    "scripts/build-qemu-plugins.sh",
+    "tools/benchmark/candidate-toolchain.Dockerfile",
+    "tools/benchmark/requirements-linux-x86_64-py314.lock",
+    "docs/optimization/data/candidate-python-inventory.v1.json",
+)
+
+
+def _copy_contract_workspace(target: Path) -> Path:
+    for relative in BOOTSTRAP_FILES:
+        destination = target / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, destination)
+    snapshot_path = target / "snapshot.json"
+    snapshot_path.write_text(SNAPSHOT.read_text(encoding="utf-8"), encoding="utf-8")
+    return snapshot_path
 
 
 def _inspect(contract: dict[str, object]) -> dict[str, object]:
@@ -87,3 +112,35 @@ def test_candidate_contract_rejects_dockerfile_physical_drift(tmp_path: Path) ->
 
     with pytest.raises(ValidationError, match="Dockerfile physical hash differs"):
         load_candidate_toolchain_contract(root=tmp_path, snapshot_path=snapshot_path)
+
+
+def test_candidate_contract_rejects_all_zero_bootstrap_hash(tmp_path: Path) -> None:
+    snapshot_path = _copy_contract_workspace(tmp_path)
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    snapshot["proxy_execution"]["candidate_toolchain"]["workspace_bootstrap"][
+        "python"
+    ]["requirements_lock"]["physical_sha256"] = "0" * 64
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="bootstrap contract differs"):
+        load_candidate_toolchain_contract(root=tmp_path, snapshot_path=snapshot_path)
+
+
+def test_candidate_contract_rejects_tampered_requirements_lock(tmp_path: Path) -> None:
+    snapshot_path = _copy_contract_workspace(tmp_path)
+    lock_path = tmp_path / "tools/benchmark/requirements-linux-x86_64-py314.lock"
+    payload = lock_path.read_text(encoding="utf-8")
+    lock_path.write_text(payload.replace("c647aa4a", "f647aa4a", 1), encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="bootstrap contract differs"):
+        load_candidate_toolchain_contract(root=tmp_path, snapshot_path=snapshot_path)
+
+
+def test_workspace_contract_rejects_missing_gradle_verification_metadata(
+    tmp_path: Path,
+) -> None:
+    _copy_contract_workspace(tmp_path)
+    (tmp_path / "gradle/verification-metadata.xml").unlink()
+
+    with pytest.raises(ConfigurationError, match="Gradle verification metadata"):
+        build_workspace_bootstrap_contract(root=tmp_path)

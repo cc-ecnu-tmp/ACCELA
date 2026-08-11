@@ -25,6 +25,10 @@ ROOT = Path(__file__).resolve().parents[3]
 SNAPSHOT = ROOT / "docs" / "optimization" / "data" / "toolchain-snapshot.json"
 WRAPPER = ROOT / "scripts" / "reference-compile.sh"
 POSIX_SH = shutil.which("sh") if os.name == "posix" else None
+HOST_MODE_ONLY = pytest.mark.skipif(
+    Path("/.dockerenv").exists(),
+    reason="host-mode Docker fallback harness requires a non-container host",
+)
 
 
 def _write_executable(path: Path, payload: str) -> None:
@@ -516,6 +520,7 @@ def test_shell_wrapper_has_no_parallel_hardcoded_frontend_or_image_override() ->
 
 
 @pytest.mark.skipif(POSIX_SH is None, reason="reference wrapper requires a POSIX shell")
+@HOST_MODE_ONLY
 @pytest.mark.parametrize(
     "native_diagnostic",
     [
@@ -580,6 +585,7 @@ esac
 
 
 @pytest.mark.skipif(POSIX_SH is None, reason="reference wrapper requires a POSIX shell")
+@HOST_MODE_ONLY
 def test_reachable_native_daemon_with_wrong_image_id_never_tries_windows(
     reference_wrapper_workspace: dict[str, Path | str],
 ) -> None:
@@ -624,6 +630,7 @@ exit 71
 
 
 @pytest.mark.skipif(POSIX_SH is None, reason="reference wrapper requires a POSIX shell")
+@HOST_MODE_ONLY
 @pytest.mark.parametrize(
     "native_diagnostic",
     [
@@ -665,6 +672,7 @@ exit 0
 
 
 @pytest.mark.skipif(POSIX_SH is None, reason="reference wrapper requires a POSIX shell")
+@HOST_MODE_ONLY
 def test_isolated_python_ignores_malicious_pythonpath(
     reference_wrapper_workspace: dict[str, Path | str],
 ) -> None:

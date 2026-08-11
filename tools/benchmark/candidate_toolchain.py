@@ -4,9 +4,11 @@ import argparse
 import json
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Mapping
 
+from .candidate_workspace import candidate_python_contract
 from .errors import ConfigurationError, ValidationError
 from .util import resolve_without_symlinks, sha256_file, validate_relative_path
 
@@ -18,6 +20,26 @@ _CONTAINER_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
 _IMAGE_TAG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}")
+_BOOTSTRAP_SCRIPT_PATH = "scripts/bootstrap-candidate-workspace.sh"
+_QEMU_PLUGIN_BUILDER_PATH = "scripts/build-qemu-plugins.sh"
+_GRADLE_VERSION = "8.14"
+_GRADLE_DISTRIBUTION_URL = (
+    "https://services.gradle.org/distributions/gradle-8.14-bin.zip"
+)
+_GRADLE_DISTRIBUTION_SHA256 = (
+    "61ad310d3c7d3e5da131b76bbf22b5a4c0786e9d892dae8c1658d4b484de3caa"
+)
+_GRADLE_WRAPPER_JAR_SHA256 = (
+    "91a239400bb638f36a1795d8fdf7939d532cdc7d794d1119b7261aac158b1e60"
+)
+_GRADLE_PATHS = {
+    "build_file": "build.gradle.kts",
+    "dependency_lock": "gradle.lockfile",
+    "verification_metadata": "gradle/verification-metadata.xml",
+    "wrapper_jar": "gradle/wrapper/gradle-wrapper.jar",
+    "wrapper_properties": "gradle/wrapper/gradle-wrapper.properties",
+}
+_GRADLE_COMPONENT = re.compile(r"[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+")
 
 
 def _is_nonzero_sha256(value: object, *, image_id: bool = False) -> bool:
@@ -36,6 +58,136 @@ def _read_object(path: Path, *, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValidationError(f"{label} must contain an object")
     return value
+
+
+def _physical_ref(workspace: Path, relative_path: str, *, label: str) -> dict[str, str]:
+    validate_relative_path(relative_path, label=f"{label} path")
+    path = resolve_without_symlinks(workspace / relative_path, label=label)
+    try:
+        path.relative_to(workspace)
+    except ValueError as exc:
+        raise ValidationError(f"{label} escapes the workspace") from exc
+    if not path.is_file():
+        raise ValidationError(f"{label} must be a regular file")
+    return {"path": relative_path, "physical_sha256": sha256_file(path)}
+
+
+def _read_gradle_wrapper_properties(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ConfigurationError("cannot read Gradle wrapper properties") from exc
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            raise ValidationError("Gradle wrapper properties contain a malformed entry")
+        key, value = stripped.split("=", 1)
+        if key in values:
+            raise ValidationError("Gradle wrapper properties repeat a key")
+        values[key] = value
+    expected = {
+        "distributionBase": "GRADLE_USER_HOME",
+        "distributionPath": "wrapper/dists",
+        "distributionSha256Sum": _GRADLE_DISTRIBUTION_SHA256,
+        "distributionUrl": _GRADLE_DISTRIBUTION_URL.replace(":", "\\:", 1),
+        "zipStoreBase": "GRADLE_USER_HOME",
+        "zipStorePath": "wrapper/dists",
+    }
+    if values != expected:
+        raise ValidationError("Gradle wrapper distribution contract differs")
+    return values
+
+
+def _validate_gradle_verification_metadata(path: Path) -> None:
+    try:
+        root = ET.parse(path).getroot()
+    except (OSError, ET.ParseError) as exc:
+        raise ConfigurationError("cannot read Gradle verification metadata") from exc
+    namespace = "{https://schema.gradle.org/dependency-verification}"
+    if root.tag != f"{namespace}verification-metadata":
+        raise ValidationError("Gradle verification metadata root differs")
+    configuration = root.find(f"{namespace}configuration")
+    components = root.find(f"{namespace}components")
+    if (
+        configuration is None
+        or configuration.findtext(f"{namespace}verify-metadata") != "true"
+        or configuration.findtext(f"{namespace}verify-signatures") != "false"
+        or components is None
+    ):
+        raise ValidationError("Gradle verification metadata configuration differs")
+    hashes = [
+        element.get("value")
+        for element in components.iter(f"{namespace}sha256")
+    ]
+    if not hashes or any(not _is_nonzero_sha256(value) for value in hashes):
+        raise ValidationError("Gradle verification metadata SHA-256 entries are invalid")
+    artifacts = list(components.iter(f"{namespace}artifact"))
+    if not artifacts or len(hashes) != len(artifacts):
+        raise ValidationError("Gradle verification metadata must hash every artifact exactly once")
+
+
+def _validate_gradle_lock(path: Path) -> None:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ConfigurationError("cannot read Gradle dependency lock") from exc
+    entries = [line for line in lines if line and not line.startswith("#")]
+    if not entries or entries[-1].split("=", 1)[0] != "empty":
+        raise ValidationError("Gradle dependency lock is incomplete")
+    modules: set[str] = set()
+    for entry in entries:
+        if "=" not in entry:
+            raise ValidationError("Gradle dependency lock contains a malformed entry")
+        module, configurations = entry.split("=", 1)
+        if module != "empty" and _GRADLE_COMPONENT.fullmatch(module) is None:
+            raise ValidationError("Gradle dependency lock module identity is invalid")
+        if module in modules or not configurations:
+            raise ValidationError("Gradle dependency lock repeats or omits an entry")
+        modules.add(module)
+    if len(modules) < 2:
+        raise ValidationError("Gradle dependency lock contains no resolved dependency")
+
+
+def build_workspace_bootstrap_contract(*, root: Path) -> dict[str, Any]:
+    workspace = resolve_without_symlinks(root, label="candidate workspace")
+    wrapper_properties_path = workspace / _GRADLE_PATHS["wrapper_properties"]
+    _read_gradle_wrapper_properties(wrapper_properties_path)
+    wrapper_jar_path = workspace / _GRADLE_PATHS["wrapper_jar"]
+    if sha256_file(wrapper_jar_path) != _GRADLE_WRAPPER_JAR_SHA256:
+        raise ValidationError("Gradle wrapper JAR physical hash differs")
+    _validate_gradle_verification_metadata(
+        workspace / _GRADLE_PATHS["verification_metadata"]
+    )
+    _validate_gradle_lock(workspace / _GRADLE_PATHS["dependency_lock"])
+    try:
+        build_file = (workspace / _GRADLE_PATHS["build_file"]).read_text(
+            encoding="utf-8"
+        )
+    except (OSError, UnicodeError) as exc:
+        raise ConfigurationError("cannot read Gradle build file") from exc
+    if "dependencyLocking {\n    lockAllConfigurations()\n}" not in build_file:
+        raise ValidationError("Gradle dependency locking is not enabled globally")
+    return {
+        "bootstrap_script": _physical_ref(
+            workspace, _BOOTSTRAP_SCRIPT_PATH, label="candidate bootstrap script"
+        ),
+        "python": candidate_python_contract(root=workspace),
+        "gradle": {
+            "version": _GRADLE_VERSION,
+            "distribution_url": _GRADLE_DISTRIBUTION_URL,
+            "distribution_sha256": _GRADLE_DISTRIBUTION_SHA256,
+            **{
+                key: _physical_ref(workspace, path, label=f"Gradle {key}")
+                for key, path in _GRADLE_PATHS.items()
+            },
+        },
+        "qemu_plugin_builder": _physical_ref(
+            workspace, _QEMU_PLUGIN_BUILDER_PATH, label="QEMU plugin builder"
+        ),
+    }
 
 
 def load_candidate_toolchain_contract(
@@ -61,6 +213,7 @@ def load_candidate_toolchain_contract(
         "image_tag",
         "image_id",
         "rootfs_layers",
+        "workspace_bootstrap",
     }:
         raise ValidationError("candidate toolchain contract fields differ")
     base_tag = contract.get("base_image_tag")
@@ -110,6 +263,9 @@ def load_candidate_toolchain_contract(
         raise ValidationError("candidate toolchain Dockerfile escapes the workspace") from exc
     if not dockerfile.is_file() or sha256_file(dockerfile) != dockerfile_sha256:
         raise ValidationError("candidate toolchain Dockerfile physical hash differs")
+    expected_bootstrap = build_workspace_bootstrap_contract(root=workspace)
+    if contract.get("workspace_bootstrap") != expected_bootstrap:
+        raise ValidationError("candidate workspace bootstrap contract differs")
     return json.loads(json.dumps(contract))
 
 

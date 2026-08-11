@@ -169,7 +169,64 @@
       "rootfs_layers": [
         "sha256:f0c5cb375e83b3dd661d3b6effd57c3eb3e1000c51fe4897896318d7b57b3055",
         "sha256:db2ea79329bf447627af7e2c48261a4f82bd2757bbbc3e8460cac6170aceab69"
-      ]
+      ],
+      "workspace_bootstrap": {
+        "bootstrap_script": {
+          "path": "scripts/bootstrap-candidate-workspace.sh",
+          "physical_sha256": "13e1507a285a7e8bf38a43ae3bedadb0a34e3112c1aa0c18ecf314ee69a00fe0"
+        },
+        "python": {
+          "version": "3.14.6",
+          "implementation": "CPython",
+          "platform_system": "Linux",
+          "platform_machine": "x86_64",
+          "venv_path": ".venv",
+          "pip_version": "26.1.2",
+          "setuptools_version": "83.0.0",
+          "project_manifest": {
+            "path": "pyproject.toml",
+            "physical_sha256": "b5f1db821278ee33a58dda230967b7e7025c2cdbae09ed348d1aac6de7ef0a5e"
+          },
+          "requirements_lock": {
+            "path": "tools/benchmark/requirements-linux-x86_64-py314.lock",
+            "physical_sha256": "457c01558b5caf4123c2ffd8ac8dfe6daad24d08a613342dd59c2ac7f387da7b"
+          },
+          "installed_inventory": {
+            "path": "docs/optimization/data/candidate-python-inventory.v1.json",
+            "canonical_sha256": "bd67fe67952c177bf28837fb5fa66c76a9896e361c256bef392ee05c63c20e32",
+            "physical_sha256": "2619f01a80f691f9c096a291a40ea5bc3956a91e96b9523b0e57793b63969547"
+          }
+        },
+        "gradle": {
+          "version": "8.14",
+          "distribution_url": "https://services.gradle.org/distributions/gradle-8.14-bin.zip",
+          "distribution_sha256": "61ad310d3c7d3e5da131b76bbf22b5a4c0786e9d892dae8c1658d4b484de3caa",
+          "build_file": {
+            "path": "build.gradle.kts",
+            "physical_sha256": "16ea88b27170f8b74304eedbdaad5997ac7c489b1b21ae2131c970e58346b2ac"
+          },
+          "dependency_lock": {
+            "path": "gradle.lockfile",
+            "physical_sha256": "a0ed43a459e2a66e814543d615e2c8f39ceb272631c9a4a825a07720050f0144"
+          },
+          "verification_metadata": {
+            "path": "gradle/verification-metadata.xml",
+            "physical_sha256": "48b5bb435a3a3dab0b40a1bd4c1110ad7c20d31477283120b0a1f4851cb30842"
+          },
+          "wrapper_jar": {
+            "path": "gradle/wrapper/gradle-wrapper.jar",
+            "physical_sha256": "91a239400bb638f36a1795d8fdf7939d532cdc7d794d1119b7261aac158b1e60"
+          },
+          "wrapper_properties": {
+            "path": "gradle/wrapper/gradle-wrapper.properties",
+            "physical_sha256": "2d276c3d1401e5db1c6dc39844a4f47a7dd653c233b9ce153a6c9ea4a9ee5872"
+          }
+        },
+        "qemu_plugin_builder": {
+          "path": "scripts/build-qemu-plugins.sh",
+          "physical_sha256": "ffb551f33f78109d5a5be3f3f6211729e91f9e9b6dfb755bf6e1588862589550"
+        }
+      }
     },
     "cache_model": "32KiB/8-way/64B/cold-per-region/LRU",
     "qemu_configuration": "virt; tcg single-thread; one vCPU; 512 MiB"
