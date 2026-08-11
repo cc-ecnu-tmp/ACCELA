@@ -5,8 +5,8 @@
 本文固定 `accela-candidate-evaluation-2026-r1` 的证据边界，并规定替代 campaign
 `accela-candidate-evaluation-2026-r2` 的 Docker Desktop 迁移条件。r1 因承载工作区
 的 WSL ext4 文件系统进入紧急只读状态而中止；这不是候选正确性失败，也不是一个
-可以恢复的调度中断。r2 当前仅完成命名和迁移决策，尚未生成 plan、status 或 run，
-也尚未开始任何正式测试。
+可以恢复的调度中断。r2 已从本地校验过的 Arch rootfs 归档构建候选工具链镜像，
+但尚未生成 plan、status 或 run，也尚未开始任何正式测试。
 
 ## 冻结源码身份
 
@@ -56,6 +56,8 @@ r1 从此固定为基础设施中止的隔离诊断：
 | `official-corpus.tar.zst` | `04819f4c63a68e174de722efbf9ce97fcec22aba7c14911fccf54c3c97b49158` | 源／目标物理哈希一致；zstd 完整性测试通过 |
 | `compiler-artifact-r1.tar.zst` | `9ce1d4b287939af5ed4838225eed615dc6a7fdda9ecc985cd793d998502fa522` | 源／目标物理哈希一致；zstd 完整性测试通过 |
 | `ignored-control-r1.tar.zst` | `6a6faf673b7392bf3722cbe166cbd886146db8478b2f3e0b249c644424bbfd7d` | 源／目标物理哈希一致；zstd 完整性测试通过 |
+| `arch-toolchain-rootfs.tar` | `f0c5cb375e83b3dd661d3b6effd57c3eb3e1000c51fe4897896318d7b57b3055` | Alpine 本地源／Windows 本地目标物理哈希一致；154096 个归档条目通过排除项检查 |
+| `arch-toolchain-rootfs.filelist` | `10c4d693195bf94aa0dad6c6a530a7763cf133f0ab8b9360e7619439ca7ce103` | Alpine 本地源／Windows 本地目标物理哈希一致 |
 
 归档复制成功只证明上述字节身份，不会把未封口的 r1 变成 terminal campaign，也
 不会赋予其排名资格。恢复时必须从 bundle 校验预期 commit/tree，并在新的 Linux
@@ -83,9 +85,17 @@ campaign，而不是 r1 的 resume。正式执行前必须满足：
 7. campaign 终止前不从 volume 汇总或发布正式报告。终止后导出时再次核对规范化
    哈希和物理哈希，且提交产物不得含宿主机绝对路径。
 
-Docker image identity、r2 plan hash 和各 run ID 当前均为 pending。它们只能由
-named-volume 内的 clean checkout 和实际 preflight 生成；本文不预填，也不把
-计划状态写成已验证状态。
+本地 rootfs 归档经 Docker Desktop 导入为
+`accela/candidate-toolchain:2026-r2`。镜像 identity 为
+`sha256:9e8d0543c848d89cd9bacd6c3cc04859d8ded988cd8f2e3565f0d09bbaedf26d`，
+其唯一 rootfs layer digest 与上述归档 SHA-256 相同。只读、无网络、移除 capability
+的容器探针已确认 Linux amd64、Python 3.14.6、QEMU 11.0.3、
+`riscv64-elf-gcc` 15.2.0、OpenJDK 21.0.11 和 Git 2.55.0 可执行。该结果只证明
+救援工具链镜像可启动，不是 compiler build、QEMU correctness 或 formal campaign
+证据。
+
+r2 plan hash 和各 run ID 当前仍为 pending。它们只能由 named-volume 内的 clean
+checkout 和实际 preflight 生成；本文不预填，也不把计划状态写成已验证状态。
 
 ## 报告口径
 
