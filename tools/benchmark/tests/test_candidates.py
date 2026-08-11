@@ -33,7 +33,8 @@ from tools.benchmark.schema import (
 )
 from tools.benchmark.util import raw_attempt_identity_sha256, sha256_file, sha256_json
 from tools.benchmark.tests.test_stats_ablation_report import make_run
-from tools.benchmark.execution import VerifiedRunRawEvidence
+from tools.benchmark.execution import BenchmarkRun, VerifiedRunRawEvidence, run_benchmark
+from tools.benchmark.lease import ExclusiveFileLease, output_lease_path
 
 
 _PROTOCOL_DIGEST_FIELDS = (
@@ -366,7 +367,14 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
             current_remark_paths={},
         )
 
-    monkeypatch.setattr(candidate_module, "verify_run_raw_evidence", fake_verify)
+    def forbid_leased_verifier(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("Oracle replay entered the leased raw verifier")
+
+    monkeypatch.setattr(
+        candidate_module,
+        "verify_run_raw_evidence",
+        forbid_leased_verifier,
+    )
     first = candidate_module.capture_candidate_oracle(
         candidate_evidence_path=tmp_path / "evidence.json",
         oracle_plan_path=tmp_path / "plan.json",
@@ -375,6 +383,7 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
         state_root=state_root,
         workspace_root=tmp_path,
         capture_id="capture-1",
+        raw_evidence_verifier=fake_verify,
     )
     second = candidate_module.capture_candidate_oracle(
         candidate_evidence_path=tmp_path / "evidence.json",
@@ -384,6 +393,7 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
         state_root=state_root,
         workspace_root=tmp_path,
         capture_id="capture-1",
+        raw_evidence_verifier=fake_verify,
     )
     assert sha256_json(first) == sha256_json(second)
     assert observed_state_roots == [state_root, state_root, state_root, state_root]
@@ -410,6 +420,7 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
             state_root=state_root,
             workspace_root=tmp_path,
             capture_id="capture-1",
+            raw_evidence_verifier=fake_verify,
         )
 
     for run in (baseline, optimized):
@@ -425,6 +436,7 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
             state_root=state_root,
             workspace_root=tmp_path,
             capture_id="capture-1",
+            raw_evidence_verifier=fake_verify,
         )
     for run in (baseline, optimized):
         for case in run["cases"]:
@@ -457,6 +469,7 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
         candidate_module._load_and_reverify_candidate_oracle_capture(
             capture_path=capture_path,
             workspace_root=tmp_path,
+            raw_evidence_verifier=fake_verify,
         )
 
 
@@ -586,6 +599,34 @@ def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
     assert received["reference_toolchain_path"] == tmp_path / "toolchain.json"
     assert received["raw_state_root"] == tmp_path / "raw-state"
     assert received["campaign_id"] == "campaign-1"
+    assert isinstance(
+        received["_raw_snapshot_cache"],
+        candidate_module._ReadOnlyRawEvidenceCache,
+    )
+
+    drift_input = tmp_path / "historical-r1.lock"
+    drift_input.write_bytes(b"stable-r1-lock\n")
+
+    def drift_after_builder_barrier(**kwargs: Any) -> dict[str, Any]:
+        cache = kwargs["_raw_snapshot_cache"]
+        cache.track_file(drift_input, label="historical r1 lease")
+        cache.assert_unchanged()
+        drift_input.write_bytes(b"drifted-r1-lock\n")
+        return {
+            "schema_version": "candidate-campaign-plan.v1",
+            "tasks": [],
+        }
+
+    monkeypatch.setattr(
+        cli,
+        "build_candidate_campaign_plan",
+        drift_after_builder_barrier,
+    )
+    drift_arguments = [*arguments]
+    drift_arguments[-1] = "drift-plan.json"
+    with pytest.raises(ValidationError, match="changed during verification"):
+        cli.dispatch(cli.build_parser().parse_args(drift_arguments))
+    assert not (tmp_path / "drift-plan.json").exists()
 
 
 def test_candidate_campaign_protocol_binding_is_role_specific() -> None:
@@ -1288,6 +1329,7 @@ def test_candidate_diagnostic_sequence_rejects_supplied_suffix_evidence() -> Non
 def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    benchmark_fixture: Any,
 ) -> None:
     source_root = Path(__file__).resolve().parents[3]
     catalog_relative = Path(
@@ -1366,29 +1408,67 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         raw_path = tmp_path / item["run_record_path"]
         raw_path.parent.mkdir(parents=True, exist_ok=True)
         raw_path.write_text("{}\n", encoding="utf-8")
-    (tmp_path / oracle_capture["raw_state_root"]).mkdir(
+    oracle_state_root = tmp_path / oracle_capture["raw_state_root"]
+    oracle_state_root.mkdir(
         parents=True, exist_ok=True
     )
+    fixture_root, _, _, _, make_options = benchmark_fixture
+    assert fixture_root == tmp_path
+    historical_fixture_root = tmp_path / "historical-r1-fixture"
+    historical_fixture_root.mkdir()
+    historical_options = replace(
+        make_options(
+            output_name="unused-historical-r1.run.json",
+            run_id="historical-r1",
+        ),
+        output_path=historical_fixture_root / "historical-r1.run.json",
+        state_root=historical_fixture_root / "state",
+        max_workers=1,
+    )
+    historical_run = run_benchmark(historical_options)
+    historical_run_directory = BenchmarkRun(historical_options)._run_directory(
+        historical_run
+    )
+    historical_lock_paths = (
+        output_lease_path(historical_options.output_path),
+        historical_run_directory / ".run.lock",
+    )
+    historical_lock_snapshots = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in historical_lock_paths
+    }
     read_only_snapshot_calls: list[Path] = []
+    read_only_snapshot_assertions: list[Path] = []
     screening_verifiers: list[Any | None] = []
     strict_prelease_verifier = [False]
+    real_read_only_snapshot = (
+        candidate_module.verify_run_raw_evidence_read_only_snapshot
+    )
 
-    class FakeReadOnlySnapshot:
-        def __init__(self, path: Path) -> None:
-            self.verified = VerifiedRunRawEvidence(
-                document={"run_canonical_sha256": sha256_file(path)},
-                current_remark_paths={},
-            )
+    class ObservedReadOnlySnapshot:
+        def __init__(self, path: Path, snapshot: Any) -> None:
+            self.path = path
+            self.snapshot = snapshot
+            self.verified = snapshot.verified
 
         def assert_unchanged(self) -> None:
-            return None
+            read_only_snapshot_assertions.append(self.path)
+            self.snapshot.assert_unchanged()
 
-    def fake_read_only_snapshot(path: Path, _state_root: Path) -> FakeReadOnlySnapshot:
+    def observe_read_only_snapshot(
+        path: Path, state_root: Path
+    ) -> ObservedReadOnlySnapshot:
         read_only_snapshot_calls.append(path)
-        return FakeReadOnlySnapshot(path)
+        return ObservedReadOnlySnapshot(
+            path,
+            real_read_only_snapshot(path, state_root),
+        )
 
     def forbid_leased_raw_verifier(*_args: Any, **_kwargs: Any) -> None:
         raise AssertionError("candidate prelease entered the leased raw verifier")
+
+    def forbid_exclusive_lease(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("candidate campaign plan entered an exclusive lease")
 
     def replay_fake_oracle_legs(verifier: Any | None) -> None:
         if strict_prelease_verifier[0] and verifier is None:
@@ -1397,11 +1477,7 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
             )
         if verifier is None:
             return
-        for item in oracle_capture["raw_evidence"].values():
-            verifier(
-                tmp_path / item["run_record_path"],
-                tmp_path / oracle_capture["raw_state_root"],
-            )
+        verifier(historical_options.output_path, historical_options.state_root)
 
     def fake_screening(**kwargs: Any) -> dict[str, Any]:
         verifier = kwargs.get("raw_evidence_verifier")
@@ -1416,13 +1492,14 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     monkeypatch.setattr(
         candidate_module,
         "verify_run_raw_evidence_read_only_snapshot",
-        fake_read_only_snapshot,
+        observe_read_only_snapshot,
     )
     monkeypatch.setattr(
         candidate_module,
         "verify_run_raw_evidence",
         forbid_leased_raw_verifier,
     )
+    monkeypatch.setattr(ExclusiveFileLease, "__enter__", forbid_exclusive_lease)
     monkeypatch.setattr(
         candidate_module,
         "_load_and_reverify_candidate_screening",
@@ -1444,6 +1521,7 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         lambda **_kwargs: None,
     )
 
+    strict_prelease_verifier[0] = True
     plan = candidate_module.build_candidate_campaign_plan(
         catalog_path=tmp_path / catalog_relative,
         pass_registry_path=tmp_path / pass_registry_relative,
@@ -1461,6 +1539,42 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         workspace_root=tmp_path,
         campaign_id="accela-candidate-evaluation-2026-r2",
     )
+    cli_arguments = [
+        "candidates",
+        "campaign-plan",
+        "--workspace-root",
+        str(tmp_path),
+        "--registry",
+        str(catalog_relative),
+        "--pass-registry",
+        str(pass_registry_relative),
+        "--matrix",
+        str(matrix_relative),
+        "--screening",
+        str(screening_relative),
+    ]
+    for role, relative in manifest_relatives.items():
+        cli_arguments.extend(["--manifest", f"{role}={relative}"])
+    cli_arguments.extend(
+        [
+            "--measurement-protocol",
+            str(protocol_relative),
+            "--hotblock-measurement-protocol",
+            str(hotblock_protocol_relative),
+            "--reference-toolchain",
+            str(toolchain_relative),
+            "--compiler-artifact",
+            "build/compiler.jar",
+            "--raw-state-root",
+            "raw-state",
+            "--campaign-id",
+            "accela-candidate-evaluation-2026-r2",
+            "--output",
+            "cli-campaign-plan.json",
+        ]
+    )
+    assert cli.dispatch(cli.build_parser().parse_args(cli_arguments)) == 0
+    assert load_and_validate(tmp_path / "cli-campaign-plan.json") == plan
     assert validate_document(deepcopy(plan)) == plan
     assert plan["reference_toolchain"]["named_volume_contract"][
         "required_labels"
@@ -1493,6 +1607,12 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
             workspace_root=tmp_path,
             campaign_id="accela-candidate-evaluation-overlap",
         )
+    strict_prelease_verifier[0] = False
+    expected_oracle_paths = [historical_options.output_path]
+    assert read_only_snapshot_calls == expected_oracle_paths * 3
+    assert read_only_snapshot_assertions == expected_oracle_paths * 3
+    for lock_path, snapshot in historical_lock_snapshots.items():
+        assert (lock_path.read_bytes(), lock_path.stat().st_mtime_ns) == snapshot
 
     raw_registry = candidate_module._build_candidate_raw_evidence_registry_from_plan(
         plan=plan,
@@ -1831,9 +1951,8 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     )
     read_only_snapshot_calls.clear()
     candidate_module.authorize_candidate_run_prelease(valid_authorization)
-    assert sorted(path.name for path in read_only_snapshot_calls) == [
-        "baseline.run.json",
-        "optimized.run.json",
+    assert [path.name for path in read_only_snapshot_calls] == [
+        "historical-r1.run.json"
     ]
     assert any(verifier is not None for verifier in screening_verifiers)
     read_only_snapshot_calls.clear()
@@ -1844,9 +1963,8 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
             status_ledger_paths=(ready_status_path, second_status_path),
         )
     )
-    assert sorted(path.name for path in read_only_snapshot_calls) == [
-        "baseline.run.json",
-        "optimized.run.json",
+    assert [path.name for path in read_only_snapshot_calls] == [
+        "historical-r1.run.json"
     ]
     assert not valid_authorization.output_path.exists()
     oracle_run_path = tmp_path / oracle_capture["raw_evidence"]["baseline"][
@@ -3197,10 +3315,17 @@ def test_screening_replay_rejects_coherent_qualification_forgery(
         "_load_version",
         lambda path, version, *, label: deepcopy(documents[path.name]),
     )
+    raw_verifier_sentinel = object()
+    observed_raw_verifiers: list[Any] = []
+
+    def load_oracle_capture(**kwargs: Any) -> dict[str, Any]:
+        observed_raw_verifiers.append(kwargs.get("raw_evidence_verifier"))
+        return deepcopy(capture)
+
     monkeypatch.setattr(
         candidate_module,
         "_load_and_reverify_candidate_oracle_capture",
-        lambda **_: deepcopy(capture),
+        load_oracle_capture,
     )
     monkeypatch.setattr(candidate_module, "_frozen_artifact_digest", frozen_digest)
     screening = candidate_module.build_candidate_screening(
@@ -3210,7 +3335,9 @@ def test_screening_replay_rejects_coherent_qualification_forgery(
         oracle_capture_path=tmp_path / "capture.json",
         workspace_root=tmp_path,
         screening_id="screening-1",
+        raw_evidence_verifier=raw_verifier_sentinel,
     )
+    assert observed_raw_verifiers == [raw_verifier_sentinel]
     forged = deepcopy(screening)
     boom = next(item for item in forged["candidates"] if item["candidate_id"] == "boom_ilp")
     for structure in boom["oracle_structures"]:
@@ -3234,7 +3361,12 @@ def test_screening_replay_rejects_coherent_qualification_forgery(
         candidate_module._load_and_reverify_candidate_screening(
             screening_path=tmp_path / "screening.json",
             workspace_root=tmp_path,
+            raw_evidence_verifier=raw_verifier_sentinel,
         )
+    assert observed_raw_verifiers == [
+        raw_verifier_sentinel,
+        raw_verifier_sentinel,
+    ]
 
 
 def test_candidate_screen_dispatch_writes_deterministic_report(

@@ -883,6 +883,10 @@ Oracle capture 不只读取 normalized run JSON：`--state-root` 必须指向两
 identity。任一 raw 文件、run 路径、配置或派生 speedup 漂移都使筛选失败，不能靠
 重新计算一份内部自洽 JSON 绕过资格门。
 
+替代 campaign 的 `campaign-plan` 只允许用严格只读 snapshot verifier 重放上述历史
+Oracle raw evidence，并在计划完成前执行最终 drift barrier；它不得获取、重新绑定或
+改写已终止 campaign 的 output/run lease metadata。
+
 实现后的正式调度由 `candidates campaign-plan` 一次绑定六份 manifest、筛选结果、
 candidate catalog、筛选基线与可执行两份 pass registry、profile matrix、standard
 与 cache-hotblock protocol、reference toolchain snapshot、clean commit/tree、

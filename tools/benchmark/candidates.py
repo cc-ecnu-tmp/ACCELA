@@ -2648,9 +2648,15 @@ def build_candidate_campaign_plan(
     raw_state_root: Path,
     workspace_root: Path,
     campaign_id: str,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
 ) -> dict[str, Any]:
     """Build the single authoritative B1-through-final candidate task DAG."""
 
+    raw_snapshot_cache = (
+        _ReadOnlyRawEvidenceCache()
+        if _raw_snapshot_cache is None
+        else _raw_snapshot_cache
+    )
     catalog = _load_version(
         catalog_path, "candidate-catalog.v1", label="candidate registry"
     )
@@ -2663,6 +2669,7 @@ def build_candidate_campaign_plan(
     screening = _load_and_reverify_candidate_screening(
         screening_path=screening_path,
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_snapshot_cache.verify,
     )
     measurement_protocol = _load_version(
         measurement_protocol_path,
@@ -3092,7 +3099,7 @@ def build_candidate_campaign_plan(
         raise ValidationError(
             "candidate executable PassRegistry must use a new artifact path"
         )
-    return validate_document(
+    plan = validate_document(
         {
             "schema_version": "candidate-campaign-plan.v1",
             "campaign_id": campaign_id,
@@ -3148,6 +3155,8 @@ def build_candidate_campaign_plan(
             "tasks": tasks,
         }
     )
+    raw_snapshot_cache.assert_unchanged()
+    return plan
 
 
 def _verify_candidate_plan_execution_environment(

@@ -112,9 +112,14 @@ output/support 的安全相对子路径作为 `volume-subpath` 交给 frozen ref
 自定义容器必须使用相同 name 与 hostname；nested bind shadow、多个有效 mount、路径
 遍历或 identity 漂移均 fail fast。原生宿主路径继续使用既有 bind transport。
 
-本次修复只闭合 candidate image、Docker CLI、named-volume 与 reference 子容器传输。
-Python 虚拟环境依赖和 Gradle distribution 的独立 hash-bound provenance 仍须在下一
-基础设施切片完成；在它们写入 freeze 合同并通过 preflight 前，仍不得生成 r2 plan。
+提交 `8152c8583f2038bbbea198e4c508ffdb3ab69cc9` 已把 Python 虚拟环境依赖、Gradle
+distribution、bootstrap 输入、QEMU plugin builder 和 analyzer contract 的独立
+hash-bound provenance 纳入 toolchain/campaign 合同。该闭环不放宽后续门禁：
+`campaign-plan` 的历史 Oracle raw evidence 重放必须先切换为严格只读 snapshot 并
+通过最终 drift barrier；官方 `main` 也必须按评测手册在运行前刷新并把结果写回
+source snapshot。为避免刷新改变 clean commit/tree，刷新记录应先于最终 plan；在
+只读修复提交、刷新记录提交及对应 Docker workspace 重建完成前，不得生成 r2
+plan 或 genesis。
 
 r2 plan hash 和各 run ID 当前仍为 pending。它们只能由 named-volume 内的 clean
 checkout 和实际 preflight 生成；本文不预填，也不把计划状态写成已验证状态。

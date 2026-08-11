@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from .audit import build_cross_suite_audit
 from .candidates import (
+    _ReadOnlyRawEvidenceCache,
     build_candidate_campaign_plan,
     build_candidate_final,
     build_candidate_raw_evidence_registry,
@@ -1625,6 +1626,7 @@ def dispatch(args: argparse.Namespace) -> int:
         )
         return 0
     if args.command == "candidates" and args.candidates_command == "campaign-plan":
+        raw_snapshot_cache = _ReadOnlyRawEvidenceCache()
         plan = build_candidate_campaign_plan(
             catalog_path=_workspace_input_path(
                 args.workspace_root, args.registry, label="candidate registry"
@@ -1675,11 +1677,19 @@ def dispatch(args: argparse.Namespace) -> int:
             ),
             workspace_root=args.workspace_root,
             campaign_id=args.campaign_id,
+            _raw_snapshot_cache=raw_snapshot_cache,
         )
+        plan_output_path = _workspace_immutable_output_path(
+            args.workspace_root, args.output, label="candidate campaign plan output"
+        )
+        _preflight_immutable_json(
+            plan_output_path,
+            plan,
+            label="candidate campaign plan output",
+        )
+        raw_snapshot_cache.assert_unchanged()
         _publish_immutable_json(
-            _workspace_immutable_output_path(
-                args.workspace_root, args.output, label="candidate campaign plan output"
-            ),
+            plan_output_path,
             plan,
             label="candidate campaign plan output",
         )
