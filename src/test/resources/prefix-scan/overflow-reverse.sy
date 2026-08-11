@@ -1,0 +1,25 @@
+// Exercises reverse-suffix reassociation across signed i32 overflow.
+int data[5] = {2147483647, 10, 20, -30, 100};
+int output_data[5];
+
+int main() {
+  int i = 0;
+  while (i < 5) {
+    int j = i;
+    int sum = 0;
+    while (j < 5) {
+      sum = sum + data[j];
+      j = j + 1;
+    }
+    output_data[i] = sum;
+    i = i + 1;
+  }
+  i = 0;
+  while (i < 5) {
+    putint(output_data[i]);
+    if (i < 4) { putch(32); }
+    i = i + 1;
+  }
+  putch(10);
+  return 0;
+}

@@ -1,0 +1,16 @@
+package accela.pass;
+
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.transform.scan.PrefixScanReuse;
+import java.util.Map;
+
+/** Test-only bridge that injects the real prefix-scan factory into the real PassBuilder. */
+public final class PrefixScanCandidatePassBuilder {
+  private PrefixScanCandidatePassBuilder() {}
+
+  public static PassBuilder create(PassInstrumentation instrumentation) {
+    return new PassBuilder(new PassBuilder.CandidatePassProvider(
+        Map.of(PrefixScanReuse.ID, PrefixScanReuse.factory(instrumentation)),
+        Map.of()));
+  }
+}

@@ -1,0 +1,120 @@
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.pass.ir.transform.scan.PrefixScanReuse;
+import accela.util.StrictJson;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+final class PrefixScanBenchmarkCompilerTest {
+  @TempDir Path tempDirectory;
+
+  @Test
+  void realBenchmarkCompilerEmitsRv64gcAssemblyAndCandidateRemarks() throws Exception {
+    Path profile = tempDirectory.resolve("enabled.json");
+    PrefixScanBenchmarkCompiler.main(new String[] {
+        "--export-enabled-profile", profile.toString()
+    });
+    Path assembly = tempDirectory.resolve("program.s");
+    Path remarks = tempDirectory.resolve("remarks.jsonl");
+    PrefixScanBenchmarkCompiler.main(new String[] {
+        Path.of("benchmarks", "oracles", "prefix_scan", "weighted_prefix", "baseline.sy")
+            .toString(),
+        "-o", assembly.toString(),
+        "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    String text = Files.readString(assembly, StandardCharsets.UTF_8);
+    assertTrue(text.contains("main:"));
+    assertFalse(text.contains(".option arch, +v"));
+    List<Map<?, ?>> events = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .<Map<?, ?>>map(value -> (Map<?, ?>) value)
+        .filter(event -> PrefixScanReuse.ID.equals(event.get("pass")))
+        .toList();
+    assertEquals(List.of("candidate", "applied"), events.stream()
+        .filter(event -> "decision".equals(event.get("event_type")))
+        .map(event -> event.get("decision"))
+        .toList());
+    assertTrue(events.stream()
+        .filter(event -> "pass".equals(event.get("event_type")))
+        .filter(event -> "@main".equals(event.get("target_name")))
+        .allMatch(event -> Boolean.TRUE.equals(event.get("changed"))));
+  }
+
+  @Test
+  void enabledCandidateLeavesFloatingPointProgramUnchangedAndUnmatched() throws Exception {
+    Path profile = tempDirectory.resolve("float-enabled.json");
+    PrefixScanBenchmarkCompiler.main(new String[] {
+        "--export-enabled-profile", profile.toString()
+    });
+    Path assembly = tempDirectory.resolve("float.s");
+    Path remarks = tempDirectory.resolve("float.jsonl");
+    PrefixScanBenchmarkCompiler.main(new String[] {
+        Path.of("testsuite", "llm_gen", "05_float_fold.sy").toString(),
+        "-o", assembly.toString(),
+        "--profile", profile.toString(),
+        "--remarks", remarks.toString()
+    });
+
+    assertTrue(Files.readString(assembly, StandardCharsets.UTF_8).contains("main:"));
+    List<Map<?, ?>> candidateEvents = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .<Map<?, ?>>map(value -> (Map<?, ?>) value)
+        .filter(event -> PrefixScanReuse.ID.equals(event.get("pass")))
+        .toList();
+    assertFalse(candidateEvents.stream()
+        .anyMatch(event -> "decision".equals(event.get("event_type"))));
+    assertTrue(candidateEvents.stream()
+        .filter(event -> "pass".equals(event.get("event_type")))
+        .allMatch(event -> Boolean.FALSE.equals(event.get("changed"))));
+  }
+
+  @Test
+  void disabledCandidateProfileIsByteIdenticalToTheDefaultJudgePipeline() throws Exception {
+    Path profile = tempDirectory.resolve("disabled.json");
+    PrefixScanBenchmarkCompiler.main(new String[] {
+        "--export-disabled-profile", profile.toString()
+    });
+
+    for (Path source : List.of(
+        Path.of("benchmarks", "oracles", "prefix_scan", "forward_prefix", "baseline.sy"),
+        Path.of("testsuite", "llm_gen", "05_float_fold.sy"))) {
+      String stem = source.getFileName().toString().replace(".sy", "");
+      Path candidateAssembly = tempDirectory.resolve(stem + "-candidate-empty.s");
+      Path defaultAssembly = tempDirectory.resolve(stem + "-default.s");
+      Path remarks = tempDirectory.resolve(stem + "-candidate-empty.jsonl");
+
+      PrefixScanBenchmarkCompiler.main(new String[] {
+          source.toString(),
+          "-o", candidateAssembly.toString(),
+          "--profile", profile.toString(),
+          "--remarks", remarks.toString()
+      });
+      Compiler.main(new String[] {
+          source.toString(), "-S", "-o", defaultAssembly.toString(), "-O1"
+      });
+
+      assertArrayEquals(Files.readAllBytes(defaultAssembly), Files.readAllBytes(candidateAssembly),
+          source.toString());
+      List<Map<?, ?>> candidateEvents = Files.readAllLines(remarks).stream()
+          .map(StrictJson::parse)
+          .<Map<?, ?>>map(value -> (Map<?, ?>) value)
+          .filter(event -> PrefixScanReuse.ID.equals(event.get("pass")))
+          .toList();
+      assertFalse(candidateEvents.stream()
+          .anyMatch(event -> "decision".equals(event.get("event_type"))), source.toString());
+      assertTrue(candidateEvents.stream()
+          .filter(event -> "pass".equals(event.get("event_type")))
+          .allMatch(event -> Boolean.FALSE.equals(event.get("changed"))), source.toString());
+    }
+  }
+}
