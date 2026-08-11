@@ -277,6 +277,17 @@ Java `PassRegistry.standard()` 是其所在提交中正式 pipeline 的 pass、�
 implementation ID、anchor 和 obligation 完全一致。
 两份快照的 canonical SHA-256 预期不同，screening/freeze/final/report 必须分别保留
 各自的路径、canonical hash 和 physical hash，禁止用一份 registry 冒充两个阶段。
+本轮 `candidate-evaluation-2026-r1` 的后实现事实源固定为：
+
+- `data/candidates/pass-registry.executable-2026-r1.v2.json`：52 项，其中 46 项
+  非候选投影逐项等于 screening base，6 项为默认关闭的可执行候选；
+- `data/candidates/candidate-catalog.2026-r1.v1.json`：按筛选顺序绑定这 6 项实现、
+  stage、显示名和完整 legality obligations；
+- `data/candidates/profiles-2026-r1/matrix.json`：只含 candidate-empty 与 6 个
+  single profile，不预生成 B3 后才能确定的 Top3 pair。
+
+这些文件一旦进入正式 plan 就是不可变 campaign 输入。B3 后的 pair 必须写入新的
+diagnostic profile 目录，不能增补或覆盖 `profiles-2026-r1`。
 物理 pipeline profile 使用 `schema_version=2`，以
 `enable_candidates` 显式区分 candidate-empty、单候选和双候选 profile。旧
 pass-registry/profile v1 只属于冻结历史证据，不得作为当前 candidate campaign
@@ -804,10 +815,10 @@ repo_root=$(git rev-parse --show-toplevel)
 benchmark_python=${benchmark_python:-.venv/bin/python}
 test -x "$benchmark_python"
 repo_root=$(git rev-parse --show-toplevel)
-: "${candidate_registry:?resolve the implemented candidate catalog}"
-: "${executable_pass_registry:?resolve the implemented candidate registry artifact}"
-: "${candidate_matrix_id:?declare a new candidate matrix identity}"
-: "${candidate_profile_directory:?resolve the immutable profile output directory}"
+candidate_registry=${candidate_registry:-docs/optimization/data/candidates/candidate-catalog.2026-r1.v1.json}
+executable_pass_registry=${executable_pass_registry:-docs/optimization/data/candidates/pass-registry.executable-2026-r1.v2.json}
+candidate_matrix_id=${candidate_matrix_id:-candidate-evaluation-2026-r1-singles}
+candidate_profile_directory=${candidate_profile_directory:-docs/optimization/data/candidates/profiles-2026-r1}
 
 "$benchmark_python" -m tools.benchmark candidates profiles \
   --registry "$candidate_registry" \

@@ -141,6 +141,10 @@ final class PassRegistryTest {
     assertEquals(frozenBase.toJson() + "\n", Files.readString(
         Path.of("docs", "optimization", "data", "pass-registry.v2.json"),
         StandardCharsets.UTF_8));
+    assertEquals(registry.toJson() + "\n", Files.readString(
+        Path.of("docs", "optimization", "data", "candidates",
+            "pass-registry.executable-2026-r1.v2.json"),
+        StandardCharsets.UTF_8));
     Map<?, ?> document = (Map<?, ?>) StrictJson.parse(registry.toJson());
     assertEquals("pass-registry.v2", document.get("schema_version"));
     List<?> passes = (List<?>) document.get("passes");
