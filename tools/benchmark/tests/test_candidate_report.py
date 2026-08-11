@@ -1229,7 +1229,8 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
     )
     pareto_svg = (first / "candidate-pareto.svg").read_text(encoding="utf-8")
     assert "静态 text bytes" in pareto_svg
-    assert "颜色编码风险" in pareto_svg
+    assert "颜色＋文字" in pareto_svg
+    assert "risk=" in pareto_svg
     cache_svg = (first / "candidate-cache-hotblock.svg").read_text(
         encoding="utf-8"
     )

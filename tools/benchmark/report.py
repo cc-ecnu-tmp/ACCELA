@@ -888,10 +888,11 @@ def _svg_pareto(
         '<rect width="100%" height="100%" fill="#fff"/>',
         '<style>text{font-family:system-ui,sans-serif;fill:#172033}.t{font-size:20px;font-weight:700}.l{font-size:11px}.a{stroke:#6d778c}</style>',
         f'<text class="t" x="20" y="30">{xml_escape(title)}</text>',
-        '<circle cx="500" cy="48" r="7" fill="#2b8a3e"/><text class="l" x="512" y="52">low</text>',
-        '<circle cx="570" cy="48" r="7" fill="#3977d4"/><text class="l" x="582" y="52">medium</text>',
-        '<circle cx="666" cy="48" r="7" fill="#d94841"/><text class="l" x="678" y="52">high</text>',
-        '<circle cx="744" cy="48" r="7" fill="#7a8496"/><text class="l" x="756" y="52">unknown（颜色编码风险）</text>',
+        '<text class="l" x="20" y="50">QEMU 代理 Combined GM 与 B3-B6 静态 text bytes；点标签同时写出风险，颜色仅作辅助。</text>',
+        '<circle cx="500" cy="68" r="7" fill="#6b7d2a"/><text class="l" x="512" y="72">risk=low</text>',
+        '<circle cx="590" cy="68" r="7" fill="#3977d4"/><text class="l" x="602" y="72">risk=medium</text>',
+        '<circle cx="704" cy="68" r="7" fill="#e3862b"/><text class="l" x="716" y="72">risk=high</text>',
+        '<circle cx="792" cy="68" r="7" fill="#7a8496"/><text class="l" x="804" y="72">risk=unknown（颜色＋文字）</text>',
     ]
     valid = [
         row
@@ -903,9 +904,9 @@ def _svg_pareto(
         and row[3] in {"low", "medium", "high", "unknown"}
     ]
     if not valid:
-        elements.append('<text class="l" x="20" y="72">无可联合展示的收益、静态 text bytes 与风险证据。</text>')
+        elements.append('<text class="l" x="20" y="96">无可联合展示的收益、静态 text bytes 与风险证据。</text>')
     else:
-        left, top, plot_w, plot_h = 80, 70, 760, 380
+        left, top, plot_w, plot_h = 80, 92, 760, 358
         min_size = min(row[1] for row in valid)
         max_size = max(row[1] for row in valid)
         min_benefit = min(row[2] for row in valid)
@@ -923,9 +924,9 @@ def _svg_pareto(
             f'<text class="l" x="{left + 5}" y="{top + plot_h - 6}">{min_benefit:.4f}x</text>',
         ])
         colors = {
-            "low": "#2b8a3e",
+            "low": "#6b7d2a",
             "medium": "#3977d4",
-            "high": "#d94841",
+            "high": "#e3862b",
             "unknown": "#7a8496",
         }
         for label, code_size, benefit, risk in valid:
@@ -937,7 +938,7 @@ def _svg_pareto(
             text_x = x - radius - 3 if text_anchor == "end" else x + radius + 3
             elements.append(
                 f'<text class="l" x="{text_x:.2f}" y="{y + 4:.2f}" text-anchor="{text_anchor}">'
-                f'{xml_escape(label[:24])} ({code_size:.0f} B, {benefit:.4f}x)</text>'
+                f'{xml_escape(label[:24])} ({code_size:.0f} B, {benefit:.4f}x, risk={risk})</text>'
             )
     elements.append("</svg>")
     return "\n".join(elements) + "\n"
