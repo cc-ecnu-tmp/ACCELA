@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +12,12 @@ import pytest
 
 from tools.benchmark import cli
 from tools.benchmark import candidates as candidate_module
+from tools.benchmark.analyzer_contract import (
+    candidate_analyzer_contract,
+    candidate_analyzer_stage,
+)
 from tools.benchmark.campaign import (
+    candidate_execution_environment_sha256,
     campaign_status_chain,
     enforce_terminal_task_immutability,
     ready_campaign_task_ids,
@@ -26,6 +34,64 @@ from tools.benchmark.schema import (
 from tools.benchmark.util import raw_attempt_identity_sha256, sha256_file, sha256_json
 from tools.benchmark.tests.test_stats_ablation_report import make_run
 from tools.benchmark.execution import VerifiedRunRawEvidence
+
+
+_PROTOCOL_DIGEST_FIELDS = (
+    "protocol_sha256",
+    "runner_command_sha256",
+    "profile_plugin_sha256",
+    "cache_plugin_sha256",
+    "hotblocks_plugin_sha256",
+    "cache_model_sha256",
+    "physical_sha256",
+)
+
+
+def _workspace_bootstrap_fixture() -> dict[str, Any]:
+    physical = lambda path, value: {
+        "path": path,
+        "physical_sha256": f"{value:064x}",
+    }
+    return {
+        "bootstrap_script": physical(
+            "scripts/bootstrap-candidate-workspace.sh", 101
+        ),
+        "python": {
+            "version": "3.14.6",
+            "implementation": "CPython",
+            "platform_system": "Linux",
+            "platform_machine": "x86_64",
+            "venv_path": ".venv",
+            "pip_version": "26.1.2",
+            "setuptools_version": "83.0.0",
+            "project_manifest": physical("pyproject.toml", 102),
+            "requirements_lock": physical(
+                "tools/benchmark/requirements-linux-x86_64-py314.lock", 103
+            ),
+            "installed_inventory": {
+                **physical(
+                    "docs/optimization/data/candidate-python-inventory.v1.json",
+                    104,
+                ),
+                "canonical_sha256": f"{105:064x}",
+            },
+        },
+        "gradle": {
+            "version": "8.14",
+            "distribution_url": "https://services.gradle.org/distributions/gradle-8.14-bin.zip",
+            "distribution_sha256": f"{106:064x}",
+            "build_file": physical("build.gradle.kts", 107),
+            "dependency_lock": physical("gradle.lockfile", 108),
+            "verification_metadata": physical(
+                "gradle/verification-metadata.xml", 109
+            ),
+            "wrapper_jar": physical("gradle/wrapper/gradle-wrapper.jar", 110),
+            "wrapper_properties": physical(
+                "gradle/wrapper/gradle-wrapper.properties", 111
+            ),
+        },
+        "qemu_plugin_builder": physical("scripts/build-qemu-plugins.sh", 112),
+    }
 
 
 def _input_files(root: Path, *names: str) -> dict[str, Path]:
@@ -394,6 +460,56 @@ def test_candidate_oracle_capture_replays_both_legs_from_one_state_root(
         )
 
 
+def test_candidate_prelease_raw_cache_replays_once_and_has_a_final_drift_barrier(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_path = tmp_path / "run.json"
+    run_path.write_text("{}\n", encoding="utf-8")
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    verified = VerifiedRunRawEvidence(
+        document={"run_canonical_sha256": "a" * 64},
+        current_remark_paths={},
+    )
+    calls: list[tuple[Path, Path]] = []
+
+    class Snapshot:
+        def __init__(self) -> None:
+            self.verified = verified
+            self.digest = sha256_file(run_path)
+            self.assertions = 0
+
+        def assert_unchanged(self) -> None:
+            self.assertions += 1
+            if sha256_file(run_path) != self.digest:
+                raise ValidationError(
+                    "benchmark raw evidence changed during read-only verification"
+                )
+
+    snapshot = Snapshot()
+
+    def capture(path: Path, observed_state_root: Path) -> Snapshot:
+        calls.append((path, observed_state_root))
+        return snapshot
+
+    monkeypatch.setattr(
+        candidate_module,
+        "verify_run_raw_evidence_read_only_snapshot",
+        capture,
+    )
+    cache = candidate_module._ReadOnlyRawEvidenceCache()
+    assert cache.verify(run_path, state_root) is verified
+    assert cache.verify(run_path, state_root) is verified
+    assert calls == [(run_path, state_root)]
+
+    cache.assert_unchanged()
+    assert snapshot.assertions == 1
+    run_path.write_text("{\"tampered\":true}\n", encoding="utf-8")
+    with pytest.raises(ValidationError, match="changed during read-only verification"):
+        cache.assert_unchanged()
+
+
 def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -474,9 +590,11 @@ def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
 
 def test_candidate_campaign_protocol_binding_is_role_specific() -> None:
     plan = {
-        "measurement_protocol": {
-            "protocol_id": "standard-proxy",
-            "protocol_sha256": "a" * 64,
+        "measurement_protocols": {
+            "standard_proxy": {
+                "protocol_id": "standard-proxy",
+                "protocol_sha256": "a" * 64,
+            }
         }
     }
     task = {"task_id": "run.B1.full", "data_role": "B1"}
@@ -496,7 +614,6 @@ def test_candidate_campaign_protocol_binding_is_role_specific() -> None:
         candidate_module._require_candidate_campaign_protocol_binding(
             plan=plan, task=task, run=run
         )
-
     task = {"task_id": "run.B2.full", "data_role": "B2"}
     candidate_module._require_candidate_campaign_protocol_binding(
         plan=plan, task=task, run=run
@@ -506,6 +623,568 @@ def test_candidate_campaign_protocol_binding_is_role_specific() -> None:
     with pytest.raises(ValidationError, match="B2 standard-proxy protocol binding"):
         candidate_module._require_candidate_campaign_protocol_binding(
             plan=plan, task=task, run=run
+        )
+
+
+def test_candidate_execution_environment_hash_binds_complete_contract() -> None:
+    environment = {
+        "run_record_schema_sha256": "1" * 64,
+        "analyzer": candidate_analyzer_contract(),
+        "measurement_protocols": {
+            mode: {
+                "measurement_mode": mode,
+                "path": f"protocols/{mode}.json",
+                "protocol_sha256": digit * 64,
+                "runner_command_sha256": digit * 64,
+                "profile_plugin_sha256": digit * 64,
+                "cache_plugin_sha256": digit * 64,
+                "hotblocks_plugin_sha256": digit * 64,
+                "cache_model_sha256": digit * 64,
+                "physical_sha256": digit * 64,
+            }
+            for mode, digit in (
+                ("standard_proxy", "2"),
+                ("cache_hotblock", "3"),
+            )
+        },
+        "reference_toolchain": {
+            "snapshot": {
+                "path": "toolchains/reference.json",
+                "canonical_sha256": "6" * 64,
+                "physical_sha256": "7" * 64,
+            },
+            "candidate_toolchain": {
+                "workspace_bootstrap": _workspace_bootstrap_fixture()
+            }
+        },
+    }
+    first = candidate_execution_environment_sha256(
+        environment=environment, compiler_artifact_sha256="4" * 64
+    )
+    assert first == candidate_execution_environment_sha256(
+        environment=deepcopy(environment), compiler_artifact_sha256="4" * 64
+    )
+    assert candidate_execution_environment_sha256(
+        environment=environment, compiler_artifact_sha256="5" * 64
+    ) != first
+    for mode in ("standard_proxy", "cache_hotblock"):
+        tampered = deepcopy(environment)
+        tampered["measurement_protocols"][mode]["physical_sha256"] = "5" * 64
+        assert candidate_execution_environment_sha256(
+            environment=tampered, compiler_artifact_sha256="4" * 64
+        ) != first
+    for mutation in (
+        "schema",
+        "protocol_path",
+        "snapshot_path",
+        "snapshot_canonical",
+        "snapshot_physical",
+        "bootstrap",
+    ):
+        tampered = deepcopy(environment)
+        if mutation == "schema":
+            tampered["run_record_schema_sha256"] = "5" * 64
+        elif mutation == "protocol_path":
+            tampered["measurement_protocols"]["standard_proxy"]["path"] = (
+                "protocols/standard-proxy-renamed.json"
+            )
+        elif mutation == "snapshot_path":
+            tampered["reference_toolchain"]["snapshot"]["path"] = (
+                "toolchains/reference-renamed.json"
+            )
+        elif mutation == "snapshot_canonical":
+            tampered["reference_toolchain"]["snapshot"][
+                "canonical_sha256"
+            ] = "5" * 64
+        elif mutation == "snapshot_physical":
+            tampered["reference_toolchain"]["snapshot"][
+                "physical_sha256"
+            ] = "5" * 64
+        else:
+            tampered["reference_toolchain"]["candidate_toolchain"][
+                "workspace_bootstrap"
+            ]["python"]["requirements_lock"]["physical_sha256"] = "5" * 64
+        assert candidate_execution_environment_sha256(
+            environment=tampered, compiler_artifact_sha256="4" * 64
+        ) != first
+    tampered_analyzer = deepcopy(environment)
+    tampered_analyzer["analyzer"]["commands"]["accela"]["argv"][1] = "-E"
+    with pytest.raises(ValidationError, match="environment analyzer differs"):
+        candidate_execution_environment_sha256(
+            environment=tampered_analyzer,
+            compiler_artifact_sha256="4" * 64,
+        )
+    for compiler_sha256, schema_sha256 in (
+        ("0" * 64, "1" * 64),
+        ("4" * 64, "0" * 64),
+    ):
+        placeholder_identity = deepcopy(environment)
+        placeholder_identity["run_record_schema_sha256"] = schema_sha256
+        with pytest.raises(ValidationError, match="placeholder hash"):
+            candidate_execution_environment_sha256(
+                environment=placeholder_identity,
+                compiler_artifact_sha256=compiler_sha256,
+            )
+    for key in _PROTOCOL_DIGEST_FIELDS:
+        placeholder = deepcopy(environment)
+        placeholder["measurement_protocols"]["cache_hotblock"][key] = "0" * 64
+        with pytest.raises(ValidationError, match="protocol binding differs"):
+            candidate_execution_environment_sha256(
+                environment=placeholder, compiler_artifact_sha256="4" * 64
+            )
+    placeholder_snapshot = deepcopy(environment)
+    placeholder_snapshot["reference_toolchain"]["snapshot"][
+        "canonical_sha256"
+    ] = "0" * 64
+    with pytest.raises(ValidationError, match="toolchain snapshot differs"):
+        candidate_execution_environment_sha256(
+            environment=placeholder_snapshot,
+            compiler_artifact_sha256="4" * 64,
+        )
+    missing_bootstrap = deepcopy(environment)
+    del missing_bootstrap["reference_toolchain"]["candidate_toolchain"][
+        "workspace_bootstrap"
+    ]
+    with pytest.raises(ValidationError, match="lacks workspace bootstrap"):
+        candidate_execution_environment_sha256(
+            environment=missing_bootstrap, compiler_artifact_sha256="4" * 64
+        )
+
+
+def test_oracle_binding_projection_retains_legacy_identity() -> None:
+    run = make_run("oracle-binding", {"case-a": ("family", 1.0)})
+    legacy = candidate_module._binding_record(run)
+    assert "execution_environment_sha256" not in legacy
+
+    run["provenance"]["execution_environment_sha256"] = "9" * 64
+    assert candidate_module._binding_record(run) == legacy
+    assert candidate_module._binding_record(
+        run, include_execution_environment=True
+    )["execution_environment_sha256"] == "9" * 64
+
+
+@pytest.mark.parametrize("toolchain", ("accela", "gcc", "clang"))
+def test_formal_candidate_run_binds_exact_analyzer(toolchain: str) -> None:
+    contract = candidate_analyzer_contract()
+    run = {
+        "configuration": {
+            "analyzer": candidate_analyzer_stage(
+                contract, toolchain=toolchain
+            )
+        }
+    }
+    candidate_module._require_candidate_analyzer_binding(
+        contract=contract,
+        run=run,
+        toolchain=toolchain,
+        label="formal candidate run",
+    )
+    run["configuration"]["analyzer"]["command_sha256"] = "0" * 64
+    with pytest.raises(ValidationError, match="analyzer contract differs"):
+        candidate_module._require_candidate_analyzer_binding(
+            contract=contract,
+            run=run,
+            toolchain=toolchain,
+            label="formal candidate run",
+        )
+
+
+def test_formal_candidate_b1_rejects_analyzer_instantiation() -> None:
+    contract = candidate_analyzer_contract()
+    run = {"configuration": {"analyzer": None}}
+    candidate_module._require_candidate_analyzer_binding(
+        contract=contract,
+        run=run,
+        toolchain=None,
+        label="formal B1 run",
+    )
+    run["configuration"]["analyzer"] = candidate_analyzer_stage(
+        contract, toolchain="accela"
+    )
+    with pytest.raises(ValidationError, match="analyzer contract differs"):
+        candidate_module._require_candidate_analyzer_binding(
+            contract=contract,
+            run=run,
+            toolchain=None,
+            label="formal B1 run",
+        )
+
+
+def test_formal_candidate_runtime_stages_are_exact() -> None:
+    correctness = {
+        "configuration": {
+            "linker": candidate_module._formal_candidate_stage(
+                kind="external",
+                command=candidate_module._FORMAL_CANDIDATE_LINKER_COMMAND,
+            ),
+            "runner": candidate_module._formal_candidate_stage(
+                kind="qemu",
+                command=candidate_module._FORMAL_CANDIDATE_CORRECTNESS_RUNNER_COMMAND,
+            ),
+        }
+    }
+    candidate_module._require_candidate_runtime_stages(
+        run=correctness,
+        data_role="B1",
+        protocol=None,
+        label="B1",
+    )
+    for stage, field, value in (
+        ("linker", "adapter", "wsl"),
+        ("runner", "command_sha256", "0" * 64),
+        ("runner", "environment_keys", ["PYTHONPATH"]),
+    ):
+        tampered = deepcopy(correctness)
+        tampered["configuration"][stage][field] = value
+        with pytest.raises(ValidationError, match="contract differs"):
+            candidate_module._require_candidate_runtime_stages(
+                run=tampered,
+                data_role="B1",
+                protocol=None,
+                label="B1",
+            )
+
+    proxy = deepcopy(correctness)
+    proxy["configuration"]["runner"] = {
+        "kind": "qemu",
+        "adapter": "host",
+        "command_sha256": "8" * 64,
+        "executable": "sh",
+        "environment_keys": [
+            "QEMU_CACHE_PLUGIN",
+            "QEMU_HOTBLOCKS_PLUGIN",
+            "QEMU_PROFILE_PLUGIN",
+            "QEMU_SYSTEM_RISCV64",
+        ],
+    }
+    protocol = {
+        "measurement_mode": "cache_hotblock",
+        "runner_adapter": "host",
+        "runner_command_sha256": "8" * 64,
+    }
+    candidate_module._require_candidate_runtime_stages(
+        run=proxy,
+        data_role="B3",
+        protocol=protocol,
+        label="cache",
+    )
+    proxy["configuration"]["runner"]["executable"] = "python3"
+    with pytest.raises(ValidationError, match="proxy runner"):
+        candidate_module._require_candidate_runtime_stages(
+            run=proxy,
+            data_role="B3",
+            protocol=protocol,
+            label="cache",
+        )
+
+
+def test_formal_candidate_result_contract_is_exact() -> None:
+    run = {
+        "configuration": {
+            "output_contract": "lf_return_trailer",
+            "result_file_sha256": None,
+            "environment_label": "proxy",
+        }
+    }
+    candidate_module._require_candidate_result_contract(run, label="formal")
+    for field, value in (
+        ("output_contract", "process_exit"),
+        ("result_file_sha256", "8" * 64),
+        ("environment_label", "local_reference"),
+    ):
+        tampered = deepcopy(run)
+        tampered["configuration"][field] = value
+        with pytest.raises(ValidationError, match="result contract differs"):
+            candidate_module._require_candidate_result_contract(
+                tampered, label="formal"
+            )
+
+
+def test_candidate_timeout_policy_is_task_and_baseline_exact() -> None:
+    baseline = make_run("campaign:run.B3.full", {"case-a": ("family", 1.0)})
+    baseline["state"] = "completed"
+    task = {
+        "task_id": "run.B3.candidate.alpha",
+        "data_role": "B3",
+        "kind": "single",
+        "candidate_ids": ["candidate.alpha"],
+    }
+    run = deepcopy(baseline)
+    run["run_id"] = "campaign:run.B3.candidate.alpha"
+    run["configuration"]["timeout_policy"] = "baseline_derived"
+    run["configuration"]["baseline_timeout_run_id"] = baseline["run_id"]
+    run["configuration"]["baseline_timeout_run_sha256"] = sha256_json(baseline)
+    candidate_module._require_candidate_timeout_configuration(
+        task=task,
+        run=run,
+        baseline_run=baseline,
+        label="single",
+    )
+    wrong = deepcopy(run)
+    wrong["configuration"]["baseline_timeout_run_id"] = "campaign:run.B2.full"
+    with pytest.raises(ValidationError, match="baseline identity"):
+        candidate_module._require_candidate_timeout_configuration(
+            task=task,
+            run=wrong,
+            baseline_run=baseline,
+            label="single",
+        )
+
+    wrong_hash = deepcopy(run)
+    wrong_hash["configuration"]["baseline_timeout_run_sha256"] = "0" * 64
+    with pytest.raises(ValidationError, match="baseline identity"):
+        candidate_module._require_candidate_timeout_configuration(
+            task=task,
+            run=wrong_hash,
+            baseline_run=baseline,
+            label="single",
+        )
+    nonterminal = deepcopy(baseline)
+    nonterminal["state"] = "failed"
+    with pytest.raises(ValidationError, match="baseline identity"):
+        candidate_module._require_candidate_timeout_configuration(
+            task=task,
+            run=run,
+            baseline_run=nonterminal,
+            label="single",
+        )
+
+    pair_task = {
+        "task_id": "diagnostic.pair.candidate.alpha+candidate.beta",
+        "data_role": "B3",
+        "kind": "pair",
+        "candidate_ids": ["candidate.alpha", "candidate.beta"],
+    }
+    candidate_module._require_candidate_timeout_configuration(
+        task=pair_task,
+        run=run,
+        baseline_run=baseline,
+        label="pair",
+    )
+    cache_baseline = deepcopy(baseline)
+    cache_baseline["run_id"] = "campaign:diagnostic.cache.full"
+    cache_run = deepcopy(run)
+    cache_run["configuration"]["baseline_timeout_run_id"] = cache_baseline["run_id"]
+    cache_run["configuration"]["baseline_timeout_run_sha256"] = sha256_json(
+        cache_baseline
+    )
+    candidate_module._require_candidate_timeout_configuration(
+        task={
+            "task_id": "diagnostic.cache.candidate.alpha",
+            "data_role": "B3",
+            "kind": "cache_hotblock",
+            "candidate_ids": ["candidate.alpha"],
+        },
+        run=cache_run,
+        baseline_run=cache_baseline,
+        label="cache single",
+    )
+
+    for initial_task in (
+        {
+            "task_id": "run.B1.full",
+            "data_role": "B1",
+            "kind": "candidate_empty",
+            "candidate_ids": [],
+        },
+        {
+            "task_id": "run.B3.gcc",
+            "data_role": "B3",
+            "kind": "reference",
+            "candidate_ids": [],
+        },
+        {
+            "task_id": "diagnostic.cache.full",
+            "data_role": "B3",
+            "kind": "cache_hotblock",
+            "candidate_ids": [],
+        },
+    ):
+        candidate_module._require_candidate_timeout_configuration(
+            task=initial_task,
+            run=baseline,
+            baseline_run=None,
+            label=initial_task["task_id"],
+        )
+    reference_task = {
+        "task_id": "run.B3.gcc",
+        "data_role": "B3",
+        "kind": "reference",
+        "candidate_ids": [],
+    }
+    with pytest.raises(ValidationError, match="initial timeouts"):
+        candidate_module._require_candidate_timeout_configuration(
+            task=reference_task,
+            run=run,
+            baseline_run=baseline,
+            label="reference",
+        )
+
+
+def test_formal_candidate_main_rejects_repository_provenance_drift() -> None:
+    plan = {
+        "execution_environment_sha256": "9" * 64,
+        "repository": {"repo_commit": "1" * 40},
+    }
+    task = {
+        "task_id": "run.B2.full",
+        "run_id": "campaign:run.B2.full",
+        "data_role": "B2",
+        "kind": "candidate_empty",
+    }
+    run = {
+        "run_id": task["run_id"],
+        "provenance": {
+            "execution_environment_sha256": "9" * 64,
+            "repo_commit": "2" * 40,
+            "repo_dirty": False,
+            "tracked_diff_sha256": None,
+        },
+    }
+    with pytest.raises(ValidationError, match="repository/execution"):
+        candidate_module._validate_campaign_run_static(
+            plan,
+            task,
+            run,
+            profiles={},
+        )
+
+
+@pytest.mark.parametrize(
+    ("data_role", "kind"),
+    (("B1", "candidate_empty"), ("B3", "reference"), ("B3", "single")),
+)
+@pytest.mark.parametrize("observed", (None, "8" * 64))
+def test_formal_candidate_run_requires_exact_execution_environment(
+    data_role: str, kind: str, observed: str | None
+) -> None:
+    plan = {"execution_environment_sha256": "9" * 64}
+    task = {
+        "task_id": f"run.{data_role}.{kind}",
+        "run_id": f"campaign:run.{data_role}.{kind}",
+        "data_role": data_role,
+        "kind": kind,
+    }
+    run = {
+        "run_id": task["run_id"],
+        "provenance": {"execution_environment_sha256": observed},
+    }
+    if observed is None:
+        del run["provenance"]["execution_environment_sha256"]
+    with pytest.raises(ValidationError, match="execution environment differs"):
+        candidate_module._validate_campaign_run(
+            plan, task, run, profiles={}
+        )
+
+
+def test_formal_candidate_diagnostic_requires_exact_execution_environment() -> None:
+    task = {
+        "task_id": "diagnostic.cache.full",
+        "run_id": "campaign:diagnostic.cache.full",
+        "measurement_mode": "cache_hotblock",
+        "candidate_ids": [],
+    }
+    run = {
+        "run_id": task["run_id"],
+        "suite_id": "suite-b3",
+        "manifest_sha256": "1" * 64,
+        "configuration": {"evidence_level": "qemu_proxy"},
+        "provenance": {
+            "repo_commit": "2" * 40,
+            "repo_dirty": False,
+            "tracked_diff_sha256": None,
+            "compiler_artifact_sha256": "3" * 64,
+            "measurement_protocol_id": "cache-hotblock",
+            "measurement_protocol_sha256": "4" * 64,
+        },
+    }
+    freeze = {
+        "execution_environment_sha256": "9" * 64,
+        "repository": {
+            "repo_commit": "2" * 40,
+            "compiler_artifact": {"physical_sha256": "3" * 64},
+        },
+        "measurement_protocols": {
+            "cache_hotblock": {
+                "protocol_id": "cache-hotblock",
+                "protocol_sha256": "4" * 64,
+            }
+        },
+    }
+    with pytest.raises(ValidationError, match="diagnostic run binding differs"):
+        candidate_module._validate_candidate_diagnostic_run(
+            task=task,
+            run=run,
+            profile={},
+            candidate_registry_sha256="5" * 64,
+            pass_registry_sha256="6" * 64,
+            b3_suite={
+                "suite_id": "suite-b3",
+                "manifest": {"canonical_sha256": "1" * 64},
+            },
+            freeze=freeze,
+        )
+
+
+def test_candidate_status_ledger_rejects_execution_environment_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = {
+        "campaign_id": "campaign",
+        "execution_environment_sha256": "9" * 64,
+    }
+    ledger_path = tmp_path / "status.json"
+    ledger_path.write_text("{}\n", encoding="utf-8")
+    entry = {
+        "campaign_id": "campaign",
+        "plan_sha256": sha256_json(plan),
+        "execution_environment_sha256": "8" * 64,
+    }
+    monkeypatch.setattr(
+        candidate_module,
+        "_load_version",
+        lambda *_args, **_kwargs: entry,
+    )
+    with pytest.raises(ValidationError, match="binds another plan"):
+        candidate_module._validate_candidate_status_ledger(
+            plan=plan,
+            status=entry,
+            ledger_paths=[ledger_path],
+            workspace_root=tmp_path,
+        )
+
+
+def test_candidate_status_ledger_rejects_analyzer_contract_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    analyzer = candidate_analyzer_contract()
+    plan = {
+        "campaign_id": "campaign",
+        "execution_environment_sha256": "9" * 64,
+        "analyzer": analyzer,
+    }
+    ledger_path = tmp_path / "status.json"
+    ledger_path.write_text("{}\n", encoding="utf-8")
+    entry = {
+        "campaign_id": "campaign",
+        "plan_sha256": sha256_json(plan),
+        "execution_environment_sha256": "9" * 64,
+        "analyzer": deepcopy(analyzer),
+    }
+    entry["analyzer"]["commands"]["accela"]["argv"][-1] = (
+        "{wrong_analysis_file}"
+    )
+    monkeypatch.setattr(
+        candidate_module,
+        "_load_version",
+        lambda *_args, **_kwargs: entry,
+    )
+    with pytest.raises(ValidationError, match="binds another plan"):
+        candidate_module._validate_candidate_status_ledger(
+            plan=plan,
+            status=entry,
+            ledger_paths=[ledger_path],
+            workspace_root=tmp_path,
         )
 
 
@@ -541,11 +1220,13 @@ def test_candidate_reference_run_binds_exact_frozen_profile_sha(
     }
     run = {
         "configuration": {
-            "compiler": {
-                "kind": "external",
-                "executable": "sh",
-                "command_sha256": "c" * 64,
-            },
+                "compiler": {
+                    "kind": "external",
+                    "adapter": "host",
+                    "executable": "sh",
+                    "command_sha256": "c" * 64,
+                    "environment_keys": [],
+                },
             "tool_versions": [
                 {
                     "tool": tool,
@@ -637,6 +1318,9 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
 
     matrix = json.loads((source_root / matrix_relative).read_text(encoding="utf-8"))
     screening = load_and_validate(source_root / screening_relative)
+    oracle_capture = load_and_validate(
+        source_root / screening["sources"]["oracle_capture"]["path"]
+    )
     copied_relatives = {
         catalog_relative,
         pass_registry_relative,
@@ -651,7 +1335,18 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         Path("tools/benchmark/candidate-toolchain.Dockerfile"),
         Path("tools/benchmark/schemas/run-record.v1.json"),
         Path("tools/qemu/sysy-builtins.h"),
+        Path("build.gradle.kts"),
+        Path("gradle.lockfile"),
+        Path("gradle/verification-metadata.xml"),
+        Path("gradle/wrapper/gradle-wrapper.jar"),
+        Path("gradle/wrapper/gradle-wrapper.properties"),
+        Path("pyproject.toml"),
+        Path("scripts/bootstrap-candidate-workspace.sh"),
+        Path("scripts/build-qemu-plugins.sh"),
+        Path("tools/benchmark/requirements-linux-x86_64-py314.lock"),
+        Path("docs/optimization/data/candidate-python-inventory.v1.json"),
         Path(screening["base_pass_registry"]["path"]),
+        *(Path(item["path"]) for item in screening["sources"].values()),
         *manifest_relatives.values(),
         *(Path(item["path"]) for item in matrix["profiles"]),
     }
@@ -665,15 +1360,88 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     compiler_artifact.write_bytes(b"candidate campaign test artifact\n")
     raw_state_root = tmp_path / "raw-state"
     raw_state_root.mkdir()
+    suite_root = tmp_path / "suite-root"
+    suite_root.mkdir()
+    for item in oracle_capture["raw_evidence"].values():
+        raw_path = tmp_path / item["run_record_path"]
+        raw_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_path.write_text("{}\n", encoding="utf-8")
+    (tmp_path / oracle_capture["raw_state_root"]).mkdir(
+        parents=True, exist_ok=True
+    )
+    read_only_snapshot_calls: list[Path] = []
+    screening_verifiers: list[Any | None] = []
+    strict_prelease_verifier = [False]
+
+    class FakeReadOnlySnapshot:
+        def __init__(self, path: Path) -> None:
+            self.verified = VerifiedRunRawEvidence(
+                document={"run_canonical_sha256": sha256_file(path)},
+                current_remark_paths={},
+            )
+
+        def assert_unchanged(self) -> None:
+            return None
+
+    def fake_read_only_snapshot(path: Path, _state_root: Path) -> FakeReadOnlySnapshot:
+        read_only_snapshot_calls.append(path)
+        return FakeReadOnlySnapshot(path)
+
+    def forbid_leased_raw_verifier(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("candidate prelease entered the leased raw verifier")
+
+    def replay_fake_oracle_legs(verifier: Any | None) -> None:
+        if strict_prelease_verifier[0] and verifier is None:
+            raise AssertionError(
+                "candidate prelease Oracle replay lost its read-only verifier"
+            )
+        if verifier is None:
+            return
+        for item in oracle_capture["raw_evidence"].values():
+            verifier(
+                tmp_path / item["run_record_path"],
+                tmp_path / oracle_capture["raw_state_root"],
+            )
+
+    def fake_screening(**kwargs: Any) -> dict[str, Any]:
+        verifier = kwargs.get("raw_evidence_verifier")
+        screening_verifiers.append(verifier)
+        replay_fake_oracle_legs(verifier)
+        return load_and_validate(kwargs["screening_path"])
+
+    def fake_oracle_capture(**kwargs: Any) -> dict[str, Any]:
+        replay_fake_oracle_legs(kwargs.get("raw_evidence_verifier"))
+        return load_and_validate(kwargs["capture_path"])
+
+    monkeypatch.setattr(
+        candidate_module,
+        "verify_run_raw_evidence_read_only_snapshot",
+        fake_read_only_snapshot,
+    )
+    monkeypatch.setattr(
+        candidate_module,
+        "verify_run_raw_evidence",
+        forbid_leased_raw_verifier,
+    )
     monkeypatch.setattr(
         candidate_module,
         "_load_and_reverify_candidate_screening",
-        lambda **kwargs: load_and_validate(kwargs["screening_path"]),
+        fake_screening,
+    )
+    monkeypatch.setattr(
+        candidate_module,
+        "_load_and_reverify_candidate_oracle_capture",
+        fake_oracle_capture,
     )
     monkeypatch.setattr(
         candidate_module,
         "_clean_repository_identity",
         lambda *_args, **_kwargs: ("a" * 40, "b" * 40),
+    )
+    monkeypatch.setattr(
+        candidate_module,
+        "_require_git_ignored_path",
+        lambda **_kwargs: None,
     )
 
     plan = candidate_module.build_candidate_campaign_plan(
@@ -700,6 +1468,449 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     assert plan["reference_toolchain"]["candidate_toolchain"]["image_id"] == (
         "sha256:548c90fb7fbf0c6a632ef6d6f180183b3bf4cbf817ba3e8ef41db6069e413eb2"
     )
+    assert set(plan["measurement_protocols"]) == {
+        "standard_proxy",
+        "cache_hotblock",
+    }
+    assert plan["execution_environment_sha256"] != "0" * 64
+    assert plan["analyzer"] == candidate_analyzer_contract()
+    with pytest.raises(ValidationError, match="raw state namespaces overlap"):
+        candidate_module.build_candidate_campaign_plan(
+            catalog_path=tmp_path / catalog_relative,
+            pass_registry_path=tmp_path / pass_registry_relative,
+            matrix_path=tmp_path / matrix_relative,
+            screening_path=tmp_path / screening_relative,
+            suite_paths={
+                role: tmp_path / relative
+                for role, relative in manifest_relatives.items()
+            },
+            measurement_protocol_path=tmp_path / protocol_relative,
+            hotblock_measurement_protocol_path=tmp_path
+            / hotblock_protocol_relative,
+            reference_toolchain_path=tmp_path / toolchain_relative,
+            compiler_artifact_path=compiler_artifact,
+            raw_state_root=tmp_path / oracle_capture["raw_state_root"],
+            workspace_root=tmp_path,
+            campaign_id="accela-candidate-evaluation-overlap",
+        )
+
+    raw_registry = candidate_module._build_candidate_raw_evidence_registry_from_plan(
+        plan=plan,
+        run_paths={},
+        workspace_root=tmp_path,
+    )
+    raw_registry_path = tmp_path / "raw-registry.json"
+    cli._publish_immutable_json(
+        raw_registry_path,
+        raw_registry,
+        label="candidate raw registry",
+    )
+    raw_registry_artifact = candidate_module.candidate_raw_evidence_registry_artifact(
+        registry=raw_registry,
+        output_path=raw_registry_path,
+        workspace_root=tmp_path,
+    )
+    status = validate_document(
+        {
+            "schema_version": "candidate-campaign-status.v1",
+            "campaign_id": plan["campaign_id"],
+            "plan_sha256": sha256_json(plan),
+            "execution_environment_sha256": plan[
+                "execution_environment_sha256"
+            ],
+            "analyzer": plan["analyzer"],
+            "previous_status_sha256": None,
+            "state": "pending",
+            "started_at": "2026-08-12T00:00:00Z",
+            "as_of": "2026-08-12T00:01:00Z",
+            "raw_evidence_registry": raw_registry_artifact,
+            "tasks": [
+                {
+                    "task_id": item["task_id"],
+                    "status": "pending",
+                    "evidence_kind": None,
+                    "evidence_sha256": None,
+                    "evidence_physical_sha256": None,
+                    "evidence_path": None,
+                    "started_at": None,
+                    "completed_at": None,
+                    "ineligibility_reason": None,
+                }
+                for item in plan["tasks"]
+            ],
+            "ready_tasks": [plan["tasks"][1]["task_id"]],
+            "diagnostic_plan": None,
+        }
+    )
+    plan_path = tmp_path / "plan.json"
+    status_path = tmp_path / "status.json"
+    cli._publish_immutable_json(plan_path, plan, label="candidate plan")
+    cli._publish_immutable_json(status_path, status, label="candidate status")
+    oracle_publication_root = tmp_path / oracle_capture["raw_state_root"]
+    oracle_raw_output = oracle_publication_root / "candidate-raw.json"
+    oracle_status_output = oracle_publication_root / "candidate-status.json"
+    with pytest.raises(ValidationError, match="exact state sibling directory"):
+        candidate_module._require_candidate_campaign_publication_paths(
+            plan=plan,
+            matrix=matrix,
+            workspace_root=tmp_path,
+            raw_output_path=oracle_raw_output,
+            status_output_path=oracle_status_output,
+            protected_input_paths=[plan_path],
+        )
+    assert not oracle_raw_output.exists()
+    assert not oracle_status_output.exists()
+    assert not (
+        oracle_publication_root / ".accela-benchmark-locks"
+    ).exists()
+    authorization = candidate_module.CandidateRunAuthorizationIntent(
+        plan_path=plan_path,
+        status_path=status_path,
+        status_ledger_paths=(status_path,),
+        task_id="run.B1.full",
+        workspace_root=tmp_path,
+        manifest_path=tmp_path / manifest_relatives["B1"],
+        suite_root=suite_root,
+        output_path=tmp_path / "authorized-output.json",
+        state_root=raw_state_root,
+        compiler_artifact_path=compiler_artifact,
+        pipeline_profile_path=tmp_path / plan["base_pipeline_profile"]["path"],
+        candidate_registry_path=tmp_path / catalog_relative,
+        candidate_pass_registry_path=tmp_path / pass_registry_relative,
+        measurement_protocol_path=None,
+        baseline_timeout_path=None,
+        run_id=next(
+            item["run_id"]
+            for item in plan["tasks"]
+            if item["task_id"] == "run.B1.full"
+        ),
+        configuration={},
+        provenance={},
+    )
+    with pytest.raises(ValidationError, match="central evidence projection"):
+        candidate_module.authorize_candidate_run_prelease(authorization)
+    assert not authorization.output_path.exists()
+    assert not (authorization.output_path.parent / ".accela-benchmark-locks").exists()
+
+    forged_completed_status = deepcopy(status)
+    forged_full = next(
+        item
+        for item in forged_completed_status["tasks"]
+        if item["task_id"] == "run.B1.full"
+    )
+    forged_run = make_run("forged-b1", {"case": ("family", 100.0)})
+    forged_run_path = tmp_path / "forged-run.json"
+    cli._publish_immutable_json(
+        forged_run_path,
+        forged_run,
+        label="forged candidate run fixture",
+    )
+    forged_full.update(
+        {
+            "status": "completed",
+            "evidence_kind": "run-record.v1",
+            "evidence_sha256": sha256_json(forged_run),
+            "evidence_physical_sha256": sha256_file(forged_run_path),
+            "evidence_path": "forged-run.json",
+            "started_at": "2026-08-12T00:00:10Z",
+            "completed_at": "2026-08-12T00:00:20Z",
+        }
+    )
+    forged_completed_status["state"] = "running"
+    forged_completed_status = validate_document(forged_completed_status)
+    forged_status_path = tmp_path / "forged-completed-status.json"
+    cli._publish_immutable_json(
+        forged_status_path,
+        forged_completed_status,
+        label="forged candidate status fixture",
+    )
+    with pytest.raises(ValidationError, match="run evidence differs from raw registry"):
+        candidate_module.authorize_candidate_run_prelease(
+            replace(
+                authorization,
+                status_path=forged_status_path,
+                status_ledger_paths=(forged_status_path,),
+                task_id=forged_completed_status["ready_tasks"][0],
+            )
+        )
+    assert not authorization.output_path.exists()
+    assert not (authorization.output_path.parent / ".accela-benchmark-locks").exists()
+
+    stale_plan = deepcopy(plan)
+    stale_plan["candidate_study_schema_sha256"] = "0" * 64
+    stale_plan_path = tmp_path / "stale-plan.json"
+    cli._publish_immutable_json(
+        stale_plan_path,
+        stale_plan,
+        label="stale candidate plan",
+    )
+    with pytest.raises(ValidationError, match="study schema binding is stale"):
+        candidate_module.authorize_candidate_run_prelease(
+            replace(authorization, plan_path=stale_plan_path)
+        )
+    assert not authorization.output_path.exists()
+
+    ready_status_path = tmp_path / "ready-status.json"
+    ready_status = candidate_module.update_candidate_campaign_status(
+        plan_path=plan_path,
+        run_paths={},
+        study_paths={},
+        raw_evidence_registry=raw_registry,
+        raw_evidence_registry_output_path=raw_registry_path,
+        status_output_path=ready_status_path,
+        workspace_root=tmp_path,
+        started_at="2026-08-12T00:00:00Z",
+        as_of="2026-08-12T00:01:00Z",
+    )
+    assert ready_status["ready_tasks"] == ["run.B1.full"]
+    cli._publish_immutable_json(
+        ready_status_path,
+        ready_status,
+        label="ready candidate status",
+    )
+    second_raw_registry_path = tmp_path / "raw-registry-2.json"
+    second_status_path = tmp_path / "ready-status-2.json"
+    second_status = candidate_module.update_candidate_campaign_status(
+        plan_path=plan_path,
+        run_paths={},
+        study_paths={},
+        raw_evidence_registry=raw_registry,
+        raw_evidence_registry_output_path=second_raw_registry_path,
+        status_output_path=second_status_path,
+        workspace_root=tmp_path,
+        previous_status_path=ready_status_path,
+        status_ledger_paths=(ready_status_path,),
+        as_of="2026-08-12T00:02:00Z",
+    )
+    cli._publish_immutable_json(
+        second_raw_registry_path,
+        raw_registry,
+        label="second candidate raw registry",
+    )
+    cli._publish_immutable_json(
+        second_status_path,
+        second_status,
+        label="second ready candidate status",
+    )
+    assert second_status["ready_tasks"] == ["run.B1.full"]
+    strict_prelease_verifier[0] = True
+    profile = next(
+        item
+        for item in matrix["profiles"]
+        if item["profile_id"] == "candidate-empty"
+    )
+    tool_versions = {
+        **plan["reference_toolchain"]["common_tool_versions"],
+        "accela-jdk": plan["reference_toolchain"]["accela_jdk_version"],
+    }
+    configuration = {
+        "compiler": candidate_module._candidate_compiler_stage(),
+        "pipeline_profile_file_sha256": profile["profile_sha256"],
+        "candidate_registry_sha256": plan["artifacts"]["candidate_registry"][
+            "canonical_sha256"
+        ],
+        "candidate_pass_registry_sha256": plan["artifacts"][
+            "executable_pass_registry"
+        ]["canonical_sha256"],
+        "enabled_candidate_ids": [],
+        "linker": candidate_module._formal_candidate_stage(
+            kind="external",
+            command=candidate_module._FORMAL_CANDIDATE_LINKER_COMMAND,
+        ),
+        "analyzer": None,
+        "runner": candidate_module._formal_candidate_stage(
+            kind="qemu",
+            command=candidate_module._FORMAL_CANDIDATE_CORRECTNESS_RUNNER_COMMAND,
+        ),
+        "compile_repetitions": 5,
+        "reuse_compile_cache": False,
+        "compile_storage_contract": "attempt_local_v1",
+        "max_workers": 4,
+        "seed": 20260809,
+        "retry_failures": False,
+        "repetitions": 1,
+        "consistency_fraction": 0.1,
+        "consistency_repetitions": 3,
+        "evidence_level": "qemu_correctness",
+        "output_contract": "lf_return_trailer",
+        "result_file_sha256": None,
+        "environment_label": "proxy",
+        "remarks_file_sha256": None,
+        "timeout_policy": "initial",
+        "baseline_timeout_run_id": None,
+        "baseline_timeout_run_sha256": None,
+        "run_timeout_seconds": 1800.0,
+        "timeout_minimum_seconds": 120.0,
+        "timeout_multiplier": 3.0,
+        "timeout_cap_seconds": 1800.0,
+        "tool_versions": [
+            {
+                "tool": tool,
+                "actual": version,
+                "official_expected": version,
+                "comparison": "exact",
+            }
+            for tool, version in tool_versions.items()
+        ],
+    }
+    provenance = {
+        "repo_commit": plan["repository"]["repo_commit"],
+        "repo_dirty": False,
+        "tracked_diff_sha256": None,
+        "compiler_artifact_sha256": plan["repository"]["compiler_artifact"][
+            "physical_sha256"
+        ],
+        "execution_environment_sha256": plan["execution_environment_sha256"],
+        "measurement_protocol_id": None,
+        "measurement_protocol_sha256": None,
+        "pipeline_profile_id": profile["profile_id"],
+        "pipeline_profile_sha256": profile["profile_sha256"],
+    }
+    original_load_and_validate = candidate_module.load_and_validate
+
+    def load_without_corpus_files(
+        path: Path,
+        *,
+        suite_root: Path | None = None,
+        verify_files: bool = False,
+    ) -> dict[str, Any]:
+        if Path(path).resolve() == (tmp_path / manifest_relatives["B1"]).resolve():
+            return original_load_and_validate(path)
+        return original_load_and_validate(
+            path,
+            suite_root=suite_root,
+            verify_files=verify_files,
+        )
+
+    monkeypatch.setattr(
+        candidate_module,
+        "load_and_validate",
+        load_without_corpus_files,
+    )
+    for field, value in (
+        ("output_contract", "process_exit"),
+        ("result_file_sha256", "8" * 64),
+        ("environment_label", "local_reference"),
+    ):
+        tampered_configuration = deepcopy(configuration)
+        tampered_configuration[field] = value
+        with pytest.raises(ValidationError, match="result contract differs"):
+            candidate_module.authorize_candidate_run_prelease(
+                replace(
+                    authorization,
+                    status_path=ready_status_path,
+                    status_ledger_paths=(ready_status_path,),
+                    configuration=tampered_configuration,
+                    provenance=provenance,
+                )
+            )
+        assert not authorization.output_path.exists()
+        assert not (
+            authorization.output_path.parent / ".accela-benchmark-locks"
+        ).exists()
+    protected_authorization = replace(
+        authorization,
+        status_path=ready_status_path,
+        status_ledger_paths=(ready_status_path,),
+        output_path=plan_path,
+        configuration=configuration,
+        provenance=provenance,
+    )
+    with pytest.raises(ValidationError, match="immutable campaign input"):
+        candidate_module.authorize_candidate_run_prelease(
+            protected_authorization
+        )
+    assert plan_path.read_bytes() == candidate_module.canonical_json_bytes(plan) + b"\n"
+
+    valid_authorization = replace(
+        authorization,
+        status_path=ready_status_path,
+        status_ledger_paths=(ready_status_path,),
+        configuration=configuration,
+        provenance=provenance,
+    )
+    read_only_snapshot_calls.clear()
+    candidate_module.authorize_candidate_run_prelease(valid_authorization)
+    assert sorted(path.name for path in read_only_snapshot_calls) == [
+        "baseline.run.json",
+        "optimized.run.json",
+    ]
+    assert any(verifier is not None for verifier in screening_verifiers)
+    read_only_snapshot_calls.clear()
+    candidate_module.authorize_candidate_run_prelease(
+        replace(
+            valid_authorization,
+            status_path=second_status_path,
+            status_ledger_paths=(ready_status_path, second_status_path),
+        )
+    )
+    assert sorted(path.name for path in read_only_snapshot_calls) == [
+        "baseline.run.json",
+        "optimized.run.json",
+    ]
+    assert not valid_authorization.output_path.exists()
+    oracle_run_path = tmp_path / oracle_capture["raw_evidence"]["baseline"][
+        "run_record_path"
+    ]
+    oracle_run_bytes = oracle_run_path.read_bytes()
+    with pytest.raises(ValidationError, match="immutable campaign input"):
+        candidate_module.authorize_candidate_run_prelease(
+            replace(valid_authorization, output_path=oracle_run_path)
+        )
+    assert oracle_run_path.read_bytes() == oracle_run_bytes
+    oracle_state_output = (
+        tmp_path / oracle_capture["raw_state_root"] / "forbidden-output.json"
+    )
+    with pytest.raises(ValidationError, match="protected campaign subtree"):
+        candidate_module.authorize_candidate_run_prelease(
+            replace(valid_authorization, output_path=oracle_state_output)
+        )
+    assert not oracle_state_output.exists()
+    assert not (oracle_state_output.parent / ".accela-benchmark-locks").exists()
+
+    wrong_analyzer = deepcopy(plan)
+    wrong_analyzer["analyzer"]["commands"]["accela"]["argv"][1] = "-E"
+    with pytest.raises(ValidationError, match="analyzer contract differs"):
+        validate_document(wrong_analyzer)
+
+    for digest_field in _PROTOCOL_DIGEST_FIELDS:
+        placeholder_protocol = deepcopy(plan)
+        placeholder_protocol["measurement_protocols"]["standard_proxy"][
+            digest_field
+        ] = "0" * 64
+        with pytest.raises(
+            ValidationError, match="placeholder protocol identity"
+        ):
+            validate_document(placeholder_protocol)
+
+    for protocol_path in (
+        tmp_path / protocol_relative,
+        tmp_path / hotblock_protocol_relative,
+    ):
+        original = protocol_path.read_bytes()
+        protocol_path.write_bytes(original + b" \n")
+        with pytest.raises(ValidationError):
+            candidate_module._verify_candidate_plan_execution_environment(
+                plan, workspace_root=tmp_path
+            )
+        protocol_path.write_bytes(original)
+    candidate_module._verify_candidate_plan_execution_environment(
+        plan, workspace_root=tmp_path
+    )
+
+    relocated_toolchain = deepcopy(plan)
+    relocated_relative = Path("docs/optimization/data/toolchain-relocated.json")
+    relocated_path = tmp_path / relocated_relative
+    relocated_path.write_bytes((tmp_path / toolchain_relative).read_bytes())
+    relocated_toolchain["reference_toolchain"]["snapshot"]["path"] = (
+        relocated_relative.as_posix()
+    )
+    with pytest.raises(
+        ValidationError, match="execution environment hash differs"
+    ):
+        candidate_module._verify_candidate_plan_execution_environment(
+            relocated_toolchain, workspace_root=tmp_path
+        )
 
     placeholder_image = deepcopy(plan)
     placeholder_image["reference_toolchain"]["candidate_toolchain"][
@@ -924,6 +2135,7 @@ def test_candidate_campaign_status_dispatch_preserves_optional_none_inputs(
         received.update(kwargs)
         return {
             "schema_version": "candidate-campaign-status.v1",
+            "campaign_id": "campaign-test",
             "state": "active",
         }
 
@@ -961,13 +2173,61 @@ def test_candidate_campaign_status_dispatch_preserves_optional_none_inputs(
     assert cli.dispatch(args) == 0
     assert received["run_paths"] == {"run.B1.full": tmp_path / "run.json"}
     assert received["study_paths"] == {"B2": tmp_path / "study.json"}
-    assert received["raw_evidence_registry_path"] == tmp_path / "raw-registry.json"
+    assert received["raw_evidence_registry"] == {
+        "schema_version": "candidate-raw-evidence.v1"
+    }
+    assert received["raw_evidence_registry_output_path"] == (
+        tmp_path / "raw-registry.json"
+    )
+    assert received["status_output_path"] == tmp_path / "status.json"
     assert received["freeze_path"] is None
     assert received["diagnostic_matrix_path"] is None
     assert received["final_path"] is None
     assert received["previous_status_path"] is None
     assert received["status_ledger_paths"] == []
     assert (tmp_path / "status.json").is_file()
+
+
+def test_candidate_campaign_status_validation_failure_publishes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _input_files(tmp_path, "plan.json", "run.json")
+    monkeypatch.setattr(
+        cli,
+        "build_candidate_raw_evidence_registry",
+        lambda **_: {"schema_version": "candidate-raw-evidence.v1"},
+    )
+
+    def reject_status(**_kwargs: Any) -> dict[str, Any]:
+        raise ValidationError("injected full status validation failure")
+
+    monkeypatch.setattr(cli, "update_candidate_campaign_status", reject_status)
+    args = cli.build_parser().parse_args(
+        [
+            "candidates",
+            "campaign-status",
+            "--plan",
+            "plan.json",
+            "--workspace-root",
+            str(tmp_path),
+            "--run",
+            "run.B1.full=run.json",
+            "--raw-evidence-registry",
+            "raw-registry.json",
+            "--started-at",
+            "2026-08-11T00:00:00Z",
+            "--as-of",
+            "2026-08-11T00:01:00Z",
+            "--output",
+            "status.json",
+        ]
+    )
+    with pytest.raises(ValidationError, match="full status validation"):
+        cli.dispatch(args)
+    assert not (tmp_path / "raw-registry.json").exists()
+    assert not (tmp_path / "status.json").exists()
+    assert not (tmp_path / ".accela-benchmark-locks").exists()
 
 
 def test_candidate_status_and_raw_snapshot_outputs_are_create_only(
@@ -983,6 +2243,186 @@ def test_candidate_status_and_raw_snapshot_outputs_are_create_only(
         cli._publish_immutable_json(
             output,
             {"schema_version": "test.v1", "value": 2},
+            label="candidate status",
+        )
+
+
+def test_candidate_status_pair_is_raw_first_retryable_and_rejects_orphan_status(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "raw.json"
+    status_path = tmp_path / "status.json"
+    raw = {"schema_version": "candidate-raw-evidence.v1", "runs": []}
+    status = {
+        "schema_version": "candidate-campaign-status.v1",
+        "campaign_id": "campaign-test",
+        "state": "pending",
+    }
+    raw_path.write_bytes(candidate_module.canonical_json_bytes(raw) + b"\n")
+    cli._publish_candidate_status_pair(
+        raw_path=raw_path,
+        raw_document=raw,
+        status_path=status_path,
+        status_document=status,
+    )
+    assert raw_path.read_bytes() == candidate_module.canonical_json_bytes(raw) + b"\n"
+    assert status_path.read_bytes() == candidate_module.canonical_json_bytes(status) + b"\n"
+
+    raw_path.unlink()
+    with pytest.raises(ConfigurationError, match="exists without"):
+        cli._publish_candidate_status_pair(
+            raw_path=raw_path,
+            raw_document=raw,
+            status_path=status_path,
+            status_document=status,
+        )
+    assert not raw_path.exists()
+
+
+def test_candidate_status_pair_rejects_same_path_and_reverse_role_race(
+    tmp_path: Path,
+) -> None:
+    first_path = tmp_path / "first.json"
+    second_path = tmp_path / "second.json"
+    first_raw = {"schema_version": "candidate-raw-evidence.v1", "runs": [1]}
+    first_status = {
+        "schema_version": "candidate-campaign-status.v1",
+        "campaign_id": "campaign-test",
+        "state": "pending",
+    }
+    second_raw = {"schema_version": "candidate-raw-evidence.v1", "runs": [2]}
+    second_status = {
+        "schema_version": "candidate-campaign-status.v1",
+        "campaign_id": "campaign-test",
+        "state": "running",
+    }
+    with pytest.raises(ConfigurationError, match="must differ"):
+        cli._publish_candidate_status_pair(
+            raw_path=first_path,
+            raw_document=first_raw,
+            status_path=first_path,
+            status_document=first_status,
+        )
+
+    def publish(
+        raw_path: Path,
+        raw_document: dict[str, Any],
+        status_path: Path,
+        status_document: dict[str, Any],
+    ) -> str:
+        try:
+            cli._publish_candidate_status_pair(
+                raw_path=raw_path,
+                raw_document=raw_document,
+                status_path=status_path,
+                status_document=status_document,
+            )
+        except Exception as exc:  # the losing nonblocking lease is expected
+            return type(exc).__name__
+        return "ok"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(
+            executor.map(
+                lambda arguments: publish(*arguments),
+                (
+                    (first_path, first_raw, second_path, first_status),
+                    (second_path, second_raw, first_path, second_status),
+                ),
+            )
+        )
+    assert outcomes.count("ok") == 1
+    first_bytes = first_path.read_bytes()
+    second_bytes = second_path.read_bytes()
+    assert (first_bytes, second_bytes) in {
+        (
+            candidate_module.canonical_json_bytes(first_raw) + b"\n",
+            candidate_module.canonical_json_bytes(first_status) + b"\n",
+        ),
+        (
+            candidate_module.canonical_json_bytes(second_status) + b"\n",
+            candidate_module.canonical_json_bytes(second_raw) + b"\n",
+        ),
+    }
+
+
+def test_candidate_formal_outputs_are_ignored_symlink_safe_and_separated(
+    tmp_path: Path,
+) -> None:
+    subprocess.run(
+        ("git", "init", "--quiet", str(tmp_path)),
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    (tmp_path / ".gitignore").write_text(".tmp/\n", encoding="utf-8")
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("tracked\n", encoding="utf-8")
+    subprocess.run(
+        ("git", "-C", str(tmp_path), "add", ".gitignore", "tracked.txt"),
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    ignored = tmp_path / ".tmp"
+    ignored.mkdir()
+    output = ignored / "run.json"
+    candidate_module._require_git_ignored_path(
+        workspace_root=tmp_path,
+        path=output,
+        label="formal output",
+    )
+    with pytest.raises(ValidationError, match="tracked repository path"):
+        candidate_module._require_git_ignored_path(
+            workspace_root=tmp_path,
+            path=tracked,
+            label="formal output",
+        )
+    with pytest.raises(ValidationError, match="ignore policy"):
+        candidate_module._require_git_ignored_path(
+            workspace_root=tmp_path,
+            path=tmp_path / "unignored.json",
+            label="formal output",
+        )
+
+    protected = ignored / "state"
+    protected.mkdir()
+    with pytest.raises(ValidationError, match="protected campaign subtree"):
+        candidate_module._require_candidate_output_separation(
+            output_path=protected / "run.json",
+            protected_files=(),
+            protected_directories=(protected,),
+        )
+    immutable = ignored / "plan.json"
+    with pytest.raises(ValidationError, match="immutable campaign"):
+        candidate_module._require_candidate_output_separation(
+            output_path=immutable,
+            protected_files=(immutable,),
+            protected_directories=(),
+        )
+
+    physical_parent = ignored / "physical"
+    physical_parent.mkdir()
+    linked_parent = ignored / "linked"
+    linked_parent.symlink_to(physical_parent, target_is_directory=True)
+    with pytest.raises(ValidationError, match="symbolic link"):
+        candidate_module._require_authorized_output_path(
+            workspace_root=tmp_path,
+            output_path=linked_parent / "run.json",
+            label="formal output",
+        )
+    with pytest.raises(ValidationError, match="lease namespace"):
+        candidate_module._require_authorized_output_path(
+            workspace_root=tmp_path,
+            output_path=(
+                ignored / ".accela-benchmark-locks" / "output.json"
+            ),
+            label="formal output",
+        )
+    with pytest.raises(ConfigurationError, match="lease namespace"):
+        cli._workspace_immutable_output_path(
+            tmp_path,
+            Path(".tmp/.accela-benchmark-locks/status.json"),
             label="candidate status",
         )
 
@@ -2014,6 +3454,7 @@ def test_candidate_interaction_formula_and_top3_coverage_are_semantic() -> None:
             "repo_dirty": False,
             "tracked_diff_sha256": None,
             "compiler_artifact_sha256": "f" * 64,
+            "execution_environment_sha256": "9" * 64,
             "measurement_protocol_id": "protocol",
             "measurement_protocol_sha256": "1" * 64,
             "pipeline_profile_id": "candidate-empty",
@@ -2054,6 +3495,14 @@ def test_candidate_interaction_formula_and_top3_coverage_are_semantic() -> None:
     }
 
     assert validate_document(document) == document
+    placeholder_environment = deepcopy(document)
+    placeholder_environment["bindings"]["execution_environment_sha256"] = (
+        "0" * 64
+    )
+    with pytest.raises(
+        ValidationError, match="execution environment is a placeholder"
+    ):
+        validate_document(placeholder_environment)
     tampered = json.loads(json.dumps(document))
     tampered["interactions"][0]["delta_ln_geometric_mean"] += 0.1
     with pytest.raises(ValidationError, match=r"ln\(S_AB\)-ln\(S_A\)-ln\(S_B\)"):
@@ -2623,6 +4072,8 @@ def test_candidate_final_identity_rejects_cross_campaign_reuse() -> None:
     plan = {
         "campaign_id": "campaign-a",
         "run_namespace": "campaign-a:",
+        "execution_environment_sha256": "9" * 64,
+        "analyzer": candidate_analyzer_contract(),
         "repository": {
             "repo_commit": "1" * 40,
             "repo_tree": "2" * 40,
@@ -2635,6 +4086,10 @@ def test_candidate_final_identity_rejects_cross_campaign_reuse() -> None:
     previous = {
         "campaign_id": "campaign-a",
         "plan_sha256": sha256_json(plan),
+        "execution_environment_sha256": plan[
+            "execution_environment_sha256"
+        ],
+        "analyzer": plan["analyzer"],
         "ready_tasks": ["final"],
         "tasks": [{"task_id": "final", "status": "pending"}],
         "raw_evidence_registry": raw_registry,
@@ -2642,6 +4097,9 @@ def test_candidate_final_identity_rejects_cross_campaign_reuse() -> None:
     freeze = {
         "freeze_id": "freeze-1",
         "campaign_id": "campaign-a",
+        "execution_environment_sha256": plan[
+            "execution_environment_sha256"
+        ],
         "b2_campaign": {"raw_evidence_registry": raw_registry},
     }
     final = {
@@ -2659,6 +4117,10 @@ def test_candidate_final_identity_rejects_cross_campaign_reuse() -> None:
             "repo_commit": plan["repository"]["repo_commit"],
             "repo_tree": plan["repository"]["repo_tree"],
             "compiler_artifact": plan["repository"]["compiler_artifact"],
+            "execution_environment_sha256": plan[
+                "execution_environment_sha256"
+            ],
+            "analyzer": plan["analyzer"],
             "raw_evidence_registry": raw_registry,
         },
     }
@@ -2729,6 +4191,109 @@ def test_candidate_ledger_prefix_binds_physical_bytes() -> None:
             ledger_identities=whitespace_rewrite,
             label="candidate freeze",
         )
+
+
+def test_candidate_status_ledger_reopens_study_path_and_physical_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger_path = tmp_path / "status.json"
+    study_path = tmp_path / "study.json"
+    wrong_path = tmp_path / "wrong-study.json"
+    alias_path = tmp_path / "study-alias.json"
+    raw_path = tmp_path / "raw.json"
+    ledger_path.write_text("{}\n", encoding="utf-8")
+    study_path.write_text('{"fixture":"study"}\n', encoding="utf-8")
+    wrong_path.write_text('{"fixture":"wrong"}\n', encoding="utf-8")
+    alias_path.write_bytes(study_path.read_bytes())
+    raw_path.write_text("{}\n", encoding="utf-8")
+    study = {"schema_version": "candidate-study.v1", "study_id": "study-b2"}
+    plan = {
+        "campaign_id": "campaign-a",
+        "execution_environment_sha256": "1" * 64,
+        "analyzer": {"contract": "fixture"},
+    }
+    raw_artifact = {
+        "path": "raw.json",
+        "canonical_sha256": "2" * 64,
+        "physical_sha256": sha256_file(raw_path),
+    }
+
+    def make_status(evidence_path: str) -> dict[str, Any]:
+        return {
+            "campaign_id": plan["campaign_id"],
+            "plan_sha256": sha256_json(plan),
+            "execution_environment_sha256": plan[
+                "execution_environment_sha256"
+            ],
+            "analyzer": plan["analyzer"],
+            "previous_status_sha256": None,
+            "started_at": "2026-08-12T00:00:00Z",
+            "as_of": "2026-08-12T00:01:00Z",
+            "raw_evidence_registry": raw_artifact,
+            "tasks": [
+                {
+                    "task_id": "study.B2",
+                    "evidence_kind": "candidate-study.v1",
+                    "evidence_sha256": sha256_json(study),
+                    "evidence_physical_sha256": sha256_file(study_path),
+                    "evidence_path": evidence_path,
+                }
+            ],
+            "diagnostic_plan": None,
+        }
+
+    current_status = [make_status("study.json")]
+    observed_versions: list[str] = []
+
+    def fake_load(path: Path, version: str, *, label: str) -> dict[str, Any]:
+        del label
+        physical = path.resolve()
+        if physical == ledger_path.resolve():
+            return deepcopy(current_status[0])
+        if physical in {
+            study_path.resolve(),
+            wrong_path.resolve(),
+            alias_path.resolve(),
+        }:
+            observed_versions.append(version)
+            return deepcopy(study)
+        raise AssertionError(f"unexpected evidence path: {path}")
+
+    monkeypatch.setattr(candidate_module, "_load_version", fake_load)
+    monkeypatch.setattr(
+        candidate_module,
+        "_load_and_reverify_candidate_raw_evidence_registry",
+        lambda **_kwargs: ({"runs": []}, deepcopy(raw_artifact)),
+    )
+
+    candidate_module._validate_candidate_status_ledger(
+        plan=plan,
+        status=current_status[0],
+        ledger_paths=[ledger_path],
+        workspace_root=tmp_path,
+    )
+    assert observed_versions == ["candidate-study.v1"]
+
+    current_status[0] = make_status("wrong-study.json")
+    with pytest.raises(ValidationError, match="canonical/physical identity differs"):
+        candidate_module._validate_candidate_status_ledger(
+            plan=plan,
+            status=current_status[0],
+            ledger_paths=[ledger_path],
+            workspace_root=tmp_path,
+        )
+
+    # Study output names are not predeclared by the plan. The first terminal
+    # ledger entry therefore commits whichever safe relative path was published;
+    # later entries cannot rename it because terminal rows are immutable.
+    current_status[0] = make_status("study-alias.json")
+    candidate_module._validate_candidate_status_ledger(
+        plan=plan,
+        status=current_status[0],
+        ledger_paths=[ledger_path],
+        workspace_root=tmp_path,
+    )
 
 
 def test_candidate_final_completion_rebuilds_all_derived_content(
@@ -2817,6 +4382,7 @@ def test_candidate_final_completion_rebuilds_all_derived_content(
                 "evidence_kind": "candidate-final.v1",
                 "evidence_sha256": sha256_json(final),
                 "evidence_physical_sha256": sha256_file(paths["final.json"]),
+                "evidence_path": "final.json",
             }
         ],
     }
@@ -2880,6 +4446,32 @@ def test_candidate_final_completion_rebuilds_all_derived_content(
         workspace_root=tmp_path,
     )
     assert closure["candidate_final_sha256"] == sha256_json(final)
+
+    final_alias = tmp_path / "final-alias.json"
+    final_alias.write_bytes(paths["final.json"].read_bytes())
+    documents[final_alias.resolve()] = final
+    with pytest.raises(ValidationError, match="terminal final/ledger closure"):
+        candidate_module.validate_candidate_final_completion(
+            campaign_plan_path=paths["plan.json"],
+            candidate_final_path=final_alias,
+            completed_status_path=paths["completed-status.json"],
+            status_ledger_paths=[
+                paths["pre-final-status.json"],
+                paths["completed-status.json"],
+            ],
+            workspace_root=tmp_path,
+        )
+    with pytest.raises(ValidationError, match="physical regular file"):
+        candidate_module.validate_candidate_final_completion(
+            campaign_plan_path=paths["plan.json"],
+            candidate_final_path=tmp_path / "missing-final.json",
+            completed_status_path=paths["completed-status.json"],
+            status_ledger_paths=[
+                paths["pre-final-status.json"],
+                paths["completed-status.json"],
+            ],
+            workspace_root=tmp_path,
+        )
 
     forged = deepcopy(final)
     forged["ranking"][0]["rank"] = 2
@@ -3075,6 +4667,8 @@ def _candidate_freeze_document() -> dict[str, Any]:
         "frozen_at": "2026-08-11T00:00:00Z",
         "campaign_id": "campaign-1",
         "run_namespace": "campaign-1:",
+        "execution_environment_sha256": "9" * 64,
+        "analyzer": candidate_analyzer_contract(),
         "repository": {
             "repo_commit": "a" * 40,
             "repo_tree": "b" * 40,
@@ -3166,6 +4760,7 @@ def _candidate_freeze_document() -> dict[str, Any]:
                 "image_tag": "accela/candidate-toolchain:test",
                 "image_id": "sha256:" + "4" * 64,
                 "rootfs_layers": ["sha256:" + "5" * 64, "sha256:" + "6" * 64],
+                "workspace_bootstrap": _workspace_bootstrap_fixture(),
             },
             "common_tool_versions": {
                 "qemu-system-riscv64": "9.2",
@@ -3259,6 +4854,33 @@ def test_candidate_freeze_enforces_counts_namespace_and_hashes() -> None:
     ] = "sha256:" + "0" * 64
     with pytest.raises(ValidationError, match="placeholder identity"):
         validate_document(placeholder_image)
+
+    placeholder_environment = deepcopy(freeze)
+    placeholder_environment["execution_environment_sha256"] = "0" * 64
+    with pytest.raises(ValidationError, match="execution environment is a placeholder"):
+        validate_document(placeholder_environment)
+
+    wrong_analyzer = deepcopy(freeze)
+    wrong_analyzer["analyzer"]["commands"]["accela"]["argv"][1] = "-E"
+    with pytest.raises(ValidationError, match="analyzer contract differs"):
+        validate_document(wrong_analyzer)
+
+    for digest_field in _PROTOCOL_DIGEST_FIELDS:
+        placeholder_protocol = deepcopy(freeze)
+        placeholder_protocol["measurement_protocols"]["cache_hotblock"][
+            digest_field
+        ] = "0" * 64
+        with pytest.raises(
+            ValidationError, match="placeholder protocol identity"
+        ):
+            validate_document(placeholder_protocol)
+
+    placeholder_bootstrap = deepcopy(freeze)
+    placeholder_bootstrap["reference_toolchain"]["candidate_toolchain"][
+        "workspace_bootstrap"
+    ]["gradle"]["dependency_lock"]["physical_sha256"] = "0" * 64
+    with pytest.raises(ValidationError, match="workspace bootstrap.*placeholder"):
+        validate_document(placeholder_bootstrap)
 
     same_registry_hash = deepcopy(freeze)
     same_registry_hash["snapshots"]["executable_pass_registry"][

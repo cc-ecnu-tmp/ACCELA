@@ -291,6 +291,12 @@ def make_run(
     return validate_document(run)
 
 
+def test_historical_run_record_without_candidate_environment_remains_read_only_valid() -> None:
+    run = make_run("historical-run", {"case": ("family", 100)})
+    assert "execution_environment_sha256" not in run["provenance"]
+    assert validate_document(deepcopy(run)) == run
+
+
 def write_matrix(path: Path, families: tuple[str, ...]) -> Path:
     profiles = [
         {"profile_id": "full", "kind": "full", "logical_families": [], "profile_sha256": "2" * 64, "path": "profiles/full.json"},

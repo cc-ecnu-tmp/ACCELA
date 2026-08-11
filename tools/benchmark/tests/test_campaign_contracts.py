@@ -24,11 +24,83 @@ from tools.benchmark.protocol import (
     capture_measurement_protocol,
     verify_measurement_protocol,
 )
-from tools.benchmark.schema import schema_sha256
+from tools.benchmark.schema import load_and_validate, schema_sha256
 from tools.benchmark.util import sha256_json
 
 
 _RUN_RECORD_SCHEMA_SHA256 = schema_sha256("run-record.v1")
+
+
+def test_oracle_readme_uses_the_isolated_workspace_python_before_imports() -> None:
+    readme = Path("docs/optimization/README.md").read_text(encoding="utf-8")
+    start = readme.index("### 首份 Oracle 的可复制 terminal run")
+    end = readme.index("## Oracle、排名与报告", start)
+    oracle_runbook = readme[start:end]
+
+    assert oracle_runbook.index("unset PYTHONPATH PYTHONHOME") < (
+        oracle_runbook.index('"$benchmark_python" -I')
+    )
+    assert (
+        'PYTHONDONTWRITEBYTECODE=1 "$benchmark_python" -I -B -'
+        in oracle_runbook
+    )
+    assert '"$benchmark_python" -B -' not in oracle_runbook
+
+
+def test_candidate_runbook_requires_exact_campaign_authorization() -> None:
+    readme = Path("docs/optimization/README.md").read_text(encoding="utf-8")
+    start = readme.index("正式 B1 和代理 run 的完整候选参数不能省略")
+    end = readme.index("## Oracle、排名与报告", start)
+    runbook = readme[start:end]
+    for token in (
+        "--candidate-campaign-plan",
+        "--candidate-campaign-status",
+        "--candidate-status-ledger",
+        "--candidate-task-id",
+        "--execution-environment-sha256",
+    ):
+        assert token in runbook
+    assert "formal_candidate_run validate suite" in runbook
+    assert "formal_candidate_run run" in runbook
+    assert '--state-dir "$candidate_raw_state_root"' in runbook
+    assert "GCC/Clang reference 使用" in runbook
+    assert "timeout 必须是 `initial`" in runbook
+
+
+def test_committed_historical_campaign_plan_is_read_only_valid() -> None:
+    plan = load_and_validate(
+        Path("docs/optimization/data/campaign/initial.plan.json")
+    )
+    assert plan["run_record_schema_sha256"] == (
+        "c25dca259dcf770924dff426f6b6a21d8e24c7d033a35a5891f2173ce3bb73ad"
+    )
+    with pytest.raises(ValidationError, match="active benchmark schema"):
+        campaign_module._require_run_record_schema_binding(plan)
+
+
+def test_candidate_run_schema_binding_rejects_symlink_components(
+    tmp_path: Path,
+) -> None:
+    real_schema = (
+        tmp_path
+        / "real"
+        / "tools"
+        / "benchmark"
+        / "schemas"
+        / "run-record.v1.json"
+    )
+    real_schema.parent.mkdir(parents=True)
+    real_schema.write_bytes(
+        Path("tools/benchmark/schemas/run-record.v1.json").read_bytes()
+    )
+    try:
+        (tmp_path / "tools").symlink_to(
+            tmp_path / "real" / "tools", target_is_directory=True
+        )
+    except OSError:
+        pytest.skip("host does not permit symbolic-link creation")
+    with pytest.raises(ValidationError, match="must not traverse a symbolic link"):
+        campaign_module._workspace_run_record_schema_sha256(tmp_path)
 
 
 def _protocol(mode: str, digit: str) -> dict:

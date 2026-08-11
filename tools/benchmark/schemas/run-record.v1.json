@@ -265,6 +265,7 @@
         "pipeline_profile_id": {"$ref": "#/$defs/id"},
         "pipeline_profile_sha256": {"$ref": "#/$defs/sha256"},
         "compiler_artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "execution_environment_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "measurement_protocol_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
         "measurement_protocol_sha256": {"$ref": "#/$defs/nullable_sha256"}
       }

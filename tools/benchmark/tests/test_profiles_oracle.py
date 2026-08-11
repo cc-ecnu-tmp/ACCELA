@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import tools.benchmark.campaign as campaign_module
+from tools.benchmark.candidate_toolchain import build_workspace_bootstrap_contract
 from tools.benchmark.campaign import (
     build_campaign_plan,
     finalize_campaign_plan,
@@ -290,6 +291,24 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
         "FROM accela/candidate-toolchain:test\n",
         encoding="utf-8",
     )
+    source_root = Path(__file__).resolve().parents[3]
+    bootstrap_relatives = (
+        "build.gradle.kts",
+        "gradle.lockfile",
+        "gradle/verification-metadata.xml",
+        "gradle/wrapper/gradle-wrapper.jar",
+        "gradle/wrapper/gradle-wrapper.properties",
+        "pyproject.toml",
+        "scripts/bootstrap-candidate-workspace.sh",
+        "scripts/build-qemu-plugins.sh",
+        "tools/benchmark/requirements-linux-x86_64-py314.lock",
+        "docs/optimization/data/candidate-python-inventory.v1.json",
+    )
+    for relative in bootstrap_relatives:
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_root / relative, destination)
+    workspace_bootstrap = build_workspace_bootstrap_contract(root=tmp_path)
     toolchain_path.write_text(json.dumps({
         "schema": "accela-toolchain-snapshot.v1",
         "target": {"isa": "rv64gc", "abi": "lp64d", "code_model": "medany"},
@@ -348,6 +367,7 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
                 "image_tag": "accela/candidate-toolchain:test-docker29.6.2",
                 "image_id": "sha256:" + "4" * 64,
                 "rootfs_layers": ["sha256:" + "5" * 64, "sha256:" + "6" * 64],
+                "workspace_bootstrap": workspace_bootstrap,
             },
             "measurement_protocols": {
                 mode: {
@@ -372,7 +392,7 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     assert plan["run_record_schema_sha256"] == sha256_file(run_schema_path)
     with pytest.raises(
         ValidationError,
-        match="run-record schema binding differs from the active benchmark schema",
+        match="neither active nor a known read-only historical schema",
     ):
         validate_document({**plan, "run_record_schema_sha256": "f" * 64})
     run_schema_path.write_bytes(b"{}\n")

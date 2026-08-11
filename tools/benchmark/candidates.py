@@ -3,14 +3,22 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
 
-from .ablation import _require_eligible_attempt_history, _require_formal_measurement
+from .ablation import (
+    _require_eligible_attempt_history,
+    _require_formal_measurement,
+    require_formal_measurement_configuration,
+)
+from .analyzer_contract import candidate_analyzer_stage
 from .campaign import (
     build_campaign_environment_contract,
+    candidate_execution_environment_sha256,
     campaign_run_status,
     campaign_status_chain,
     enforce_terminal_task_immutability,
@@ -18,8 +26,8 @@ from .campaign import (
     require_formal_suite_contract,
 )
 from .errors import ConfigurationError, ValidationError
-from .execution import VerifiedRunRawEvidence, verify_run_raw_evidence
 from .journal import durable_create_json
+from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
 from .schema import (
     load_and_validate,
     load_pipeline_profile_v2,
@@ -28,6 +36,9 @@ from .schema import (
     validate_document,
     validate_pipeline_profile_v2,
 )
+
+if TYPE_CHECKING:
+    from .execution import ReadOnlyRunRawEvidenceSnapshot, VerifiedRunRawEvidence
 from .stats import (
     bootstrap_geometric_mean_ci,
     case_metric,
@@ -45,6 +56,7 @@ from .util import (
     sha256_bytes,
     sha256_file,
     sha256_json,
+    validate_relative_path,
 )
 
 
@@ -57,6 +69,144 @@ _CANDIDATE_SUITE_CASE_COUNTS = {
     "B6": 88,
 }
 
+_FORMAL_CANDIDATE_COMPILER_COMMAND = (
+    "sh",
+    "scripts/benchmark-compile.sh",
+    "{profile}",
+    "{source}",
+    "{artifact}",
+    "{remarks_file}",
+)
+_FORMAL_CANDIDATE_LINKER_COMMAND = (
+    "sh",
+    "scripts/benchmark-link.sh",
+    "{artifact}",
+    "{binary}",
+)
+_FORMAL_CANDIDATE_CORRECTNESS_RUNNER_COMMAND = (
+    "sh",
+    "scripts/benchmark-qemu-correctness.sh",
+    "{binary}",
+    "{input}",
+)
+
+
+def verify_run_raw_evidence(*args: Any, **kwargs: Any) -> VerifiedRunRawEvidence:
+    """Lazy bridge keeps candidates importable by the execution preflight."""
+
+    from .execution import verify_run_raw_evidence as verify
+
+    return verify(*args, **kwargs)
+
+
+def verify_run_raw_evidence_read_only_snapshot(
+    *args: Any, **kwargs: Any
+) -> ReadOnlyRunRawEvidenceSnapshot:
+    from .execution import verify_run_raw_evidence_read_only_snapshot as verify
+
+    return verify(*args, **kwargs)
+
+
+class _ReadOnlyRawEvidenceCache:
+    """Per-authorization read-only raw snapshots with a final drift barrier."""
+
+    def __init__(self) -> None:
+        self._snapshots: dict[
+            tuple[Path, Path], ReadOnlyRunRawEvidenceSnapshot
+        ] = {}
+        self._files: dict[Path, str] = {}
+
+    def track_file(
+        self,
+        path: Path,
+        *,
+        label: str,
+        expected_sha256: str | None = None,
+    ) -> Path:
+        physical = resolve_without_symlinks(path, label=label)
+        if not physical.is_file():
+            raise ValidationError(f"{label} must be a regular file")
+        digest = sha256_file(physical)
+        if expected_sha256 is not None and digest != expected_sha256:
+            raise ValidationError(f"{label} physical SHA-256 differs")
+        previous = self._files.setdefault(physical, digest)
+        if previous != digest:
+            raise ValidationError(f"{label} changed during authorization")
+        return physical
+
+    def verify(
+        self,
+        run_record_path: Path,
+        state_root: Path,
+        *,
+        remark_validator: Any = None,
+    ) -> VerifiedRunRawEvidence:
+        resolved_record = resolve_without_symlinks(
+            run_record_path, label="candidate read-only run record"
+        )
+        resolved_state = resolve_without_symlinks(
+            state_root, label="candidate read-only state root"
+        )
+        key = (resolved_record, resolved_state)
+        snapshot = self._snapshots.get(key)
+        if snapshot is None:
+            snapshot = verify_run_raw_evidence_read_only_snapshot(
+                resolved_record,
+                resolved_state,
+            )
+            self._snapshots[key] = snapshot
+        if remark_validator is not None:
+            record = _load_version(
+                resolved_record,
+                "run-record.v1",
+                label="candidate read-only raw remark run",
+            )
+            for case in record["cases"]:
+                remark_path = snapshot.verified.current_remark_paths[
+                    case["case_id"]
+                ]
+                if remark_path is not None:
+                    remark_validator(remark_path, deepcopy(case))
+        return snapshot.verified
+
+    def assert_unchanged(self) -> None:
+        for path, digest in self._files.items():
+            if (
+                resolve_without_symlinks(
+                    path, label="candidate authorization immutable input"
+                )
+                != path
+                or not path.is_file()
+                or sha256_file(path) != digest
+            ):
+                raise ValidationError(
+                    "candidate authorization input changed during verification"
+                )
+        for snapshot in self._snapshots.values():
+            snapshot.assert_unchanged()
+
+
+@dataclass(frozen=True)
+class CandidateRunAuthorizationIntent:
+    plan_path: Path
+    status_path: Path
+    status_ledger_paths: tuple[Path, ...]
+    task_id: str
+    workspace_root: Path
+    manifest_path: Path
+    suite_root: Path
+    output_path: Path
+    state_root: Path
+    compiler_artifact_path: Path
+    pipeline_profile_path: Path | None
+    candidate_registry_path: Path | None
+    candidate_pass_registry_path: Path | None
+    measurement_protocol_path: Path | None
+    baseline_timeout_path: Path | None
+    run_id: str | None
+    configuration: Mapping[str, Any]
+    provenance: Mapping[str, Any]
+
 
 def _latest_evidence_timestamp(values: Sequence[str]) -> str:
     if not values:
@@ -67,20 +217,9 @@ def _latest_evidence_timestamp(values: Sequence[str]) -> str:
     )
 
 
-def _require_candidate_run_protocol(
-    run: Mapping[str, Any],
-    *,
-    data_role: str,
+def _require_candidate_run_protocol_configuration(
+    run: Mapping[str, Any], *, data_role: str
 ) -> None:
-    expected_count = _CANDIDATE_SUITE_CASE_COUNTS[data_role]
-    if (
-        run["manifest_case_count"] != expected_count
-        or len(run["cases"]) != expected_count
-        or {case["data_role"] for case in run["cases"]} != {data_role}
-    ):
-        raise ValidationError(
-            f"candidate {data_role} run must bind the exact {expected_count}-case manifest"
-        )
     configuration = run["configuration"]
     if (
         configuration["compile_repetitions"] != 5
@@ -101,11 +240,26 @@ def _require_candidate_run_protocol(
         )
 
 
-def _require_candidate_correctness_run(
+def _require_candidate_run_protocol(
+    run: Mapping[str, Any],
+    *,
+    data_role: str,
+) -> None:
+    _require_candidate_run_protocol_configuration(run, data_role=data_role)
+    expected_count = _CANDIDATE_SUITE_CASE_COUNTS[data_role]
+    if (
+        run["manifest_case_count"] != expected_count
+        or len(run["cases"]) != expected_count
+        or {case["data_role"] for case in run["cases"]} != {data_role}
+    ):
+        raise ValidationError(
+            f"candidate {data_role} run must bind the exact {expected_count}-case manifest"
+        )
+
+
+def _require_candidate_correctness_configuration(
     run: Mapping[str, Any], *, label: str
 ) -> None:
-    """Require the ACCELA BenchmarkCompiler-to-QEMU correctness path for B1."""
-
     configuration = run["configuration"]
     tool_ids = {item["tool"] for item in configuration["tool_versions"]}
     if (
@@ -120,6 +274,15 @@ def _require_candidate_correctness_run(
             f"{label} must use BenchmarkCompiler, the frozen pipeline, QEMU, "
             "and exact stdout/main-return correctness"
         )
+
+
+def _require_candidate_correctness_run(
+    run: Mapping[str, Any], *, label: str
+) -> None:
+    """Require the ACCELA BenchmarkCompiler-to-QEMU correctness path for B1."""
+
+    _require_candidate_correctness_configuration(run, label=label)
+    configuration = run["configuration"]
     enabled_candidate_ids = configuration.get("enabled_candidate_ids", [])
     if enabled_candidate_ids and (
         configuration["remarks_file_sha256"] is None
@@ -194,7 +357,10 @@ def _workspace_regular_path(
         cursor = cursor / component
         if cursor.is_symlink():
             raise ValidationError(f"{label} cannot traverse a symbolic link")
-    physical = lexical.resolve(strict=True)
+    try:
+        physical = lexical.resolve(strict=True)
+    except OSError as exc:
+        raise ValidationError(f"{label} must be a physical regular file") from exc
     try:
         physical.relative_to(root)
     except ValueError as exc:
@@ -337,9 +503,11 @@ def _verify_candidate_run_raw_evidence(
     state_root: Path,
     catalog: Mapping[str, Any],
     pass_registry: Mapping[str, Any],
+    raw_evidence_verifier: Any | None = None,
 ) -> tuple[dict[str, Any], VerifiedRunRawEvidence]:
     run = _load_version(run_path, "run-record.v1", label="candidate raw run")
-    verified = verify_run_raw_evidence(
+    verifier = raw_evidence_verifier or verify_run_raw_evidence
+    verified = verifier(
         run_path,
         state_root,
         remark_validator=_candidate_remark_validator(
@@ -374,6 +542,7 @@ def _build_candidate_raw_evidence_registry_from_plan(
     plan: Mapping[str, Any],
     run_paths: Mapping[str, Path],
     workspace_root: Path,
+    raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     if plan["candidate_raw_evidence_schema_sha256"] != schema_sha256(
         "candidate-raw-evidence.v1"
@@ -413,6 +582,7 @@ def _build_candidate_raw_evidence_registry_from_plan(
         _load_and_reverify_candidate_screening(
             screening_path=root / plan["artifacts"]["screening"]["path"],
             workspace_root=root,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
         != screening
         or
@@ -453,6 +623,7 @@ def _build_candidate_raw_evidence_registry_from_plan(
             state_root=state_root,
             catalog=catalog,
             pass_registry=pass_registry,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
         if run["run_id"] in observed_run_ids:
             raise ValidationError("candidate raw registry contains a repeated run id")
@@ -488,6 +659,7 @@ def _load_and_reverify_candidate_raw_evidence_registry(
     registry_path: Path,
     workspace_root: Path,
     expected_run_paths: Mapping[str, Path] | None = None,
+    raw_evidence_verifier: Any | None = None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     root = _candidate_workspace_root(workspace_root)
     registry = _load_version(
@@ -495,40 +667,13 @@ def _load_and_reverify_candidate_raw_evidence_registry(
         "candidate-raw-evidence.v1",
         label="candidate raw evidence registry",
     )
-    if (
-        registry["campaign_id"] != plan["campaign_id"]
-        or registry["plan_sha256"] != sha256_json(plan)
-        or registry["raw_state_root"] != plan["raw_state_root"]
-    ):
-        raise ValidationError("candidate raw evidence registry binds another campaign")
-    recorded_paths = {
-        item["task_id"]: root / item["run_record"]["path"]
-        for item in registry["runs"]
-    }
-    if expected_run_paths is not None:
-        normalized_expected = {
-            task_id: _workspace_regular_path(
-                root, path, label=f"candidate raw run {task_id}"
-            )[2].as_posix()
-            for task_id, path in expected_run_paths.items()
-        }
-        normalized_recorded = {
-            item["task_id"]: item["run_record"]["path"]
-            for item in registry["runs"]
-        }
-        if normalized_recorded != normalized_expected:
-            raise ValidationError(
-                "candidate raw evidence registry run-path set differs from status inputs"
-            )
-    expected = _build_candidate_raw_evidence_registry_from_plan(
+    registry = _reverify_candidate_raw_evidence_registry_document(
         plan=plan,
-        run_paths=recorded_paths,
+        registry=registry,
         workspace_root=root,
+        expected_run_paths=expected_run_paths,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
-    if expected != registry:
-        raise ValidationError(
-            "candidate raw evidence registry differs from replayed journals/raw files"
-        )
     _, physical_registry, relative_registry = _workspace_regular_path(
         root, registry_path, label="candidate raw evidence registry"
     )
@@ -539,11 +684,97 @@ def _load_and_reverify_candidate_raw_evidence_registry(
     }
 
 
+def _reverify_candidate_raw_evidence_registry_document(
+    *,
+    plan: Mapping[str, Any],
+    registry: Mapping[str, Any],
+    workspace_root: Path,
+    expected_run_paths: Mapping[str, Path] | None = None,
+    raw_evidence_verifier: Any | None = None,
+) -> dict[str, Any]:
+    root = _candidate_workspace_root(workspace_root)
+    document = validate_document(dict(registry))
+    if document["schema_version"] != "candidate-raw-evidence.v1":
+        raise ValidationError("candidate raw evidence registry version differs")
+    if (
+        document["campaign_id"] != plan["campaign_id"]
+        or document["plan_sha256"] != sha256_json(plan)
+        or document["raw_state_root"] != plan["raw_state_root"]
+    ):
+        raise ValidationError("candidate raw evidence registry binds another campaign")
+    recorded_paths = {
+        item["task_id"]: root / item["run_record"]["path"]
+        for item in document["runs"]
+    }
+    if expected_run_paths is not None:
+        normalized_expected = {
+            task_id: _workspace_regular_path(
+                root, path, label=f"candidate raw run {task_id}"
+            )[2].as_posix()
+            for task_id, path in expected_run_paths.items()
+        }
+        normalized_recorded = {
+            item["task_id"]: item["run_record"]["path"]
+            for item in document["runs"]
+        }
+        if normalized_recorded != normalized_expected:
+            raise ValidationError(
+                "candidate raw evidence registry run-path set differs from status inputs"
+            )
+    expected = _build_candidate_raw_evidence_registry_from_plan(
+        plan=plan,
+        run_paths=recorded_paths,
+        workspace_root=root,
+        raw_evidence_verifier=raw_evidence_verifier,
+    )
+    if expected != document:
+        raise ValidationError(
+            "candidate raw evidence registry differs from replayed journals/raw files"
+        )
+    return document
+
+
+def candidate_raw_evidence_registry_artifact(
+    *,
+    registry: Mapping[str, Any],
+    output_path: Path,
+    workspace_root: Path,
+) -> dict[str, str]:
+    root = _candidate_workspace_root(workspace_root)
+    document = validate_document(dict(registry))
+    if document["schema_version"] != "candidate-raw-evidence.v1":
+        raise ValidationError("candidate raw evidence registry version differs")
+    lexical = (output_path if output_path.is_absolute() else root / output_path).absolute()
+    try:
+        relative = lexical.relative_to(root)
+    except ValueError as exc:
+        raise ValidationError(
+            "candidate raw evidence registry output escapes the workspace"
+        ) from exc
+    cursor = root
+    for component in relative.parent.parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ValidationError(
+                "candidate raw evidence registry output traverses a symbolic link"
+            )
+    if lexical.parent.resolve(strict=True) != lexical.parent or lexical.is_symlink():
+        raise ValidationError(
+            "candidate raw evidence registry output path identity differs"
+        )
+    return {
+        "path": relative.as_posix(),
+        "canonical_sha256": sha256_json(document),
+        "physical_sha256": sha256_bytes(canonical_json_bytes(document) + b"\n"),
+    }
+
+
 def _verify_candidate_freeze_inputs(
     freeze: Mapping[str, Any],
     *,
     workspace_root: Path,
     candidate_order: list[str],
+    raw_evidence_verifier: Any | None = None,
 ) -> dict[str, dict[str, Any]]:
     _, observed_tree = _clean_repository_identity(
         workspace_root, freeze["repository"]["repo_commit"]
@@ -577,6 +808,7 @@ def _verify_candidate_freeze_inputs(
         _load_and_reverify_candidate_screening(
             screening_path=workspace_root / snapshots["screening"]["path"],
             workspace_root=workspace_root,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
         != documents["screening"]
         or _require_executable_registry_bridge(
@@ -646,6 +878,7 @@ def _verify_candidate_freeze_inputs(
         hotblock_measurement_protocol_path=protocol_paths["cache_hotblock"],
         reference_toolchain_path=workspace_root / toolchain_snapshot["path"],
         workspace_root=workspace_root,
+        include_candidate_workspace_bootstrap=True,
     )
     for mode in ("standard_proxy", "cache_hotblock"):
         frozen_contract = dict(freeze["measurement_protocols"][mode])
@@ -659,13 +892,30 @@ def _verify_candidate_freeze_inputs(
     frozen_toolchain.pop("snapshot")
     environment_toolchain = dict(environment["reference_toolchain"])
     environment_toolchain.pop("snapshot_sha256")
-    if frozen_toolchain != environment_toolchain:
+    if (
+        frozen_toolchain != environment_toolchain
+        or freeze["analyzer"] != environment["analyzer"]
+    ):
         raise ValidationError("frozen reference toolchain contract has drifted")
+    if freeze["execution_environment_sha256"] != (
+        candidate_execution_environment_sha256(
+            environment={
+                **environment,
+                "measurement_protocols": freeze["measurement_protocols"],
+                "reference_toolchain": freeze["reference_toolchain"],
+            },
+            compiler_artifact_sha256=freeze["repository"]["compiler_artifact"][
+                "physical_sha256"
+            ],
+        )
+    ):
+        raise ValidationError("frozen candidate execution environment has drifted")
     screening = documents["screening"]
     capture = documents["oracle_capture"]
     replayed_capture = _load_and_reverify_candidate_oracle_capture(
         capture_path=workspace_root / snapshots["oracle_capture"]["path"],
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     if (
         replayed_capture != capture
@@ -893,9 +1143,11 @@ def _raw_verifications_by_run_id(
     return result
 
 
-def _binding_record(run: Mapping[str, Any]) -> dict[str, Any]:
+def _binding_record(
+    run: Mapping[str, Any], *, include_execution_environment: bool = False
+) -> dict[str, Any]:
     provenance = run["provenance"]
-    return {
+    binding = {
         "repo_commit": provenance["repo_commit"],
         "repo_dirty": provenance["repo_dirty"],
         "tracked_diff_sha256": provenance["tracked_diff_sha256"],
@@ -905,6 +1157,11 @@ def _binding_record(run: Mapping[str, Any]) -> dict[str, Any]:
         "pipeline_profile_id": provenance["pipeline_profile_id"],
         "pipeline_profile_sha256": provenance["pipeline_profile_sha256"],
     }
+    if include_execution_environment:
+        binding["execution_environment_sha256"] = provenance.get(
+            "execution_environment_sha256"
+        )
+    return binding
 
 
 def _require_common_binding(
@@ -912,17 +1169,27 @@ def _require_common_binding(
     other: Mapping[str, Any],
     *,
     label: str,
+    require_execution_environment: bool = True,
 ) -> None:
     common_keys = (
         "repo_commit",
         "repo_dirty",
         "tracked_diff_sha256",
         "compiler_artifact_sha256",
+        "execution_environment_sha256",
         "measurement_protocol_id",
         "measurement_protocol_sha256",
     )
-    left = _binding_record(baseline)
-    right = _binding_record(other)
+    if not require_execution_environment:
+        common_keys = tuple(
+            key for key in common_keys if key != "execution_environment_sha256"
+        )
+    left = _binding_record(
+        baseline, include_execution_environment=require_execution_environment
+    )
+    right = _binding_record(
+        other, include_execution_environment=require_execution_environment
+    )
     if any(left[key] != right[key] for key in common_keys):
         raise ValidationError(
             f"{label} differs from FULL in artifact/commit/protocol provenance"
@@ -1242,6 +1509,7 @@ def build_candidate_screening(
     oracle_capture_path: Path,
     workspace_root: Path,
     screening_id: str,
+    raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     evidence = _load_version(
         candidate_evidence_path,
@@ -1275,6 +1543,7 @@ def build_candidate_screening(
     capture = _load_and_reverify_candidate_oracle_capture(
         capture_path=oracle_capture_path,
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     if capture["candidate_evidence_sha256"] != sha256_json(evidence):
         raise ValidationError("Oracle capture binds different candidate evidence")
@@ -1513,6 +1782,7 @@ def _load_and_reverify_candidate_screening(
     *,
     screening_path: Path,
     workspace_root: Path,
+    raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Rebuild screening from every frozen source and require exact identity."""
 
@@ -1535,6 +1805,7 @@ def _load_and_reverify_candidate_screening(
         oracle_capture_path=root / sources["oracle_capture"]["path"],
         workspace_root=root,
         screening_id=screening["screening_id"],
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     if expected != screening:
         raise ValidationError(
@@ -1995,7 +2266,9 @@ def build_candidate_study(
             "suite_id": baseline["suite_id"],
             "data_role": data_role,
             "manifest_sha256": baseline["manifest_sha256"],
-            "bindings": _binding_record(baseline),
+            "bindings": _binding_record(
+                baseline, include_execution_environment=True
+            ),
             "baseline": _run_ref(baseline),
             "raw_evidence": {
                 "baseline": _raw_run_ref(baseline_verified),
@@ -2114,6 +2387,7 @@ def capture_candidate_oracle(
     state_root: Path,
     workspace_root: Path,
     capture_id: str,
+    raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     evidence = _load_version(
         candidate_evidence_path,
@@ -2142,10 +2416,11 @@ def capture_candidate_oracle(
     _, physical_optimized, relative_optimized = _workspace_regular_path(
         root, optimized_path, label="candidate Oracle optimized run"
     )
-    baseline_verified = verify_run_raw_evidence(
+    verifier = raw_evidence_verifier or verify_run_raw_evidence
+    baseline_verified = verifier(
         physical_baseline, physical_state_root
     )
-    optimized_verified = verify_run_raw_evidence(
+    optimized_verified = verifier(
         physical_optimized, physical_state_root
     )
     if (
@@ -2181,7 +2456,12 @@ def capture_candidate_oracle(
                 "without baseline derivations"
             )
         _require_formal_measurement(run, require_accela_pipeline=True)
-    _require_common_binding(baseline, optimized, label="oracle optimized run")
+    _require_common_binding(
+        baseline,
+        optimized,
+        label="oracle optimized run",
+        require_execution_environment=False,
+    )
     if baseline["configuration"] != optimized["configuration"]:
         raise ValidationError("oracle source legs require identical run configuration")
     primary = metric_spec(baseline)
@@ -2313,6 +2593,7 @@ def _load_and_reverify_candidate_oracle_capture(
     *,
     capture_path: Path,
     workspace_root: Path,
+    raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     root = _candidate_workspace_root(workspace_root)
     capture = _load_version(
@@ -2344,6 +2625,7 @@ def _load_and_reverify_candidate_oracle_capture(
         state_root=root / capture["raw_state_root"],
         workspace_root=root,
         capture_id=capture["capture_id"],
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     if expected != capture:
         raise ValidationError(
@@ -2387,21 +2669,22 @@ def build_candidate_campaign_plan(
         "measurement-protocol.v1",
         label="candidate standard measurement protocol",
     )
+    hotblock_measurement_protocol = _load_version(
+        hotblock_measurement_protocol_path,
+        "measurement-protocol.v1",
+        label="candidate cache/hotblock measurement protocol",
+    )
     if measurement_protocol["measurement_mode"] != "standard_proxy":
         raise ValidationError("candidate formal DAG requires standard_proxy protocol")
+    if hotblock_measurement_protocol["measurement_mode"] != "cache_hotblock":
+        raise ValidationError("candidate formal DAG requires cache_hotblock protocol")
     environment = build_campaign_environment_contract(
         measurement_protocol_path=measurement_protocol_path,
         hotblock_measurement_protocol_path=hotblock_measurement_protocol_path,
         reference_toolchain_path=reference_toolchain_path,
         workspace_root=workspace_root,
+        include_candidate_workspace_bootstrap=True,
     )
-    if (
-        environment["measurement_protocols"]["standard_proxy"][
-            "protocol_sha256"
-        ]
-        != sha256_json(measurement_protocol)
-    ):
-        raise ValidationError("candidate campaign standard protocol contract differs")
     _require_executable_registry_bridge(
         screening=screening,
         catalog=catalog,
@@ -2726,20 +3009,57 @@ def build_candidate_campaign_plan(
         terminal_dependencies=["study.B4", "study.B5", "study.B6"],
     )
     root = _candidate_workspace_root(workspace_root)
-    _, _, raw_state_relative = _workspace_directory_path(
+    _, raw_state_physical, raw_state_relative = _workspace_directory_path(
         root, raw_state_root, label="candidate raw evidence state root"
+    )
+    oracle_capture = _load_frozen_artifact(
+        root,
+        screening["sources"]["oracle_capture"],
+        label="candidate campaign screening Oracle capture",
+        version="candidate-oracle-capture.v1",
+    )
+    _, oracle_state_physical, _ = _workspace_directory_path(
+        root,
+        root / oracle_capture["raw_state_root"],
+        label="candidate campaign screening Oracle raw state root",
+    )
+    _require_disjoint_candidate_raw_namespaces(
+        candidate_state_root=raw_state_physical,
+        oracle_state_root=oracle_state_physical,
+    )
+    _require_git_ignored_path(
+        workspace_root=root,
+        path=raw_state_physical,
+        label="candidate raw evidence state root",
     )
     base_profile_path = root / baseline_profile["path"]
     repo_commit, repo_tree = _clean_repository_identity(root)
     compiler_artifact = _frozen_compiler_artifact(
         root, compiler_artifact_path
     )
-    protocol_artifact = _frozen_artifact_digest(
-        root,
-        measurement_protocol_path,
-        measurement_protocol,
-        label="candidate standard measurement protocol",
-    )
+    protocol_documents = {
+        "standard_proxy": (measurement_protocol_path, measurement_protocol),
+        "cache_hotblock": (
+            hotblock_measurement_protocol_path,
+            hotblock_measurement_protocol,
+        ),
+    }
+    measurement_protocols: dict[str, dict[str, Any]] = {}
+    for mode, (protocol_path, protocol_document) in protocol_documents.items():
+        artifact = _frozen_artifact_digest(
+            root,
+            protocol_path,
+            protocol_document,
+            label=f"candidate {mode} measurement protocol",
+        )
+        contract = dict(environment["measurement_protocols"][mode])
+        if artifact["canonical_sha256"] != contract["protocol_sha256"]:
+            raise ValidationError(
+                f"candidate campaign {mode} protocol changed while freezing"
+            )
+        contract["path"] = artifact["path"]
+        contract["physical_sha256"] = artifact["physical_sha256"]
+        measurement_protocols[mode] = contract
     toolchain_document = read_json(reference_toolchain_path)
     if not isinstance(toolchain_document, dict):
         raise ValidationError("candidate reference toolchain must be a JSON object")
@@ -2754,6 +3074,11 @@ def build_candidate_campaign_plan(
     if toolchain_artifact["physical_sha256"] != expected_toolchain_physical:
         raise ValidationError("candidate reference toolchain physical hash differs")
     toolchain_contract["snapshot"] = toolchain_artifact
+    candidate_environment = {
+        **environment,
+        "measurement_protocols": measurement_protocols,
+        "reference_toolchain": toolchain_contract,
+    }
     executable_pass_registry_artifact = _frozen_artifact_digest(
         workspace_root,
         pass_registry_path,
@@ -2777,12 +3102,13 @@ def build_candidate_campaign_plan(
                 "repo_tree": repo_tree,
                 "compiler_artifact": compiler_artifact,
             },
-            "measurement_protocol": {
-                "protocol_id": measurement_protocol["protocol_id"],
-                "protocol_sha256": sha256_json(measurement_protocol),
-                "artifact": protocol_artifact,
-            },
+            "measurement_protocols": measurement_protocols,
             "reference_toolchain": toolchain_contract,
+            "analyzer": environment["analyzer"],
+            "execution_environment_sha256": candidate_execution_environment_sha256(
+                environment=candidate_environment,
+                compiler_artifact_sha256=compiler_artifact["physical_sha256"],
+            ),
             "artifacts": {
                 "candidate_registry": _frozen_artifact_digest(
                     workspace_root, catalog_path, catalog, label="candidate registry"
@@ -2824,15 +3150,348 @@ def build_candidate_campaign_plan(
     )
 
 
-def _validate_campaign_run(
+def _verify_candidate_plan_execution_environment(
+    plan: Mapping[str, Any], *, workspace_root: Path
+) -> dict[str, Any]:
+    """Rebuild and compare every physical input covered by the plan hash."""
+
+    root = _candidate_workspace_root(workspace_root)
+    snapshot_artifact = plan["reference_toolchain"]["snapshot"]
+    _load_frozen_artifact(
+        root,
+        snapshot_artifact,
+        label="candidate campaign reference toolchain",
+    )
+    protocol_paths: dict[str, Path] = {}
+    for mode in ("standard_proxy", "cache_hotblock"):
+        relative_path = plan["measurement_protocols"][mode]["path"]
+        validate_relative_path(
+            relative_path,
+            label=f"candidate campaign {mode} protocol path",
+        )
+        protocol_paths[mode] = root / relative_path
+    environment = build_campaign_environment_contract(
+        measurement_protocol_path=protocol_paths["standard_proxy"],
+        hotblock_measurement_protocol_path=protocol_paths["cache_hotblock"],
+        reference_toolchain_path=root / snapshot_artifact["path"],
+        workspace_root=root,
+        include_candidate_workspace_bootstrap=True,
+    )
+    measurement_protocols: dict[str, dict[str, Any]] = {}
+    for mode, protocol_path in protocol_paths.items():
+        contract = dict(environment["measurement_protocols"][mode])
+        contract["path"] = plan["measurement_protocols"][mode]["path"]
+        contract["physical_sha256"] = sha256_file(
+            resolve_without_symlinks(
+                protocol_path,
+                label=f"candidate campaign {mode} measurement protocol",
+            )
+        )
+        measurement_protocols[mode] = contract
+    normalized_toolchain = dict(environment["reference_toolchain"])
+    snapshot_physical_sha256 = normalized_toolchain.pop("snapshot_sha256")
+    normalized_toolchain["snapshot"] = snapshot_artifact
+    if (
+        snapshot_physical_sha256 != snapshot_artifact["physical_sha256"]
+        or normalized_toolchain != plan["reference_toolchain"]
+        or environment["run_record_schema_sha256"]
+        != plan["run_record_schema_sha256"]
+        or measurement_protocols != plan["measurement_protocols"]
+        or environment["analyzer"] != plan["analyzer"]
+    ):
+        raise ValidationError("candidate campaign execution environment has drifted")
+    candidate_environment = {
+        **environment,
+        "measurement_protocols": measurement_protocols,
+        "reference_toolchain": normalized_toolchain,
+    }
+    expected_sha256 = candidate_execution_environment_sha256(
+        environment=candidate_environment,
+        compiler_artifact_sha256=plan["repository"]["compiler_artifact"][
+            "physical_sha256"
+        ],
+    )
+    if plan["execution_environment_sha256"] != expected_sha256:
+        raise ValidationError("candidate campaign execution environment hash differs")
+    return candidate_environment
+
+
+def _require_candidate_analyzer_binding(
+    *,
+    contract: Mapping[str, Any],
+    run: Mapping[str, Any],
+    toolchain: str | None,
+    label: str,
+) -> None:
+    expected = (
+        None
+        if toolchain is None
+        else candidate_analyzer_stage(contract, toolchain=toolchain)
+    )
+    if run["configuration"].get("analyzer") != expected:
+        raise ValidationError(f"{label} analyzer contract differs")
+
+
+def _candidate_task_analyzer_toolchain(task: Mapping[str, Any]) -> str | None:
+    if task["data_role"] == "B1":
+        return None
+    if task["kind"] != "reference":
+        return "accela"
+    reference_toolchains = {
+        "gcc-13.3-o2": "gcc",
+        "clang-18-o3": "clang",
+    }
+    toolchain = reference_toolchains.get(task["reference_profile_id"])
+    if toolchain is None:
+        raise ValidationError("candidate reference analyzer profile is unknown")
+    return toolchain
+
+
+def _formal_candidate_stage(
+    *, kind: str, command: Sequence[str]
+) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "adapter": "host",
+        "command_sha256": sha256_json(
+            {"command": list(command), "environment": {}}
+        ),
+        "executable": "sh",
+        "environment_keys": [],
+    }
+
+
+def _candidate_compiler_stage() -> dict[str, Any]:
+    return _formal_candidate_stage(
+        kind="benchmark-compiler",
+        command=_FORMAL_CANDIDATE_COMPILER_COMMAND,
+    )
+
+
+def _require_candidate_runtime_stages(
+    *,
+    run: Mapping[str, Any],
+    data_role: str,
+    protocol: Mapping[str, Any] | None,
+    label: str,
+) -> None:
+    configuration = run["configuration"]
+    if configuration.get("linker") != _formal_candidate_stage(
+        kind="external", command=_FORMAL_CANDIDATE_LINKER_COMMAND
+    ):
+        raise ValidationError(f"{label} linker contract differs")
+    runner = configuration.get("runner")
+    if data_role == "B1":
+        expected_runner = _formal_candidate_stage(
+            kind="qemu",
+            command=_FORMAL_CANDIDATE_CORRECTNESS_RUNNER_COMMAND,
+        )
+        if protocol is not None or runner != expected_runner:
+            raise ValidationError(f"{label} correctness runner contract differs")
+        return
+    expected_environment_keys = [
+        "QEMU_CACHE_PLUGIN",
+        *(
+            ["QEMU_HOTBLOCKS_PLUGIN"]
+            if protocol is not None
+            and protocol["measurement_mode"] == "cache_hotblock"
+            else []
+        ),
+        "QEMU_PROFILE_PLUGIN",
+        "QEMU_SYSTEM_RISCV64",
+    ]
+    if protocol is None or not isinstance(runner, Mapping) or (
+        runner.get("kind") != "qemu"
+        or runner.get("adapter") != protocol["runner_adapter"]
+        or runner.get("command_sha256") != protocol["runner_command_sha256"]
+        or runner.get("executable") != "sh"
+        or runner.get("environment_keys") != expected_environment_keys
+    ):
+        raise ValidationError(f"{label} proxy runner contract differs")
+
+
+def _require_candidate_result_contract(
+    run: Mapping[str, Any], *, label: str
+) -> None:
+    configuration = run["configuration"]
+    if (
+        configuration.get("output_contract") != "lf_return_trailer"
+        or configuration.get("result_file_sha256") is not None
+        or configuration.get("environment_label") != "proxy"
+    ):
+        raise ValidationError(
+            f"{label} result contract differs from the frozen proxy contract"
+        )
+
+
+def _require_candidate_cache_metric_extension(
+    run: Mapping[str, Any], *, label: str
+) -> None:
+    preset = rv64gc_qemu_v1()
+    base_ids = {preset["primary_metric_id"]} | {
+        item["metric_id"] for item in preset["additional"]
+    }
+    expected = {
+        item["metric_id"]: {
+            "metric_id": item["metric_id"],
+            "source": item["source"],
+            "pattern_sha256": (
+                None if item["pattern"] is None else sha256_json(item["pattern"])
+            ),
+            "unit": item["unit"],
+        }
+        for item in cache_hotblock_metrics_v1()
+    }
+    observed = {
+        item["metric_id"]: item
+        for item in run["configuration"]["metrics"]
+        if item["metric_id"] not in base_ids
+    }
+    if observed != expected:
+        raise ValidationError(f"{label} cache/hotblock metric extension differs")
+
+
+def _candidate_timeout_baseline_task_id(task: Mapping[str, Any]) -> str | None:
+    task_id = task["task_id"]
+    if task_id.startswith("diagnostic."):
+        if task["kind"] == "pair":
+            return "run.B3.full"
+        if task["kind"] != "cache_hotblock":
+            raise ValidationError("candidate diagnostic timeout task kind is unknown")
+        return None if not task["candidate_ids"] else "diagnostic.cache.full"
+    if (
+        task["data_role"] == "B1"
+        or task["kind"] in {"candidate_empty", "reference"}
+    ):
+        return None
+    return f"run.{task['data_role']}.full"
+
+
+def _require_candidate_timeout_configuration(
+    *,
+    task: Mapping[str, Any],
+    run: Mapping[str, Any],
+    baseline_run: Mapping[str, Any] | None,
+    label: str,
+) -> None:
+    expected_baseline_task_id = _candidate_timeout_baseline_task_id(task)
+    configuration = run["configuration"]
+    if any(
+        not math.isclose(configuration[field], expected, rel_tol=0, abs_tol=1e-12)
+        for field, expected in (
+            ("run_timeout_seconds", 1800.0),
+            ("timeout_minimum_seconds", 120.0),
+            ("timeout_multiplier", 3.0),
+            ("timeout_cap_seconds", 1800.0),
+        )
+    ):
+        raise ValidationError(f"{label} timeout constants differ")
+    if expected_baseline_task_id is None:
+        if (
+            baseline_run is not None
+            or configuration["timeout_policy"] != "initial"
+            or configuration["baseline_timeout_run_id"] is not None
+            or configuration["baseline_timeout_run_sha256"] is not None
+        ):
+            raise ValidationError(f"{label} requires canonical initial timeouts")
+        return
+    if baseline_run is None:
+        raise ValidationError(
+            f"{label} lacks the authorized timeout baseline {expected_baseline_task_id}"
+        )
+    if (
+        baseline_run["run_id"] is None
+        or configuration["timeout_policy"] != "baseline_derived"
+        or configuration["baseline_timeout_run_id"] != baseline_run["run_id"]
+        or configuration["baseline_timeout_run_sha256"]
+        != sha256_json(baseline_run)
+        or baseline_run["state"] != "completed"
+        or any(case["status"] != "passed" for case in baseline_run["cases"])
+    ):
+        raise ValidationError(
+            f"{label} timeout baseline identity/state differs from {expected_baseline_task_id}"
+        )
+
+
+def _require_candidate_compiler_binding(
+    *,
+    plan: Mapping[str, Any],
+    task: Mapping[str, Any],
+    run: Mapping[str, Any],
+    label: str,
+) -> None:
+    if task.get("kind") == "reference":
+        _require_frozen_reference_run(run, task, plan)
+        return
+    if (
+        run["configuration"].get("compiler") != _candidate_compiler_stage()
+        or run["provenance"]["compiler_artifact_sha256"]
+        != plan["repository"]["compiler_artifact"]["physical_sha256"]
+    ):
+        raise ValidationError(f"{label} compiler contract differs")
+
+
+def _require_candidate_tool_versions(
+    *,
+    plan: Mapping[str, Any],
+    task: Mapping[str, Any],
+    run: Mapping[str, Any],
+    label: str,
+) -> None:
+    expected = dict(plan["reference_toolchain"]["common_tool_versions"])
+    if task.get("kind") == "reference":
+        reference = next(
+            (
+                item
+                for item in plan["reference_toolchain"]["baselines"]
+                if item["profile_id"] == task["reference_profile_id"]
+            ),
+            None,
+        )
+        if reference is None:
+            raise ValidationError(f"{label} lacks a frozen reference baseline")
+        expected[reference["tool"]] = reference["version"]
+    else:
+        expected["accela-jdk"] = plan["reference_toolchain"][
+            "accela_jdk_version"
+        ]
+    observed = {
+        item["tool"]: item for item in run["configuration"]["tool_versions"]
+    }
+    if set(observed) != set(expected) or any(
+        observed[tool]
+        != {
+            "tool": tool,
+            "actual": version,
+            "official_expected": version,
+            "comparison": "exact",
+        }
+        for tool, version in expected.items()
+    ):
+        raise ValidationError(f"{label} tool versions differ from the frozen snapshot")
+
+
+def _validate_campaign_run_static(
     plan: Mapping[str, Any],
     task: Mapping[str, Any],
     run: Mapping[str, Any],
     *,
     profiles: Mapping[str, Mapping[str, Any]],
+    baseline_run: Mapping[str, Any] | None = None,
 ) -> None:
     if run["run_id"] != task["run_id"]:
         raise ValidationError(f"campaign task run id differs: {task['task_id']}")
+    if (
+        run["provenance"].get("execution_environment_sha256")
+        != plan["execution_environment_sha256"]
+        or run["provenance"]["repo_commit"]
+        != plan["repository"]["repo_commit"]
+        or run["provenance"]["repo_dirty"]
+        or run["provenance"]["tracked_diff_sha256"] is not None
+    ):
+        raise ValidationError(
+            f"campaign task repository/execution environment differs: {task['task_id']}"
+        )
     suite = next(
         item for item in plan["suites"] if item["data_role"] == task["data_role"]
     )
@@ -2842,14 +3501,58 @@ def _validate_campaign_run(
     ):
         raise ValidationError(f"campaign task suite/manifest differs: {task['task_id']}")
     _require_candidate_campaign_protocol_binding(plan=plan, task=task, run=run)
-    _require_candidate_run_protocol(run, data_role=task["data_role"])
+    _require_candidate_run_protocol_configuration(
+        run, data_role=task["data_role"]
+    )
+    _require_candidate_result_contract(
+        run, label=f"campaign task {task['task_id']}"
+    )
+    _require_candidate_runtime_stages(
+        run=run,
+        data_role=task["data_role"],
+        protocol=(
+            None
+            if task["data_role"] == "B1"
+            else plan["measurement_protocols"]["standard_proxy"]
+        ),
+        label=f"campaign task {task['task_id']}",
+    )
+    _require_candidate_timeout_configuration(
+        task=task,
+        run=run,
+        baseline_run=baseline_run,
+        label=f"campaign task {task['task_id']}",
+    )
+    if task["data_role"] != "B1":
+        require_formal_measurement_configuration(
+            run,
+            require_accela_pipeline=task["kind"] != "reference",
+        )
     expected_evidence = "qemu_correctness" if task["data_role"] == "B1" else "qemu_proxy"
     if run["configuration"]["evidence_level"] != expected_evidence:
         raise ValidationError(
             f"campaign task evidence level differs: {task['task_id']}"
         )
+    _require_candidate_analyzer_binding(
+        contract=plan["analyzer"],
+        run=run,
+        toolchain=_candidate_task_analyzer_toolchain(task),
+        label=f"campaign task {task['task_id']}",
+    )
+    _require_candidate_compiler_binding(
+        plan=plan,
+        task=task,
+        run=run,
+        label=f"campaign task {task['task_id']}",
+    )
+    _require_candidate_tool_versions(
+        plan=plan,
+        task=task,
+        run=run,
+        label=f"campaign task {task['task_id']}",
+    )
     if task["data_role"] == "B1":
-        _require_candidate_correctness_run(
+        _require_candidate_correctness_configuration(
             run, label=f"campaign B1 task {task['task_id']}"
         )
     if task["kind"] == "reference":
@@ -2870,6 +3573,28 @@ def _validate_campaign_run(
         profile=profiles[task["logical_profile_id"]],
         label=f"campaign task {task['task_id']}",
     )
+
+
+def _validate_campaign_run(
+    plan: Mapping[str, Any],
+    task: Mapping[str, Any],
+    run: Mapping[str, Any],
+    *,
+    profiles: Mapping[str, Mapping[str, Any]],
+    baseline_run: Mapping[str, Any] | None = None,
+) -> None:
+    _validate_campaign_run_static(
+        plan,
+        task,
+        run,
+        profiles=profiles,
+        baseline_run=baseline_run,
+    )
+    _require_candidate_run_protocol(run, data_role=task["data_role"])
+    if task["data_role"] == "B1":
+        _require_candidate_correctness_run(
+            run, label=f"campaign B1 task {task['task_id']}"
+        )
 
 
 def _require_frozen_reference_run(
@@ -2893,9 +3618,14 @@ def _require_frozen_reference_run(
     }
     observed = versions.get(reference["tool"])
     if (
-        compiler["kind"] != "external"
-        or compiler["executable"] != reference["compiler_executable"]
-        or compiler["command_sha256"] != reference["compiler_command_sha256"]
+        compiler
+        != {
+            "kind": "external",
+            "adapter": "host",
+            "command_sha256": reference["compiler_command_sha256"],
+            "executable": reference["compiler_executable"],
+            "environment_keys": [],
+        }
         or run["provenance"]["compiler_artifact_sha256"]
         != freeze["reference_toolchain"]["snapshot"]["physical_sha256"]
         or run["provenance"]["pipeline_profile_sha256"]
@@ -2925,9 +3655,10 @@ def _require_candidate_campaign_protocol_binding(
         expected = (None, None)
         label = "B1 correctness"
     else:
+        standard_protocol = plan["measurement_protocols"]["standard_proxy"]
         expected = (
-            plan["measurement_protocol"]["protocol_id"],
-            plan["measurement_protocol"]["protocol_sha256"],
+            standard_protocol["protocol_id"],
+            standard_protocol["protocol_sha256"],
         )
         label = f"{task['data_role']} standard-proxy"
     if observed != expected:
@@ -2936,7 +3667,7 @@ def _require_candidate_campaign_protocol_binding(
         )
 
 
-def _validate_candidate_diagnostic_run(
+def _validate_candidate_diagnostic_run_static(
     *,
     task: Mapping[str, Any],
     run: Mapping[str, Any],
@@ -2945,6 +3676,7 @@ def _validate_candidate_diagnostic_run(
     pass_registry_sha256: str,
     b3_suite: Mapping[str, Any],
     freeze: Mapping[str, Any],
+    baseline_run: Mapping[str, Any] | None = None,
 ) -> None:
     protocol_contract = freeze["measurement_protocols"][task["measurement_mode"]]
     if (
@@ -2959,6 +3691,8 @@ def _validate_candidate_diagnostic_run(
         or run["provenance"]["tracked_diff_sha256"] is not None
         or run["provenance"]["compiler_artifact_sha256"]
         != freeze["repository"]["compiler_artifact"]["physical_sha256"]
+        or run["provenance"].get("execution_environment_sha256")
+        != freeze["execution_environment_sha256"]
         or run["provenance"]["measurement_protocol_id"]
         != protocol_contract["protocol_id"]
         or run["provenance"]["measurement_protocol_sha256"]
@@ -2967,7 +3701,50 @@ def _validate_candidate_diagnostic_run(
         raise ValidationError(
             f"candidate diagnostic run binding differs: {task['task_id']}"
         )
-    _require_candidate_run_protocol(run, data_role="B3")
+    _require_candidate_analyzer_binding(
+        contract=freeze["analyzer"],
+        run=run,
+        toolchain="accela",
+        label=f"candidate diagnostic run {task['task_id']}",
+    )
+    _require_candidate_tool_versions(
+        plan=freeze,
+        task=task,
+        run=run,
+        label=f"candidate diagnostic run {task['task_id']}",
+    )
+    _require_candidate_compiler_binding(
+        plan=freeze,
+        task=task,
+        run=run,
+        label=f"candidate diagnostic run {task['task_id']}",
+    )
+    _require_candidate_run_protocol_configuration(run, data_role="B3")
+    _require_candidate_result_contract(
+        run, label=f"candidate diagnostic run {task['task_id']}"
+    )
+    _require_candidate_runtime_stages(
+        run=run,
+        data_role="B3",
+        protocol=protocol_contract,
+        label=f"candidate diagnostic run {task['task_id']}",
+    )
+    _require_candidate_timeout_configuration(
+        task=task,
+        run=run,
+        baseline_run=baseline_run,
+        label=f"candidate diagnostic run {task['task_id']}",
+    )
+    require_formal_measurement_configuration(
+        run,
+        require_accela_pipeline=True,
+        allow_metric_superset=task["measurement_mode"] == "cache_hotblock",
+    )
+    if task["measurement_mode"] == "cache_hotblock":
+        _require_candidate_cache_metric_extension(
+            run,
+            label=f"candidate diagnostic run {task['task_id']}",
+        )
     _require_candidate_configuration(
         run,
         registry_sha256=candidate_registry_sha256,
@@ -2976,6 +3753,1102 @@ def _validate_candidate_diagnostic_run(
         profile=profile,
         label=f"candidate diagnostic run {task['task_id']}",
     )
+
+
+def _validate_candidate_diagnostic_run(
+    *,
+    task: Mapping[str, Any],
+    run: Mapping[str, Any],
+    profile: Mapping[str, Any],
+    candidate_registry_sha256: str,
+    pass_registry_sha256: str,
+    b3_suite: Mapping[str, Any],
+    freeze: Mapping[str, Any],
+    baseline_run: Mapping[str, Any] | None = None,
+) -> None:
+    _validate_candidate_diagnostic_run_static(
+        task=task,
+        run=run,
+        profile=profile,
+        candidate_registry_sha256=candidate_registry_sha256,
+        pass_registry_sha256=pass_registry_sha256,
+        b3_suite=b3_suite,
+        freeze=freeze,
+        baseline_run=baseline_run,
+    )
+    _require_candidate_run_protocol(run, data_role="B3")
+
+
+def _require_authorized_regular_path(
+    *,
+    workspace_root: Path,
+    observed_path: Path | None,
+    expected_path: str,
+    label: str,
+) -> Path:
+    if observed_path is None:
+        raise ValidationError(f"{label} is required")
+    _, physical, relative = _workspace_regular_path(
+        workspace_root, observed_path, label=label
+    )
+    if relative.as_posix() != expected_path:
+        raise ValidationError(f"{label} path differs from the authorized campaign")
+    return physical
+
+
+def _require_authorized_output_path(
+    *, workspace_root: Path, output_path: Path, label: str
+) -> Path:
+    root = _candidate_workspace_root(workspace_root)
+    lexical = (output_path if output_path.is_absolute() else root / output_path).absolute()
+    try:
+        relative = lexical.relative_to(root)
+    except ValueError as exc:
+        raise ValidationError(f"{label} must stay within the campaign workspace") from exc
+    if ".accela-benchmark-locks" in relative.parts:
+        raise ValidationError(f"{label} cannot use the benchmark lease namespace")
+    cursor = root
+    for component in relative.parent.parts:
+        cursor = cursor / component
+        if cursor.is_symlink():
+            raise ValidationError(f"{label} cannot traverse a symbolic link")
+    parent = lexical.parent.resolve(strict=True)
+    if parent != lexical.parent or lexical.is_symlink():
+        raise ValidationError(f"{label} path identity differs")
+    if lexical.exists() and not lexical.is_file():
+        raise ValidationError(f"{label} must be a regular-file target")
+    return lexical
+
+
+def _require_git_ignored_path(
+    *, workspace_root: Path, path: Path, label: str
+) -> None:
+    root = _candidate_workspace_root(workspace_root)
+    lexical = (path if path.is_absolute() else root / path).absolute()
+    try:
+        relative = lexical.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise ValidationError(f"{label} must stay within the campaign workspace") from exc
+
+    def git(*arguments: str) -> int:
+        try:
+            result = subprocess.run(
+                ("git", "--no-optional-locks", "-C", str(root), *arguments),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ConfigurationError(
+                f"cannot verify {label} Git ignore identity"
+            ) from exc
+        return result.returncode
+
+    tracked = git("ls-files", "--error-unmatch", "--", relative)
+    if tracked == 0:
+        raise ValidationError(f"{label} cannot be a tracked repository path")
+    if tracked != 1:
+        raise ConfigurationError(f"cannot verify {label} tracked-file identity")
+    ignored = git("check-ignore", "--quiet", "--no-index", "--", relative)
+    if ignored == 1:
+        raise ValidationError(f"{label} must be covered by the repository ignore policy")
+    if ignored != 0:
+        raise ConfigurationError(f"cannot verify {label} Git ignore identity")
+
+
+def _require_candidate_output_separation(
+    *,
+    output_path: Path,
+    protected_files: Sequence[Path],
+    protected_directories: Sequence[Path],
+) -> None:
+    output = output_path.absolute()
+    if any(output == path.absolute() for path in protected_files):
+        raise ValidationError(
+            "candidate run output collides with immutable campaign input/evidence"
+        )
+    for directory in protected_directories:
+        protected = directory.absolute()
+        if output == protected or output.is_relative_to(protected):
+            raise ValidationError(
+                "candidate run output collides with a protected campaign subtree"
+            )
+
+
+def _require_disjoint_candidate_raw_namespaces(
+    *, candidate_state_root: Path, oracle_state_root: Path
+) -> None:
+    candidate = candidate_state_root.absolute()
+    oracle = oracle_state_root.absolute()
+    if candidate.is_relative_to(oracle) or oracle.is_relative_to(candidate):
+        raise ValidationError(
+            "candidate campaign and screening Oracle raw state namespaces overlap"
+        )
+
+
+def _require_candidate_campaign_publication_paths(
+    *,
+    plan: Mapping[str, Any],
+    matrix: Mapping[str, Any],
+    workspace_root: Path,
+    raw_output_path: Path,
+    status_output_path: Path,
+    protected_input_paths: Sequence[Path],
+) -> None:
+    root = _candidate_workspace_root(workspace_root)
+    raw_output = _require_authorized_output_path(
+        workspace_root=root,
+        output_path=raw_output_path,
+        label="candidate raw evidence registry output",
+    )
+    status_output = _require_authorized_output_path(
+        workspace_root=root,
+        output_path=status_output_path,
+        label="candidate campaign status output",
+    )
+    if raw_output == status_output:
+        raise ValidationError(
+            "candidate raw registry and campaign status outputs must differ"
+        )
+    for output, label in (
+        (raw_output, "candidate raw evidence registry output"),
+        (status_output, "candidate campaign status output"),
+    ):
+        _require_git_ignored_path(
+            workspace_root=root,
+            path=output,
+            label=label,
+        )
+
+    protected_files: set[Path] = set()
+    for input_path in protected_input_paths:
+        protected_files.add(
+            _workspace_regular_path(
+                root,
+                input_path,
+                label="candidate campaign publication input",
+            )[1]
+        )
+    artifact_paths = {
+        plan["base_pipeline_profile"]["path"],
+        plan["reference_toolchain"]["snapshot"]["path"],
+        *(item["manifest"]["path"] for item in plan["suites"]),
+        *(item["path"] for item in plan["measurement_protocols"].values()),
+        *(item["path"] for item in plan["artifacts"].values()),
+        *(item["path"] for item in matrix["profiles"]),
+    }
+    for relative in artifact_paths:
+        protected_files.add(
+            _workspace_regular_path(
+                root,
+                root / relative,
+                label="candidate campaign frozen publication input",
+            )[1]
+        )
+    _, state_root, _ = _workspace_directory_path(
+        root,
+        root / plan["raw_state_root"],
+        label="candidate campaign raw state root",
+    )
+    if any(output.parent != state_root.parent for output in (raw_output, status_output)):
+        raise ValidationError(
+            "candidate campaign publications must use the exact state sibling directory"
+        )
+    compiler = resolve_without_symlinks(
+        root / plan["repository"]["compiler_artifact"]["path"],
+        label="candidate campaign compiler artifact",
+    )
+    protected_directories = {
+        state_root,
+        compiler if compiler.is_dir() else compiler.parent,
+    }
+    git_control = root / ".git"
+    if git_control.is_dir():
+        protected_directories.add(git_control.absolute())
+    elif git_control.is_file():
+        protected_files.add(git_control.absolute())
+    for output in (raw_output, status_output):
+        _require_candidate_output_separation(
+            output_path=output,
+            protected_files=tuple(protected_files),
+            protected_directories=tuple(protected_directories),
+        )
+
+
+def _authorized_candidate_ready_tasks(
+    *, plan: Mapping[str, Any], status: Mapping[str, Any]
+) -> list[str]:
+    planned_ids = [item["task_id"] for item in plan["tasks"]]
+    if [item["task_id"] for item in status["tasks"]] != planned_ids:
+        raise ValidationError("candidate authorization status task set differs from plan")
+    ready = ready_campaign_task_ids(
+        tasks=plan["tasks"], statuses=status["tasks"]
+    )
+    diagnostic = status["diagnostic_plan"]
+    if diagnostic is None:
+        return ready
+    diagnostic_ready: list[str] = []
+    diagnostic_active = False
+    for row in [*diagnostic["tasks"], diagnostic["study"]]:
+        if row["status"] in {
+            "completed",
+            "failed",
+            "interrupted",
+            "ineligible",
+        }:
+            continue
+        diagnostic_active = True
+        if row["status"] == "pending":
+            diagnostic_ready = [row["task_id"]]
+        break
+    return diagnostic_ready if diagnostic_active else ready
+
+
+def validate_candidate_status_projection_prelease(
+    *,
+    plan_path: Path,
+    plan: Mapping[str, Any],
+    status_path: Path,
+    status: Mapping[str, Any],
+    ledger_paths: Sequence[Path],
+    raw_evidence_registry: Mapping[str, Any],
+    workspace_root: Path,
+    raw_evidence_verifier: Any,
+) -> None:
+    """Rebuild the ledger head from its exact physical evidence before a run."""
+
+    root = _candidate_workspace_root(workspace_root)
+    if not ledger_paths or ledger_paths[-1] != status_path:
+        raise ValidationError(
+            "candidate status projection requires the physical ledger head"
+        )
+    planned_task_ids = [item["task_id"] for item in plan["tasks"]]
+    if [item["task_id"] for item in status["tasks"]] != planned_task_ids:
+        raise ValidationError(
+            "candidate status projection task order differs from plan"
+        )
+    raw_by_task = {
+        item["task_id"]: item for item in raw_evidence_registry["runs"]
+    }
+    if len(raw_by_task) != len(raw_evidence_registry["runs"]):
+        raise ValidationError("candidate status projection repeats a raw task")
+    run_paths = {
+        task_id: _workspace_regular_path(
+            root,
+            root / item["run_record"]["path"],
+            label=f"candidate status projection run {task_id}",
+        )[1]
+        for task_id, item in raw_by_task.items()
+    }
+    study_paths: dict[str, Path] = {}
+    freeze_path: Path | None = None
+    final_path: Path | None = None
+    task_specs = {item["task_id"]: item for item in plan["tasks"]}
+    for row in status["tasks"]:
+        evidence_path = row["evidence_path"]
+        if evidence_path is None:
+            continue
+        physical = _workspace_regular_path(
+            root,
+            root / evidence_path,
+            label=f"candidate status projection evidence {row['task_id']}",
+        )[1]
+        spec = task_specs.get(row["task_id"])
+        if spec is None:
+            raise ValidationError(
+                "candidate status projection task is absent from plan"
+            )
+        if spec["task_type"] == "run":
+            raw = raw_by_task.get(row["task_id"])
+            if raw is None or raw["run_record"]["path"] != evidence_path:
+                raise ValidationError(
+                    "candidate status run evidence path differs from raw evidence"
+                )
+        elif row["task_id"].startswith("study."):
+            study_paths[row["task_id"].removeprefix("study.")] = physical
+        elif row["task_id"] == "freeze":
+            freeze_path = physical
+        elif row["task_id"] == "final":
+            final_path = physical
+        else:
+            raise ValidationError("candidate status projection task kind is unknown")
+
+    diagnostic_matrix_path: Path | None = None
+    diagnostic = status["diagnostic_plan"]
+    if diagnostic is not None:
+        diagnostic_matrix_path = _workspace_regular_path(
+            root,
+            root / diagnostic["matrix"]["path"],
+            label="candidate status projection diagnostic matrix",
+        )[1]
+        for row in diagnostic["tasks"]:
+            evidence_path = row["evidence_path"]
+            if evidence_path is None:
+                continue
+            raw = raw_by_task.get(row["task_id"])
+            if raw is None or raw["run_record"]["path"] != evidence_path:
+                raise ValidationError(
+                    "candidate diagnostic status path differs from raw evidence"
+                )
+        diagnostic_study = diagnostic["study"]
+        if diagnostic_study["evidence_path"] is not None:
+            study_paths["diagnostic"] = _workspace_regular_path(
+                root,
+                root / diagnostic_study["evidence_path"],
+                label="candidate status projection diagnostic study",
+            )[1]
+    authorized_run_tasks = {
+        item["task_id"]
+        for item in plan["tasks"]
+        if item["task_type"] == "run"
+    }
+    if diagnostic is not None:
+        authorized_run_tasks.update(
+            item["task_id"] for item in diagnostic["tasks"]
+        )
+    unknown_raw_tasks = sorted(set(raw_by_task) - authorized_run_tasks)
+    if unknown_raw_tasks:
+        raise ValidationError(
+            "candidate status projection raw task is not authorized: "
+            + ", ".join(unknown_raw_tasks)
+        )
+
+    previous_path = ledger_paths[-2] if len(ledger_paths) > 1 else None
+    rebuilt = update_candidate_campaign_status(
+        plan_path=plan_path,
+        run_paths=run_paths,
+        study_paths=study_paths,
+        diagnostic_matrix_path=diagnostic_matrix_path,
+        freeze_path=freeze_path,
+        final_path=final_path,
+        raw_evidence_registry=raw_evidence_registry,
+        raw_evidence_registry_output_path=_workspace_regular_path(
+            root,
+            root / status["raw_evidence_registry"]["path"],
+            label="candidate status projection raw evidence registry",
+        )[1],
+        status_output_path=status_path,
+        workspace_root=root,
+        previous_status_path=previous_path,
+        status_ledger_paths=ledger_paths[:-1],
+        started_at=status["started_at"],
+        as_of=status["as_of"],
+        _raw_evidence_verifier=raw_evidence_verifier,
+    )
+    if rebuilt != status:
+        raise ValidationError(
+            "candidate status differs from the central evidence projection"
+        )
+
+
+def authorize_candidate_run_prelease(
+    intent: CandidateRunAuthorizationIntent,
+) -> None:
+    """Authorize one exact ready candidate run before execution writes state."""
+
+    root = _candidate_workspace_root(intent.workspace_root)
+    raw_snapshot_cache = _ReadOnlyRawEvidenceCache()
+    _, plan_physical, _ = _workspace_regular_path(
+        root, intent.plan_path, label="candidate run authorization plan"
+    )
+    raw_snapshot_cache.track_file(
+        plan_physical, label="candidate run authorization plan"
+    )
+    _, status_physical, _ = _workspace_regular_path(
+        root, intent.status_path, label="candidate run authorization status"
+    )
+    raw_snapshot_cache.track_file(
+        status_physical, label="candidate run authorization status"
+    )
+    ledger_physical_paths = tuple(
+        _workspace_regular_path(
+            root,
+            path,
+            label=f"candidate run authorization ledger entry {index}",
+        )[1]
+        for index, path in enumerate(intent.status_ledger_paths)
+    )
+    for index, ledger_path in enumerate(ledger_physical_paths):
+        raw_snapshot_cache.track_file(
+            ledger_path,
+            label=f"candidate run authorization ledger entry {index}",
+        )
+    plan = _load_version(
+        plan_physical,
+        "candidate-campaign-plan.v1",
+        label="candidate run authorization plan",
+    )
+    _, state_physical, state_relative = _workspace_directory_path(
+        root, intent.state_root, label="candidate run authorization state root"
+    )
+    if state_relative.as_posix() != plan["raw_state_root"]:
+        raise ValidationError(
+            "candidate run authorization state root differs from plan"
+        )
+    output_physical = _require_authorized_output_path(
+        workspace_root=root,
+        output_path=intent.output_path,
+        label="candidate run authorization output",
+    )
+    if not output_physical.is_relative_to(state_physical.parent):
+        raise ValidationError(
+            "candidate run output must stay in the campaign-owned state sibling namespace"
+        )
+    _require_git_ignored_path(
+        workspace_root=root,
+        path=output_physical,
+        label="candidate run authorization output",
+    )
+    status = _load_version(
+        status_physical,
+        "candidate-campaign-status.v1",
+        label="candidate run authorization status",
+    )
+    if not intent.status_ledger_paths:
+        raise ConfigurationError(
+            "formal candidate run authorization requires the complete status ledger"
+        )
+    ledger_head_physical = ledger_physical_paths[-1]
+    if status_physical != ledger_head_physical:
+        raise ValidationError(
+            "candidate run authorization status must be the physical ledger head"
+        )
+    _validate_candidate_status_ledger(
+        plan=plan,
+        status=status,
+        ledger_paths=ledger_physical_paths,
+        workspace_root=root,
+        raw_evidence_verifier=raw_snapshot_cache.verify,
+    )
+    for index, ledger_path in enumerate(ledger_physical_paths):
+        ledger_entry = _load_version(
+            ledger_path,
+            "candidate-campaign-status.v1",
+            label=f"candidate run authorization ledger entry {index}",
+        )
+        raw_snapshot_cache.track_file(
+            root / ledger_entry["raw_evidence_registry"]["path"],
+            label=f"candidate run authorization raw registry {index}",
+            expected_sha256=ledger_entry["raw_evidence_registry"][
+                "physical_sha256"
+            ],
+        )
+        for row in ledger_entry["tasks"]:
+            if row["evidence_path"] is not None:
+                raw_snapshot_cache.track_file(
+                    root / row["evidence_path"],
+                    label=(
+                        "candidate run authorization task evidence "
+                        + row["task_id"]
+                    ),
+                    expected_sha256=row["evidence_physical_sha256"],
+                )
+        diagnostic_ledger = ledger_entry["diagnostic_plan"]
+        if diagnostic_ledger is not None:
+            raw_snapshot_cache.track_file(
+                root / diagnostic_ledger["matrix"]["path"],
+                label="candidate run authorization diagnostic matrix",
+                expected_sha256=diagnostic_ledger["matrix"][
+                    "physical_sha256"
+                ],
+            )
+            for row in diagnostic_ledger["tasks"]:
+                if row["evidence_path"] is not None:
+                    raw_snapshot_cache.track_file(
+                        root / row["evidence_path"],
+                        label=(
+                            "candidate run authorization diagnostic evidence "
+                            + row["task_id"]
+                        ),
+                        expected_sha256=row["evidence_physical_sha256"],
+                    )
+            diagnostic_study = diagnostic_ledger["study"]
+            if diagnostic_study["evidence_path"] is not None:
+                raw_snapshot_cache.track_file(
+                    root / diagnostic_study["evidence_path"],
+                    label="candidate run authorization diagnostic study",
+                    expected_sha256=diagnostic_study[
+                        "evidence_physical_sha256"
+                    ],
+                )
+    if (
+        status["campaign_id"] != plan["campaign_id"]
+        or status["plan_sha256"] != sha256_json(plan)
+        or status["execution_environment_sha256"]
+        != plan["execution_environment_sha256"]
+        or status["analyzer"] != plan["analyzer"]
+    ):
+        raise ValidationError("candidate run authorization status binds another plan")
+    current_raw_registry, current_raw_registry_artifact = (
+        _load_and_reverify_candidate_raw_evidence_registry(
+            plan=plan,
+            registry_path=root / status["raw_evidence_registry"]["path"],
+            workspace_root=root,
+            raw_evidence_verifier=raw_snapshot_cache.verify,
+        )
+    )
+    if current_raw_registry_artifact != status["raw_evidence_registry"]:
+        raise ValidationError(
+            "candidate run authorization raw-evidence registry differs"
+        )
+    validate_candidate_status_projection_prelease(
+        plan_path=plan_physical,
+        plan=plan,
+        status_path=status_physical,
+        status=status,
+        ledger_paths=ledger_physical_paths,
+        raw_evidence_registry=current_raw_registry,
+        workspace_root=root,
+        raw_evidence_verifier=raw_snapshot_cache.verify,
+    )
+    ready = _authorized_candidate_ready_tasks(plan=plan, status=status)
+    if status["ready_tasks"] != ready or ready != [intent.task_id]:
+        raise ValidationError(
+            "formal candidate run must be the unique current ready task"
+        )
+
+    _, observed_tree = _clean_repository_identity(
+        root, plan["repository"]["repo_commit"]
+    )
+    if (
+        observed_tree != plan["repository"]["repo_tree"]
+        or _frozen_compiler_artifact(
+            root, root / plan["repository"]["compiler_artifact"]["path"]
+        )
+        != plan["repository"]["compiler_artifact"]
+    ):
+        raise ValidationError(
+            "candidate run authorization repository/compiler artifact drifted"
+        )
+    _verify_candidate_plan_execution_environment(plan, workspace_root=root)
+    screening = _load_and_reverify_candidate_screening(
+        screening_path=root / plan["artifacts"]["screening"]["path"],
+        workspace_root=root,
+        raw_evidence_verifier=raw_snapshot_cache.verify,
+    )
+    oracle_capture_artifact = screening["sources"]["oracle_capture"]
+    oracle_capture = _load_and_reverify_candidate_oracle_capture(
+        capture_path=root / oracle_capture_artifact["path"],
+        workspace_root=root,
+        raw_evidence_verifier=raw_snapshot_cache.verify,
+    )
+    _, oracle_state_physical, _ = _workspace_directory_path(
+        root,
+        root / oracle_capture["raw_state_root"],
+        label="candidate authorization Oracle raw state root",
+    )
+    _require_disjoint_candidate_raw_namespaces(
+        candidate_state_root=state_physical,
+        oracle_state_root=oracle_state_physical,
+    )
+    raw_snapshot_cache.track_file(
+        root / plan["artifacts"]["screening"]["path"],
+        label="candidate run authorization screening",
+        expected_sha256=plan["artifacts"]["screening"]["physical_sha256"],
+    )
+    raw_snapshot_cache.track_file(
+        root / oracle_capture_artifact["path"],
+        label="candidate run authorization Oracle capture",
+        expected_sha256=oracle_capture_artifact["physical_sha256"],
+    )
+
+    candidate_ids = plan["qualified_candidate_ids"]
+    catalog = _load_frozen_artifact(
+        root,
+        plan["artifacts"]["candidate_registry"],
+        label="candidate run authorization registry",
+        version="candidate-catalog.v1",
+    )
+    pass_registry = _load_frozen_artifact(
+        root,
+        plan["artifacts"]["executable_pass_registry"],
+        label="candidate run authorization PassRegistry",
+        version="pass-registry.v2",
+    )
+    matrix = _load_frozen_artifact(
+        root,
+        plan["artifacts"]["matrix"],
+        label="candidate run authorization matrix",
+        version="candidate-profile-matrix.v1",
+    )
+    profiles = _verify_matrix_profiles(
+        root, matrix, candidate_order=candidate_ids
+    )
+
+    main_tasks = {item["task_id"]: item for item in plan["tasks"]}
+    task = main_tasks.get(intent.task_id)
+    diagnostic_task: Mapping[str, Any] | None = None
+    diagnostic_profiles: Mapping[str, Mapping[str, Any]] | None = None
+    diagnostic_matrix: Mapping[str, Any] | None = None
+    if task is None:
+        diagnostic = status["diagnostic_plan"]
+        if diagnostic is None:
+            raise ValidationError("candidate authorization task is unknown")
+        diagnostic_task = next(
+            (
+                item
+                for item in diagnostic["tasks"]
+                if item["task_id"] == intent.task_id
+            ),
+            None,
+        )
+        if diagnostic_task is None:
+            raise ValidationError("candidate authorization task is not a run")
+        for key in (
+            "configuration_sha256",
+            "evidence_sha256",
+            "evidence_physical_sha256",
+            "evidence_path",
+            "started_at",
+            "completed_at",
+            "failure_reason",
+        ):
+            if diagnostic_task[key] is not None:
+                raise ValidationError(
+                    "pending candidate diagnostic authorization carries evidence state"
+                )
+        main_by_id = {item["task_id"]: item for item in status["tasks"]}
+        if (
+            main_by_id["freeze"]["status"] != "completed"
+            or main_by_id["freeze"]["evidence_sha256"]
+            != diagnostic["source_freeze_sha256"]
+            or main_by_id["study.B3"]["status"] != "completed"
+            or main_by_id["study.B3"]["evidence_sha256"]
+            != diagnostic["source_study_sha256"]
+        ):
+            raise ValidationError(
+                "candidate diagnostic authorization source freeze/study differs"
+            )
+        diagnostic_matrix = _load_frozen_artifact(
+            root,
+            diagnostic["matrix"],
+            label="candidate diagnostic authorization matrix",
+            version="candidate-profile-matrix.v1",
+        )
+        diagnostic_profiles = _verify_matrix_profiles(
+            root, diagnostic_matrix, candidate_order=candidate_ids
+        )
+    elif task["task_type"] != "run":
+        raise ValidationError("candidate authorization task is not a run")
+    else:
+        status_row = next(
+            item for item in status["tasks"] if item["task_id"] == intent.task_id
+        )
+        for key in (
+            "evidence_kind",
+            "evidence_sha256",
+            "evidence_physical_sha256",
+            "evidence_path",
+            "started_at",
+            "completed_at",
+            "ineligibility_reason",
+        ):
+            if status_row[key] is not None:
+                raise ValidationError(
+                    "pending candidate run authorization carries evidence state"
+                )
+
+    authorization_task = task if task is not None else diagnostic_task
+    assert authorization_task is not None
+    baseline_task_id = _candidate_timeout_baseline_task_id(authorization_task)
+    baseline_run: Mapping[str, Any] | None = None
+    if baseline_task_id is None:
+        if intent.baseline_timeout_path is not None:
+            raise ValidationError(
+                "initial candidate timeout authorization forbids a baseline run"
+            )
+    else:
+        raw_baseline = next(
+            (
+                item
+                for item in current_raw_registry["runs"]
+                if item["task_id"] == baseline_task_id
+            ),
+            None,
+        )
+        if raw_baseline is None:
+            raise ValidationError(
+                "candidate timeout baseline is absent from current raw evidence"
+            )
+        baseline_physical = _require_authorized_regular_path(
+            workspace_root=root,
+            observed_path=intent.baseline_timeout_path,
+            expected_path=raw_baseline["run_record"]["path"],
+            label="candidate authorization timeout baseline",
+        )
+        baseline_run = _load_version(
+            baseline_physical,
+            "run-record.v1",
+            label="candidate authorization timeout baseline",
+        )
+        if (
+            sha256_json(baseline_run)
+            != raw_baseline["run_record"]["canonical_sha256"]
+            or sha256_file(baseline_physical)
+            != raw_baseline["run_record"]["physical_sha256"]
+        ):
+            raise ValidationError(
+                "candidate timeout baseline differs from current raw evidence"
+            )
+        baseline_main_task = main_tasks.get(baseline_task_id)
+        if baseline_main_task is not None:
+            baseline_status = next(
+                item
+                for item in status["tasks"]
+                if item["task_id"] == baseline_task_id
+            )
+            _validate_campaign_run_static(
+                plan,
+                baseline_main_task,
+                baseline_run,
+                profiles=profiles,
+            )
+        else:
+            diagnostic_status = status["diagnostic_plan"]
+            if diagnostic_status is None or diagnostic_profiles is None:
+                raise ValidationError(
+                    "candidate diagnostic timeout baseline lacks its frozen plan"
+                )
+            baseline_status = next(
+                (
+                    item
+                    for item in diagnostic_status["tasks"]
+                    if item["task_id"] == baseline_task_id
+                ),
+                None,
+            )
+            if baseline_status is None:
+                raise ValidationError(
+                    "candidate diagnostic timeout baseline task is absent"
+                )
+            baseline_static_task = {
+                "task_id": baseline_status["task_id"],
+                "run_id": baseline_status["run_id"],
+                "kind": baseline_status["kind"],
+                "measurement_mode": baseline_status["measurement_mode"],
+                "candidate_ids": baseline_status["candidate_ids"],
+            }
+            _validate_candidate_diagnostic_run_static(
+                task=baseline_static_task,
+                run=baseline_run,
+                profile=diagnostic_profiles[baseline_status["logical_profile_id"]],
+                candidate_registry_sha256=sha256_json(catalog),
+                pass_registry_sha256=sha256_json(pass_registry),
+                b3_suite=next(
+                    item for item in plan["suites"] if item["data_role"] == "B3"
+                ),
+                freeze={
+                    "repository": plan["repository"],
+                    "measurement_protocols": plan["measurement_protocols"],
+                    "reference_toolchain": plan["reference_toolchain"],
+                    "analyzer": plan["analyzer"],
+                    "execution_environment_sha256": plan[
+                        "execution_environment_sha256"
+                    ],
+                },
+            )
+        if (
+            baseline_status["status"] != "completed"
+            or baseline_status["evidence_sha256"] != sha256_json(baseline_run)
+            or baseline_status["evidence_physical_sha256"]
+            != sha256_file(baseline_physical)
+        ):
+            raise ValidationError(
+                "candidate timeout baseline is not exact completed campaign evidence"
+            )
+
+    data_role = (
+        task["data_role"] if task is not None else diagnostic_task["data_role"]
+    )
+    suite = next(
+        item for item in plan["suites"] if item["data_role"] == data_role
+    )
+    manifest_physical = _require_authorized_regular_path(
+        workspace_root=root,
+        observed_path=intent.manifest_path,
+        expected_path=suite["manifest"]["path"],
+        label="candidate run authorization manifest",
+    )
+    _, suite_root_physical, _ = _workspace_directory_path(
+        root, intent.suite_root, label="candidate run authorization suite root"
+    )
+    manifest = load_and_validate(
+        manifest_physical,
+        suite_root=suite_root_physical,
+        verify_files=True,
+    )
+    if (
+        manifest["schema_version"] != "benchmark-manifest.v1"
+        or manifest["provenance"]["data_role"] != data_role
+        or manifest["suite_id"] != suite["suite_id"]
+        or len(manifest["cases"]) != suite["case_count"]
+        or sha256_json(manifest) != suite["manifest"]["canonical_sha256"]
+        or sha256_file(manifest_physical)
+        != suite["manifest"]["physical_sha256"]
+    ):
+        raise ValidationError("candidate run authorization manifest differs")
+    require_formal_suite_contract(
+        role=data_role, manifest=manifest, manifest_path=manifest_physical
+    )
+
+    run = {
+        "run_id": intent.run_id,
+        "suite_id": manifest["suite_id"],
+        "manifest_sha256": sha256_json(manifest),
+        "configuration": intent.configuration,
+        "provenance": intent.provenance,
+    }
+    if task is not None:
+        _validate_campaign_run_static(
+            plan,
+            task,
+            run,
+            profiles=profiles,
+            baseline_run=baseline_run,
+        )
+        expected_mode = None if data_role == "B1" else "standard_proxy"
+        if task["kind"] == "reference":
+            if any(
+                item is not None
+                for item in (
+                    intent.pipeline_profile_path,
+                    intent.candidate_registry_path,
+                    intent.candidate_pass_registry_path,
+                )
+            ) or any(
+                intent.configuration.get(key) is not None
+                for key in (
+                    "pipeline_profile_file_sha256",
+                    "candidate_registry_sha256",
+                    "candidate_pass_registry_sha256",
+                )
+            ):
+                raise ValidationError(
+                    "candidate reference authorization carries candidate profile artifacts"
+                )
+            reference_snapshot = plan["reference_toolchain"]["snapshot"]
+            _require_authorized_regular_path(
+                workspace_root=root,
+                observed_path=intent.compiler_artifact_path,
+                expected_path=reference_snapshot["path"],
+                label="candidate reference compiler artifact",
+            )
+        else:
+            profile = profiles[task["logical_profile_id"]]
+            if (
+                task["candidate_profile_sha256"] != profile["profile_sha256"]
+                or task["candidate_profile_path"] != profile["path"]
+            ):
+                raise ValidationError(
+                    "candidate authorization task profile differs from matrix"
+                )
+            _require_authorized_regular_path(
+                workspace_root=root,
+                observed_path=intent.pipeline_profile_path,
+                expected_path=profile["path"],
+                label="candidate authorization pipeline profile",
+            )
+    else:
+        assert diagnostic_task is not None and diagnostic_profiles is not None
+        profile = diagnostic_profiles[diagnostic_task["logical_profile_id"]]
+        if (
+            diagnostic_task["profile_sha256"] != profile["profile_sha256"]
+            or diagnostic_task["profile_path"] != profile["path"]
+        ):
+            raise ValidationError(
+                "candidate diagnostic authorization profile differs from matrix"
+            )
+        _require_authorized_regular_path(
+            workspace_root=root,
+            observed_path=intent.pipeline_profile_path,
+            expected_path=profile["path"],
+            label="candidate diagnostic authorization pipeline profile",
+        )
+        diagnostic_static_task = {
+            "task_id": diagnostic_task["task_id"],
+            "run_id": diagnostic_task["run_id"],
+            "kind": diagnostic_task["kind"],
+            "measurement_mode": diagnostic_task["measurement_mode"],
+            "candidate_ids": diagnostic_task["candidate_ids"],
+        }
+        _validate_candidate_diagnostic_run_static(
+            task=diagnostic_static_task,
+            run=run,
+            profile=profile,
+            candidate_registry_sha256=sha256_json(catalog),
+            pass_registry_sha256=sha256_json(pass_registry),
+            b3_suite=suite,
+            freeze={
+                "repository": plan["repository"],
+                "measurement_protocols": plan["measurement_protocols"],
+                "reference_toolchain": plan["reference_toolchain"],
+                "analyzer": plan["analyzer"],
+                "execution_environment_sha256": plan[
+                    "execution_environment_sha256"
+                ],
+            },
+            baseline_run=baseline_run,
+        )
+        expected_mode = diagnostic_task["measurement_mode"]
+
+    if task is None or task["kind"] != "reference":
+        if _frozen_compiler_artifact(root, intent.compiler_artifact_path) != plan[
+            "repository"
+        ]["compiler_artifact"]:
+            raise ValidationError(
+                "candidate authorization compiler artifact path/hash differs"
+            )
+        for observed_path, artifact, label in (
+            (
+                intent.candidate_registry_path,
+                plan["artifacts"]["candidate_registry"],
+                "candidate authorization registry",
+            ),
+            (
+                intent.candidate_pass_registry_path,
+                plan["artifacts"]["executable_pass_registry"],
+                "candidate authorization PassRegistry",
+            ),
+        ):
+            _require_authorized_regular_path(
+                workspace_root=root,
+                observed_path=observed_path,
+                expected_path=artifact["path"],
+                label=label,
+            )
+
+    if expected_mode is None:
+        if intent.measurement_protocol_path is not None:
+            raise ValidationError(
+                "B1 candidate authorization forbids a measurement protocol"
+            )
+    else:
+        protocol = plan["measurement_protocols"][expected_mode]
+        protocol_physical = _require_authorized_regular_path(
+            workspace_root=root,
+            observed_path=intent.measurement_protocol_path,
+            expected_path=protocol["path"],
+            label="candidate authorization measurement protocol",
+        )
+        protocol_document = _load_version(
+            protocol_physical,
+            "measurement-protocol.v1",
+            label="candidate authorization measurement protocol",
+        )
+        if (
+            sha256_json(protocol_document) != protocol["protocol_sha256"]
+            or sha256_file(protocol_physical) != protocol["physical_sha256"]
+        ):
+            raise ValidationError(
+                "candidate authorization measurement protocol differs"
+            )
+
+    protected_files = {
+        plan_physical,
+        status_physical,
+        *ledger_physical_paths,
+        manifest_physical,
+    }
+    for supplied in (
+        intent.pipeline_profile_path,
+        intent.candidate_registry_path,
+        intent.candidate_pass_registry_path,
+        intent.measurement_protocol_path,
+        intent.baseline_timeout_path,
+    ):
+        if supplied is not None:
+            protected_files.add(
+                _workspace_regular_path(
+                    root,
+                    supplied,
+                    label="candidate authorization protected input",
+                )[1]
+            )
+    artifact_paths = {
+        plan["base_pipeline_profile"]["path"],
+        plan["reference_toolchain"]["snapshot"]["path"],
+        *(item["manifest"]["path"] for item in plan["suites"]),
+        *(item["path"] for item in plan["measurement_protocols"].values()),
+        *(item["path"] for item in plan["artifacts"].values()),
+        *(item["path"] for item in matrix["profiles"]),
+        *(item["path"] for item in screening["sources"].values()),
+        *(
+            item["run_record_path"]
+            for item in oracle_capture["raw_evidence"].values()
+        ),
+    }
+    artifact_paths.update(
+        item["run_record"]["path"]
+        for item in current_raw_registry["runs"]
+    )
+    if diagnostic_matrix is not None:
+        artifact_paths.update(item["path"] for item in diagnostic_matrix["profiles"])
+        assert status["diagnostic_plan"] is not None
+        artifact_paths.add(status["diagnostic_plan"]["matrix"]["path"])
+    for ledger_path in ledger_physical_paths:
+        ledger_entry = _load_version(
+            ledger_path,
+            "candidate-campaign-status.v1",
+            label="candidate authorization protected ledger entry",
+        )
+        artifact_paths.add(ledger_entry["raw_evidence_registry"]["path"])
+        artifact_paths.update(
+            row["evidence_path"]
+            for row in ledger_entry["tasks"]
+            if row["evidence_path"] is not None
+        )
+        if ledger_entry["diagnostic_plan"] is not None:
+            artifact_paths.update(
+                row["evidence_path"]
+                for row in ledger_entry["diagnostic_plan"]["tasks"]
+                if row["evidence_path"] is not None
+            )
+            diagnostic_study_path = ledger_entry["diagnostic_plan"]["study"][
+                "evidence_path"
+            ]
+            if diagnostic_study_path is not None:
+                artifact_paths.add(diagnostic_study_path)
+    for relative in artifact_paths:
+        protected_files.add(
+            _workspace_regular_path(
+                root,
+                root / relative,
+                label="candidate authorization protected artifact",
+            )[1]
+        )
+
+    compiler_physical = resolve_without_symlinks(
+        intent.compiler_artifact_path,
+        label="candidate authorization compiler artifact",
+    )
+    plan_compiler_physical = resolve_without_symlinks(
+        root / plan["repository"]["compiler_artifact"]["path"],
+        label="candidate authorization frozen compiler artifact",
+    )
+    protected_directories = {
+        state_physical,
+        suite_root_physical,
+        oracle_state_physical,
+        compiler_physical if compiler_physical.is_dir() else compiler_physical.parent,
+        (
+            plan_compiler_physical
+            if plan_compiler_physical.is_dir()
+            else plan_compiler_physical.parent
+        ),
+    }
+    git_control = root / ".git"
+    if git_control.is_dir():
+        protected_directories.add(git_control.absolute())
+    elif git_control.is_file():
+        protected_files.add(git_control.absolute())
+    _require_candidate_output_separation(
+        output_path=output_physical,
+        protected_files=tuple(protected_files),
+        protected_directories=tuple(protected_directories),
+    )
+    raw_snapshot_cache.assert_unchanged()
 
 
 def _candidate_remark_totals(
@@ -3347,6 +5220,12 @@ def _candidate_reference_toolchain_context(
     toolchain = freeze["reference_toolchain"]
     return {
         "snapshot": toolchain["snapshot"],
+        "compile_driver_sha256": toolchain["compile_driver_sha256"],
+        "source_adapter_sha256": toolchain["source_adapter_sha256"],
+        "builtin_header_sha256": toolchain["builtin_header_sha256"],
+        "image_id": toolchain["image_id"],
+        "named_volume_contract": toolchain["named_volume_contract"],
+        "candidate_toolchain": toolchain["candidate_toolchain"],
         "common_tool_versions": toolchain["common_tool_versions"],
         "accela_jdk_version": toolchain["accela_jdk_version"],
         "baselines": [
@@ -3385,7 +5264,32 @@ def _candidate_final_diagnostic_ref(
         "source_study_sha256": diagnostic_plan["source_study_sha256"],
         "matrix": diagnostic_plan["matrix"],
         "top3_candidate_ids": diagnostic_plan["top3_candidate_ids"],
-        "tasks": diagnostic_plan["tasks"],
+        "tasks": [
+            {
+                key: task[key]
+                for key in (
+                    "task_id",
+                    "kind",
+                    "candidate_ids",
+                    "run_id",
+                    "data_role",
+                    "measurement_mode",
+                    "logical_profile_id",
+                    "profile_sha256",
+                    "configuration_sha256",
+                    "profile_path",
+                    "ranking_evidence",
+                    "dependencies",
+                    "status",
+                    "evidence_sha256",
+                    "evidence_physical_sha256",
+                    "started_at",
+                    "completed_at",
+                    "failure_reason",
+                )
+            }
+            for task in diagnostic_plan["tasks"]
+        ],
         "study_status": study["status"],
         "study_ineligibility_reason": study["ineligibility_reason"],
         "study": (
@@ -3418,6 +5322,9 @@ def _require_candidate_final_campaign_identity(
     if (
         previous["campaign_id"] != plan["campaign_id"]
         or previous["plan_sha256"] != plan_sha256
+        or previous["execution_environment_sha256"]
+        != plan["execution_environment_sha256"]
+        or previous["analyzer"] != plan["analyzer"]
         or previous["ready_tasks"] != ["final"]
         or previous_by_id.get("final", {}).get("status") != "pending"
         or final["campaign"]["plan_sha256"] != plan_sha256
@@ -3434,6 +5341,9 @@ def _require_candidate_final_campaign_identity(
         or final["freeze"]["repo_tree"] != plan["repository"]["repo_tree"]
         or final["freeze"]["compiler_artifact"]
         != plan["repository"]["compiler_artifact"]
+        or final["freeze"]["execution_environment_sha256"]
+        != plan["execution_environment_sha256"]
+        or final["freeze"]["analyzer"] != plan["analyzer"]
         or final["freeze"]["raw_evidence_registry"]
         != freeze["b2_campaign"]["raw_evidence_registry"]
     ):
@@ -3554,12 +5464,15 @@ def update_candidate_campaign_status(
     diagnostic_matrix_path: Path | None = None,
     freeze_path: Path | None = None,
     final_path: Path | None = None,
-    raw_evidence_registry_path: Path,
+    raw_evidence_registry: Mapping[str, Any],
+    raw_evidence_registry_output_path: Path,
+    status_output_path: Path,
     workspace_root: Path,
     previous_status_path: Path | None = None,
     status_ledger_paths: Sequence[Path] = (),
     started_at: str | None = None,
     as_of: str | None = None,
+    _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Recompute the sole dependency-safe B1-through-final scheduler view."""
 
@@ -3603,6 +5516,7 @@ def update_candidate_campaign_status(
         _load_and_reverify_candidate_screening(
             screening_path=root / plan["artifacts"]["screening"]["path"],
             workspace_root=root,
+            raw_evidence_verifier=_raw_evidence_verifier,
         )
         != screening
         or
@@ -3640,18 +5554,7 @@ def update_candidate_campaign_status(
         root, root / plan["repository"]["compiler_artifact"]["path"]
     ) != plan["repository"]["compiler_artifact"]:
         raise ValidationError("candidate campaign repository/compiler artifact drifted")
-    protocol = _load_frozen_artifact(
-        root,
-        plan["measurement_protocol"]["artifact"],
-        label="candidate campaign standard measurement protocol",
-        version="measurement-protocol.v1",
-    )
-    if (
-        protocol["measurement_mode"] != "standard_proxy"
-        or protocol["protocol_id"] != plan["measurement_protocol"]["protocol_id"]
-        or sha256_json(protocol) != plan["measurement_protocol"]["protocol_sha256"]
-    ):
-        raise ValidationError("candidate campaign measurement protocol drifted")
+    _verify_candidate_plan_execution_environment(plan, workspace_root=root)
     base = plan["base_pipeline_profile"]
     if (
         base["profile_id"] != "candidate-empty"
@@ -3690,6 +5593,61 @@ def update_candidate_campaign_status(
         if previous_status_path is not None
         else None
     )
+    if (
+        previous is not None
+        and (
+            previous["execution_environment_sha256"]
+            != plan["execution_environment_sha256"]
+            or previous["analyzer"] != plan["analyzer"]
+        )
+    ):
+        raise ValidationError(
+            "previous candidate status execution environment differs from plan"
+        )
+    publication_inputs = [
+        plan_path,
+        *run_paths.values(),
+        *study_paths.values(),
+        *status_ledger_paths,
+        *(
+            [path]
+            if (path := diagnostic_matrix_path) is not None
+            else []
+        ),
+        *([path] if (path := freeze_path) is not None else []),
+        *([path] if (path := final_path) is not None else []),
+        *(
+            [path]
+            if (path := previous_status_path) is not None
+            else []
+        ),
+    ]
+    status_inputs = [
+        *(
+            [previous]
+            if previous is not None
+            else []
+        ),
+        *[
+            _load_version(
+                path,
+                "candidate-campaign-status.v1",
+                label=f"candidate publication ledger entry {index}",
+            )
+            for index, path in enumerate(status_ledger_paths)
+        ],
+    ]
+    publication_inputs.extend(
+        root / item["raw_evidence_registry"]["path"] for item in status_inputs
+    )
+    _require_candidate_campaign_publication_paths(
+        plan=plan,
+        matrix=matrix,
+        workspace_root=root,
+        raw_output_path=raw_evidence_registry_output_path,
+        status_output_path=status_output_path,
+        protected_input_paths=publication_inputs,
+    )
     plan_sha256 = sha256_json(plan)
     chain_started_at, observation_time, previous_sha256 = campaign_status_chain(
         campaign_id=plan["campaign_id"],
@@ -3707,27 +5665,35 @@ def update_candidate_campaign_status(
         raise ConfigurationError("unknown candidate campaign run task: " + ", ".join(unknown))
     if any(tasks[item]["task_type"] != "run" for item in main_run_paths):
         raise ConfigurationError("candidate campaign --run may bind only run tasks")
-    raw_evidence_registry, raw_evidence_registry_artifact = (
-        _load_and_reverify_candidate_raw_evidence_registry(
-            plan=plan,
-            registry_path=raw_evidence_registry_path,
-            workspace_root=root,
-            expected_run_paths=run_paths,
-        )
+    raw_evidence_registry = _reverify_candidate_raw_evidence_registry_document(
+        plan=plan,
+        registry=raw_evidence_registry,
+        workspace_root=root,
+        expected_run_paths=run_paths,
+        raw_evidence_verifier=_raw_evidence_verifier,
+    )
+    raw_evidence_registry_artifact = candidate_raw_evidence_registry_artifact(
+        registry=raw_evidence_registry,
+        output_path=raw_evidence_registry_output_path,
+        workspace_root=root,
     )
     if previous is not None:
         _, previous_raw_registry_artifact = (
             _load_and_reverify_candidate_raw_evidence_registry(
-            plan=plan,
-            registry_path=root / previous["raw_evidence_registry"]["path"],
-            workspace_root=root,
-        )
+                plan=plan,
+                registry_path=root / previous["raw_evidence_registry"]["path"],
+                workspace_root=root,
+                raw_evidence_verifier=_raw_evidence_verifier,
+            )
         )
         if previous_raw_registry_artifact != previous["raw_evidence_registry"]:
             raise ValidationError(
                 "previous candidate status raw-evidence artifact differs"
             )
     raw_verifications = _raw_verifications_by_run_id(raw_evidence_registry)
+    def status_evidence_path(path: Path, *, label: str) -> str:
+        return _workspace_regular_path(root, path, label=label)[2].as_posix()
+
     unknown_studies = sorted(
         set(study_paths) - set(plan["study_ids"]) - {"diagnostic"}
     )
@@ -3748,14 +5714,28 @@ def update_candidate_campaign_status(
                 "evidence_kind": None,
                 "evidence_sha256": None,
                 "evidence_physical_sha256": None,
+                "evidence_path": None,
                 "started_at": None,
                 "completed_at": None,
                 "ineligibility_reason": None,
             }
         else:
             run = _load_version(path, "run-record.v1", label=f"campaign run {task_id}")
-            _validate_campaign_run(plan, task, run, profiles=profiles)
-            binding = _binding_record(run)
+            baseline_task_id = _candidate_timeout_baseline_task_id(task)
+            _validate_campaign_run(
+                plan,
+                task,
+                run,
+                profiles=profiles,
+                baseline_run=(
+                    None
+                    if baseline_task_id is None
+                    else loaded_runs.get(baseline_task_id)
+                ),
+            )
+            binding = _binding_record(
+                run, include_execution_environment=True
+            )
             if (
                 binding["repo_commit"] != plan["repository"]["repo_commit"]
                 or binding["repo_dirty"]
@@ -3777,6 +5757,9 @@ def update_candidate_campaign_status(
                 "evidence_kind": "run-record.v1",
                 "evidence_sha256": sha256_json(run),
                 "evidence_physical_sha256": sha256_file(path),
+                "evidence_path": status_evidence_path(
+                    path, label=f"campaign run evidence {task_id}"
+                ),
                 "started_at": run["started_at"],
                 "completed_at": raw_verifications[run["run_id"]][
                     "terminal_observed_at"
@@ -3801,6 +5784,7 @@ def update_candidate_campaign_status(
                 "evidence_kind": None,
                 "evidence_sha256": None,
                 "evidence_physical_sha256": None,
+                "evidence_path": None,
                 "started_at": None,
                 "completed_at": None,
                 "ineligibility_reason": None,
@@ -3877,6 +5861,9 @@ def update_candidate_campaign_status(
             "evidence_kind": "candidate-study.v1",
             "evidence_sha256": sha256_json(study),
             "evidence_physical_sha256": sha256_file(path),
+            "evidence_path": status_evidence_path(
+                path, label=f"candidate campaign {role} study evidence"
+            ),
             "started_at": study["generated_at"],
             "completed_at": study["generated_at"],
             "ineligibility_reason": None,
@@ -3890,6 +5877,7 @@ def update_candidate_campaign_status(
             "evidence_kind": None,
             "evidence_sha256": None,
             "evidence_physical_sha256": None,
+            "evidence_path": None,
             "started_at": None,
             "completed_at": None,
             "ineligibility_reason": None,
@@ -3899,11 +5887,16 @@ def update_candidate_campaign_status(
             freeze_path, "candidate-freeze.v1", label="candidate campaign freeze"
         )
         _verify_candidate_freeze_inputs(
-            freeze, workspace_root=root, candidate_order=candidate_ids
+            freeze,
+            workspace_root=root,
+            candidate_order=candidate_ids,
+            raw_evidence_verifier=_raw_evidence_verifier,
         )
         if (
             freeze["campaign_id"] != plan["campaign_id"]
             or freeze["b2_campaign"]["plan_sha256"] != plan_sha256
+            or freeze["execution_environment_sha256"]
+            != plan["execution_environment_sha256"]
             or freeze["b2_campaign"]["study_sha256"]
             != statuses_by_id["study.B2"]["evidence_sha256"]
         ):
@@ -3914,6 +5907,7 @@ def update_candidate_campaign_status(
                 registry_path=root
                 / freeze["b2_campaign"]["raw_evidence_registry"]["path"],
                 workspace_root=root,
+                raw_evidence_verifier=_raw_evidence_verifier,
             )
         )
         if (
@@ -3942,6 +5936,9 @@ def update_candidate_campaign_status(
             "evidence_kind": "candidate-freeze.v1",
             "evidence_sha256": sha256_json(freeze),
             "evidence_physical_sha256": sha256_file(freeze_path),
+            "evidence_path": status_evidence_path(
+                freeze_path, label="candidate campaign freeze evidence"
+            ),
             "started_at": freeze["frozen_at"],
             "completed_at": freeze["frozen_at"],
             "ineligibility_reason": None,
@@ -3959,6 +5956,7 @@ def update_candidate_campaign_status(
             "evidence_kind": None,
             "evidence_sha256": None,
             "evidence_physical_sha256": None,
+            "evidence_path": None,
             "started_at": None,
             "completed_at": None,
             "ineligibility_reason": None,
@@ -4033,6 +6031,8 @@ def update_candidate_campaign_status(
             }
             or final_freeze["reference_toolchain"]
             != _candidate_reference_toolchain_context(freeze)
+            or final_freeze["execution_environment_sha256"]
+            != freeze["execution_environment_sha256"]
             or final_freeze["frozen_candidate_ids_sha256"]
             != freeze["frozen_candidate_ids_sha256"]
             or final_freeze["freeze_status_ledger_entry_count"]
@@ -4070,6 +6070,9 @@ def update_candidate_campaign_status(
             "evidence_kind": "candidate-final.v1",
             "evidence_sha256": sha256_json(final),
             "evidence_physical_sha256": sha256_file(final_path),
+            "evidence_path": status_evidence_path(
+                final_path, label="candidate campaign final evidence"
+            ),
             "started_at": final["generated_at"],
             "completed_at": final["generated_at"],
             "ineligibility_reason": None,
@@ -4242,6 +6245,7 @@ def update_candidate_campaign_status(
                 status = "pending"
                 evidence_sha256 = None
                 evidence_physical_sha256 = None
+                evidence_path = None
                 configuration_sha256 = None
                 started_at_value = None
                 completed_at_value = None
@@ -4252,24 +6256,40 @@ def update_candidate_campaign_status(
                     "run-record.v1",
                     label=f"candidate diagnostic run {task_id}",
                 )
+                diagnostic_validation_task = {
+                    "task_id": task_id,
+                    "run_id": f"{plan['run_namespace']}{task_id}",
+                    "kind": kind,
+                    "measurement_mode": measurement_mode,
+                    "candidate_ids": diagnostic_candidate_ids,
+                }
+                baseline_task_id = _candidate_timeout_baseline_task_id(
+                    diagnostic_validation_task
+                )
                 _validate_candidate_diagnostic_run(
-                    task={
-                        "task_id": task_id,
-                        "run_id": f"{plan['run_namespace']}{task_id}",
-                        "measurement_mode": measurement_mode,
-                        "candidate_ids": diagnostic_candidate_ids,
-                    },
+                    task=diagnostic_validation_task,
                     run=run,
                     profile=diagnostic_profiles[profile_record["profile_id"]],
                     candidate_registry_sha256=sha256_json(catalog),
                     pass_registry_sha256=sha256_json(pass_registry),
                     b3_suite=suite_by_role["B3"],
                     freeze=freeze,
+                    baseline_run=(
+                        None
+                        if baseline_task_id is None
+                        else (
+                            loaded_runs.get(baseline_task_id)
+                            or diagnostic_loaded_runs.get(baseline_task_id)
+                        )
+                    ),
                 )
                 status, failure_reason = campaign_run_status(run)
                 diagnostic_loaded_runs[task_id] = run
                 evidence_sha256 = sha256_json(run)
                 evidence_physical_sha256 = sha256_file(path)
+                evidence_path = status_evidence_path(
+                    path, label=f"candidate diagnostic run evidence {task_id}"
+                )
                 configuration_sha256 = run["configuration_sha256"]
                 started_at_value = run["started_at"]
                 completed_at_value = raw_verifications[run["run_id"]][
@@ -4292,6 +6312,7 @@ def update_candidate_campaign_status(
                     "status": status,
                     "evidence_sha256": evidence_sha256,
                     "evidence_physical_sha256": evidence_physical_sha256,
+                    "evidence_path": evidence_path,
                     "started_at": started_at_value,
                     "completed_at": completed_at_value,
                     "failure_reason": failure_reason,
@@ -4328,6 +6349,7 @@ def update_candidate_campaign_status(
                 "evidence_kind": None,
                 "evidence_sha256": None,
                 "evidence_physical_sha256": None,
+                "evidence_path": None,
                 "started_at": None,
                 "completed_at": (
                     diagnostic_tasks[-1]["completed_at"]
@@ -4348,6 +6370,7 @@ def update_candidate_campaign_status(
                 "evidence_kind": None,
                 "evidence_sha256": None,
                 "evidence_physical_sha256": None,
+                "evidence_path": None,
                 "started_at": None,
                 "completed_at": None,
                 "ineligibility_reason": None,
@@ -4392,6 +6415,10 @@ def update_candidate_campaign_status(
                 "evidence_kind": "candidate-study.v1",
                 "evidence_sha256": sha256_json(diagnostic_study),
                 "evidence_physical_sha256": sha256_file(diagnostic_study_path),
+                "evidence_path": status_evidence_path(
+                    diagnostic_study_path,
+                    label="candidate diagnostic study evidence",
+                ),
                 "started_at": diagnostic_study["generated_at"],
                 "completed_at": diagnostic_study["generated_at"],
                 "ineligibility_reason": None,
@@ -4558,6 +6585,7 @@ def update_candidate_campaign_status(
             diagnostic_study_path=study_paths.get("diagnostic"),
             freeze_path=freeze_path,
             final_id=final["final_id"],
+            _raw_evidence_verifier=_raw_evidence_verifier,
         )
         _require_exact_candidate_final_derivation(final, expected_final)
 
@@ -4618,6 +6646,10 @@ def update_candidate_campaign_status(
             "schema_version": "candidate-campaign-status.v1",
             "campaign_id": plan["campaign_id"],
             "plan_sha256": plan_sha256,
+            "execution_environment_sha256": plan[
+                "execution_environment_sha256"
+            ],
+            "analyzer": plan["analyzer"],
             "previous_status_sha256": previous_sha256,
             "state": state,
             "started_at": chain_started_at,
@@ -4639,7 +6671,7 @@ def _clean_repository_identity(
     def git(*arguments: str) -> str:
         try:
             result = subprocess.run(
-                ("git", "-C", str(root), *arguments),
+                ("git", "--no-optional-locks", "-C", str(root), *arguments),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -4674,12 +6706,49 @@ def _clean_repository_identity(
     return head, tree
 
 
+def _reverify_candidate_status_evidence(
+    *,
+    workspace_root: Path,
+    row: Mapping[str, Any],
+    version: str,
+    label: str,
+    cache: dict[tuple[str, str], dict[str, str]] | None = None,
+) -> dict[str, str] | None:
+    evidence_path = row["evidence_path"]
+    if evidence_path is None:
+        return None
+    root = _candidate_workspace_root(workspace_root)
+    _, physical, relative = _workspace_regular_path(
+        root,
+        root / evidence_path,
+        label=label,
+    )
+    key = (relative.as_posix(), version)
+    artifact = None if cache is None else cache.get(key)
+    if artifact is None:
+        document = _load_version(physical, version, label=label)
+        artifact = {
+            "path": relative.as_posix(),
+            "canonical_sha256": sha256_json(document),
+            "physical_sha256": sha256_file(physical),
+        }
+        if cache is not None:
+            cache[key] = artifact
+    if (
+        artifact["canonical_sha256"] != row["evidence_sha256"]
+        or artifact["physical_sha256"] != row["evidence_physical_sha256"]
+    ):
+        raise ValidationError(f"{label} canonical/physical identity differs")
+    return artifact
+
+
 def _validate_candidate_status_ledger(
     *,
     plan: Mapping[str, Any],
     status: Mapping[str, Any],
     ledger_paths: Sequence[Path],
     workspace_root: Path,
+    raw_evidence_verifier: Any | None = None,
 ) -> tuple[
     int,
     str,
@@ -4694,6 +6763,7 @@ def _validate_candidate_status_ledger(
     started_at: str | None = None
     entries: list[dict[str, Any]] = []
     identities: list[dict[str, str]] = []
+    evidence_cache: dict[tuple[str, str], dict[str, str]] = {}
     for index, path in enumerate(ledger_paths):
         physical_path = resolve_without_symlinks(
             path, label=f"candidate status ledger entry {index}"
@@ -4710,20 +6780,75 @@ def _validate_candidate_status_ledger(
         if (
             entry["campaign_id"] != plan["campaign_id"]
             or entry["plan_sha256"] != plan_digest
+            or entry["execution_environment_sha256"]
+            != plan["execution_environment_sha256"]
+            or entry["analyzer"] != plan["analyzer"]
         ):
             raise ValidationError("candidate status ledger entry binds another plan")
-        _, raw_registry_artifact = (
+        raw_registry, raw_registry_artifact = (
             _load_and_reverify_candidate_raw_evidence_registry(
                 plan=plan,
                 registry_path=_candidate_workspace_root(workspace_root)
                 / entry["raw_evidence_registry"]["path"],
                 workspace_root=workspace_root,
+                raw_evidence_verifier=raw_evidence_verifier,
             )
         )
         if raw_registry_artifact != entry["raw_evidence_registry"]:
             raise ValidationError(
                 "candidate status ledger raw-evidence artifact differs"
             )
+        raw_runs_by_task = {
+            item["task_id"]: item["run_record"] for item in raw_registry["runs"]
+        }
+        for row in entry["tasks"]:
+            evidence_kind = row["evidence_kind"]
+            if evidence_kind is None:
+                continue
+            artifact = _reverify_candidate_status_evidence(
+                workspace_root=workspace_root,
+                row=row,
+                version=evidence_kind,
+                label=f"candidate status ledger evidence {row['task_id']}",
+                cache=evidence_cache,
+            )
+            assert artifact is not None
+            if evidence_kind == "run-record.v1" and (
+                raw_runs_by_task.get(row["task_id"]) != artifact
+            ):
+                raise ValidationError(
+                    "candidate status ledger run evidence differs from raw registry"
+                )
+        diagnostic = entry["diagnostic_plan"]
+        if diagnostic is not None:
+            for row in diagnostic["tasks"]:
+                if row["evidence_path"] is None:
+                    continue
+                artifact = _reverify_candidate_status_evidence(
+                    workspace_root=workspace_root,
+                    row=row,
+                    version="run-record.v1",
+                    label=(
+                        "candidate status ledger diagnostic evidence "
+                        + row["task_id"]
+                    ),
+                    cache=evidence_cache,
+                )
+                assert artifact is not None
+                if raw_runs_by_task.get(row["task_id"]) != artifact:
+                    raise ValidationError(
+                        "candidate status ledger diagnostic evidence differs "
+                        "from raw registry"
+                    )
+            diagnostic_study = diagnostic["study"]
+            if diagnostic_study["evidence_path"] is not None:
+                _reverify_candidate_status_evidence(
+                    workspace_root=workspace_root,
+                    row=diagnostic_study,
+                    version="candidate-study.v1",
+                    label="candidate status ledger diagnostic study evidence",
+                    cache=evidence_cache,
+                )
         if previous is None:
             if entry["previous_status_sha256"] is not None:
                 raise ValidationError("candidate status ledger does not start at genesis")
@@ -4752,6 +6877,16 @@ def _validate_candidate_status_ledger(
     assert previous is not None
     if previous != status:
         raise ValidationError("candidate status ledger head differs from --status")
+    for (relative, _), artifact in evidence_cache.items():
+        _, physical, _ = _workspace_regular_path(
+            _candidate_workspace_root(workspace_root),
+            _candidate_workspace_root(workspace_root) / relative,
+            label="candidate status ledger cached evidence",
+        )
+        if sha256_file(physical) != artifact["physical_sha256"]:
+            raise ValidationError(
+                "candidate status ledger evidence changed during validation"
+            )
     return (
         len(entries),
         sha256_json(previous),
@@ -4797,7 +6932,7 @@ def validate_candidate_final_completion(
     _, plan_physical, _ = _workspace_regular_path(
         root, campaign_plan_path, label="candidate report campaign plan"
     )
-    _, final_physical, _ = _workspace_regular_path(
+    _, final_physical, final_relative = _workspace_regular_path(
         root, candidate_final_path, label="candidate report final"
     )
     _, status_physical, _ = _workspace_regular_path(
@@ -4873,6 +7008,7 @@ def validate_candidate_final_completion(
         or final_task["evidence_kind"] != "candidate-final.v1"
         or final_task["evidence_sha256"] != final_sha256
         or final_task["evidence_physical_sha256"] != final_physical_sha256
+        or final_task["evidence_path"] != final_relative.as_posix()
         or final["campaign"]["plan_sha256"] != plan_sha256
         or final["freeze"]["campaign_id"] != plan["campaign_id"]
         or final["freeze"]["run_namespace"] != plan["run_namespace"]
@@ -5056,6 +7192,9 @@ def finalize_candidate_campaign(
     if (
         status["campaign_id"] != plan["campaign_id"]
         or status["plan_sha256"] != plan_digest
+        or status["execution_environment_sha256"]
+        != plan["execution_environment_sha256"]
+        or status["analyzer"] != plan["analyzer"]
         or status_by_id["freeze"]["status"] != "pending"
         or status["ready_tasks"] != ["freeze"]
     ):
@@ -5155,6 +7294,7 @@ def finalize_candidate_campaign(
         hotblock_measurement_protocol_path=hotblock_measurement_protocol_path,
         reference_toolchain_path=reference_toolchain_path,
         workspace_root=workspace_root,
+        include_candidate_workspace_bootstrap=True,
     )
     standard_protocol = environment["measurement_protocols"]["standard_proxy"]
     standard_protocol_document = _load_version(
@@ -5162,24 +7302,12 @@ def finalize_candidate_campaign(
         "measurement-protocol.v1",
         label="standard measurement protocol",
     )
-    if (
-        plan["measurement_protocol"]["protocol_id"]
-        != standard_protocol["protocol_id"]
-        or plan["measurement_protocol"]["protocol_sha256"]
-        != standard_protocol["protocol_sha256"]
-        or plan["measurement_protocol"]["artifact"]
-        != _frozen_artifact_digest(
-            workspace_root,
-            measurement_protocol_path,
-            standard_protocol_document,
-            label="standard measurement protocol",
-        )
-    ):
-        raise ValidationError("candidate freeze standard protocol differs from plan")
     binding = study["bindings"]
     if (
         binding["repo_dirty"]
         or binding["tracked_diff_sha256"] is not None
+        or binding["execution_environment_sha256"]
+        != plan["execution_environment_sha256"]
         or binding["measurement_protocol_id"] != standard_protocol["protocol_id"]
         or binding["measurement_protocol_sha256"]
         != standard_protocol["protocol_sha256"]
@@ -5262,7 +7390,10 @@ def finalize_candidate_campaign(
         contract["path"] = artifact["path"]
         contract["physical_sha256"] = artifact["physical_sha256"]
         frozen_protocols[mode] = contract
-
+    if frozen_protocols != plan["measurement_protocols"]:
+        raise ValidationError("candidate freeze measurement protocols differ from plan")
+    if environment["analyzer"] != plan["analyzer"]:
+        raise ValidationError("candidate freeze analyzer contract differs from plan")
     toolchain_document = read_json(reference_toolchain_path)
     if not isinstance(toolchain_document, dict):
         raise ValidationError("candidate reference toolchain must be a JSON object")
@@ -5277,6 +7408,18 @@ def finalize_candidate_campaign(
     if toolchain_artifact["physical_sha256"] != expected_toolchain_physical:
         raise ValidationError("candidate reference toolchain physical hash differs")
     toolchain_contract["snapshot"] = toolchain_artifact
+    if toolchain_contract != plan["reference_toolchain"]:
+        raise ValidationError("candidate freeze toolchain contract differs from plan")
+    execution_environment_sha256 = candidate_execution_environment_sha256(
+        environment={
+            **environment,
+            "measurement_protocols": frozen_protocols,
+            "reference_toolchain": toolchain_contract,
+        },
+        compiler_artifact_sha256=compiler_artifact["physical_sha256"],
+    )
+    if plan["execution_environment_sha256"] != execution_environment_sha256:
+        raise ValidationError("candidate freeze execution environment differs from plan")
 
     schema_paths = {
         "run_record_schema": workspace_root
@@ -5360,6 +7503,8 @@ def finalize_candidate_campaign(
             "suites": suites,
             "measurement_protocols": frozen_protocols,
             "reference_toolchain": toolchain_contract,
+            "analyzer": environment["analyzer"],
+            "execution_environment_sha256": execution_environment_sha256,
             "gates": {
                 "oracle_structure_geometric_mean_minimum": 1.10,
                 "b3_geometric_mean_strictly_above": 1.0,
@@ -5413,6 +7558,7 @@ def build_candidate_final(
     diagnostic_study_path: Path | None,
     freeze_path: Path,
     final_id: str,
+    _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Build the B3/B4/B5/B6 final using equal weight for all 267 cases."""
 
@@ -5440,11 +7586,15 @@ def build_candidate_final(
         status=campaign_status,
         ledger_paths=status_ledger_paths,
         workspace_root=workspace_root,
+        raw_evidence_verifier=_raw_evidence_verifier,
     )
     status_by_id = {item["task_id"]: item for item in campaign_status["tasks"]}
     if (
         campaign_status["campaign_id"] != plan["campaign_id"]
         or campaign_status["plan_sha256"] != plan_sha256
+        or campaign_status["execution_environment_sha256"]
+        != plan["execution_environment_sha256"]
+        or campaign_status["analyzer"] != plan["analyzer"]
         or campaign_status["ready_tasks"] != ["final"]
         or status_by_id["final"]["status"] != "pending"
     ):
@@ -5456,6 +7606,7 @@ def build_candidate_final(
             / campaign_status["raw_evidence_registry"]["path"],
             workspace_root=workspace_root,
             expected_run_paths=run_paths,
+            raw_evidence_verifier=_raw_evidence_verifier,
         )
     )
     if raw_evidence_registry_artifact != campaign_status["raw_evidence_registry"]:
@@ -5466,6 +7617,7 @@ def build_candidate_final(
     screening = _load_and_reverify_candidate_screening(
         screening_path=screening_path,
         workspace_root=workspace_root,
+        raw_evidence_verifier=_raw_evidence_verifier,
     )
     catalog = _load_version(
         catalog_path, "candidate-catalog.v1", label="candidate registry"
@@ -5480,6 +7632,7 @@ def build_candidate_final(
         freeze,
         workspace_root=workspace_root,
         candidate_order=[item["candidate_id"] for item in catalog["candidates"]],
+        raw_evidence_verifier=_raw_evidence_verifier,
     )
     _require_candidate_ledger_prefix(
         binding=freeze["b2_campaign"],
@@ -5573,9 +7726,16 @@ def build_candidate_final(
             "candidate final requires every and only hash-bound full-stage raw run"
         )
     plan_tasks = {item["task_id"]: item for item in plan["tasks"]}
-    raw_runs: dict[str, dict[str, Any]] = {}
+    raw_runs: dict[str, dict[str, Any]] = {
+        task_id: _load_version(
+            path,
+            "run-record.v1",
+            label=f"candidate final raw run {task_id}",
+        )
+        for task_id, path in run_paths.items()
+    }
     for task_id, path in run_paths.items():
-        run = _load_version(path, "run-record.v1", label=f"candidate final raw run {task_id}")
+        run = raw_runs[task_id]
         if (
             sha256_json(run) != run_statuses[task_id]["evidence_sha256"]
             or sha256_file(path)
@@ -5586,10 +7746,23 @@ def build_candidate_final(
             task = plan_tasks[task_id]
             if task["task_type"] != "run":
                 raise ValidationError(f"candidate final task is not a run: {task_id}")
-            _validate_campaign_run(plan, task, run, profiles=profiles)
+            baseline_task_id = _candidate_timeout_baseline_task_id(task)
+            _validate_campaign_run(
+                plan,
+                task,
+                run,
+                profiles=profiles,
+                baseline_run=(
+                    None
+                    if baseline_task_id is None
+                    else raw_runs.get(baseline_task_id)
+                ),
+            )
             if task["kind"] == "reference":
                 _require_frozen_reference_run(run, task, freeze)
-            binding = _binding_record(run)
+            binding = _binding_record(
+                run, include_execution_environment=True
+            )
             if (
                 binding["repo_commit"] != plan["repository"]["repo_commit"]
                 or binding["repo_dirty"]
@@ -5605,6 +7778,7 @@ def build_candidate_final(
                 )
         else:
             task = diagnostic_tasks[task_id]
+            baseline_task_id = _candidate_timeout_baseline_task_id(task)
             _validate_candidate_diagnostic_run(
                 task=task,
                 run=run,
@@ -5617,8 +7791,12 @@ def build_candidate_final(
                     item for item in plan["suites"] if item["data_role"] == "B3"
                 ),
                 freeze=freeze,
+                baseline_run=(
+                    None
+                    if baseline_task_id is None
+                    else raw_runs.get(baseline_task_id)
+                ),
             )
-        raw_runs[task_id] = run
     freeze_snapshots = freeze["snapshots"]
     if (
         status_by_id["freeze"]["status"] != "completed"
@@ -5669,10 +7847,10 @@ def build_candidate_final(
             "repo_tree": freeze["repository"]["repo_tree"],
             "compiler_artifact": freeze["repository"]["compiler_artifact"],
         }
-        or plan["measurement_protocol"]["protocol_id"]
-        != freeze["measurement_protocols"]["standard_proxy"]["protocol_id"]
-        or plan["measurement_protocol"]["protocol_sha256"]
-        != freeze["measurement_protocols"]["standard_proxy"]["protocol_sha256"]
+        or plan["execution_environment_sha256"]
+        != freeze["execution_environment_sha256"]
+        or plan["measurement_protocols"] != freeze["measurement_protocols"]
+        or plan["analyzer"] != freeze["analyzer"]
     ):
         raise ValidationError(
             "candidate final inputs differ from the immutable pre-B3 freeze"
@@ -5697,6 +7875,7 @@ def build_candidate_final(
         "repo_dirty",
         "tracked_diff_sha256",
         "compiler_artifact_sha256",
+        "execution_environment_sha256",
         "measurement_protocol_id",
         "measurement_protocol_sha256",
     )
@@ -5758,6 +7937,17 @@ def build_candidate_final(
             != sha256_file(all_study_paths[role])
         ):
             raise ValidationError(f"candidate final {role} study/status hash differs")
+
+    if (
+        common_binding is None
+        or common_binding["execution_environment_sha256"]
+        != freeze["execution_environment_sha256"]
+        or common_binding["compiler_artifact_sha256"]
+        != freeze["repository"]["compiler_artifact"]["physical_sha256"]
+    ):
+        raise ValidationError(
+            "candidate final study execution environment differs from freeze"
+        )
 
     if sha256_json(studies["B2"]) != freeze["b2_campaign"]["study_sha256"]:
         raise ValidationError("candidate final B2 study differs from pre-B3 freeze")
@@ -5847,12 +8037,15 @@ def build_candidate_final(
         _require_candidate_correctness_run(
             run, label=f"B1 candidate {candidate_id}"
         )
-        binding = _binding_record(run)
+        binding = _binding_record(
+            run, include_execution_environment=True
+        )
         for key in (
             "repo_commit",
             "repo_dirty",
             "tracked_diff_sha256",
             "compiler_artifact_sha256",
+            "execution_environment_sha256",
         ):
             if binding[key] != common_binding[key]:
                 raise ValidationError(
@@ -6204,6 +8397,10 @@ def build_candidate_final(
                 "repo_commit": freeze["repository"]["repo_commit"],
                 "repo_tree": freeze["repository"]["repo_tree"],
                 "compiler_artifact": freeze["repository"]["compiler_artifact"],
+                "execution_environment_sha256": freeze[
+                    "execution_environment_sha256"
+                ],
+                "analyzer": freeze["analyzer"],
                 "candidate_registry": freeze["snapshots"]["candidate_registry"],
                 "executable_pass_registry": freeze["snapshots"][
                     "executable_pass_registry"

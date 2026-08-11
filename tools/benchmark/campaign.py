@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .ablation import _require_eligible_attempt_history, _require_formal_measurement
+from .analyzer_contract import candidate_analyzer_contract
 from .candidate_toolchain import load_candidate_toolchain_contract
 from .errors import ConfigurationError, ValidationError
 from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
@@ -84,6 +86,16 @@ _PHASES = (
 )
 _TOTAL_BUDGET_SECONDS = 72 * 60 * 60
 _RUN_RECORD_SCHEMA_RELATIVE_PATH = Path("tools/benchmark/schemas/run-record.v1.json")
+_CANDIDATE_EXECUTION_ENVIRONMENT_SCHEMA = "candidate-execution-environment.v1"
+_CANDIDATE_PROTOCOL_DIGEST_FIELDS = (
+    "protocol_sha256",
+    "runner_command_sha256",
+    "profile_plugin_sha256",
+    "cache_plugin_sha256",
+    "hotblocks_plugin_sha256",
+    "cache_model_sha256",
+    "physical_sha256",
+)
 
 _REFERENCE_BASELINES = REFERENCE_BASELINES
 _REFERENCE_COMMON_SEMANTICS = list(REFERENCE_COMMON_SEMANTICS)
@@ -133,15 +145,20 @@ def require_formal_suite_contract(
 
 
 def _workspace_run_record_schema_sha256(workspace_root: Path) -> str:
-    root = workspace_root.resolve(strict=True)
+    root = resolve_without_symlinks(
+        workspace_root, label="campaign workspace root"
+    )
     if not root.is_dir():
         raise ConfigurationError("campaign workspace root must be a directory")
-    physical = (root / _RUN_RECORD_SCHEMA_RELATIVE_PATH).resolve(strict=True)
+    physical = resolve_without_symlinks(
+        root / _RUN_RECORD_SCHEMA_RELATIVE_PATH,
+        label="campaign run-record schema",
+    )
     try:
         physical.relative_to(root)
     except ValueError as exc:
         raise ValidationError("campaign run-record schema escapes the workspace") from exc
-    if not physical.is_file() or physical.is_symlink():
+    if not physical.is_file():
         raise ValidationError("campaign run-record schema is not a physical regular file")
     observed = sha256_file(physical)
     if observed != schema_sha256("run-record.v1"):
@@ -177,6 +194,7 @@ def _reference_toolchain_contract(
     workspace_root: Path,
     measurement_protocols: Mapping[str, Mapping[str, Any]],
     measurement_protocol_paths: Mapping[str, Path],
+    include_candidate_workspace_bootstrap: bool,
 ) -> dict[str, Any]:
     snapshot = _read_json_object(path, label="reference toolchain snapshot")
     try:
@@ -369,6 +387,8 @@ def _reference_toolchain_contract(
     candidate_toolchain = load_candidate_toolchain_contract(
         root=root, snapshot_path=path
     )
+    if not include_candidate_workspace_bootstrap:
+        candidate_toolchain.pop("workspace_bootstrap")
     candidate_docker_cli = dict(candidate_toolchain["docker_cli"])
     candidate_docker_cli.pop("install_path")
     candidate_docker_cli["install_path_id"] = "usr-local-bin-docker-v1"
@@ -422,6 +442,7 @@ def build_campaign_environment_contract(
     hotblock_measurement_protocol_path: Path,
     reference_toolchain_path: Path,
     workspace_root: Path,
+    include_candidate_workspace_bootstrap: bool = False,
 ) -> dict[str, Any]:
     """Verify and normalize the shared formal-campaign environment freeze.
 
@@ -455,14 +476,140 @@ def build_campaign_environment_contract(
             "standard_proxy": measurement_protocol_path,
             "cache_hotblock": hotblock_measurement_protocol_path,
         },
+        include_candidate_workspace_bootstrap=include_candidate_workspace_bootstrap,
     )
-    return {
+    environment = {
         "run_record_schema_sha256": _workspace_run_record_schema_sha256(
             workspace_root
         ),
         "measurement_protocols": measurement_protocols,
         "reference_toolchain": reference_toolchain,
     }
+    if include_candidate_workspace_bootstrap:
+        environment["analyzer"] = candidate_analyzer_contract()
+    return environment
+
+
+def candidate_execution_environment_sha256(
+    *, environment: Mapping[str, Any], compiler_artifact_sha256: str
+) -> str:
+    """Hash the one formal candidate execution environment.
+
+    This deliberately binds both measurement protocols, the full normalized
+    reference/candidate toolchain (including workspace bootstrap provenance),
+    the active run schema, and the ACCELA compiler artifact used by candidate
+    legs. Reference legs share this environment hash while retaining their own
+    frozen frontend snapshot as ``compiler_artifact_sha256`` provenance.
+    """
+
+    if set(environment) != {
+        "run_record_schema_sha256",
+        "measurement_protocols",
+        "reference_toolchain",
+        "analyzer",
+    }:
+        raise ValidationError("candidate execution environment fields differ")
+    if environment["analyzer"] != candidate_analyzer_contract():
+        raise ValidationError("candidate execution environment analyzer differs")
+    if (
+        re.fullmatch(r"[0-9a-f]{64}", compiler_artifact_sha256) is None
+        or compiler_artifact_sha256 == "0" * 64
+        or re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(environment["run_record_schema_sha256"]),
+        )
+        is None
+        or environment["run_record_schema_sha256"] == "0" * 64
+    ):
+        raise ValidationError(
+            "candidate execution environment contains a placeholder hash"
+        )
+    try:
+        reference_toolchain = environment["reference_toolchain"]
+        reference_snapshot = reference_toolchain["snapshot"]
+    except (KeyError, TypeError) as exc:
+        raise ValidationError(
+            "candidate execution environment lacks frozen toolchain provenance"
+        ) from exc
+    if not isinstance(reference_toolchain, Mapping) or not isinstance(
+        reference_snapshot, Mapping
+    ):
+        raise ValidationError(
+            "candidate execution environment toolchain snapshot differs"
+        )
+    try:
+        reference_toolchain["candidate_toolchain"]["workspace_bootstrap"]
+    except (KeyError, TypeError) as exc:
+        raise ValidationError(
+            "candidate execution environment lacks workspace bootstrap provenance"
+        ) from exc
+    if "snapshot_sha256" in reference_toolchain:
+        raise ValidationError(
+            "candidate execution environment uses an unfrozen toolchain snapshot"
+        )
+    try:
+        validate_relative_path(
+            reference_snapshot["path"],
+            label="candidate execution environment toolchain snapshot path",
+        )
+    except (KeyError, TypeError) as exc:
+        raise ValidationError(
+            "candidate execution environment toolchain snapshot differs"
+        ) from exc
+    for key in ("canonical_sha256", "physical_sha256"):
+        value = reference_snapshot.get(key)
+        if (
+            not isinstance(value, str)
+            or re.fullmatch(r"[0-9a-f]{64}", value) is None
+            or value == "0" * 64
+        ):
+            raise ValidationError(
+                "candidate execution environment toolchain snapshot differs"
+            )
+    protocols = environment["measurement_protocols"]
+    if not isinstance(protocols, Mapping) or set(protocols) != {
+        "standard_proxy",
+        "cache_hotblock",
+    }:
+        raise ValidationError(
+            "candidate execution environment must bind both measurement protocols"
+        )
+    for mode in ("standard_proxy", "cache_hotblock"):
+        protocol = protocols[mode]
+        if not isinstance(protocol, Mapping):
+            raise ValidationError(
+                f"candidate execution environment {mode} protocol binding differs"
+            )
+        digest_values = [
+            protocol.get(key) for key in _CANDIDATE_PROTOCOL_DIGEST_FIELDS
+        ]
+        if (
+            protocol.get("measurement_mode") != mode
+            or not isinstance(protocol.get("path"), str)
+            or any(
+                not isinstance(value, str)
+                or re.fullmatch(r"[0-9a-f]{64}", value) is None
+                or value == "0" * 64
+                for value in digest_values
+            )
+        ):
+            raise ValidationError(
+                f"candidate execution environment {mode} protocol binding differs"
+            )
+        validate_relative_path(
+            protocol.get("path"),
+            label=f"candidate execution environment {mode} protocol path",
+        )
+    return sha256_json(
+        {
+            "schema_version": _CANDIDATE_EXECUTION_ENVIRONMENT_SCHEMA,
+            "run_record_schema_sha256": environment["run_record_schema_sha256"],
+            "compiler_artifact_sha256": compiler_artifact_sha256,
+            "measurement_protocols": environment["measurement_protocols"],
+            "reference_toolchain": environment["reference_toolchain"],
+            "analyzer": environment["analyzer"],
+        }
+    )
 
 
 def _parse_timestamp(value: str, *, label: str) -> datetime:

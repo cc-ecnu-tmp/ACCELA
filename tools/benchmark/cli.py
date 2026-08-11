@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -20,6 +21,7 @@ from .candidates import (
     update_candidate_campaign_status,
 )
 from .journal import durable_create_json
+from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .adapters import StageSpec
 from .errors import BenchmarkError, ConfigurationError
 from .execution import MeasurementSpec, RunOptions, RunProvenance, ToolVersion, run_benchmark
@@ -81,6 +83,8 @@ def _workspace_input_path(
         relative = lexical.relative_to(workspace_root)
     except ValueError as exc:
         raise ConfigurationError(f"{label} must be contained by --workspace-root") from exc
+    if ".accela-benchmark-locks" in relative.parts:
+        raise ConfigurationError(f"{label} cannot use the benchmark lease namespace")
     cursor = workspace_root
     for component in relative.parts:
         cursor = cursor / component
@@ -131,6 +135,8 @@ def _workspace_immutable_output_path(
         relative = lexical.relative_to(workspace_root)
     except ValueError as exc:
         raise ConfigurationError(f"{label} must be contained by --workspace-root") from exc
+    if ".accela-benchmark-locks" in relative.parts:
+        raise ConfigurationError(f"{label} cannot use the benchmark lease namespace")
     cursor = workspace_root
     for component in relative.parent.parts:
         cursor = cursor / component
@@ -144,17 +150,91 @@ def _workspace_immutable_output_path(
     return lexical
 
 
-def _publish_immutable_json(path: Path, value: Mapping[str, Any], *, label: str) -> None:
+def _preflight_immutable_json(
+    path: Path, value: Mapping[str, Any], *, label: str
+) -> None:
     expected = canonical_json_bytes(value) + b"\n"
     if path.exists():
         if not path.is_file() or path.read_bytes() != expected:
             raise ConfigurationError(f"{label} already exists with different bytes")
+
+
+def _publish_immutable_json(path: Path, value: Mapping[str, Any], *, label: str) -> None:
+    expected = canonical_json_bytes(value) + b"\n"
+    _preflight_immutable_json(path, value, label=label)
+    if path.exists():
         return
     try:
         durable_create_json(path, value)
     except BenchmarkError:
         if not path.is_file() or path.read_bytes() != expected:
             raise
+
+
+def _publish_candidate_status_pair(
+    *,
+    raw_path: Path,
+    raw_document: Mapping[str, Any],
+    status_path: Path,
+    status_document: Mapping[str, Any],
+) -> None:
+    """Publish the raw registry followed by its status commit marker.
+
+    Full campaign validation happens before this helper is called.  The stable
+    pair of output leases prevents two orchestrators from publishing the same
+    paths with their raw/status roles reversed.  Preflight is repeated while
+    both leases are held so no cooperating writer can invalidate the decision.
+    """
+
+    if raw_path == status_path:
+        raise ConfigurationError(
+            "candidate raw registry and campaign status outputs must differ"
+        )
+
+    def preflight() -> None:
+        if status_path.exists() and not raw_path.exists():
+            raise ConfigurationError(
+                "candidate campaign status exists without its raw evidence registry"
+            )
+        _preflight_immutable_json(
+            raw_path,
+            raw_document,
+            label="candidate raw evidence registry output",
+        )
+        _preflight_immutable_json(
+            status_path,
+            status_document,
+            label="candidate campaign status output",
+        )
+
+    preflight()
+    output_paths = sorted(
+        (raw_path, status_path),
+        key=lambda path: path_identity(path),
+    )
+    with ExitStack() as stack:
+        for output_path in output_paths:
+            stack.enter_context(
+                ExclusiveFileLease(
+                    output_lease_path(output_path),
+                    "candidate campaign publication",
+                    {
+                        "campaign_id": status_document["campaign_id"],
+                        "output_path_sha256": path_identity(output_path),
+                    },
+                )
+            )
+        preflight()
+        _publish_immutable_json(
+            raw_path,
+            raw_document,
+            label="candidate raw evidence registry output",
+        )
+        _publish_immutable_json(
+            status_path,
+            status_document,
+            label="candidate campaign status output",
+        )
 
 
 def _workspace_artifact_path(
@@ -350,11 +430,11 @@ def _stage(
 
 
 def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
-    manifest_path = args.manifest.resolve(strict=True)
-    suite_root = (args.suite_root or manifest_path.parent).resolve(strict=True)
+    manifest_path = args.manifest.absolute()
+    suite_root = (args.suite_root or manifest_path.parent).absolute()
     workspace_root = args.workspace_root.resolve(strict=True)
-    output_path = args.output.resolve()
-    state_root = (args.state_dir or (output_path.parent / ".benchmark-state")).resolve()
+    output_path = args.output.absolute()
+    state_root = (args.state_dir or (output_path.parent / ".benchmark-state")).absolute()
     compiler = _stage(
         command_json=args.compiler_command_json,
         label="compiler-command-json",
@@ -440,14 +520,42 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
         args.candidate_pass_registry,
         label="candidate pass registry",
     )
+    candidate_campaign_plan_path = _workspace_input_path(
+        workspace_root,
+        getattr(args, "candidate_campaign_plan", None),
+        label="candidate campaign authorization plan",
+    )
+    candidate_campaign_status_path = _workspace_input_path(
+        workspace_root,
+        getattr(args, "candidate_campaign_status", None),
+        label="candidate campaign authorization status",
+    )
+    candidate_status_ledger_paths = tuple(
+        _workspace_input_path(
+            workspace_root,
+            path,
+            label="candidate campaign authorization ledger entry",
+        )
+        for path in getattr(args, "candidate_status_ledger", ())
+    )
+    if any(path is None for path in candidate_status_ledger_paths):
+        raise AssertionError("candidate status ledger path normalization failed")
     pipeline_profile_sha256 = (
         args.pipeline_profile_sha256
         if args.pipeline_profile_sha256 is not None
         else sha256_artifact(pipeline_profile_path)
     )
+    measurement_protocol_path = (
+        None if args.measurement_protocol is None else args.measurement_protocol.absolute()
+    )
+    baseline_timeout_path = (
+        None
+        if args.baseline_timeout_run is None
+        else args.baseline_timeout_run.absolute()
+    )
     measurement_protocol = (
-        load_and_validate(args.measurement_protocol.resolve(strict=True))
-        if args.measurement_protocol is not None
+        load_and_validate(measurement_protocol_path.resolve(strict=True))
+        if measurement_protocol_path is not None
         else None
     )
     if measurement_protocol is not None and measurement_protocol["schema_version"] != "measurement-protocol.v1":
@@ -459,6 +567,9 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
         pipeline_profile_id=args.pipeline_profile_id,
         pipeline_profile_sha256=pipeline_profile_sha256,
         compiler_artifact_sha256=sha256_artifact(args.compiler_artifact),
+        execution_environment_sha256=getattr(
+            args, "execution_environment_sha256", None
+        ),
         measurement_protocol_id=(
             None if measurement_protocol is None else measurement_protocol["protocol_id"]
         ),
@@ -476,14 +587,21 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
         linker=linker,
         runner=runner,
         provenance=provenance,
+        compiler_artifact_path=args.compiler_artifact.absolute(),
         pipeline_profile_path=pipeline_profile_path,
         candidate_registry_path=candidate_registry_path,
         candidate_pass_registry_path=candidate_pass_registry_path,
-        measurement_protocol_path=args.measurement_protocol,
+        measurement_protocol_path=measurement_protocol_path,
         measurement_protocol_assets=tuple(
             (key, Path(value))
             for key, value in _parse_assignments(args.measurement_asset, "measurement asset").items()
         ),
+        candidate_campaign_plan_path=candidate_campaign_plan_path,
+        candidate_campaign_status_path=candidate_campaign_status_path,
+        candidate_status_ledger_paths=tuple(
+            path for path in candidate_status_ledger_paths if path is not None
+        ),
+        candidate_task_id=getattr(args, "candidate_task_id", None),
         analyzer=analyzer,
         compile_timeout_seconds=args.compile_timeout,
         compile_repetitions=args.compile_repetitions,
@@ -492,7 +610,7 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
         analyze_timeout_seconds=args.analyze_timeout,
         run_timeout_seconds=args.run_timeout,
         timeout_policy=args.timeout_policy,
-        baseline_timeout_path=args.baseline_timeout_run,
+        baseline_timeout_path=baseline_timeout_path,
         timeout_minimum_seconds=args.timeout_minimum,
         timeout_multiplier=args.timeout_multiplier,
         timeout_cap_seconds=args.timeout_cap,
@@ -523,7 +641,9 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
     )
 
 
-def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_run_arguments(
+    parser: argparse.ArgumentParser, *, include_candidate_authorization: bool
+) -> None:
     parser.add_argument("manifest", type=_path)
     parser.add_argument("--suite-root", type=_path)
     parser.add_argument("--workspace-root", type=_path, required=True)
@@ -548,6 +668,21 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         help="physical pass-registry.v2 snapshot bound by candidate-catalog.v1",
     )
     parser.add_argument("--compiler-artifact", type=_path, required=True, help="compiler binary or classes directory to hash")
+    if include_candidate_authorization:
+        parser.add_argument(
+            "--execution-environment-sha256",
+            help="candidate plan/freeze execution environment SHA-256; required by formal candidate runs",
+        )
+        parser.add_argument("--candidate-campaign-plan", type=_path)
+        parser.add_argument("--candidate-campaign-status", type=_path)
+        parser.add_argument(
+            "--candidate-status-ledger",
+            action="append",
+            default=[],
+            type=_path,
+            metavar="STATUS_JSON",
+        )
+        parser.add_argument("--candidate-task-id")
     parser.add_argument(
         "--measurement-protocol", type=_path,
         help="measurement-protocol.v1 snapshot; required for qemu_proxy evidence",
@@ -718,7 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate_suite = validate_commands.add_parser(
         "suite", help="compile, link, execute, and byte-check all cases without performance ranking"
     )
-    _add_run_arguments(validate_suite)
+    _add_run_arguments(validate_suite, include_candidate_authorization=True)
     validate_suite.set_defaults(
         primary_metric_id="wall_time_ns",
         metric_source="wall_time",
@@ -736,7 +871,7 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("--output", type=_path, required=True)
 
     run = subparsers.add_parser("run", help="compile, link, execute, and verify a benchmark suite")
-    _add_run_arguments(run)
+    _add_run_arguments(run, include_candidate_authorization=True)
 
     oracle = subparsers.add_parser("oracle", help="plan or execute clean-room oracle measurements")
     oracle_commands = oracle.add_subparsers(dest="oracle_command", required=True)
@@ -755,7 +890,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     oracle_run.add_argument("--plan", type=_path, required=True)
     oracle_run.add_argument("--leg", choices=("baseline", "optimized"), required=True)
-    _add_run_arguments(oracle_run)
+    _add_run_arguments(oracle_run, include_candidate_authorization=False)
     oracle_run.set_defaults(compiler_kind="benchmark-compiler", runner_kind="qemu")
 
     candidates = subparsers.add_parser(
@@ -1580,10 +1715,10 @@ def dispatch(args: argparse.Namespace) -> int:
             args.raw_evidence_registry,
             label="candidate raw evidence registry output",
         )
-        _publish_immutable_json(
-            raw_registry_output,
-            raw_registry,
-            label="candidate raw evidence registry output",
+        status_output = _workspace_immutable_output_path(
+            args.workspace_root,
+            args.output,
+            label="candidate campaign status output",
         )
         status = update_candidate_campaign_status(
             plan_path=candidate_plan_path,
@@ -1609,7 +1744,9 @@ def dispatch(args: argparse.Namespace) -> int:
             final_path=_workspace_input_path(
                 args.workspace_root, args.final, label="candidate campaign final"
             ),
-            raw_evidence_registry_path=raw_registry_output,
+            raw_evidence_registry=raw_registry,
+            raw_evidence_registry_output_path=raw_registry_output,
+            status_output_path=status_output,
             workspace_root=args.workspace_root,
             previous_status_path=_workspace_input_path(
                 args.workspace_root,
@@ -1627,14 +1764,11 @@ def dispatch(args: argparse.Namespace) -> int:
             started_at=args.started_at,
             as_of=args.as_of,
         )
-        _publish_immutable_json(
-            _workspace_immutable_output_path(
-                args.workspace_root,
-                args.output,
-                label="candidate campaign status output",
-            ),
-            status,
-            label="candidate campaign status output",
+        _publish_candidate_status_pair(
+            raw_path=raw_registry_output,
+            raw_document=raw_registry,
+            status_path=status_output,
+            status_document=status,
         )
         print(
             json.dumps(

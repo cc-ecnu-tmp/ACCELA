@@ -5,13 +5,15 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "campaign_id", "plan_sha256", "previous_status_sha256",
+    "schema_version", "campaign_id", "plan_sha256", "execution_environment_sha256", "analyzer", "previous_status_sha256",
     "state", "started_at", "as_of", "raw_evidence_registry", "tasks", "ready_tasks", "diagnostic_plan"
   ],
   "properties": {
     "schema_version": {"const": "candidate-campaign-status.v1"},
     "campaign_id": {"$ref": "#/$defs/id"},
     "plan_sha256": {"$ref": "#/$defs/sha256"},
+    "execution_environment_sha256": {"$ref": "#/$defs/sha256"},
+    "analyzer": {"$ref": "#/$defs/analyzer_contract"},
     "previous_status_sha256": {"$ref": "#/$defs/nullable_sha256"},
     "state": {"enum": ["pending", "running", "completed", "failed", "interrupted"]},
     "started_at": {"type": "string", "format": "date-time"},
@@ -36,10 +38,40 @@
       "oneOf": [{"type": "null"}, {"type": "string", "format": "date-time"}]
     },
     "nullable_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+    "analyzer_command": {
+      "type": "object", "additionalProperties": false,
+      "required": ["argv", "command_sha256", "executable"],
+      "properties": {
+        "argv": {
+          "type": "array", "minItems": 15, "maxItems": 19,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256}
+        },
+        "command_sha256": {"$ref": "#/$defs/sha256"},
+        "executable": {"const": "python"}
+      }
+    },
+    "analyzer_contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_version", "adapter", "environment_keys", "commands"],
+      "properties": {
+        "contract_version": {"const": "candidate-binary-analyzer.v1"},
+        "adapter": {"const": "host"},
+        "environment_keys": {"type": "array", "maxItems": 0},
+        "commands": {
+          "type": "object", "additionalProperties": false,
+          "required": ["accela", "gcc", "clang"],
+          "properties": {
+            "accela": {"$ref": "#/$defs/analyzer_command"},
+            "gcc": {"$ref": "#/$defs/analyzer_command"},
+            "clang": {"$ref": "#/$defs/analyzer_command"}
+          }
+        }
+      }
+    },
     "task_status": {
       "type": "object", "additionalProperties": false,
       "required": [
-        "task_id", "status", "evidence_kind", "evidence_sha256", "evidence_physical_sha256", "started_at",
+        "task_id", "status", "evidence_kind", "evidence_sha256", "evidence_physical_sha256", "evidence_path", "started_at",
         "completed_at", "ineligibility_reason"
       ],
       "properties": {
@@ -50,6 +82,7 @@
         },
         "evidence_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "evidence_physical_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "evidence_path": {"$ref": "#/$defs/nullable_path"},
         "started_at": {"$ref": "#/$defs/nullable_time"},
         "completed_at": {"$ref": "#/$defs/nullable_time"},
         "ineligibility_reason": {"$ref": "#/$defs/nullable_id"}
@@ -61,7 +94,7 @@
         "task_id", "kind", "candidate_ids", "run_id", "data_role",
         "measurement_mode", "logical_profile_id", "profile_sha256", "configuration_sha256", "profile_path",
         "ranking_evidence", "dependencies", "status", "evidence_sha256",
-        "evidence_physical_sha256", "started_at", "completed_at", "failure_reason"
+        "evidence_physical_sha256", "evidence_path", "started_at", "completed_at", "failure_reason"
       ],
       "properties": {
         "task_id": {"$ref": "#/$defs/id"},
@@ -85,6 +118,7 @@
         "status": {"enum": ["pending", "running", "completed", "failed", "interrupted"]},
         "evidence_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "evidence_physical_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "evidence_path": {"$ref": "#/$defs/nullable_path"},
         "started_at": {"$ref": "#/$defs/nullable_time"},
         "completed_at": {"$ref": "#/$defs/nullable_time"},
         "failure_reason": {
@@ -96,7 +130,7 @@
       "type": "object", "additionalProperties": false,
       "required": [
         "task_id", "dependencies", "status", "evidence_kind",
-        "evidence_sha256", "evidence_physical_sha256", "started_at",
+        "evidence_sha256", "evidence_physical_sha256", "evidence_path", "started_at",
         "completed_at", "ineligibility_reason"
       ],
       "properties": {
@@ -111,6 +145,7 @@
         },
         "evidence_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "evidence_physical_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "evidence_path": {"$ref": "#/$defs/nullable_path"},
         "started_at": {"$ref": "#/$defs/nullable_time"},
         "completed_at": {"$ref": "#/$defs/nullable_time"},
         "ineligibility_reason": {
@@ -147,6 +182,12 @@
         "canonical_sha256": {"$ref": "#/$defs/sha256"},
         "physical_sha256": {"$ref": "#/$defs/sha256"}
       }
+    },
+    "nullable_path": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1, "maxLength": 4096}
+      ]
     }
   }
 }

@@ -5,6 +5,7 @@ import io
 import math
 import re
 import statistics
+from copy import deepcopy
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -2595,6 +2596,78 @@ def build_candidate_report(
             "physical_sha256": artifact["physical_sha256"],
         }
 
+    def physical_identity(artifact: Mapping[str, Any]) -> dict[str, Any]:
+        return {"physical_sha256": artifact["physical_sha256"]}
+
+    def candidate_toolchain_identity(
+        candidate_toolchain: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        bootstrap = candidate_toolchain["workspace_bootstrap"]
+        python = bootstrap["python"]
+        gradle = bootstrap["gradle"]
+        return {
+            key: deepcopy(candidate_toolchain[key])
+            for key in (
+                "base_image_tag",
+                "base_image_id",
+                "dockerfile_sha256",
+                "docker_cli",
+                "image_tag",
+                "image_id",
+                "rootfs_layers",
+            )
+        } | {
+            "workspace_bootstrap": {
+                "bootstrap_script": physical_identity(
+                    bootstrap["bootstrap_script"]
+                ),
+                "python": {
+                    key: python[key]
+                    for key in (
+                        "version",
+                        "implementation",
+                        "platform_system",
+                        "platform_machine",
+                        "venv_path",
+                        "pip_version",
+                        "setuptools_version",
+                    )
+                }
+                | {
+                    "project_manifest": physical_identity(
+                        python["project_manifest"]
+                    ),
+                    "requirements_lock": physical_identity(
+                        python["requirements_lock"]
+                    ),
+                    "installed_inventory": frozen_artifact_identity(
+                        python["installed_inventory"]
+                    ),
+                },
+                "gradle": {
+                    key: gradle[key]
+                    for key in (
+                        "version",
+                        "distribution_url",
+                        "distribution_sha256",
+                    )
+                }
+                | {
+                    key: physical_identity(gradle[key])
+                    for key in (
+                        "build_file",
+                        "dependency_lock",
+                        "verification_metadata",
+                        "wrapper_jar",
+                        "wrapper_properties",
+                    )
+                },
+                "qemu_plugin_builder": physical_identity(
+                    bootstrap["qemu_plugin_builder"]
+                ),
+            }
+        }
+
     frozen = final["freeze"]
     reference_toolchain = frozen["reference_toolchain"]
     reference_baselines = {
@@ -2613,6 +2686,10 @@ def build_candidate_report(
         "compiler_artifact_physical_sha256": frozen["compiler_artifact"][
             "physical_sha256"
         ],
+        "execution_environment_sha256": frozen[
+            "execution_environment_sha256"
+        ],
+        "analyzer": deepcopy(frozen["analyzer"]),
         "candidate_empty_profile_id": "candidate-empty",
         "candidate_empty_profile": frozen_artifact_identity(
             frozen["base_pipeline_profile"]
@@ -2625,6 +2702,22 @@ def build_candidate_report(
         ),
         "reference_toolchain": {
             "snapshot": frozen_artifact_identity(reference_toolchain["snapshot"]),
+            "compile_driver_sha256": reference_toolchain[
+                "compile_driver_sha256"
+            ],
+            "source_adapter_sha256": reference_toolchain[
+                "source_adapter_sha256"
+            ],
+            "builtin_header_sha256": reference_toolchain[
+                "builtin_header_sha256"
+            ],
+            "image_id": reference_toolchain["image_id"],
+            "named_volume_contract": deepcopy(
+                reference_toolchain["named_volume_contract"]
+            ),
+            "candidate_toolchain": candidate_toolchain_identity(
+                reference_toolchain["candidate_toolchain"]
+            ),
             "common_tool_versions": dict(
                 reference_toolchain["common_tool_versions"]
             ),
@@ -2846,9 +2939,15 @@ def build_candidate_report(
         f"- Freeze / campaign：`{_markdown_cell(frozen_context['freeze_id'])}` / `{_markdown_cell(frozen_context['campaign_id'])}`；freeze canonical SHA-256 `{frozen_context['freeze_sha256']}`。",
         f"- Repository commit / tree：`{frozen_context['repository_commit']}` / `{frozen_context['repository_tree']}`。",
         f"- Compiler artifact physical SHA-256：`{frozen_context['compiler_artifact_physical_sha256']}`。",
+        f"- Candidate execution environment SHA-256：`{frozen_context['execution_environment_sha256']}`。",
+        f"- Binary analyzer：`{_markdown_cell(frozen_context['analyzer']['contract_version'])}`；ACCELA / GCC / Clang command SHA-256 `{frozen_context['analyzer']['commands']['accela']['command_sha256']}` / `{frozen_context['analyzer']['commands']['gcc']['command_sha256']}` / `{frozen_context['analyzer']['commands']['clang']['command_sha256']}`。",
         f"- Candidate-empty FULL profile：`{frozen_context['candidate_empty_profile_id']}`；canonical / physical SHA-256 `{frozen_context['candidate_empty_profile']['canonical_sha256']}` / `{frozen_context['candidate_empty_profile']['physical_sha256']}`。",
         f"- Standard protocol canonical / physical SHA-256：`{frozen_context['standard_measurement_protocol']['canonical_sha256']}` / `{frozen_context['standard_measurement_protocol']['physical_sha256']}`；hotblock protocol：`{frozen_context['hotblock_measurement_protocol']['canonical_sha256']}` / `{frozen_context['hotblock_measurement_protocol']['physical_sha256']}`。",
         f"- Reference toolchain snapshot canonical / physical SHA-256：`{frozen_context['reference_toolchain']['snapshot']['canonical_sha256']}` / `{frozen_context['reference_toolchain']['snapshot']['physical_sha256']}`；ACCELA JDK `{_markdown_cell(frozen_context['reference_toolchain']['accela_jdk_version'])}`。",
+        f"- Reference image ID：`{frozen_context['reference_toolchain']['image_id']}`；formal workspace volume `{_markdown_cell(frozen_context['reference_toolchain']['named_volume_contract']['name'])}`。",
+        f"- Candidate image ID：`{frozen_context['reference_toolchain']['candidate_toolchain']['image_id']}`；base image ID `{frozen_context['reference_toolchain']['candidate_toolchain']['base_image_id']}`；Dockerfile SHA-256 `{frozen_context['reference_toolchain']['candidate_toolchain']['dockerfile_sha256']}`。",
+        f"- Python bootstrap：CPython `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['python']['version']}` / pip `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['python']['pip_version']}` / setuptools `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['python']['setuptools_version']}`；requirements lock physical SHA-256 `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['python']['requirements_lock']['physical_sha256']}`；installed inventory canonical / physical SHA-256 `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['python']['installed_inventory']['canonical_sha256']}` / `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['python']['installed_inventory']['physical_sha256']}`。",
+        f"- Gradle bootstrap：`{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['gradle']['version']}` distribution SHA-256 `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['gradle']['distribution_sha256']}`；dependency lock / verification metadata physical SHA-256 `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['gradle']['dependency_lock']['physical_sha256']}` / `{frozen_context['reference_toolchain']['candidate_toolchain']['workspace_bootstrap']['gradle']['verification_metadata']['physical_sha256']}`。",
         "",
         "| 冻结公共工具 | 版本 |",
         "|---|---|",

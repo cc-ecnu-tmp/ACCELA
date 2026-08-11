@@ -43,7 +43,7 @@
     "bindings": {
       "type": "object", "additionalProperties": false,
       "required": [
-        "repo_commit", "repo_dirty", "tracked_diff_sha256", "compiler_artifact_sha256",
+        "repo_commit", "repo_dirty", "tracked_diff_sha256", "compiler_artifact_sha256", "execution_environment_sha256",
         "measurement_protocol_id", "measurement_protocol_sha256",
         "pipeline_profile_id", "pipeline_profile_sha256"
       ],
@@ -52,6 +52,7 @@
         "repo_dirty": {"type": "boolean"},
         "tracked_diff_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "compiler_artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "execution_environment_sha256": {"$ref": "#/$defs/sha256"},
         "measurement_protocol_id": {"$ref": "#/$defs/nullable_id"},
         "measurement_protocol_sha256": {"$ref": "#/$defs/nullable_sha256"},
         "pipeline_profile_id": {"$ref": "#/$defs/id"},

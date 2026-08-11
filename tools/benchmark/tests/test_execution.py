@@ -16,13 +16,22 @@ from typing import Any
 import pytest
 
 from tools.benchmark import cache as cache_module
+from tools.benchmark import execution as execution_module
 from tools.benchmark import journal as journal_module
+from tools.benchmark.analyzer_contract import (
+    FORMAL_ANALYZER_MODULE,
+    FORMAL_ANALYZER_TOOLCHAINS,
+    candidate_analyzer_contract,
+)
+from tools.benchmark.candidate_workspace import VENV_PATH
 from tools.benchmark.execution import (
     BenchmarkRun,
     MeasurementSpec,
+    _validate_options,
     _summary,
     run_benchmark,
     verify_run_raw_evidence,
+    verify_run_raw_evidence_read_only_snapshot,
 )
 from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
 from tools.benchmark.journal import AttemptJournal
@@ -40,6 +49,254 @@ class InjectedCommittedPhaseError(RuntimeError):
 
 class InjectedTerminalPublishError(RuntimeError):
     pass
+
+
+def _with_formal_authorization(options, *, task_id: str):
+    return replace(
+        options,
+        compiler_artifact_path=options.workspace_root / "fixture_tool.py",
+        candidate_campaign_plan_path=options.manifest_path,
+        candidate_campaign_status_path=options.manifest_path,
+        candidate_status_ledger_paths=(options.manifest_path,),
+        candidate_task_id=task_id,
+    )
+
+
+def test_formal_analyzer_contract_is_canonical_and_hash_bound() -> None:
+    contract = candidate_analyzer_contract()
+    assert tuple(contract["commands"]) == FORMAL_ANALYZER_TOOLCHAINS
+    for toolchain, command in contract["commands"].items():
+        argv = command["argv"]
+        assert argv[:4] == [
+            f"{VENV_PATH}/bin/python",
+            "-I",
+            "-m",
+            FORMAL_ANALYZER_MODULE,
+        ]
+        assert argv[argv.index("--timeout") + 1] == "60"
+        assert ("--remarks" in argv) == (toolchain == "accela")
+        assert command["command_sha256"] == sha256_json(
+            {"command": argv, "environment": {}}
+        )
+
+
+def test_execution_environment_provenance_round_trips_and_rejects_placeholders(
+    benchmark_fixture,
+) -> None:
+    *_unused, make_options = benchmark_fixture
+    options = make_options(
+        output_name="environment-provenance.json",
+        run_id="environment-provenance",
+        additional_metrics=(
+            MeasurementSpec("elf_text_bytes", "analyzer", "bytes"),
+        ),
+    )
+    assert options.provenance.as_record() == {
+        "repo_commit": options.provenance.repo_commit,
+        "repo_dirty": options.provenance.repo_dirty,
+        "tracked_diff_sha256": options.provenance.tracked_diff_sha256,
+        "pipeline_profile_id": options.provenance.pipeline_profile_id,
+        "pipeline_profile_sha256": options.provenance.pipeline_profile_sha256,
+        "compiler_artifact_sha256": (
+            options.provenance.compiler_artifact_sha256
+        ),
+        "measurement_protocol_id": options.provenance.measurement_protocol_id,
+        "measurement_protocol_sha256": (
+            options.provenance.measurement_protocol_sha256
+        ),
+    }
+    analyzer_contract = candidate_analyzer_contract()
+    analyzer_argv = tuple(analyzer_contract["commands"]["accela"]["argv"])
+    bound = _with_formal_authorization(
+        replace(
+            options,
+            analyzer=StageSpec("analyzer", "host", analyzer_argv, {}),
+            analysis_file="analysis/binary.json",
+            provenance=replace(
+                options.provenance,
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id="run.B3.fixture",
+    )
+    _validate_options(bound)
+    assert bound.provenance.as_record()["execution_environment_sha256"] == "a" * 64
+    with pytest.raises(ConfigurationError, match="complete ledger"):
+        _validate_options(replace(bound, candidate_status_ledger_paths=()))
+    with pytest.raises(ConfigurationError, match="formal campaign authorization"):
+        _validate_options(
+            replace(
+                options,
+                candidate_registry_path=options.manifest_path,
+            )
+        )
+    wrong_argv = list(analyzer_argv)
+    wrong_argv[1] = "-E"
+    for index, analyzer in enumerate(
+        (
+            StageSpec("analyzer", "host", tuple(wrong_argv), {}),
+            StageSpec("analyzer", "wsl", analyzer_argv, {}),
+            StageSpec(
+                "analyzer",
+                "host",
+                analyzer_argv,
+                {"PYTHONPATH": "ambient-modules"},
+            ),
+        )
+    ):
+        wrong_analyzer = replace(
+            bound,
+            analyzer=analyzer,
+            output_path=bound.output_path.with_name(f"wrong-analyzer-{index}.json"),
+            state_root=bound.state_root.with_name(f"wrong-analyzer-state-{index}"),
+        )
+        with pytest.raises(ConfigurationError, match="analyzer contract differs"):
+            run_benchmark(wrong_analyzer)
+        assert not wrong_analyzer.output_path.exists()
+        assert not wrong_analyzer.state_root.exists()
+    for invalid in ("0" * 64, "A" * 64, "short"):
+        with pytest.raises(ConfigurationError, match="nonzero SHA-256"):
+            _validate_options(
+                replace(
+                    options,
+                    provenance=replace(
+                        options.provenance,
+                        execution_environment_sha256=invalid,
+                    ),
+                )
+            )
+
+
+def test_formal_candidate_authorization_fails_before_state_output_or_lease(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    *_unused, make_options = benchmark_fixture
+    options = make_options(
+        output_name="unauthorized-formal.json",
+        run_id="unauthorized-formal",
+        additional_metrics=(
+            MeasurementSpec("elf_text_bytes", "analyzer", "bytes"),
+        ),
+    )
+    analyzer = StageSpec(
+        "analyzer",
+        "host",
+        tuple(candidate_analyzer_contract()["commands"]["accela"]["argv"]),
+        {},
+    )
+    bound = _with_formal_authorization(
+        replace(
+            options,
+            analyzer=analyzer,
+            analysis_file="analysis/binary.json",
+            provenance=replace(
+                options.provenance,
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id="run.B3.fixture",
+    )
+
+    def reject(_intent: object) -> None:
+        raise ValidationError("injected pre-lease authorization rejection")
+
+    monkeypatch.setattr(
+        execution_module,
+        "authorize_candidate_run_prelease",
+        reject,
+    )
+    lease_path = output_lease_path(bound.output_path)
+    assert not bound.output_path.exists()
+    assert not bound.state_root.exists()
+    assert not lease_path.exists()
+    with pytest.raises(ValidationError, match="pre-lease authorization"):
+        BenchmarkRun(bound)
+    assert not bound.output_path.exists()
+    assert not bound.state_root.exists()
+    assert not lease_path.exists()
+
+
+def test_formal_b1_analyzer_is_absent_and_fails_before_state_creation(
+    benchmark_fixture,
+) -> None:
+    *_unused, make_options = benchmark_fixture
+    options = make_options(output_name="formal-b1.json", run_id="formal-b1")
+    options = _with_formal_authorization(
+        replace(
+            options,
+            evidence_level="qemu_correctness",
+            provenance=replace(
+                options.provenance,
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id="run.B1.fixture",
+    )
+    _validate_options(options)
+    analyzer = candidate_analyzer_contract()["commands"]["accela"]
+    wrong = replace(
+        options,
+        analyzer=StageSpec(
+            "analyzer", "host", tuple(analyzer["argv"]), {}
+        ),
+        state_root=options.state_root.with_name("formal-b1-wrong-state"),
+    )
+    with pytest.raises(ConfigurationError, match="analyzer contract differs"):
+        run_benchmark(wrong)
+    assert not wrong.output_path.exists()
+    assert not wrong.state_root.exists()
+
+
+@pytest.mark.parametrize(
+    ("profile_id", "toolchain"),
+    (("gcc-13.3-o2", "gcc"), ("clang-18-o3", "clang")),
+)
+def test_formal_reference_analyzer_is_exact_and_fails_before_state_creation(
+    benchmark_fixture,
+    profile_id: str,
+    toolchain: str,
+) -> None:
+    *_unused, make_options = benchmark_fixture
+    options = make_options(
+        output_name=f"formal-{toolchain}.json",
+        run_id=f"formal-{toolchain}",
+        additional_metrics=(
+            MeasurementSpec("elf_text_bytes", "analyzer", "bytes"),
+        ),
+    )
+    command = candidate_analyzer_contract()["commands"][toolchain]
+    options = _with_formal_authorization(
+        replace(
+            options,
+            compiler=StageSpec(
+                "external",
+                options.compiler.adapter,
+                options.compiler.command,
+                options.compiler.environment,
+            ),
+            analyzer=StageSpec("analyzer", "host", tuple(command["argv"]), {}),
+            analysis_file="analysis/binary.json",
+            provenance=replace(
+                options.provenance,
+                pipeline_profile_id=profile_id,
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id=f"run.B3.{toolchain}",
+    )
+    _validate_options(options)
+    wrong_argv = list(command["argv"])
+    wrong_argv[-1] = "{wrong_analysis_file}"
+    wrong = replace(
+        options,
+        analyzer=StageSpec("analyzer", "host", tuple(wrong_argv), {}),
+        state_root=options.state_root.with_name(f"formal-{toolchain}-wrong-state"),
+    )
+    with pytest.raises(ConfigurationError, match="analyzer contract differs"):
+        run_benchmark(wrong)
+    assert not wrong.output_path.exists()
+    assert not wrong.state_root.exists()
 
 
 def _run_benchmark_in_subprocess(options: Any, result_queue: Any) -> None:
@@ -511,6 +768,70 @@ def test_raw_evidence_verifier_recomputes_a_path_free_terminal_closure(
     )
     assert all(path is None for path in first.current_remark_paths.values())
     assert str(tmp_path) not in json.dumps(first.document, sort_keys=True)
+
+
+def test_read_only_raw_evidence_snapshot_never_enters_or_rewrites_a_lease(
+    benchmark_fixture,
+    monkeypatch,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-read-only.json", run_id="raw-read-only"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    run_directory = BenchmarkRun(options)._run_directory(completed)
+    lock_paths = (
+        output_lease_path(options.output_path),
+        run_directory / ".run.lock",
+    )
+    before = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns) for path in lock_paths
+    }
+
+    def forbid_lease(*_args, **_kwargs):
+        raise AssertionError("read-only verification entered an execution lease")
+
+    monkeypatch.setattr(execution_module, "ExclusiveFileLease", forbid_lease)
+    snapshot = verify_run_raw_evidence_read_only_snapshot(
+        options.output_path, options.state_root
+    )
+
+    assert snapshot.verified.document["run_canonical_sha256"] == sha256_json(
+        completed
+    )
+    snapshot.assert_unchanged()
+    assert {
+        path: (path.read_bytes(), path.stat().st_mtime_ns) for path in lock_paths
+    } == before
+
+
+def test_read_only_raw_evidence_snapshot_rejects_verification_window_drift(
+    benchmark_fixture,
+    monkeypatch,
+) -> None:
+    _, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(output_name="raw-read-only-drift.json", run_id="raw-read-only-drift"),
+        max_workers=1,
+    )
+    completed = run_benchmark(options)
+    run_directory = BenchmarkRun(options)._run_directory(completed)
+    run_lock = run_directory / ".run.lock"
+    original = execution_module._verify_run_raw_evidence_locked
+
+    def verify_then_drift(*args, **kwargs):
+        verified = original(*args, **kwargs)
+        run_lock.write_bytes(run_lock.read_bytes() + b"\n")
+        return verified
+
+    monkeypatch.setattr(
+        execution_module, "_verify_run_raw_evidence_locked", verify_then_drift
+    )
+    with pytest.raises(ExecutionError, match="changed during read-only verification"):
+        verify_run_raw_evidence_read_only_snapshot(
+            options.output_path, options.state_root
+        )
 
 
 def test_raw_evidence_verifier_rejects_an_internally_valid_normalized_fake(

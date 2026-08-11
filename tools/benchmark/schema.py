@@ -60,6 +60,15 @@ _SCHEMA_FILES = {
 _WINDOWS_LOCAL_PATH = re.compile(r"(?i)(?<![A-Za-z0-9])(?:[a-z]:[\\/]|\\\\[^\\/\s]+[\\/])")
 _POSIX_LOCAL_PATH = re.compile(r"(?<![A-Za-z0-9/])/(?!/)")
 _FILE_URI = re.compile(r"(?i)\bfile://")
+_CANDIDATE_PROTOCOL_DIGEST_FIELDS = (
+    "protocol_sha256",
+    "runner_command_sha256",
+    "profile_plugin_sha256",
+    "cache_plugin_sha256",
+    "hotblocks_plugin_sha256",
+    "cache_model_sha256",
+    "physical_sha256",
+)
 
 _ATTEMPT_FAILURE_SUMMARIES = {
     "compile_error": "compiler_stage_failed",
@@ -219,6 +228,16 @@ def _reject_local_absolute_paths(value: Any, location: str = "$") -> None:
         or _FILE_URI.search(value)
     ):
         raise ValidationError(f"{location}: local absolute paths are forbidden in persisted records")
+
+
+def _candidate_analyzer_contract() -> dict[str, Any]:
+    # Keep candidate_workspace importable as a warning-free ``python -m``
+    # bootstrap probe. The analyzer contract deliberately reuses its VENV_PATH,
+    # so importing it eagerly from this package's public schema facade would
+    # pre-import the probe module before runpy executes it.
+    from .analyzer_contract import candidate_analyzer_contract
+
+    return candidate_analyzer_contract()
 
 
 def _load_schema(version: str) -> dict[str, Any]:
@@ -1545,10 +1564,18 @@ def _validate_cross_suite_audit_semantics(document: dict[str, Any]) -> None:
             raise ValidationError("cross-suite mapping status is inconsistent with membership")
 
 
+_READ_ONLY_HISTORICAL_RUN_RECORD_SCHEMA_SHA256 = {
+    "c25dca259dcf770924dff426f6b6a21d8e24c7d033a35a5891f2173ce3bb73ad",
+}
+
+
 def _validate_campaign_plan_semantics(document: dict[str, Any]) -> None:
-    if document["run_record_schema_sha256"] != schema_sha256("run-record.v1"):
+    if document["run_record_schema_sha256"] not in {
+        schema_sha256("run-record.v1"),
+        *_READ_ONLY_HISTORICAL_RUN_RECORD_SCHEMA_SHA256,
+    }:
         raise ValidationError(
-            "campaign run-record schema binding differs from the active benchmark schema"
+            "campaign run-record schema binding is neither active nor a known read-only historical schema"
         )
     finalized = document["parent_plan_sha256"] is not None
     if finalized != (document["promotion_status_sha256"] is not None):
@@ -2167,6 +2194,8 @@ def _validate_candidate_profile_matrix_semantics(document: dict[str, Any]) -> No
 
 
 def _validate_candidate_study_semantics(document: dict[str, Any]) -> None:
+    if document["bindings"]["execution_environment_sha256"] == "0" * 64:
+        raise ValidationError("candidate study execution environment is a placeholder")
     expected_case_count = {
         "B2": 20,
         "B3": 60,
@@ -2588,20 +2617,9 @@ def _validate_candidate_oracle_structure(
             )
 
 
-def _validate_candidate_execution_toolchain(
-    toolchain: Mapping[str, Any], *, campaign_id: str, label: str
+def _validate_candidate_toolchain_identity(
+    candidate: Mapping[str, Any], *, label: str
 ) -> None:
-    validate_relative_path(
-        toolchain["snapshot"]["path"], label=f"{label} toolchain snapshot path"
-    )
-    volume = toolchain["named_volume_contract"]
-    labels = volume["required_labels"]
-    if (
-        labels["org.accela.campaign"] != campaign_id
-        or labels["org.accela.purpose"] != "formal-workspace"
-    ):
-        raise ValidationError(f"{label} named-volume campaign labels differ")
-    candidate = toolchain["candidate_toolchain"]
     docker_cli = candidate["docker_cli"]
     digests = [
         candidate["base_image_id"][7:],
@@ -2620,6 +2638,180 @@ def _validate_candidate_execution_toolchain(
     validate_relative_path(
         candidate["dockerfile_path"], label=f"{label} candidate Dockerfile path"
     )
+    bootstrap = candidate["workspace_bootstrap"]
+    python = bootstrap["python"]
+    gradle = bootstrap["gradle"]
+    expected_paths = {
+        "bootstrap script": (
+            bootstrap["bootstrap_script"],
+            "scripts/bootstrap-candidate-workspace.sh",
+        ),
+        "Python project manifest": (python["project_manifest"], "pyproject.toml"),
+        "Python requirements lock": (
+            python["requirements_lock"],
+            "tools/benchmark/requirements-linux-x86_64-py314.lock",
+        ),
+        "Python installed inventory": (
+            python["installed_inventory"],
+            "docs/optimization/data/candidate-python-inventory.v1.json",
+        ),
+        "Gradle build file": (gradle["build_file"], "build.gradle.kts"),
+        "Gradle dependency lock": (gradle["dependency_lock"], "gradle.lockfile"),
+        "Gradle verification metadata": (
+            gradle["verification_metadata"],
+            "gradle/verification-metadata.xml",
+        ),
+        "Gradle wrapper JAR": (
+            gradle["wrapper_jar"],
+            "gradle/wrapper/gradle-wrapper.jar",
+        ),
+        "Gradle wrapper properties": (
+            gradle["wrapper_properties"],
+            "gradle/wrapper/gradle-wrapper.properties",
+        ),
+        "QEMU plugin builder": (
+            bootstrap["qemu_plugin_builder"],
+            "scripts/build-qemu-plugins.sh",
+        ),
+    }
+    bootstrap_digests = [gradle["distribution_sha256"]]
+    for artifact_label, (artifact, expected_path) in expected_paths.items():
+        if artifact["path"] != expected_path:
+            raise ValidationError(f"{label} {artifact_label} path differs")
+        validate_relative_path(
+            artifact["path"], label=f"{label} {artifact_label} path"
+        )
+        bootstrap_digests.append(artifact["physical_sha256"])
+    bootstrap_digests.append(python["installed_inventory"]["canonical_sha256"])
+    if any(value == "0" * 64 for value in bootstrap_digests):
+        raise ValidationError(
+            f"{label} workspace bootstrap contains placeholder identity"
+        )
+
+
+def _validate_candidate_protocol_identity(
+    protocol: Mapping[str, Any], *, label: str
+) -> None:
+    placeholder_fields = [
+        key
+        for key in _CANDIDATE_PROTOCOL_DIGEST_FIELDS
+        if protocol[key] == "0" * 64
+    ]
+    if placeholder_fields:
+        raise ValidationError(
+            f"{label} contains placeholder protocol identity: "
+            + ", ".join(placeholder_fields)
+        )
+
+
+def _validate_candidate_execution_toolchain(
+    toolchain: Mapping[str, Any], *, campaign_id: str, label: str
+) -> None:
+    validate_relative_path(
+        toolchain["snapshot"]["path"], label=f"{label} toolchain snapshot path"
+    )
+    reference_digests = [
+        toolchain["snapshot"]["canonical_sha256"],
+        toolchain["snapshot"]["physical_sha256"],
+        toolchain["compile_driver_sha256"],
+        toolchain["source_adapter_sha256"],
+        toolchain["builtin_header_sha256"],
+        toolchain["image_id"][7:],
+    ]
+    if any(value == "0" * 64 for value in reference_digests):
+        raise ValidationError(f"{label} reference toolchain contains placeholder identity")
+    volume = toolchain["named_volume_contract"]
+    labels = volume["required_labels"]
+    if (
+        labels["org.accela.campaign"] != campaign_id
+        or labels["org.accela.purpose"] != "formal-workspace"
+    ):
+        raise ValidationError(f"{label} named-volume campaign labels differ")
+    _validate_candidate_toolchain_identity(
+        toolchain["candidate_toolchain"], label=label
+    )
+    if [item["compiler_baseline"] for item in toolchain["baselines"]] != [
+        "gcc_13_3_o2",
+        "clang_18_o3",
+    ]:
+        raise ValidationError(f"{label} reference baselines must be GCC then Clang")
+
+
+def _validate_candidate_report_toolchain_identity(
+    toolchain: Mapping[str, Any], *, campaign_id: str, label: str
+) -> None:
+    reference_digests = [
+        toolchain["snapshot"]["canonical_sha256"],
+        toolchain["snapshot"]["physical_sha256"],
+        toolchain["compile_driver_sha256"],
+        toolchain["source_adapter_sha256"],
+        toolchain["builtin_header_sha256"],
+        toolchain["image_id"][7:],
+    ]
+    if any(value == "0" * 64 for value in reference_digests):
+        raise ValidationError(f"{label} reference toolchain contains placeholder identity")
+    labels = toolchain["named_volume_contract"]["required_labels"]
+    if (
+        labels["org.accela.campaign"] != campaign_id
+        or labels["org.accela.purpose"] != "formal-workspace"
+    ):
+        raise ValidationError(f"{label} named-volume campaign labels differ")
+
+    candidate = toolchain["candidate_toolchain"]
+    bootstrap = candidate["workspace_bootstrap"]
+    python = bootstrap["python"]
+    gradle = bootstrap["gradle"]
+
+    def with_path(artifact: Mapping[str, Any], path: str) -> dict[str, Any]:
+        return {"path": path, **artifact}
+
+    expanded = {
+        **candidate,
+        "dockerfile_path": "tools/benchmark/candidate-toolchain.Dockerfile",
+        "workspace_bootstrap": {
+            "bootstrap_script": with_path(
+                bootstrap["bootstrap_script"],
+                "scripts/bootstrap-candidate-workspace.sh",
+            ),
+            "python": {
+                **python,
+                "project_manifest": with_path(
+                    python["project_manifest"], "pyproject.toml"
+                ),
+                "requirements_lock": with_path(
+                    python["requirements_lock"],
+                    "tools/benchmark/requirements-linux-x86_64-py314.lock",
+                ),
+                "installed_inventory": with_path(
+                    python["installed_inventory"],
+                    "docs/optimization/data/candidate-python-inventory.v1.json",
+                ),
+            },
+            "gradle": {
+                **gradle,
+                "build_file": with_path(gradle["build_file"], "build.gradle.kts"),
+                "dependency_lock": with_path(
+                    gradle["dependency_lock"], "gradle.lockfile"
+                ),
+                "verification_metadata": with_path(
+                    gradle["verification_metadata"],
+                    "gradle/verification-metadata.xml",
+                ),
+                "wrapper_jar": with_path(
+                    gradle["wrapper_jar"], "gradle/wrapper/gradle-wrapper.jar"
+                ),
+                "wrapper_properties": with_path(
+                    gradle["wrapper_properties"],
+                    "gradle/wrapper/gradle-wrapper.properties",
+                ),
+            },
+            "qemu_plugin_builder": with_path(
+                bootstrap["qemu_plugin_builder"],
+                "scripts/build-qemu-plugins.sh",
+            ),
+        },
+    }
+    _validate_candidate_toolchain_identity(expanded, label=label)
     if [item["compiler_baseline"] for item in toolchain["baselines"]] != [
         "gcc_13_3_o2",
         "clang_18_o3",
@@ -2628,6 +2820,10 @@ def _validate_candidate_execution_toolchain(
 
 
 def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> None:
+    if document["execution_environment_sha256"] == "0" * 64:
+        raise ValidationError("candidate campaign execution environment is a placeholder")
+    if document["analyzer"] != _candidate_analyzer_contract():
+        raise ValidationError("candidate campaign analyzer contract differs")
     if document["run_record_schema_sha256"] != schema_sha256("run-record.v1"):
         raise ValidationError("candidate campaign run-record schema binding is stale")
     if document["candidate_study_schema_sha256"] != schema_sha256(
@@ -2656,10 +2852,7 @@ def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> Non
         for item in suites
     ):
         raise ValidationError("candidate campaign suites/counts are not canonical B1-B6")
-    artifacts = [
-        *document["artifacts"].values(),
-        document["measurement_protocol"]["artifact"],
-    ]
+    artifacts = [*document["artifacts"].values()]
     artifacts.extend(item["manifest"] for item in suites)
     for artifact in artifacts:
         validate_relative_path(artifact["path"], label="candidate campaign artifact path")
@@ -2681,9 +2874,29 @@ def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> Non
         document["raw_state_root"],
         label="candidate campaign raw state root",
     )
-    protocol = document["measurement_protocol"]
-    if protocol["protocol_sha256"] != protocol["artifact"]["canonical_sha256"]:
-        raise ValidationError("candidate campaign protocol canonical identity differs")
+    protocols = document["measurement_protocols"]
+    for mode in ("standard_proxy", "cache_hotblock"):
+        protocol = protocols[mode]
+        _validate_candidate_protocol_identity(
+            protocol, label=f"candidate campaign {mode}"
+        )
+        if protocol["measurement_mode"] != mode:
+            raise ValidationError(
+                "candidate campaign protocol key/mode binding is inconsistent"
+            )
+        validate_relative_path(
+            protocol["path"],
+            label=f"candidate campaign {mode} protocol path",
+        )
+    if (
+        protocols["standard_proxy"]["protocol_sha256"]
+        == protocols["cache_hotblock"]["protocol_sha256"]
+        or protocols["standard_proxy"]["runner_command_sha256"]
+        == protocols["cache_hotblock"]["runner_command_sha256"]
+    ):
+        raise ValidationError(
+            "candidate campaign requires distinct standard and cache protocols"
+        )
     validate_relative_path(
         document["base_pipeline_profile"]["path"],
         label="candidate campaign base profile path",
@@ -2898,6 +3111,10 @@ def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> Non
 
 
 def _validate_candidate_campaign_status_semantics(document: dict[str, Any]) -> None:
+    if document["execution_environment_sha256"] == "0" * 64:
+        raise ValidationError("candidate status execution environment is a placeholder")
+    if document["analyzer"] != _candidate_analyzer_contract():
+        raise ValidationError("candidate status analyzer contract differs")
     validate_relative_path(
         document["raw_evidence_registry"]["path"],
         label="candidate campaign raw evidence registry path",
@@ -2913,10 +3130,21 @@ def _validate_candidate_campaign_status_semantics(document: dict[str, Any]) -> N
         status = item["status"]
         has_evidence = item["evidence_sha256"] is not None
         has_physical_evidence = item["evidence_physical_sha256"] is not None
-        if has_evidence != has_physical_evidence or has_evidence != (status not in {"pending", "ineligible"}) or (
+        has_evidence_path = item["evidence_path"] is not None
+        if (
+            has_evidence != has_physical_evidence
+            or has_evidence != has_evidence_path
+            or has_evidence != (status not in {"pending", "ineligible"})
+            or (
             has_evidence != (item["evidence_kind"] is not None)
+            )
         ):
             raise ValidationError("candidate campaign task evidence binding is inconsistent")
+        if has_evidence_path:
+            validate_relative_path(
+                item["evidence_path"],
+                label=f"candidate campaign task evidence path {item['task_id']}",
+            )
         if status == "pending":
             if item["started_at"] is not None or item["completed_at"] is not None:
                 raise ValidationError("pending candidate campaign task carries timestamps")
@@ -2991,13 +3219,20 @@ def _validate_candidate_campaign_status_semantics(document: dict[str, Any]) -> N
             status = task["status"]
             has_evidence = task["evidence_sha256"] is not None
             has_physical = task["evidence_physical_sha256"] is not None
+            has_evidence_path = task["evidence_path"] is not None
             has_configuration = task["configuration_sha256"] is not None
             if (
                 has_evidence != has_physical
+                or has_evidence != has_evidence_path
                 or has_evidence != has_configuration
                 or has_evidence != (status != "pending")
             ):
                 raise ValidationError("candidate diagnostic evidence binding is inconsistent")
+            if has_evidence_path:
+                validate_relative_path(
+                    task["evidence_path"],
+                    label=f"candidate diagnostic evidence path {task['task_id']}",
+                )
             if status == "pending":
                 if (
                     task["started_at"] is not None
@@ -3022,10 +3257,18 @@ def _validate_candidate_campaign_status_semantics(document: dict[str, Any]) -> N
         study_status = study_task["status"]
         study_has_evidence = study_task["evidence_sha256"] is not None
         study_has_physical = study_task["evidence_physical_sha256"] is not None
-        if study_has_evidence != study_has_physical or study_has_evidence != (
-            study_status == "completed"
+        study_has_evidence_path = study_task["evidence_path"] is not None
+        if (
+            study_has_evidence != study_has_physical
+            or study_has_evidence != study_has_evidence_path
+            or study_has_evidence != (study_status == "completed")
         ):
             raise ValidationError("candidate diagnostic study evidence binding differs")
+        if study_has_evidence_path:
+            validate_relative_path(
+                study_task["evidence_path"],
+                label="candidate diagnostic study evidence path",
+            )
         if (study_status == "completed") != (
             study_task["evidence_kind"] == "candidate-study.v1"
         ):
@@ -3177,6 +3420,10 @@ def _validate_candidate_raw_evidence_semantics(document: dict[str, Any]) -> None
 
 
 def _validate_candidate_freeze_semantics(document: dict[str, Any]) -> None:
+    if document["execution_environment_sha256"] == "0" * 64:
+        raise ValidationError("candidate freeze execution environment is a placeholder")
+    if document["analyzer"] != _candidate_analyzer_contract():
+        raise ValidationError("candidate freeze analyzer contract differs")
     expected_counts = {
         "B1": 140,
         "B2": 20,
@@ -3216,7 +3463,11 @@ def _validate_candidate_freeze_semantics(document: dict[str, Any]) -> None:
     )
     protocols = document["measurement_protocols"]
     for mode in ("standard_proxy", "cache_hotblock"):
-        if protocols[mode]["measurement_mode"] != mode:
+        protocol = protocols[mode]
+        _validate_candidate_protocol_identity(
+            protocol, label=f"candidate freeze {mode}"
+        )
+        if protocol["measurement_mode"] != mode:
             raise ValidationError(
                 "candidate freeze protocol key/mode binding is inconsistent"
             )
@@ -3337,6 +3588,15 @@ def _validate_candidate_final_semantics(document: dict[str, Any]) -> None:
     eligible_ids: list[str] = []
     qualified_ids: list[str] = []
     freeze = document["freeze"]
+    if freeze["execution_environment_sha256"] == "0" * 64:
+        raise ValidationError("candidate final execution environment is a placeholder")
+    if freeze["analyzer"] != _candidate_analyzer_contract():
+        raise ValidationError("candidate final analyzer contract differs")
+    _validate_candidate_execution_toolchain(
+        freeze["reference_toolchain"],
+        campaign_id=freeze["campaign_id"],
+        label="candidate final",
+    )
     validate_relative_path(
         document["campaign"]["raw_evidence_registry"]["path"],
         label="candidate final campaign raw evidence registry path",
@@ -3891,10 +4151,19 @@ def _validate_candidate_report_semantics(document: dict[str, Any]) -> None:
         )
 
     frozen_context = document["frozen_context"]
+    if frozen_context["execution_environment_sha256"] == "0" * 64:
+        raise ValidationError("candidate report execution environment is a placeholder")
+    if frozen_context["analyzer"] != _candidate_analyzer_contract():
+        raise ValidationError("candidate report analyzer contract differs")
     if frozen_context["campaign_id"] != completion["campaign_id"]:
         raise ValidationError(
             "candidate report frozen campaign differs from terminal closure"
         )
+    _validate_candidate_report_toolchain_identity(
+        frozen_context["reference_toolchain"],
+        campaign_id=frozen_context["campaign_id"],
+        label="candidate report",
+    )
     expected_reference_baselines = [
         (
             "gcc_13_3_o2",

@@ -65,6 +65,36 @@
         "physical_sha256": {"$ref": "#/$defs/sha256"}
       }
     },
+    "analyzer_command": {
+      "type": "object", "additionalProperties": false,
+      "required": ["argv", "command_sha256", "executable"],
+      "properties": {
+        "argv": {
+          "type": "array", "minItems": 15, "maxItems": 19,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256}
+        },
+        "command_sha256": {"$ref": "#/$defs/sha256"},
+        "executable": {"const": "python"}
+      }
+    },
+    "analyzer_contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract_version", "adapter", "environment_keys", "commands"],
+      "properties": {
+        "contract_version": {"const": "candidate-binary-analyzer.v1"},
+        "adapter": {"const": "host"},
+        "environment_keys": {"type": "array", "maxItems": 0},
+        "commands": {
+          "type": "object", "additionalProperties": false,
+          "required": ["accela", "gcc", "clang"],
+          "properties": {
+            "accela": {"$ref": "#/$defs/analyzer_command"},
+            "gcc": {"$ref": "#/$defs/analyzer_command"},
+            "clang": {"$ref": "#/$defs/analyzer_command"}
+          }
+        }
+      }
+    },
     "campaign_run": {
       "type": "object", "additionalProperties": false,
       "required": ["task_id", "run_id", "run_sha256", "run_physical_sha256", "state"],
@@ -180,7 +210,7 @@
       "type": "object", "additionalProperties": false,
       "required": [
         "freeze_id", "freeze_sha256", "artifact", "campaign_id", "run_namespace",
-        "repo_commit", "repo_tree", "compiler_artifact",
+        "repo_commit", "repo_tree", "compiler_artifact", "execution_environment_sha256", "analyzer",
         "candidate_registry", "executable_pass_registry",
         "screening_base_pass_registry", "matrix", "screening",
         "oracle_capture", "run_record_schema", "candidate_study_schema",
@@ -202,6 +232,8 @@
         "repo_commit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
         "repo_tree": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
         "compiler_artifact": {"$ref": "#/$defs/binary_artifact"},
+        "execution_environment_sha256": {"$ref": "#/$defs/sha256"},
+        "analyzer": {"$ref": "#/$defs/analyzer_contract"},
         "candidate_registry": {"$ref": "#/$defs/artifact_digest"},
         "executable_pass_registry": {"$ref": "#/$defs/artifact_digest"},
         "screening_base_pass_registry": {"$ref": "#/$defs/artifact_digest"},
@@ -255,9 +287,33 @@
     },
     "reference_toolchain_context": {
       "type": "object", "additionalProperties": false,
-      "required": ["snapshot", "common_tool_versions", "accela_jdk_version", "baselines"],
+      "required": [
+        "snapshot", "compile_driver_sha256", "source_adapter_sha256",
+        "builtin_header_sha256", "image_id", "named_volume_contract",
+        "candidate_toolchain", "common_tool_versions", "accela_jdk_version", "baselines"
+      ],
       "properties": {
         "snapshot": {"$ref": "#/$defs/artifact_digest"},
+        "compile_driver_sha256": {"$ref": "#/$defs/sha256"},
+        "source_adapter_sha256": {"$ref": "#/$defs/sha256"},
+        "builtin_header_sha256": {"$ref": "#/$defs/sha256"},
+        "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "named_volume_contract": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name", "required_labels"],
+          "properties": {
+            "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$"},
+            "required_labels": {
+              "type": "object", "additionalProperties": false,
+              "required": ["org.accela.campaign", "org.accela.purpose"],
+              "properties": {
+                "org.accela.campaign": {"type": "string", "minLength": 1, "maxLength": 255},
+                "org.accela.purpose": {"const": "formal-workspace"}
+              }
+            }
+          }
+        },
+        "candidate_toolchain": {"$ref": "#/$defs/candidate_toolchain"},
         "common_tool_versions": {
           "type": "object", "additionalProperties": false,
           "required": ["qemu-system-riscv64", "bare-metal-linker", "python", "glib"],
@@ -273,6 +329,91 @@
           "type": "array", "minItems": 2, "maxItems": 2,
           "items": {"$ref": "#/$defs/reference_baseline_context"}
         }
+      }
+    },
+    "candidate_toolchain": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "base_image_tag", "base_image_id", "dockerfile_path", "dockerfile_sha256",
+        "docker_cli", "image_tag", "image_id", "rootfs_layers", "workspace_bootstrap"
+      ],
+      "properties": {
+        "base_image_tag": {"type": "string", "minLength": 1, "maxLength": 256},
+        "base_image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "dockerfile_path": {"const": "tools/benchmark/candidate-toolchain.Dockerfile"},
+        "dockerfile_sha256": {"$ref": "#/$defs/sha256"},
+        "docker_cli": {
+          "type": "object", "additionalProperties": false,
+          "required": ["install_path_id", "sha256", "version", "version_output"],
+          "properties": {
+            "install_path_id": {"const": "usr-local-bin-docker-v1"},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "version": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){2}$"},
+            "version_output": {"type": "string", "minLength": 1, "maxLength": 256}
+          }
+        },
+        "image_tag": {"type": "string", "minLength": 1, "maxLength": 256},
+        "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "rootfs_layers": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+        },
+        "workspace_bootstrap": {"$ref": "#/$defs/workspace_bootstrap"}
+      }
+    },
+    "physical_artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "python_bootstrap": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "version", "implementation", "platform_system", "platform_machine",
+        "venv_path", "pip_version", "setuptools_version", "project_manifest",
+        "requirements_lock", "installed_inventory"
+      ],
+      "properties": {
+        "version": {"const": "3.14.6"},
+        "implementation": {"const": "CPython"},
+        "platform_system": {"const": "Linux"},
+        "platform_machine": {"const": "x86_64"},
+        "venv_path": {"const": ".venv"},
+        "pip_version": {"const": "26.1.2"},
+        "setuptools_version": {"const": "83.0.0"},
+        "project_manifest": {"$ref": "#/$defs/physical_artifact"},
+        "requirements_lock": {"$ref": "#/$defs/physical_artifact"},
+        "installed_inventory": {"$ref": "#/$defs/artifact_digest"}
+      }
+    },
+    "gradle_bootstrap": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "version", "distribution_url", "distribution_sha256", "build_file",
+        "dependency_lock", "verification_metadata", "wrapper_jar", "wrapper_properties"
+      ],
+      "properties": {
+        "version": {"const": "8.14"},
+        "distribution_url": {"const": "https://services.gradle.org/distributions/gradle-8.14-bin.zip"},
+        "distribution_sha256": {"$ref": "#/$defs/sha256"},
+        "build_file": {"$ref": "#/$defs/physical_artifact"},
+        "dependency_lock": {"$ref": "#/$defs/physical_artifact"},
+        "verification_metadata": {"$ref": "#/$defs/physical_artifact"},
+        "wrapper_jar": {"$ref": "#/$defs/physical_artifact"},
+        "wrapper_properties": {"$ref": "#/$defs/physical_artifact"}
+      }
+    },
+    "workspace_bootstrap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bootstrap_script", "python", "gradle", "qemu_plugin_builder"],
+      "properties": {
+        "bootstrap_script": {"$ref": "#/$defs/physical_artifact"},
+        "python": {"$ref": "#/$defs/python_bootstrap"},
+        "gradle": {"$ref": "#/$defs/gradle_bootstrap"},
+        "qemu_plugin_builder": {"$ref": "#/$defs/physical_artifact"}
       }
     },
     "reference_baseline_context": {

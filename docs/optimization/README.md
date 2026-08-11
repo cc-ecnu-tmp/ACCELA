@@ -546,9 +546,9 @@ campaign 必须使用全新的 campaign ID、plan、status ledger 和 run ID nam
 
 首次筛选必须先在 clean、已提交的 WSL 原生检出中生成两条 terminal run。下面的
 POSIX `sh` 模板把所有公共配置集中在一个函数中；两腿只能改变 `leg`、plan 锁定的
-`run_id` 和 normalized output。它不激活虚拟环境：benchmark driver 固定直接调用
-`.venv/bin/python`，而 analyzer command 中的 `python` 仍表示 toolchain snapshot
-锁定的系统 Python。CLI 没有不落盘的 `--dry-run`；调用 `oracle run` 就会建立不可变
+`run_id` 和 normalized output。benchmark driver 与 binary analyzer 都固定使用
+workspace bootstrap 核验过的 `.venv/bin/python -I`，不接受 ambient Python 或模块
+路径。CLI 没有不落盘的 `--dry-run`；调用 `oracle run` 就会建立不可变
 raw evidence，因此所有检查必须先完成。
 
 ```sh
@@ -575,6 +575,9 @@ screening_base_pass_registry=docs/optimization/data/pass-registry.v2.json
 full_profile=docs/optimization/profiles/full.json
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json
 
+# The first Python import must already be isolated from the ambient shell.
+unset PYTHONPATH PYTHONHOME
+
 oracle_root=.tmp/runs/candidate-screening-oracle-2026-r1
 oracle_raw_state_root=$oracle_root/state
 oracle_baseline_run=$oracle_root/baseline.run.json
@@ -585,8 +588,8 @@ candidate_screening_id=candidate-screening-2026-r1
 candidate_screening=docs/optimization/data/candidates/candidate-screening.v1.json
 candidate_screening_report_dir=docs/optimization/data/candidates/screening-report-r1
 
-"$benchmark_python" -m tools.benchmark oracle run --help >/dev/null
-"$benchmark_python" -m tools.benchmark validate schema \
+"$benchmark_python" -I -m tools.benchmark oracle run --help >/dev/null
+"$benchmark_python" -I -m tools.benchmark validate schema \
   "$oracle_manifest" \
   "$oracle_plan" \
   "$candidate_evidence" \
@@ -596,7 +599,7 @@ candidate_screening_report_dir=docs/optimization/data/candidates/screening-repor
   --suite-root "$oracle_suite_root" \
   --verify-files
 
-PYTHONDONTWRITEBYTECODE=1 "$benchmark_python" -B - <<'PY'
+PYTHONDONTWRITEBYTECODE=1 "$benchmark_python" -I -B - <<'PY'
 from pathlib import Path
 
 from tools.benchmark.schema import load_and_validate, load_pipeline_profile_v2
@@ -664,7 +667,7 @@ qemu_binary=$(command -v qemu-system-riscv64)
 test -n "$qemu_binary"
 qemu_version=$("$qemu_binary" --version | awk 'NR == 1 { print $4 }')
 linker_version=$(riscv64-elf-gcc -dumpfullversion)
-python_version=$(python -c 'import platform; print(platform.python_version())')
+python_version=$("$benchmark_python" -I -c 'import platform; print(platform.python_version())')
 glib_version=$(pkg-config --modversion glib-2.0)
 jdk_version=$(java -XshowSettings:properties -version 2>&1 |
   awk -F'= ' '/^[[:space:]]*java.version =/ { print $2; exit }')
@@ -675,14 +678,14 @@ test "$glib_version" = 2.88.3
 test "$jdk_version" = 21.0.11
 
 # benchmark-link.sh 固定上述裸机工具链；正式运行前必须清除交互式覆盖。
-unset RISCV_GCC
+unset PYTHONPATH PYTHONHOME RISCV_GCC
 
 compiler_command='["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]'
 link_command='["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]'
-analyzer_command='["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]'
+analyzer_command='[".venv/bin/python","-I","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--timeout","60","--output","{analysis_file}"]'
 runner_command='["sh","{runner_executable}","{binary}","{metric_file}","{input}"]'
 
-"$benchmark_python" -m tools.benchmark protocol verify "$standard_protocol" \
+"$benchmark_python" -I -m tools.benchmark protocol verify "$standard_protocol" \
   --workspace-root "$repo_root" \
   --asset profile_plugin_source=tools/qemu/profile.c \
   --asset cache_plugin_source=tools/qemu/cache.c \
@@ -705,7 +708,7 @@ test ! -e "$oracle_root"
 mkdir -p "$oracle_root"
 
 run_oracle_leg() {
-  "$benchmark_python" -m tools.benchmark oracle run \
+  "$benchmark_python" -I -m tools.benchmark oracle run \
     --plan "$oracle_plan" \
     --leg "$1" \
     "$oracle_manifest" \
@@ -801,8 +804,9 @@ plan 中的 artifact key；调用者先解析并核验对应 physical/canonical 
 本机绝对路径或临时 run ID 写入提交文件：
 
 ```sh
-benchmark_python=${benchmark_python:-.venv/bin/python}
+benchmark_python=.venv/bin/python
 test -x "$benchmark_python"
+unset PYTHONPATH PYTHONHOME
 repo_root=$(git rev-parse --show-toplevel)
 : "${candidate_evidence:?resolve candidate-evidence.v1}"
 : "${candidate_screening_spec:?resolve candidate-screening-spec.v1}"
@@ -817,7 +821,7 @@ repo_root=$(git rev-parse --show-toplevel)
 : "${candidate_screening:?resolve an immutable screening output path}"
 : "${candidate_screening_report_dir:?resolve the first-report output directory}"
 
-"$benchmark_python" -m tools.benchmark candidates oracle-capture \
+"$benchmark_python" -I -m tools.benchmark candidates oracle-capture \
   --workspace-root "$repo_root" \
   --evidence "$candidate_evidence" \
   --oracle-plan "$oracle_plan" \
@@ -827,7 +831,7 @@ repo_root=$(git rev-parse --show-toplevel)
   --capture-id "$oracle_capture_id" \
   --output "$oracle_capture"
 
-"$benchmark_python" -m tools.benchmark candidates screen \
+"$benchmark_python" -I -m tools.benchmark candidates screen \
   --workspace-root "$repo_root" \
   --evidence "$candidate_evidence" \
   --spec "$candidate_screening_spec" \
@@ -842,15 +846,16 @@ repo_root=$(git rev-parse --show-toplevel)
 才运行 profile 生成；第一份筛选报告不依赖下列后实现输入：
 
 ```sh
-benchmark_python=${benchmark_python:-.venv/bin/python}
+benchmark_python=.venv/bin/python
 test -x "$benchmark_python"
+unset PYTHONPATH PYTHONHOME
 repo_root=$(git rev-parse --show-toplevel)
 candidate_registry=${candidate_registry:-docs/optimization/data/candidates/candidate-catalog.2026-r1.v1.json}
 executable_pass_registry=${executable_pass_registry:-docs/optimization/data/candidates/pass-registry.executable-2026-r1.v2.json}
 candidate_matrix_id=${candidate_matrix_id:-candidate-evaluation-2026-r1-singles}
 candidate_profile_directory=${candidate_profile_directory:-docs/optimization/data/candidates/profiles-2026-r1}
 
-"$benchmark_python" -m tools.benchmark candidates profiles \
+"$benchmark_python" -I -m tools.benchmark candidates profiles \
   --registry "$candidate_registry" \
   --pass-registry "$executable_pass_registry" \
   --workspace-root "$repo_root" \
@@ -906,25 +911,68 @@ ledger 的 JSON 直接发布报告。
 
 ```sh
 set -eu
+benchmark_python=.venv/bin/python
+test -x "$benchmark_python"
 test -z "$(git status --porcelain)" || {
   echo 'formal candidate run requires a clean worktree' >&2
   exit 1
 }
-unset RISCV_GCC
+unset PYTHONPATH PYTHONHOME RISCV_GCC
 repo_commit=$(git rev-parse HEAD)
 repo_root=$(git rev-parse --show-toplevel)
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json
 
-: "${candidate_id:?resolve candidate_id from the frozen plan}"
+: "${candidate_plan:?resolve the immutable candidate campaign plan}"
+: "${candidate_status:?resolve the current immutable campaign status/ledger head}"
+: "${candidate_status_ledger_list:?provide the complete ordered ledger, one path per line}"
+: "${candidate_task_id:?resolve the unique ready task id from current status}"
 : "${candidate_run_id:?resolve run_id from the frozen plan}"
-: "${candidate_profile_id:?resolve profile_id from the frozen matrix}"
-: "${candidate_pipeline_profile:?resolve pipeline profile v2 from the frozen matrix}"
-: "${candidate_registry:?resolve candidate registry from the frozen plan}"
-: "${candidate_pass_registry:?resolve executable PassRegistry v2 from the frozen plan}"
-: "${candidate_output:?resolve output from the frozen plan}"
-: "${baseline_run:?resolve the same-stage candidate-empty run from the frozen plan}"
+: "${candidate_output:?choose the task Git-ignored output under raw_state_root's campaign-owned parent}"
 : "${candidate_manifest:?resolve manifest from the frozen plan}"
 : "${candidate_suite_root:?resolve suite root for the frozen manifest}"
+: "${candidate_raw_state_root:?resolve raw_state_root from the frozen plan}"
+
+"$benchmark_python" -I -m tools.benchmark.candidate_workspace --root "$repo_root"
+"$benchmark_python" -I -m tools.benchmark validate schema "$candidate_plan"
+execution_environment_sha256=$(
+  "$benchmark_python" -I -c '
+import json
+import re
+import sys
+from pathlib import Path
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))[
+    "execution_environment_sha256"
+]
+if re.fullmatch(r"[0-9a-f]{64}", value) is None or value == "0" * 64:
+    raise SystemExit("candidate plan has an invalid execution environment SHA-256")
+print(value)
+' "$candidate_plan"
+)
+
+formal_candidate_run() {
+  set -- "$@" \
+    --execution-environment-sha256 "$execution_environment_sha256" \
+    --candidate-campaign-plan "$candidate_plan" \
+    --candidate-campaign-status "$candidate_status" \
+    --candidate-task-id "$candidate_task_id"
+  ledger_count=0
+  while IFS= read -r ledger_path
+  do
+    test -n "$ledger_path" || continue
+    test -f "$ledger_path" || {
+      echo 'candidate status ledger entry is missing' >&2
+      return 1
+    }
+    set -- "$@" --candidate-status-ledger "$ledger_path"
+    ledger_count=$((ledger_count + 1))
+  done < "$candidate_status_ledger_list"
+  test "$ledger_count" -gt 0 || {
+    echo 'formal candidate run requires the complete non-empty status ledger' >&2
+    return 1
+  }
+  "$benchmark_python" -I -m tools.benchmark "$@"
+}
 
 qemu_binary=$(command -v qemu-system-riscv64)
 test -n "$qemu_binary" || {
@@ -933,7 +981,13 @@ test -n "$qemu_binary" || {
 }
 qemu_version=$("$qemu_binary" --version | awk 'NR == 1 { print $4 }')
 linker_version=$(riscv64-elf-gcc -dumpfullversion)
-python_version=$(python -c 'import platform; print(platform.python_version())')
+python_version=$(
+  "$benchmark_python" -I -c 'import platform; print(platform.python_version())'
+)
+test "$python_version" = 3.14.6 || {
+  echo 'candidate Python version differs from the workspace bootstrap contract' >&2
+  exit 1
+}
 glib_version=$(pkg-config --modversion glib-2.0)
 jdk_version=$(java -XshowSettings:properties -version 2>&1 |
   awk -F'= ' '/^[[:space:]]*java.version =/ { print $2; exit }')
@@ -952,11 +1006,16 @@ pipeline profile v2 和 optimization-remark v2；candidate-empty baseline 使用
 命令，改用 `enable_candidates=[]` 的 empty profile 和自己的 frozen run ID：
 
 ```sh
-python -m tools.benchmark validate suite \
+: "${candidate_profile_id:?resolve profile_id from the frozen matrix}"
+: "${candidate_pipeline_profile:?resolve pipeline profile v2 from the frozen matrix}"
+: "${candidate_registry:?resolve candidate registry from the frozen plan}"
+: "${candidate_pass_registry:?resolve executable PassRegistry v2 from the frozen plan}"
+
+formal_candidate_run validate suite \
   docs/optimization/data/manifests/b1-official-functional-2026.manifest.json \
   --workspace-root "$repo_root" \
   --suite-root .tmp/official/2026-riscv-functional \
-  --output "$candidate_output" --state-dir .tmp/runs/state \
+  --output "$candidate_output" --state-dir "$candidate_raw_state_root" \
   --run-id "$candidate_run_id" \
   --repo-commit "$repo_commit" --repo-dirty false \
   --pipeline-profile-id "$candidate_profile_id" \
@@ -970,6 +1029,7 @@ python -m tools.benchmark validate suite \
   --runner-command-json '["sh","scripts/benchmark-qemu-correctness.sh","{binary}","{input}"]' \
   --runner-kind qemu --environment-label proxy \
   --evidence-level qemu_correctness --jobs 4 \
+  --run-timeout 1800 --timeout-policy initial \
   --tool-version "qemu-system-riscv64=$qemu_version" \
   --tool-version "bare-metal-linker=$linker_version" \
   --tool-version "python=$python_version" \
@@ -977,15 +1037,21 @@ python -m tools.benchmark validate suite \
   --tool-version "accela-jdk=$jdk_version"
 ```
 
-standard proxy run 必须完整列出 12 个 measurement asset，并引用同阶段已完成且全
-正确的 candidate-empty baseline 来派生 timeout：
+下面的 standard proxy 单候选 run 必须完整列出 12 个 measurement asset，并引用同
+阶段已完成且全正确的 candidate-empty baseline 来派生 timeout：
 
 ```sh
-python -m tools.benchmark run \
+: "${candidate_profile_id:?resolve profile_id from the frozen matrix}"
+: "${candidate_pipeline_profile:?resolve pipeline profile v2 from the frozen matrix}"
+: "${candidate_registry:?resolve candidate registry from the frozen plan}"
+: "${candidate_pass_registry:?resolve executable PassRegistry v2 from the frozen plan}"
+: "${baseline_run:?resolve the same-stage completed candidate-empty run}"
+
+formal_candidate_run run \
   "$candidate_manifest" \
   --workspace-root "$repo_root" \
   --suite-root "$candidate_suite_root" \
-  --output "$candidate_output" --state-dir .tmp/runs/state \
+  --output "$candidate_output" --state-dir "$candidate_raw_state_root" \
   --run-id "$candidate_run_id" \
   --repo-commit "$repo_commit" --repo-dirty false \
   --pipeline-profile-id "$candidate_profile_id" \
@@ -1010,7 +1076,7 @@ python -m tools.benchmark run \
   --compiler-command-json '["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]' \
   --remarks-file optimization-remarks.jsonl \
   --link-command-json '["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]' \
-  --analyzer-command-json '["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]' \
+  --analyzer-command-json '[".venv/bin/python","-I","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--timeout","60","--output","{analysis_file}"]' \
   --runner-command-json '["sh","{runner_executable}","{binary}","{metric_file}","{input}"]' \
   --runner-env 'QEMU_SYSTEM_RISCV64={qemu_binary}' \
   --runner-env 'QEMU_PROFILE_PLUGIN={profile_plugin_binary}' \
@@ -1027,10 +1093,21 @@ python -m tools.benchmark run \
 ```
 
 对 B2/B3/B4/B5/B6 只替换 plan 绑定的 manifest、suite root、run ID、output 和同
-阶段 baseline；不得缩写 protocol/assets/configuration。B3 pair 使用
+阶段 baseline；不得缩写 protocol/assets/configuration。每条 Python candidate-scoped
+run 都必须经 `formal_candidate_run` 注入 plan、当前 status、从 genesis 开始的完整
+有序 ledger、唯一 `ready_task` 和 execution-environment identity；省略这些参数不是
+ad-hoc 模式，而是执行前错误。普通非 candidate run 与 Oracle run 仍使用无该授权的
+独立入口，Java candidate E2 也不经过 Python campaign runner。B3 pair 使用
 `enable_candidates` 恰含两个 Top3 ID 的物理 pipeline profile v2；不存在另一个
 命令行 enablement 来源。cache/hotblock 使用独立协议与 runner，只调度
 candidate-empty 和 B3 Top3 单候选，绝不调度 pair。
+所有 candidate-empty、单项、pair、GCC/Clang reference 及 cache/hotblock 正式 run
+都必须经上述 wrapper 传入同一个冻结环境和四类授权输入。GCC/Clang reference 使用
+各自冻结的 external compiler/profile/analyzer，但 timeout 必须是 `initial`，不得引用
+ACCELA FULL；reference run 只替换自身 compiler artifact provenance，不得另造环境
+身份。B2--B6 的 candidate-empty FULL 同样使用 `initial`；同阶段单项使用该 FULL 的
+`baseline_derived`。B3 pair 引用 `run.B3.full`，`diagnostic.cache.full` 使用 `initial`，
+cache 单项只引用 `diagnostic.cache.full`。
 
 正式 run 默认使用 attempt-local 冷编译，不读取共享编译缓存。五次编译记录
 median/MAD；动态确定性抽样、最大四个 QEMU worker 和 timeout derivation 必须

@@ -11,6 +11,7 @@ from xml.etree import ElementTree
 
 import pytest
 
+from tools.benchmark.analyzer_contract import candidate_analyzer_contract
 from tools.benchmark import cli, report
 from tools.benchmark.errors import ConfigurationError, ValidationError
 from tools.benchmark.schema import (
@@ -27,6 +28,72 @@ from tools.benchmark.util import (
 
 SHA = "0" * 64
 NOW = "2026-08-11T00:00:00Z"
+
+
+def _candidate_toolchain_fixture() -> dict[str, Any]:
+    physical = lambda path, value: {
+        "path": path,
+        "physical_sha256": f"{value:064x}",
+    }
+    return {
+        "base_image_tag": "accela/candidate-toolchain:test-base",
+        "base_image_id": "sha256:" + "1" * 64,
+        "dockerfile_path": "tools/benchmark/candidate-toolchain.Dockerfile",
+        "dockerfile_sha256": "2" * 64,
+        "docker_cli": {
+            "install_path_id": "usr-local-bin-docker-v1",
+            "sha256": "3" * 64,
+            "version": "29.6.2",
+            "version_output": "Docker version 29.6.2, build dfc4efb",
+        },
+        "image_tag": "accela/candidate-toolchain:test",
+        "image_id": "sha256:" + "4" * 64,
+        "rootfs_layers": ["sha256:" + "5" * 64, "sha256:" + "6" * 64],
+        "workspace_bootstrap": {
+            "bootstrap_script": physical(
+                "scripts/bootstrap-candidate-workspace.sh", 101
+            ),
+            "python": {
+                "version": "3.14.6",
+                "implementation": "CPython",
+                "platform_system": "Linux",
+                "platform_machine": "x86_64",
+                "venv_path": ".venv",
+                "pip_version": "26.1.2",
+                "setuptools_version": "83.0.0",
+                "project_manifest": physical("pyproject.toml", 102),
+                "requirements_lock": physical(
+                    "tools/benchmark/requirements-linux-x86_64-py314.lock", 103
+                ),
+                "installed_inventory": {
+                    **physical(
+                        "docs/optimization/data/candidate-python-inventory.v1.json",
+                        104,
+                    ),
+                    "canonical_sha256": f"{105:064x}",
+                },
+            },
+            "gradle": {
+                "version": "8.14",
+                "distribution_url": "https://services.gradle.org/distributions/gradle-8.14-bin.zip",
+                "distribution_sha256": f"{106:064x}",
+                "build_file": physical("build.gradle.kts", 107),
+                "dependency_lock": physical("gradle.lockfile", 108),
+                "verification_metadata": physical(
+                    "gradle/verification-metadata.xml", 109
+                ),
+                "wrapper_jar": physical(
+                    "gradle/wrapper/gradle-wrapper.jar", 110
+                ),
+                "wrapper_properties": physical(
+                    "gradle/wrapper/gradle-wrapper.properties", 111
+                ),
+            },
+            "qemu_plugin_builder": physical(
+                "scripts/build-qemu-plugins.sh", 112
+            ),
+        },
+    }
 
 
 def _json_artifact(root: Path, key: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -670,6 +737,8 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
         "campaign_id": "candidate-campaign:test",
         "repo_commit": "a" * 40,
         "repo_tree": "b" * 40,
+        "execution_environment_sha256": "7" * 64,
+        "analyzer": candidate_analyzer_contract(),
         "screening_base_pass_registry": {
             "path": "registries/screening-base.json",
             "canonical_sha256": "2" * 64,
@@ -702,6 +771,18 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
                 "canonical_sha256": "d" * 64,
                 "physical_sha256": "e" * 64,
             },
+            "compile_driver_sha256": "1" * 64,
+            "source_adapter_sha256": "2" * 64,
+            "builtin_header_sha256": "3" * 64,
+            "image_id": "sha256:" + "4" * 64,
+            "named_volume_contract": {
+                "name": "accela_candidate_evaluation_test",
+                "required_labels": {
+                    "org.accela.campaign": "candidate-campaign:test",
+                    "org.accela.purpose": "formal-workspace",
+                },
+            },
+            "candidate_toolchain": _candidate_toolchain_fixture(),
             "common_tool_versions": {
                 "qemu-system-riscv64": "9.2.4",
                 "bare-metal-linker": "GNU ld 2.44",
@@ -1064,6 +1145,18 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
     assert failed_pair["delta_ln_geometric_mean"] is None
     assert summary["r7_diagnostic_appendix"]["enumerated_bindings_rehashed"] == 56
     assert summary["frozen_context"]["repository_commit"] == "a" * 40
+    assert summary["frozen_context"]["execution_environment_sha256"] == "7" * 64
+    assert summary["frozen_context"]["analyzer"] == candidate_analyzer_contract()
+    assert summary["frozen_context"]["reference_toolchain"][
+        "candidate_toolchain"
+    ]["workspace_bootstrap"]["python"]["version"] == "3.14.6"
+    markdown = (first / "FINAL_CANDIDATE_REPORT.zh-CN.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Candidate execution environment SHA-256" in markdown
+    assert "Binary analyzer" in markdown
+    assert "Python bootstrap" in markdown
+    assert "Gradle bootstrap" in markdown
     assert [
         row["profile_id"]
         for row in summary["frozen_context"]["reference_toolchain"]["baselines"]
@@ -1117,8 +1210,28 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
     reordered_toolchains["frozen_context"]["reference_toolchain"][
         "baselines"
     ].reverse()
-    with pytest.raises(ValidationError, match="frozen GCC/Clang"):
+    with pytest.raises(ValidationError, match="reference baselines"):
         validate_document(reordered_toolchains)
+    placeholder_environment = deepcopy(summary)
+    placeholder_environment["frozen_context"][
+        "execution_environment_sha256"
+    ] = "0" * 64
+    with pytest.raises(ValidationError, match="execution environment is a placeholder"):
+        validate_document(placeholder_environment)
+    wrong_analyzer = deepcopy(summary)
+    wrong_analyzer["frozen_context"]["analyzer"]["commands"]["accela"][
+        "argv"
+    ][1] = "-E"
+    with pytest.raises(ValidationError, match="analyzer contract differs"):
+        validate_document(wrong_analyzer)
+    tampered_bootstrap = deepcopy(summary)
+    tampered_bootstrap["frozen_context"]["reference_toolchain"][
+        "candidate_toolchain"
+    ]["workspace_bootstrap"]["python"]["requirements_lock"][
+        "physical_sha256"
+    ] = "0" * 64
+    with pytest.raises(ValidationError, match="workspace bootstrap.*placeholder"):
+        validate_document(tampered_bootstrap)
     fabricated_winner_binding = deepcopy(summary)
     fabricated_winner_binding["bindings"]["winner_run"] = deepcopy(
         summary["bindings"]["b3_full_run"]

@@ -86,7 +86,7 @@ def _require_eligible_attempt_history(
             )
 
 
-def _require_formal_measurement(
+def require_formal_measurement_configuration(
     run: Mapping[str, Any],
     *,
     require_accela_pipeline: bool = False,
@@ -183,6 +183,22 @@ def _require_formal_measurement(
             )
         if configuration["remarks_file_sha256"] is None:
             raise ValidationError("ACCELA ranking requires configured optimization remarks")
+
+
+def _require_formal_measurement(
+    run: Mapping[str, Any],
+    *,
+    require_accela_pipeline: bool = False,
+    allow_metric_superset: bool = False,
+) -> None:
+    require_formal_measurement_configuration(
+        run,
+        require_accela_pipeline=require_accela_pipeline,
+        allow_metric_superset=allow_metric_superset,
+    )
+    configuration = run["configuration"]
+    preset = rv64gc_qemu_v1()
+    compiler_kind = configuration["compiler"]["kind"]
     _require_eligible_attempt_history(run, context="formal optimization ranking")
     runtime_ids = {preset["primary_metric_id"]} | {
         item["metric_id"] for item in preset["additional"] if item["source"] == "file"

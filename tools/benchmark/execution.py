@@ -14,10 +14,18 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .adapters import CommandRenderer, StageSpec, WslPathMapper
+from .analyzer_contract import (
+    candidate_analyzer_contract,
+    candidate_analyzer_stage,
+)
 from .cache import (
     CompileBuild,
     CompileCache,
     compile_storage_contract,
+)
+from .candidates import (
+    CandidateRunAuthorizationIntent,
+    authorize_candidate_run_prelease,
 )
 from .errors import ConfigurationError, ExecutionError, ValidationError
 from .journal import (
@@ -133,12 +141,13 @@ class RunProvenance:
     pipeline_profile_id: str
     pipeline_profile_sha256: str
     compiler_artifact_sha256: str
+    execution_environment_sha256: str | None = None
     measurement_protocol_id: str | None = None
     measurement_protocol_sha256: str | None = None
     tracked_diff_sha256: str | None = None
 
     def as_record(self) -> dict[str, Any]:
-        return {
+        record = {
             "repo_commit": self.repo_commit,
             "repo_dirty": self.repo_dirty,
             "tracked_diff_sha256": self.tracked_diff_sha256,
@@ -148,6 +157,11 @@ class RunProvenance:
             "measurement_protocol_id": self.measurement_protocol_id,
             "measurement_protocol_sha256": self.measurement_protocol_sha256,
         }
+        if self.execution_environment_sha256 is not None:
+            record["execution_environment_sha256"] = (
+                self.execution_environment_sha256
+            )
+        return record
 
 
 @dataclass(frozen=True)
@@ -161,11 +175,16 @@ class RunOptions:
     linker: StageSpec | None
     runner: StageSpec
     provenance: RunProvenance
+    compiler_artifact_path: Path | None = None
     pipeline_profile_path: Path | None = None
     candidate_registry_path: Path | None = None
     candidate_pass_registry_path: Path | None = None
     measurement_protocol_path: Path | None = None
     measurement_protocol_assets: tuple[tuple[str, Path], ...] = ()
+    candidate_campaign_plan_path: Path | None = None
+    candidate_campaign_status_path: Path | None = None
+    candidate_status_ledger_paths: tuple[Path, ...] = ()
+    candidate_task_id: str | None = None
     analyzer: StageSpec | None = None
     compile_timeout_seconds: float = 120.0
     compile_repetitions: int = 5
@@ -300,6 +319,81 @@ def _pipeline_profile_candidate_ids(
 def _validate_options(options: RunOptions) -> None:
     if not options.workspace_root.is_absolute():
         raise ConfigurationError("workspace_root must be an absolute path")
+    execution_environment_sha256 = options.provenance.execution_environment_sha256
+    if execution_environment_sha256 is not None and (
+        re.fullmatch(r"[0-9a-f]{64}", execution_environment_sha256) is None
+        or execution_environment_sha256 == "0" * 64
+    ):
+        raise ConfigurationError(
+            "execution environment provenance must be a nonzero SHA-256"
+        )
+    if execution_environment_sha256 is not None:
+        if options.evidence_level == "qemu_correctness":
+            analyzer_toolchain = None
+        elif options.evidence_level != "qemu_proxy":
+            raise ConfigurationError(
+                "formal candidate execution environment requires QEMU evidence"
+            )
+        elif options.compiler.kind == "benchmark-compiler":
+            analyzer_toolchain = "accela"
+        elif options.compiler.kind == "external":
+            analyzer_toolchain = {
+                "gcc-13.3-o2": "gcc",
+                "clang-18-o3": "clang",
+            }.get(options.provenance.pipeline_profile_id)
+            if analyzer_toolchain is None:
+                raise ConfigurationError(
+                    "formal reference analyzer profile is unknown"
+                )
+        else:
+            raise ConfigurationError(
+                "formal candidate analyzer cannot identify the compiler toolchain"
+            )
+        expected_analyzer = (
+            None
+            if analyzer_toolchain is None
+            else candidate_analyzer_stage(
+                candidate_analyzer_contract(), toolchain=analyzer_toolchain
+            )
+        )
+        if _stage_record(options.analyzer) != expected_analyzer:
+            raise ConfigurationError(
+                "formal candidate analyzer contract differs"
+            )
+    authorization_values = (
+        options.candidate_campaign_plan_path,
+        options.candidate_campaign_status_path,
+        options.candidate_task_id,
+    )
+    has_authorization = any(value is not None for value in authorization_values) or bool(
+        options.candidate_status_ledger_paths
+    )
+    candidate_scoped = (
+        options.candidate_registry_path is not None
+        or options.candidate_pass_registry_path is not None
+        or (
+            options.compiler.kind == "external"
+            and options.provenance.pipeline_profile_id
+            in {"gcc-13.3-o2", "clang-18-o3"}
+        )
+    )
+    if candidate_scoped and execution_environment_sha256 is None:
+        raise ConfigurationError(
+            "candidate-scoped runs require formal campaign authorization"
+        )
+    if execution_environment_sha256 is None:
+        if has_authorization:
+            raise ConfigurationError(
+                "candidate campaign authorization requires execution environment provenance"
+            )
+    elif (
+        any(value is None for value in authorization_values)
+        or not options.candidate_status_ledger_paths
+        or options.compiler_artifact_path is None
+    ):
+        raise ConfigurationError(
+            "formal candidate runs require plan, current status, complete ledger, task id, and compiler artifact path"
+        )
     if options.compiler.command is None or options.runner.command is None:
         raise ConfigurationError("compiler and runner commands are required")
     if options.candidate_registry_path is not None:
@@ -930,6 +1024,51 @@ class VerifiedRunRawEvidence:
 
     document: dict[str, Any]
     current_remark_paths: Mapping[str, Path | None]
+
+
+@dataclass(frozen=True)
+class ReadOnlyRunRawEvidenceSnapshot:
+    """A verified raw-evidence closure that can be rechecked without a lease."""
+
+    verified: VerifiedRunRawEvidence
+    run_record_path: Path
+    run_record_sha256: str
+    run_directory: Path
+    state_tree_sha256: str
+    output_lock_path: Path
+    output_lock_sha256: str
+    run_lock_path: Path
+    run_lock_sha256: str
+
+    def assert_unchanged(self) -> None:
+        if (
+            resolve_without_symlinks(
+                self.run_record_path, label="benchmark read-only run record"
+            )
+            != self.run_record_path
+            or resolve_without_symlinks(
+                self.run_directory, label="benchmark read-only run state"
+            )
+            != self.run_directory
+            or resolve_without_symlinks(
+                self.output_lock_path, label="benchmark read-only output lease"
+            )
+            != self.output_lock_path
+            or resolve_without_symlinks(
+                self.run_lock_path, label="benchmark read-only run lease"
+            )
+            != self.run_lock_path
+            or not self.run_record_path.is_file()
+            or not self.output_lock_path.is_file()
+            or not self.run_lock_path.is_file()
+            or sha256_file(self.run_record_path) != self.run_record_sha256
+            or _state_tree_sha256(self.run_directory) != self.state_tree_sha256
+            or sha256_file(self.output_lock_path) != self.output_lock_sha256
+            or sha256_file(self.run_lock_path) != self.run_lock_sha256
+        ):
+            raise ExecutionError(
+                "benchmark raw evidence changed during read-only verification"
+            )
 
 
 def _run_terminal_identity(
@@ -1711,6 +1850,75 @@ def verify_run_raw_evidence(
             )
 
 
+def verify_run_raw_evidence_read_only_snapshot(
+    run_record_path: Path,
+    state_root: Path,
+    *,
+    remark_validator: RemarkEvidenceValidator | None = None,
+) -> ReadOnlyRunRawEvidenceSnapshot:
+    """Verify one immutable run without acquiring or rewriting its lease files."""
+
+    resolved_record = resolve_without_symlinks(
+        run_record_path, label="benchmark read-only run record"
+    )
+    if not resolved_record.is_file():
+        raise ValidationError("benchmark run record must be a regular file")
+    record = load_and_validate(resolved_record)
+    if record["schema_version"] != "run-record.v1":
+        raise ValidationError("raw evidence verifier requires run-record.v1")
+    resolved_state_root = resolve_without_symlinks(
+        state_root, label="benchmark read-only state root"
+    )
+    if not resolved_state_root.is_dir():
+        raise ValidationError("benchmark state root must be a regular directory")
+    store = _RawAttemptStore(
+        output_path=resolved_record,
+        state_root=resolved_state_root,
+    )
+    run_directory = resolve_without_symlinks(
+        store.run_directory(record), label="benchmark read-only run state"
+    )
+    output_lock = resolve_without_symlinks(
+        output_lease_path(resolved_record), label="benchmark read-only output lease"
+    )
+    run_lock = resolve_without_symlinks(
+        run_directory / ".run.lock", label="benchmark read-only run lease"
+    )
+    if not output_lock.is_file() or not run_lock.is_file():
+        raise ValidationError("benchmark execution leases must be regular files")
+    run_record_sha256 = sha256_file(resolved_record)
+    state_tree_sha256 = _state_tree_sha256(run_directory)
+    output_lock_sha256 = sha256_file(output_lock)
+    run_lock_sha256 = sha256_file(run_lock)
+    verified = _verify_run_raw_evidence_locked(
+        resolved_record,
+        resolved_state_root,
+        remark_validator=remark_validator,
+    )
+    if (
+        sha256_file(resolved_record) != run_record_sha256
+        or _state_tree_sha256(run_directory) != state_tree_sha256
+        or sha256_file(output_lock) != output_lock_sha256
+        or sha256_file(run_lock) != run_lock_sha256
+    ):
+        raise ExecutionError(
+            "benchmark raw evidence changed during read-only verification"
+        )
+    snapshot = ReadOnlyRunRawEvidenceSnapshot(
+        verified=verified,
+        run_record_path=resolved_record,
+        run_record_sha256=run_record_sha256,
+        run_directory=run_directory,
+        state_tree_sha256=state_tree_sha256,
+        output_lock_path=output_lock,
+        output_lock_sha256=output_lock_sha256,
+        run_lock_path=run_lock,
+        run_lock_sha256=run_lock_sha256,
+    )
+    snapshot.assert_unchanged()
+    return snapshot
+
+
 def _archive_attempt(record: Mapping[str, Any], case: dict[str, Any]) -> None:
     if case["status"] == "pending":
         raise ExecutionError("cannot archive a pending benchmark attempt")
@@ -2059,6 +2267,33 @@ class BenchmarkCompiler:
 class BenchmarkRun:
     def __init__(self, options: RunOptions) -> None:
         _validate_options(options)
+        if options.provenance.execution_environment_sha256 is not None:
+            assert options.candidate_campaign_plan_path is not None
+            assert options.candidate_campaign_status_path is not None
+            assert options.candidate_task_id is not None
+            assert options.compiler_artifact_path is not None
+            authorize_candidate_run_prelease(
+                CandidateRunAuthorizationIntent(
+                    plan_path=options.candidate_campaign_plan_path,
+                    status_path=options.candidate_campaign_status_path,
+                    status_ledger_paths=options.candidate_status_ledger_paths,
+                    task_id=options.candidate_task_id,
+                    workspace_root=options.workspace_root,
+                    manifest_path=options.manifest_path,
+                    suite_root=options.suite_root,
+                    output_path=options.output_path,
+                    state_root=options.state_root,
+                    compiler_artifact_path=options.compiler_artifact_path,
+                    pipeline_profile_path=options.pipeline_profile_path,
+                    candidate_registry_path=options.candidate_registry_path,
+                    candidate_pass_registry_path=options.candidate_pass_registry_path,
+                    measurement_protocol_path=options.measurement_protocol_path,
+                    baseline_timeout_path=options.baseline_timeout_path,
+                    run_id=options.run_id,
+                    configuration=_configuration(options),
+                    provenance=options.provenance.as_record(),
+                )
+            )
         self.options = options
         self.manifest_path = options.manifest_path.resolve(strict=True)
         self.suite_root = options.suite_root.resolve(strict=True)

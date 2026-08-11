@@ -52,6 +52,22 @@ def test_all_public_commands_are_registered() -> None:
             if action.dest == "workspace_root"
         )
         assert workspace_action.required
+    for run_parser_with_provenance in (run_parser, validate_suite_parser):
+        environment_action = next(
+            action
+            for action in run_parser_with_provenance._actions
+            if action.dest == "execution_environment_sha256"
+        )
+        assert not environment_action.required
+    assert not any(
+        action.dest == "execution_environment_sha256"
+        for action in oracle_run_parser._actions
+    )
+    assert not any(
+        action.dest.startswith("candidate_campaign_")
+        or action.dest in {"candidate_status_ledger", "candidate_task_id"}
+        for action in oracle_run_parser._actions
+    )
     assert set(oracle_subparsers.choices) == {"plan", "run"}
     assert set(validate_subparsers.choices) == {"schema", "suite"}
 
