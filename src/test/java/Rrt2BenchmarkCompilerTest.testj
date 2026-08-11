@@ -1,0 +1,222 @@
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.BackendCompiler;
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.pass.PassBuilder;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.pass.Rrt2OnDemandMemoizationCandidate;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.util.StrictJson;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+final class Rrt2BenchmarkCompilerTest {
+  @TempDir Path temporaryDirectory;
+
+  @Test
+  void realDevelopmentCompilerRunsTheEnabledCandidateAndWritesPairedEvidence()
+      throws Exception {
+    Path source = writeSource();
+    Path profile = temporaryDirectory.resolve("enabled.json");
+    Path assembly = temporaryDirectory.resolve("enabled.s");
+    Path remarks = temporaryDirectory.resolve("enabled.jsonl");
+    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
+    PipelineProfile.builder(registry)
+        .enableCandidate(Rrt2OnDemandMemoizationCandidate.ID)
+        .build()
+        .writeJson(profile);
+
+    BenchmarkCompiler.runForTesting(
+        new String[] {
+          source.toString(), "-o", assembly.toString(),
+          "--profile", profile.toString(), "--remarks", remarks.toString()
+        },
+        new CandidateDevelopmentPipeline(registry));
+
+    String assemblyText = Files.readString(assembly, StandardCharsets.UTF_8);
+    assertTrue(assemblyText.contains("paths.rrt2.memo:"));
+    assertTrue(assemblyText.contains("choose.rrt2.memo:"));
+    assertTrue(assemblyText.contains("__rrt2_paths_values"));
+    List<Map<?, ?>> events = Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .<Map<?, ?>>map(value -> (Map<?, ?>) value)
+        .filter(event -> Rrt2OnDemandMemoizationCandidate.ID.equals(event.get("pass")))
+        .toList();
+    assertEquals(List.of("candidate", "applied", "candidate", "applied"),
+        events.subList(0, 4).stream().map(event -> event.get("decision")).toList());
+    assertEquals(List.of("decision", "decision", "decision", "decision", "pass_summary"),
+        events.stream().map(event -> event.get("event_type")).toList());
+    assertEquals("pass_summary", events.getLast().get("event_type"));
+    assertEquals(Boolean.TRUE, events.getLast().get("changed"));
+  }
+
+  @Test
+  void realDevelopmentCompilerKeepsDisabledCandidateByteIdenticalAndSilent()
+      throws Exception {
+    Path source = writeGridOnlySource();
+    Path profile = temporaryDirectory.resolve("disabled.json");
+    Path candidateAssembly = temporaryDirectory.resolve("disabled-development.s");
+    Path judgeAssembly = temporaryDirectory.resolve("disabled-judge.s");
+    Path remarks = temporaryDirectory.resolve("disabled.jsonl");
+    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
+    PipelineProfile.full(registry).writeJson(profile);
+
+    Compiler.main(new String[] {
+        source.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
+    });
+    BenchmarkCompiler.runForTesting(
+        new String[] {
+          source.toString(), "-o", candidateAssembly.toString(),
+          "--profile", profile.toString(), "--remarks", remarks.toString()
+        },
+        new CandidateDevelopmentPipeline(registry));
+
+    assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(candidateAssembly));
+    assertTrue(Files.readAllLines(remarks).stream()
+        .map(StrictJson::parse)
+        .map(value -> (Map<?, ?>) value)
+        .noneMatch(event -> Rrt2OnDemandMemoizationCandidate.ID.equals(event.get("pass"))));
+  }
+
+  @Test
+  void enabledCandidatePassesARealRv64gcQemuDifferentialCase() throws Exception {
+    Assumptions.assumeTrue(commandWorks("riscv64-elf-gcc", "--version")
+        && commandWorks("qemu-system-riscv64", "--version"));
+    Path source = writeSource();
+    Path profile = temporaryDirectory.resolve("rv64gc.json");
+    Path assembly = temporaryDirectory.resolve("rv64gc.s");
+    Path remarks = temporaryDirectory.resolve("rv64gc.jsonl");
+    Path executable = temporaryDirectory.resolve("rv64gc.elf");
+    Path input = temporaryDirectory.resolve("empty.in");
+    Files.write(input, new byte[0]);
+    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
+    PipelineProfile.builder(registry)
+        .enableCandidate(Rrt2OnDemandMemoizationCandidate.ID)
+        .build()
+        .writeJson(profile);
+    BenchmarkCompiler.runForTesting(
+        new String[] {
+          source.toString(), "-o", assembly.toString(),
+          "--profile", profile.toString(), "--remarks", remarks.toString()
+        },
+        new CandidateDevelopmentPipeline(registry));
+
+    Path root = Path.of("").toAbsolutePath().normalize();
+    Process link = new ProcessBuilder(
+        "riscv64-elf-gcc",
+        "-march=rv64gc",
+        "-mabi=lp64d",
+        "-mcmodel=medany",
+        "-O2",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-nostdlib",
+        "-nostartfiles",
+        "-Wl,-T," + root.resolve("tools/qemu/linker.ld"),
+        root.resolve("tools/qemu/crt.S").toString(),
+        root.resolve("tools/qemu/runtime.c").toString(),
+        assembly.toString(),
+        "-lgcc",
+        "-o",
+        executable.toString())
+        .redirectErrorStream(true)
+        .start();
+    link.getOutputStream().close();
+    assertTrue(link.waitFor(30, TimeUnit.SECONDS), "RV64GC link timed out");
+    String linkOutput = new String(link.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    assertEquals(0, link.exitValue(), linkOutput);
+
+    Process qemu = new ProcessBuilder(
+        "qemu-system-riscv64",
+        "-machine", "virt", "-accel", "tcg,thread=single",
+        "-smp", "1", "-m", "512M", "-bios", "none",
+        "-kernel", executable.toString(),
+        "-display", "none", "-monitor", "none", "-serial", "stdio",
+        "-fw_cfg", "name=opt/accela/sysy-input,file=" + input)
+        .start();
+    qemu.getOutputStream().close();
+    boolean finished = qemu.waitFor(30, TimeUnit.SECONDS);
+    if (!finished) qemu.destroyForcibly();
+    assertTrue(finished, "RV64GC QEMU execution timed out");
+    String output = new String(qemu.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    String error = new String(qemu.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+    assertFalse(output.isBlank(), error);
+    assertEquals("85814\n0\n", output, error);
+  }
+
+  private Path writeSource() throws Exception {
+    Path source = temporaryDirectory.resolve("rrt2.sy");
+    Files.writeString(source, """
+        int paths(int x, int y) {
+          if (x == 0 || y == 0) return 1;
+          return paths(x - 1, y) + paths(x, y - 1);
+        }
+        int choose(int x, int k) {
+          if (k == 0 || k == x) return 1;
+          return choose(x - 1, k - 1) + choose(x - 1, k);
+        }
+        int main() {
+          int first = paths(12, 6);
+          int second = paths(12, 6);
+          int negative = paths(-1, 0);
+          int outside = paths(64, 1);
+          int choice = choose(18, 9);
+          putint(first + second + negative + outside + choice);
+          putch(10);
+          return 0;
+        }
+        """, StandardCharsets.UTF_8);
+    return source;
+  }
+
+  private Path writeGridOnlySource() throws Exception {
+    Path source = temporaryDirectory.resolve("rrt2-disabled.sy");
+    Files.writeString(source, """
+        int paths(int x, int y) {
+          if (x == 0 || y == 0) return 1;
+          return paths(x - 1, y) + paths(x, y - 1);
+        }
+        int main() {
+          return paths(6, 3);
+        }
+        """, StandardCharsets.UTF_8);
+    return source;
+  }
+
+  private static boolean commandWorks(String... command) {
+    try {
+      Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+      process.getOutputStream().close();
+      boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+      if (!finished) process.destroyForcibly();
+      return finished && process.exitValue() == 0;
+    } catch (Exception unavailable) {
+      return false;
+    }
+  }
+
+  private record CandidateDevelopmentPipeline(PassRegistry registry)
+      implements BenchmarkCompiler.DevelopmentPipeline {
+    @Override
+    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
+      return Rrt2OnDemandMemoizationCandidate.passBuilder(instrumentation);
+    }
+
+    @Override
+    public BackendCompiler backendCompiler(
+        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
+      return new BackendCompiler(profile, instrumentation);
+    }
+  }
+}

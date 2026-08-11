@@ -1,0 +1,590 @@
+package accela.pass.ir.transform.recurrence;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.BackendCompiler;
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.PassBuilder;
+import accela.pass.PreservedAnalyses;
+import accela.pass.Rrt2OnDemandMemoizationCandidate;
+import accela.pass.instrument.DecisionRemark;
+import accela.pass.instrument.DecisionStatus;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.analysis.recurrence.OnDemandMemoRecurrence;
+import accela.pass.ir.analysis.recurrence.OnDemandMemoRecurrenceMatcher;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+final class Rrt2OnDemandMemoizationTest {
+  @Test
+  void matchesCompositeRankButExcludesOrdinaryFibonacciAndDummyDimensions() {
+    Module grid = gridModule(true);
+    var matched = OnDemandMemoRecurrenceMatcher.inspect(function(grid, "paths"));
+    assertTrue(matched.matched());
+    assertEquals(
+        List.of(
+            new OnDemandMemoRecurrence.Transition(1, 0),
+            new OnDemandMemoRecurrence.Transition(0, 1)),
+        matched.recurrence().transitions());
+    assertEquals(
+        OnDemandMemoRecurrence.DomainShape.RECTANGULAR_NONNEGATIVE,
+        matched.recurrence().domainShape());
+
+    var binomial = OnDemandMemoRecurrenceMatcher.inspect(binomialFunction());
+    assertTrue(binomial.matched());
+    assertEquals(
+        OnDemandMemoRecurrence.DomainShape.TRIANGULAR_NONNEGATIVE,
+        binomial.recurrence().domainShape());
+
+    var fibonacci = OnDemandMemoRecurrenceMatcher.inspect(fibonacciFunction());
+    assertTrue(fibonacci.considered());
+    assertFalse(fibonacci.matched());
+    assertEquals(
+        OnDemandMemoRecurrenceMatcher.MODULO_I32_EQUIVALENCE,
+        fibonacci.rejectedObligationId());
+
+    var dummy = OnDemandMemoRecurrenceMatcher.inspect(dummySecondDimensionFunction());
+    assertTrue(dummy.considered());
+    assertFalse(dummy.matched());
+    assertEquals(
+        OnDemandMemoRecurrenceMatcher.COMPOSITE_WELL_FOUNDED_RANK,
+        dummy.rejectedObligationId());
+
+    var unguarded = OnDemandMemoRecurrenceMatcher.inspect(unguardedGridFunction());
+    assertTrue(unguarded.considered());
+    assertFalse(unguarded.matched());
+    assertEquals(
+        OnDemandMemoRecurrenceMatcher.REACHABLE_DOMAIN,
+        unguarded.rejectedObligationId());
+  }
+
+  @Test
+  void rejectsMemoryEffectsUnderTheExactPureContextObligation() {
+    Module module = gridModule(true);
+    Function paths = function(module, "paths");
+    GlobalVariable observation =
+        new GlobalVariable("observation", Type.INT, Constant.intConst(0), false);
+    module.addGlobal(observation);
+    new IRBuilder(block(paths, "recur")).createStore(paths.getArguments().get(0), observation);
+
+    var result = OnDemandMemoRecurrenceMatcher.inspect(paths);
+
+    assertTrue(result.considered());
+    assertFalse(result.matched());
+    assertEquals(OnDemandMemoRecurrenceMatcher.PURE_CONTEXT, result.rejectedObligationId());
+  }
+
+  @Test
+  void buildsReachableStateMemoHelperWithBoundedZeroInitializedStorage() {
+    Module module = gridModule(true);
+    Function paths = function(module, "paths");
+    OnDemandMemoRecurrence recurrence =
+        OnDemandMemoRecurrenceMatcher.inspect(paths).recurrence();
+
+    Function helper = Rrt2MemoizationTransform.apply(module, recurrence);
+    IRVerifier.verifyModule(module);
+
+    assertEquals(Rrt2MemoizationTransform.helperName(paths), helper.getName());
+    assertEquals(2, module.getGlobals().size());
+    for (GlobalVariable global : module.getGlobals()) {
+      assertTrue(global.getInitializer() instanceof Constant.Zero);
+      assertTrue(global.getValueType().isArray());
+      assertEquals(Rrt2MemoizationProfitability.TABLE_CELLS, global.getValueType().size);
+      assertEquals(Type.INT, global.getValueType().innerType);
+    }
+    assertSame(helper, calls(function(module, "main")).getFirst().getCallee());
+    assertEquals(2, calls(paths).stream().filter(call -> call.getCallee() == helper).count());
+    assertEquals(1, calls(helper).stream().filter(call -> call.getCallee() == paths).count());
+    assertEquals(2, calls(helper).stream().filter(call -> call.getCallee() == helper).count());
+    assertTrue(helper.getBlocks().stream()
+        .anyMatch(candidate -> candidate.getLabel().equals("rrt2.fallback")));
+    assertTrue(helper.getBlocks().stream()
+        .flatMap(candidate -> candidate.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.STORE));
+  }
+
+  @Test
+  void differentialExecutionCoversOverflowBoundsNegativeAndCrossCallReuse() {
+    Module module = gridModule(true);
+    Function paths = function(module, "paths");
+    Function helper = Rrt2MemoizationTransform.apply(
+        module, OnDemandMemoRecurrenceMatcher.inspect(paths).recurrence());
+    TinyIrExecutor executor = new TinyIrExecutor(module);
+
+    for (int[] state : List.of(
+        new int[] {0, 0},
+        new int[] {3, 2},
+        new int[] {12, 6},
+        new int[] {40, 20})) {
+      assertEquals(gridReference(state[0], state[1]), executor.execute(helper, state));
+    }
+    // The cache key is guarded. These base states exercise both signed-negative and upper-bound
+    // fallback without indexing either memo table.
+    assertEquals(1, executor.execute(helper, -1, 0));
+    assertEquals(1, executor.execute(helper, Rrt2MemoizationProfitability.DOMAIN_EXTENT, 0));
+    int originalBefore = executor.invocations(paths);
+    assertEquals(65, executor.execute(
+        helper, Rrt2MemoizationProfitability.DOMAIN_EXTENT, 1));
+    assertTrue(executor.invocations(paths) > originalBefore);
+
+    int invocationsBefore = executor.invocations(helper);
+    int first = executor.execute(helper, 50, 30);
+    int invocationsAfterFirst = executor.invocations(helper);
+    int second = executor.execute(helper, 50, 30);
+    assertEquals(first, second);
+    assertTrue(invocationsAfterFirst > invocationsBefore + 1);
+    assertEquals(invocationsAfterFirst + 1, executor.invocations(helper));
+  }
+
+  @Test
+  void emitsPairedLegalityRejectionOnFixedSymbolCollisionAndPreservesAnalyses() {
+    Module module = gridModule(true);
+    Function paths = function(module, "paths");
+    Function conflict = new Function(Rrt2MemoizationTransform.helperName(paths), Type.INT);
+    module.addFunction(conflict);
+    new IRBuilder(conflict.addBlock("entry")).createRet(Constant.intConst(0));
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    PassInstrumentation instrumentation = PassInstrumentation.observed(false, remarks::add);
+    var pass = new Rrt2OnDemandMemoization(
+        instrumentation, Rrt2OnDemandMemoizationCandidate.descriptor(), 1);
+
+    PreservedAnalyses result = pass.run(
+        module,
+        new ModuleAnalysisManager(),
+        new PassBuilder().buildFunctionAnalysisManager());
+
+    assertTrue(result.preservesAll());
+    assertEquals(
+        List.of(DecisionStatus.CANDIDATE, DecisionStatus.REJECTED),
+        remarks.stream().map(DecisionRemark.class::cast).map(DecisionRemark::decision).toList());
+    assertEquals(
+        OnDemandMemoRecurrenceMatcher.NO_ABI_RUNTIME_CHANGE,
+        ((DecisionRemark) remarks.getLast()).legalityObligationId());
+  }
+
+  @Test
+  void reportsNoBenefitWithoutAnExternalCallerAndInvalidatesOnTransform() {
+    Module noCaller = gridModule(false);
+    List<OptimizationRemark> rejected = new ArrayList<>();
+    var rejectedPass = new Rrt2OnDemandMemoization(
+        PassInstrumentation.observed(false, rejected::add),
+        Rrt2OnDemandMemoizationCandidate.descriptor(),
+        1);
+    assertTrue(rejectedPass.run(
+        noCaller,
+        new ModuleAnalysisManager(),
+        new PassBuilder().buildFunctionAnalysisManager()).preservesAll());
+    assertEquals(DecisionStatus.REJECTED, ((DecisionRemark) rejected.getLast()).decision());
+
+    Module applied = gridModule(true);
+    List<OptimizationRemark> accepted = new ArrayList<>();
+    var appliedPass = new Rrt2OnDemandMemoization(
+        PassInstrumentation.observed(false, accepted::add),
+        Rrt2OnDemandMemoizationCandidate.descriptor(),
+        1);
+    assertTrue(appliedPass.run(
+        applied,
+        new ModuleAnalysisManager(),
+        new PassBuilder().buildFunctionAnalysisManager()).preservesNone());
+    IRVerifier.verifyModule(applied);
+    assertEquals(DecisionStatus.APPLIED, ((DecisionRemark) accepted.getLast()).decision());
+  }
+
+  @Test
+  void transformedModuleLowersThroughTheRv64gcBackend() {
+    Module module = gridModule(true);
+    Function paths = function(module, "paths");
+    Rrt2MemoizationTransform.apply(
+        module, OnDemandMemoRecurrenceMatcher.inspect(paths).recurrence());
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.contains(Rrt2MemoizationTransform.helperName(paths) + ":"));
+    assertTrue(assembly.contains(Rrt2MemoizationTransform.valuesName(paths)));
+    assertTrue(assembly.contains(Rrt2MemoizationTransform.seenName(paths)));
+    assertTrue(assembly.contains(".zero 16384"));
+  }
+
+  @Test
+  void productionRrtDoesNotDenseLowerTheCandidateFallbackASecondTime() {
+    Module module = gridModule(true);
+    Function paths = function(module, "paths");
+    Function helper = Rrt2MemoizationTransform.apply(
+        module, OnDemandMemoRecurrenceMatcher.inspect(paths).recurrence());
+
+    assertFalse(RankedRecurrenceTabulation.run(module));
+    IRVerifier.verifyModule(module);
+    assertEquals(2, module.getGlobals().size());
+    assertFalse(module.getFunctions().stream()
+        .anyMatch(function -> function.getName().equals("paths.rrt")));
+    assertEquals(1, calls(helper).stream().filter(call -> call.getCallee() == paths).count());
+    assertEquals(2, calls(paths).stream().filter(call -> call.getCallee() == helper).count());
+  }
+
+  @Test
+  void transformsMultipleQualifiedFunctionsWithUniqueBoundedTables() {
+    Module module = new Module();
+    Function first = addGridFunction(module, "first_paths");
+    Function second = addGridFunction(module, "second_paths");
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Value left = builder.createCall(
+        first, Type.INT, Constant.intConst(6), Constant.intConst(3));
+    Value right = builder.createCall(
+        second, Type.INT, Constant.intConst(7), Constant.intConst(2));
+    builder.createRet(builder.createAdd(left, right));
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    var pass = new Rrt2OnDemandMemoization(
+        PassInstrumentation.observed(false, remarks::add),
+        Rrt2OnDemandMemoizationCandidate.descriptor(),
+        1);
+
+    assertTrue(pass.run(
+        module,
+        new ModuleAnalysisManager(),
+        new PassBuilder().buildFunctionAnalysisManager()).preservesNone());
+    IRVerifier.verifyModule(module);
+
+    assertEquals(4, module.getGlobals().size());
+    assertEquals(2L * Rrt2MemoizationProfitability.TOTAL_STORAGE_CELLS,
+        module.getGlobals().stream().mapToLong(global -> global.getValueType().size).sum());
+    assertEquals(4, module.getGlobals().stream().map(GlobalVariable::getName).distinct().count());
+    assertNotNull(function(module, Rrt2MemoizationTransform.helperName(first)));
+    assertNotNull(function(module, Rrt2MemoizationTransform.helperName(second)));
+    assertEquals(2, remarks.stream()
+        .map(DecisionRemark.class::cast)
+        .filter(remark -> remark.decision() == DecisionStatus.APPLIED)
+        .count());
+  }
+
+  @Test
+  void rejectsSingleTransitionRecursionAsUnprofitableWithoutAllocatingStorage() {
+    Module module = singleTransitionModule();
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    var pass = new Rrt2OnDemandMemoization(
+        PassInstrumentation.observed(false, remarks::add),
+        Rrt2OnDemandMemoizationCandidate.descriptor(),
+        1);
+
+    assertTrue(pass.run(
+        module,
+        new ModuleAnalysisManager(),
+        new PassBuilder().buildFunctionAnalysisManager()).preservesAll());
+
+    assertTrue(module.getGlobals().isEmpty());
+    assertEquals(accela.pass.instrument.DecisionReasonCode.REJECTED_PROFITABILITY,
+        ((DecisionRemark) remarks.getLast()).reason());
+  }
+
+  private static Module gridModule(boolean withMain) {
+    Module module = new Module();
+    Function paths = addGridFunction(module, "paths");
+    if (withMain) {
+      Function main = new Function("main", Type.INT);
+      module.addFunction(main);
+      IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+      Value first = builder.createCall(
+          paths, Type.INT, Constant.intConst(8), Constant.intConst(4));
+      Value second = builder.createCall(
+          paths, Type.INT, Constant.intConst(8), Constant.intConst(4));
+      builder.createRet(builder.createAdd(first, second));
+    }
+    IRVerifier.verifyModule(module);
+    return module;
+  }
+
+  private static Function addGridFunction(Module module, String name) {
+    Function paths = new Function(name, Type.INT);
+    module.addFunction(paths);
+    Value x = paths.addArgument(Type.INT, "x");
+    Value y = paths.addArgument(Type.INT, "y");
+    BasicBlock entry = paths.addBlock("entry");
+    BasicBlock checkY = paths.addBlock("check.y");
+    BasicBlock base = paths.addBlock("base");
+    BasicBlock recur = paths.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(builder.createICmp("eq", x, Constant.intConst(0)), base, checkY);
+    builder.setInsertPoint(checkY);
+    builder.createCondBr(builder.createICmp("eq", y, Constant.intConst(0)), base, recur);
+    new IRBuilder(base).createRet(Constant.intConst(1));
+    builder.setInsertPoint(recur);
+    Value left = builder.createCall(
+        paths, Type.INT, builder.createSub(x, Constant.intConst(1)), y);
+    Value right = builder.createCall(
+        paths, Type.INT, x, builder.createSub(y, Constant.intConst(1)));
+    builder.createRet(builder.createAdd(left, right));
+
+    return paths;
+  }
+
+  private static Module singleTransitionModule() {
+    Module module = new Module();
+    Function recurrence = new Function("single", Type.INT);
+    module.addFunction(recurrence);
+    Value x = recurrence.addArgument(Type.INT, "x");
+    Value y = recurrence.addArgument(Type.INT, "y");
+    BasicBlock entry = recurrence.addBlock("entry");
+    BasicBlock checkY = recurrence.addBlock("check.y");
+    BasicBlock base = recurrence.addBlock("base");
+    BasicBlock recur = recurrence.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(builder.createICmp("eq", x, Constant.intConst(0)), base, checkY);
+    builder.setInsertPoint(checkY);
+    builder.createCondBr(builder.createICmp("eq", y, Constant.intConst(0)), base, recur);
+    new IRBuilder(base).createRet(y);
+    builder.setInsertPoint(recur);
+    Value nextX = builder.createSub(x, Constant.intConst(1));
+    Value nextY = builder.createSub(y, Constant.intConst(1));
+    builder.createRet(builder.createCall(recurrence, Type.INT, nextX, nextY));
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    builder.setInsertPoint(main.addBlock("entry"));
+    builder.createRet(builder.createCall(
+        recurrence, Type.INT, Constant.intConst(8), Constant.intConst(4)));
+    IRVerifier.verifyModule(module);
+    return module;
+  }
+
+  private static Function fibonacciFunction() {
+    Function fibonacci = new Function("fibonacci", Type.INT);
+    Value n = fibonacci.addArgument(Type.INT, "n");
+    BasicBlock entry = fibonacci.addBlock("entry");
+    BasicBlock base = fibonacci.addBlock("base");
+    BasicBlock recur = fibonacci.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(builder.createICmp("sle", n, Constant.intConst(1)), base, recur);
+    new IRBuilder(base).createRet(n);
+    builder.setInsertPoint(recur);
+    Value first = builder.createCall(
+        fibonacci, Type.INT, builder.createSub(n, Constant.intConst(1)));
+    Value second = builder.createCall(
+        fibonacci, Type.INT, builder.createSub(n, Constant.intConst(2)));
+    builder.createRet(builder.createAdd(first, second));
+    return fibonacci;
+  }
+
+  private static Function dummySecondDimensionFunction() {
+    Function function = new Function("dummy", Type.INT);
+    Value x = function.addArgument(Type.INT, "x");
+    Value y = function.addArgument(Type.INT, "y");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock base = function.addBlock("base");
+    BasicBlock recur = function.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(builder.createICmp("eq", x, Constant.intConst(0)), base, recur);
+    new IRBuilder(base).createRet(y);
+    builder.setInsertPoint(recur);
+    Value first = builder.createCall(
+        function, Type.INT, builder.createSub(x, Constant.intConst(1)), y);
+    Value second = builder.createCall(
+        function, Type.INT, builder.createSub(x, Constant.intConst(2)), y);
+    builder.createRet(builder.createAdd(first, second));
+    return function;
+  }
+
+  private static Function binomialFunction() {
+    Function function = new Function("choose", Type.INT);
+    Value x = function.addArgument(Type.INT, "x");
+    Value k = function.addArgument(Type.INT, "k");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock checkEqual = function.addBlock("check.equal");
+    BasicBlock base = function.addBlock("base");
+    BasicBlock recur = function.addBlock("recur");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createCondBr(builder.createICmp("eq", k, Constant.intConst(0)), base, checkEqual);
+    builder.setInsertPoint(checkEqual);
+    builder.createCondBr(builder.createICmp("eq", k, x), base, recur);
+    new IRBuilder(base).createRet(Constant.intConst(1));
+    builder.setInsertPoint(recur);
+    Value nextX = builder.createSub(x, Constant.intConst(1));
+    Value left = builder.createCall(
+        function, Type.INT, nextX, builder.createSub(k, Constant.intConst(1)));
+    Value right = builder.createCall(function, Type.INT, nextX, k);
+    builder.createRet(builder.createAdd(left, right));
+    return function;
+  }
+
+  private static Function unguardedGridFunction() {
+    Function function = new Function("unguarded", Type.INT);
+    Value x = function.addArgument(Type.INT, "x");
+    Value y = function.addArgument(Type.INT, "y");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Value left = builder.createCall(
+        function, Type.INT, builder.createSub(x, Constant.intConst(1)), y);
+    Value right = builder.createCall(
+        function, Type.INT, x, builder.createSub(y, Constant.intConst(1)));
+    builder.createRet(builder.createAdd(left, right));
+    return function;
+  }
+
+  private static int gridReference(int x, int y) {
+    int[][] values = new int[x + 1][y + 1];
+    for (int first = 0; first <= x; first++) values[first][0] = 1;
+    for (int second = 0; second <= y; second++) values[0][second] = 1;
+    for (int first = 1; first <= x; first++) {
+      for (int second = 1; second <= y; second++) {
+        values[first][second] = values[first - 1][second] + values[first][second - 1];
+      }
+    }
+    return values[x][y];
+  }
+
+  private static Function function(Module module, String name) {
+    return module.getFunctions().stream()
+        .filter(candidate -> candidate.getName().equals(name))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static BasicBlock block(Function function, String name) {
+    return function.getBlocks().stream()
+        .filter(candidate -> candidate.getLabel().equals(name))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static List<Instruction> calls(Function function) {
+    assertNotNull(function);
+    return function.getBlocks().stream()
+        .flatMap(candidate -> candidate.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL)
+        .toList();
+  }
+
+  /** Small deterministic executor for differential testing of the candidate's exact IR subset. */
+  private static final class TinyIrExecutor {
+    private record Pointer(GlobalVariable global, int index) {}
+
+    private final Map<GlobalVariable, int[]> memory = new IdentityHashMap<>();
+    private final Map<Function, Integer> invocations = new IdentityHashMap<>();
+
+    TinyIrExecutor(Module module) {
+      for (GlobalVariable global : module.getGlobals()) {
+        memory.put(global, new int[global.getValueType().size]);
+      }
+    }
+
+    int invocations(Function function) {
+      return invocations.getOrDefault(function, 0);
+    }
+
+    int execute(Function function, int... arguments) {
+      invocations.merge(function, 1, Integer::sum);
+      Map<Value, Object> values = new IdentityHashMap<>();
+      for (int index = 0; index < arguments.length; index++) {
+        values.put(function.getArguments().get(index), arguments[index]);
+      }
+      BasicBlock current = function.getEntryBlock();
+      BasicBlock predecessor = null;
+      while (true) {
+        BasicBlock next = null;
+        for (Instruction instruction : current.getInstructions()) {
+          switch (instruction.getOpcode()) {
+            case ADD -> values.put(instruction,
+                integer(instruction.getOperand(0), values)
+                    + integer(instruction.getOperand(1), values));
+            case SUB -> values.put(instruction,
+                integer(instruction.getOperand(0), values)
+                    - integer(instruction.getOperand(1), values));
+            case MUL -> values.put(instruction,
+                integer(instruction.getOperand(0), values)
+                    * integer(instruction.getOperand(1), values));
+            case AND -> values.put(instruction,
+                integer(instruction.getOperand(0), values)
+                    & integer(instruction.getOperand(1), values));
+            case XOR -> values.put(instruction,
+                integer(instruction.getOperand(0), values)
+                    ^ integer(instruction.getOperand(1), values));
+            case ICMP -> values.put(instruction, compare(
+                instruction.getPredicate(),
+                integer(instruction.getOperand(0), values),
+                integer(instruction.getOperand(1), values)) ? 1 : 0);
+            case ZEXT, SEXT ->
+                values.put(instruction, integer(instruction.getOperand(0), values));
+            case GEP -> {
+              GlobalVariable global = (GlobalVariable) instruction.getOperand(0);
+              values.put(instruction, new Pointer(
+                  global,
+                  integer(instruction.getOperand(instruction.getNumOperands() - 1), values)));
+            }
+            case LOAD -> {
+              Pointer pointer = (Pointer) values.get(instruction.getOperand(0));
+              values.put(instruction, memory.get(pointer.global())[pointer.index()]);
+            }
+            case STORE -> {
+              Pointer pointer = (Pointer) values.get(instruction.getOperand(1));
+              memory.get(pointer.global())[pointer.index()] =
+                  integer(instruction.getOperand(0), values);
+            }
+            case CALL -> {
+              int[] callArguments = new int[instruction.getNumOperands()];
+              for (int index = 0; index < callArguments.length; index++) {
+                callArguments[index] = integer(instruction.getOperand(index), values);
+              }
+              values.put(instruction, execute(instruction.getCallee(), callArguments));
+            }
+            case PHI -> {
+              boolean found = false;
+              for (int index = 0; index < instruction.getNumOperands(); index += 2) {
+                if (instruction.getOperand(index + 1) == predecessor) {
+                  values.put(instruction, integer(instruction.getOperand(index), values));
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) throw new IllegalStateException("phi has no incoming predecessor");
+            }
+            case BR -> next = (BasicBlock) instruction.getOperand(0);
+            case CONDBR -> next = (BasicBlock) instruction.getOperand(
+                integer(instruction.getOperand(0), values) != 0 ? 1 : 2);
+            case RET -> {
+              return integer(instruction.getOperand(0), values);
+            }
+            default -> throw new IllegalStateException(
+                "unsupported differential opcode " + instruction.getOpcode());
+          }
+          if (next != null) break;
+        }
+        if (next == null) throw new IllegalStateException("unterminated differential block");
+        predecessor = current;
+        current = next;
+      }
+    }
+
+    private static int integer(Value value, Map<Value, Object> values) {
+      if (value instanceof Constant.Int constant) return (int) constant.value;
+      return (Integer) values.get(value);
+    }
+
+    private static boolean compare(String predicate, int left, int right) {
+      return switch (predicate) {
+        case "eq" -> left == right;
+        case "ne" -> left != right;
+        case "slt" -> left < right;
+        case "sle" -> left <= right;
+        case "sgt" -> left > right;
+        case "sge" -> left >= right;
+        default -> throw new IllegalStateException("unsupported predicate " + predicate);
+      };
+    }
+  }
+}
