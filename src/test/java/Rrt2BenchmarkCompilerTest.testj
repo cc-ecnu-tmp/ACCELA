@@ -3,13 +3,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import accela.backend.BackendCompiler;
-import accela.backend.instrument.BackendPassInstrumentation;
-import accela.pass.PassBuilder;
 import accela.pass.PassRegistry;
 import accela.pass.PipelineProfile;
 import accela.pass.Rrt2OnDemandMemoizationCandidate;
-import accela.pass.ir.instrument.PassInstrumentation;
 import accela.util.StrictJson;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,18 +27,16 @@ final class Rrt2BenchmarkCompilerTest {
     Path profile = temporaryDirectory.resolve("enabled.json");
     Path assembly = temporaryDirectory.resolve("enabled.s");
     Path remarks = temporaryDirectory.resolve("enabled.jsonl");
-    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
+    PassRegistry registry = PassRegistry.standard();
     PipelineProfile.builder(registry)
         .enableCandidate(Rrt2OnDemandMemoizationCandidate.ID)
         .build()
         .writeJson(profile);
 
-    BenchmarkCompiler.runForTesting(
-        new String[] {
-          source.toString(), "-o", assembly.toString(),
-          "--profile", profile.toString(), "--remarks", remarks.toString()
-        },
-        new CandidateDevelopmentPipeline(registry));
+    BenchmarkCompiler.main(new String[] {
+        source.toString(), "-o", assembly.toString(),
+        "--profile", profile.toString(), "--remarks", remarks.toString()
+    });
 
     String assemblyText = Files.readString(assembly, StandardCharsets.UTF_8);
     assertTrue(assemblyText.contains("paths.rrt2.memo:"));
@@ -69,18 +63,16 @@ final class Rrt2BenchmarkCompilerTest {
     Path candidateAssembly = temporaryDirectory.resolve("disabled-development.s");
     Path judgeAssembly = temporaryDirectory.resolve("disabled-judge.s");
     Path remarks = temporaryDirectory.resolve("disabled.jsonl");
-    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
+    PassRegistry registry = PassRegistry.standard();
     PipelineProfile.full(registry).writeJson(profile);
 
     Compiler.main(new String[] {
         source.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
     });
-    BenchmarkCompiler.runForTesting(
-        new String[] {
-          source.toString(), "-o", candidateAssembly.toString(),
-          "--profile", profile.toString(), "--remarks", remarks.toString()
-        },
-        new CandidateDevelopmentPipeline(registry));
+    BenchmarkCompiler.main(new String[] {
+        source.toString(), "-o", candidateAssembly.toString(),
+        "--profile", profile.toString(), "--remarks", remarks.toString()
+    });
 
     assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(candidateAssembly));
     assertTrue(Files.readAllLines(remarks).stream()
@@ -100,17 +92,15 @@ final class Rrt2BenchmarkCompilerTest {
     Path executable = temporaryDirectory.resolve("rv64gc.elf");
     Path input = temporaryDirectory.resolve("empty.in");
     Files.write(input, new byte[0]);
-    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
+    PassRegistry registry = PassRegistry.standard();
     PipelineProfile.builder(registry)
         .enableCandidate(Rrt2OnDemandMemoizationCandidate.ID)
         .build()
         .writeJson(profile);
-    BenchmarkCompiler.runForTesting(
-        new String[] {
-          source.toString(), "-o", assembly.toString(),
-          "--profile", profile.toString(), "--remarks", remarks.toString()
-        },
-        new CandidateDevelopmentPipeline(registry));
+    BenchmarkCompiler.main(new String[] {
+        source.toString(), "-o", assembly.toString(),
+        "--profile", profile.toString(), "--remarks", remarks.toString()
+    });
 
     Path root = Path.of("").toAbsolutePath().normalize();
     Process link = new ProcessBuilder(
@@ -206,17 +196,4 @@ final class Rrt2BenchmarkCompilerTest {
     }
   }
 
-  private record CandidateDevelopmentPipeline(PassRegistry registry)
-      implements BenchmarkCompiler.DevelopmentPipeline {
-    @Override
-    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
-      return Rrt2OnDemandMemoizationCandidate.passBuilder(instrumentation);
-    }
-
-    @Override
-    public BackendCompiler backendCompiler(
-        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
-      return new BackendCompiler(profile, instrumentation);
-    }
-  }
 }

@@ -5,6 +5,8 @@ import static accela.pass.PassDescriptor.Stage.BACKEND_MODULE;
 import static accela.pass.PassDescriptor.Stage.IR_FUNCTION;
 import static accela.pass.PassDescriptor.Stage.IR_MODULE;
 
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import accela.pass.ir.transform.scan.PrefixScanReuse;
 import accela.util.StrictJson;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -288,6 +290,15 @@ public final class PassRegistry {
         FAMILY_INTEGER_CONSTANT_ARITHMETIC_STRENGTH_REDUCTION,
         "RISC-V constant arithmetic strength reduction", BACKEND_MODULE, 1));
     passes.add(required(BACKEND_ASM_EMISSION, FAMILY_BACKEND_EMISSION, "RISC-V frame lowering and assembly emission", BACKEND_MODULE, 1));
+
+    // Executable candidates follow the frozen screening order. They remain default-off and
+    // are inserted at their declared production anchors only by the development provider.
+    passes.add(ExtendedAffineSummarizationCandidate.descriptor());
+    passes.add(FiniteStateAccelerationCandidate.descriptor());
+    passes.add(SameDomainLoopFusionCandidate.descriptor());
+    passes.add(IntegerLinearTransitionCandidate.descriptor());
+    passes.add(Rrt2OnDemandMemoizationCandidate.descriptor());
+    passes.add(PrefixScanReuse.descriptor());
     return new PassRegistry(passes);
   }
 

@@ -1,5 +1,6 @@
 package accela.pass;
 
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.FunctionPassManager;
@@ -38,6 +39,7 @@ import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 import accela.pass.ir.transform.loop.unroll.LoopUnrollAndJam;
 import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
+import accela.pass.ir.transform.scan.PrefixScanReuse;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -60,6 +62,38 @@ public final class PassBuilder {
   PassBuilder(CandidatePassProvider candidatePassProvider) {
     this.candidatePassProvider = Objects.requireNonNull(
         candidatePassProvider, "candidatePassProvider");
+  }
+
+  /**
+   * Creates the development-only pipeline builder containing every screened candidate factory.
+   *
+   * <p>The judge-facing compiler deliberately uses {@link #PassBuilder()} instead. Candidate
+   * implementations require decision instrumentation and remain lazily uninstantiated unless a
+   * profile explicitly enables their stable identifier.
+   */
+  public static PassBuilder withStandardCandidateImplementations(
+      PassInstrumentation instrumentation) {
+    Objects.requireNonNull(instrumentation, "instrumentation");
+    if (!instrumentation.isEnabled()) {
+      throw new IllegalArgumentException(
+          "standard candidate implementations require enabled decision instrumentation");
+    }
+    CandidatePassProvider provider = new CandidatePassProvider(
+        Map.of(
+            ExtendedAffineSummarizationCandidate.ID,
+                ExtendedAffineSummarizationCandidate.factory(instrumentation),
+            FiniteStateAccelerationCandidate.ID,
+                FiniteStateAccelerationCandidate.functionFactory(instrumentation),
+            SameDomainLoopFusionCandidate.ID,
+                SameDomainLoopFusionCandidate.functionFactory(instrumentation),
+            IntegerLinearTransitionCandidate.ID,
+                IntegerLinearTransitionCandidate.functionFactory(instrumentation),
+            PrefixScanReuse.ID,
+                PrefixScanReuse.factory(instrumentation)),
+        Map.of(
+            Rrt2OnDemandMemoizationCandidate.ID,
+                Rrt2OnDemandMemoizationCandidate.factory(instrumentation)));
+    return new PassBuilder(provider);
   }
 
   /** Creates pass instrumentation with always-on verification and optional reporting. */

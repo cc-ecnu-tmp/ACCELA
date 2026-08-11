@@ -9,12 +9,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.recurrence.Rrt2OnDemandMemoization;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 final class Rrt2OnDemandMemoizationCandidateTest {
   @Test
-  void descriptorMatchesTheQualifiedScreeningContractWithoutChangingBaseRegistry() {
+  void descriptorMatchesTheQualifiedScreeningContractAndCentralRegistry() {
     PassDescriptor descriptor = Rrt2OnDemandMemoizationCandidate.descriptor();
 
     assertEquals("candidate.rrt2-on-demand-memoization", descriptor.id());
@@ -41,34 +40,7 @@ final class Rrt2OnDemandMemoizationCandidateTest {
         "candidate.rrt2-on-demand-memoization.no-abi-runtime-change",
         "candidate.rrt2-on-demand-memoization.profitability"),
         descriptor.legalityObligationIds());
-    assertTrue(PassRegistry.standard().candidates().isEmpty());
-    assertSame(descriptor,
-        Rrt2OnDemandMemoizationCandidate.combinedRegistry().require(descriptor.id()));
-  }
-
-  @Test
-  void disabledCandidateDoesNotInstantiateItsFactoryAndEnabledCandidateDoes() {
-    PassRegistry registry = Rrt2OnDemandMemoizationCandidate.combinedRegistry();
-    AtomicInteger constructions = new AtomicInteger();
-    try (PassInstrumentation instrumentation =
-        PassInstrumentation.observed(false, ignored -> {})) {
-      var delegate = Rrt2OnDemandMemoizationCandidate.factory(instrumentation);
-      PassBuilder builder = Rrt2OnDemandMemoizationCandidate.passBuilder(
-          instrumentation,
-          (descriptor, occurrence) -> {
-            constructions.incrementAndGet();
-            return delegate.apply(descriptor, occurrence);
-          });
-
-      builder.buildIRO0Pipeline(instrumentation, PipelineProfile.full(registry));
-      assertEquals(0, constructions.get());
-
-      PipelineProfile enabled = PipelineProfile.builder(registry)
-          .enableCandidate(Rrt2OnDemandMemoizationCandidate.ID)
-          .build();
-      builder.buildIRO0Pipeline(instrumentation, enabled);
-      assertEquals(1, constructions.get());
-    }
+    assertSame(descriptor, PassRegistry.standard().require(descriptor.id()));
   }
 
   @Test

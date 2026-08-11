@@ -33,7 +33,7 @@ public final class BenchmarkCompiler {
 
     @Override
     public PassBuilder passBuilder(PassInstrumentation instrumentation) {
-      return new PassBuilder();
+      return PassBuilder.withStandardCandidateImplementations(instrumentation);
     }
 
     @Override

@@ -21,8 +21,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 final class PrefixScanCandidateIntegrationTest {
@@ -66,28 +64,28 @@ final class PrefixScanCandidateIntegrationTest {
   }
 
   @Test
-  void disabledProfileDoesNotInstantiateTheFactory() throws Exception {
-    PassRegistry registry = registry();
-    AtomicInteger constructions = new AtomicInteger();
-    try (PassInstrumentation instrumentation = PassInstrumentation.enabled(false)) {
-      PassBuilder builder = builder(instrumentation, constructions);
+  void disabledProfileEmitsNoCandidateEventsAndKeepsIrValid() throws Exception {
+    PassRegistry registry = PassRegistry.standard();
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      PassBuilder builder = PassBuilder.withStandardCandidateImplementations(instrumentation);
       var module = parse(oracle("forward_prefix"));
       builder.buildIRO0Pipeline(instrumentation, PipelineProfile.full(registry)).run(
           module, builder.buildModuleAnalysisManager(), builder.buildFunctionAnalysisManager());
       IRVerifier.verifyModule(module);
     }
-    assertEquals(0, constructions.get());
+    assertTrue(remarks.stream().noneMatch(remark -> remark.passId().startsWith("candidate.")));
   }
 
   @Test
   void fullPipelineTransformsAllThreeOracleStructuresAndPairsRemarks() throws Exception {
     for (String structure : List.of("forward_prefix", "reverse_suffix", "weighted_prefix")) {
-      PassRegistry registry = registry();
+      PassRegistry registry = PassRegistry.standard();
       List<OptimizationRemark> remarks = new ArrayList<>();
-      AtomicInteger constructions = new AtomicInteger();
       try (PassInstrumentation instrumentation =
           PassInstrumentation.observed(false, remarks::add)) {
-        PassBuilder builder = builder(instrumentation, constructions);
+        PassBuilder builder = PassBuilder.withStandardCandidateImplementations(instrumentation);
         var module = parse(oracle(structure));
         PipelineProfile profile = PipelineProfile.builder(registry)
             .enableCandidate(PrefixScanReuse.ID)
@@ -96,7 +94,6 @@ final class PrefixScanCandidateIntegrationTest {
             module, builder.buildModuleAnalysisManager(), builder.buildFunctionAnalysisManager());
         IRVerifier.verifyModule(module);
       }
-      assertEquals(1, constructions.get(), structure);
       List<DecisionStatus> decisions = remarks.stream()
           .filter(remark -> PrefixScanReuse.ID.equals(remark.passId()))
           .filter(DecisionRemark.class::isInstance)
@@ -111,23 +108,6 @@ final class PrefixScanCandidateIntegrationTest {
           .map(accela.pass.instrument.PassRemark.class::cast)
           .allMatch(accela.pass.instrument.PassRemark::changed));
     }
-  }
-
-  private static PassRegistry registry() {
-    List<PassDescriptor> descriptors = new ArrayList<>(PassRegistry.standard().all());
-    descriptors.add(PrefixScanReuse.descriptor());
-    return PassRegistry.of(descriptors);
-  }
-
-  private static PassBuilder builder(
-      PassInstrumentation instrumentation, AtomicInteger constructions) {
-    var realFactory = PrefixScanReuse.factory(instrumentation);
-    return new PassBuilder(new PassBuilder.CandidatePassProvider(
-        Map.of(PrefixScanReuse.ID, (descriptor, occurrence) -> {
-          constructions.incrementAndGet();
-          return realFactory.apply(descriptor, occurrence);
-        }),
-        Map.of()));
   }
 
   private static accela.ir.Module parse(Path sourcePath) throws Exception {

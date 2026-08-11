@@ -2,22 +2,15 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import accela.backend.BackendCompiler;
-import accela.backend.instrument.BackendPassInstrumentation;
-import accela.pass.PassBuilder;
 import accela.pass.PassRegistry;
 import accela.pass.PipelineProfile;
 import accela.pass.SameDomainLoopFusionCandidate;
-import accela.pass.SameDomainLoopFusionCandidatePassBuilder;
-import accela.pass.SameDomainLoopFusionCandidateRegistry;
-import accela.pass.ir.instrument.PassInstrumentation;
 import accela.util.StrictJson;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -54,7 +47,7 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
   @Test
   void enabledCandidateRunsThroughTheRealDevelopmentCompilerAndRv64gcBackend()
       throws Exception {
-    PassRegistry registry = SameDomainLoopFusionCandidateRegistry.create();
+    PassRegistry registry = PassRegistry.standard();
     Path input = temporaryDirectory.resolve("fusion.sy");
     Path profile = temporaryDirectory.resolve("enabled.json");
     Path assembly = temporaryDirectory.resolve("enabled.s");
@@ -64,14 +57,11 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
         .enableCandidate(SameDomainLoopFusionCandidate.ID)
         .build()
         .writeJson(profile);
-    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
-
-    BenchmarkCompiler.runForTesting(new String[] {
+    BenchmarkCompiler.main(new String[] {
         input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
         "--remarks", remarks.toString()
-    }, pipeline);
+    });
 
-    assertEquals(1, pipeline.passFactoryInvocations.get());
     assertTrue(Files.readString(assembly, StandardCharsets.UTF_8).contains("main:"));
     List<Map<?, ?>> candidateEvents = Files.readAllLines(remarks).stream()
         .map(StrictJson::parse).<Map<?, ?>>map(value -> (Map<?, ?>) value)
@@ -84,9 +74,9 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
   }
 
   @Test
-  void disabledCandidateNeverInvokesItsFactoryAndKeepsJudgeAssemblyIdentical()
+  void disabledCandidateIsSilentAndKeepsJudgeAssemblyIdentical()
       throws Exception {
-    PassRegistry registry = SameDomainLoopFusionCandidateRegistry.create();
+    PassRegistry registry = PassRegistry.standard();
     Path input = temporaryDirectory.resolve("disabled.sy");
     Path profile = temporaryDirectory.resolve("disabled.json");
     Path assembly = temporaryDirectory.resolve("disabled.s");
@@ -94,17 +84,14 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
     Path remarks = temporaryDirectory.resolve("disabled.jsonl");
     Files.writeString(input, SOURCE, StandardCharsets.UTF_8);
     PipelineProfile.full(registry).writeJson(profile);
-    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
-
-    BenchmarkCompiler.runForTesting(new String[] {
+    BenchmarkCompiler.main(new String[] {
         input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
         "--remarks", remarks.toString()
-    }, pipeline);
+    });
     Compiler.main(new String[] {
         input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
     });
 
-    assertEquals(0, pipeline.passFactoryInvocations.get());
     assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(assembly));
     assertTrue(Files.readAllLines(remarks).stream()
         .map(StrictJson::parse).map(value -> (Map<?, ?>) value)
@@ -113,7 +100,7 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
 
   @Test
   void allFourFrozenOracleStructuresReachTheRealCandidateTransform() throws Exception {
-    PassRegistry registry = SameDomainLoopFusionCandidateRegistry.create();
+    PassRegistry registry = PassRegistry.standard();
     Path profile = temporaryDirectory.resolve("oracles-enabled.json");
     PipelineProfile.builder(registry)
         .enableCandidate(SameDomainLoopFusionCandidate.ID)
@@ -124,26 +111,24 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
         Path.of("benchmarks/oracles/fusion/stencil_producer/baseline.sy"),
         Path.of("benchmarks/oracles/fusion/two_temporaries/baseline.sy"),
         Path.of("benchmarks/oracles/boom_ilp/independent_chains/baseline.sy"));
-    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
     for (int index = 0; index < sources.size(); index++) {
       Path assembly = temporaryDirectory.resolve("oracle-" + index + ".s");
       Path remarks = temporaryDirectory.resolve("oracle-" + index + ".jsonl");
-      BenchmarkCompiler.runForTesting(new String[] {
+      BenchmarkCompiler.main(new String[] {
           sources.get(index).toString(), "-o", assembly.toString(),
           "--profile", profile.toString(), "--remarks", remarks.toString()
-      }, pipeline);
+      });
       assertTrue(Files.readAllLines(remarks).stream()
           .map(StrictJson::parse).map(value -> (Map<?, ?>) value)
           .filter(event -> SameDomainLoopFusionCandidate.ID.equals(event.get("pass")))
           .anyMatch(event -> "applied".equals(event.get("decision"))),
           "candidate did not transform " + sources.get(index));
     }
-    assertEquals(4, pipeline.passFactoryInvocations.get());
   }
 
   @Test
   void disabledCandidateAlsoKeepsFloatingPointJudgeAssemblyIdentical() throws Exception {
-    PassRegistry registry = SameDomainLoopFusionCandidateRegistry.create();
+    PassRegistry registry = PassRegistry.standard();
     Path input = temporaryDirectory.resolve("floating.sy");
     Path profile = temporaryDirectory.resolve("floating-disabled.json");
     Path assembly = temporaryDirectory.resolve("floating-disabled.s");
@@ -154,47 +139,18 @@ final class SameDomainLoopFusionBenchmarkCompilerTest {
         int main() { putfloat(transform(getfloat())); return 0; }
         """, StandardCharsets.UTF_8);
     PipelineProfile.full(registry).writeJson(profile);
-    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
-
-    BenchmarkCompiler.runForTesting(new String[] {
+    BenchmarkCompiler.main(new String[] {
         input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
         "--remarks", remarks.toString()
-    }, pipeline);
+    });
     Compiler.main(new String[] {
         input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
     });
 
-    assertEquals(0, pipeline.passFactoryInvocations.get());
     assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(assembly));
     assertTrue(Files.readAllLines(remarks).stream()
         .map(StrictJson::parse).map(value -> (Map<?, ?>) value)
         .noneMatch(event -> SameDomainLoopFusionCandidate.ID.equals(event.get("pass"))));
   }
 
-  private static final class CandidateDevelopmentPipeline
-      implements BenchmarkCompiler.DevelopmentPipeline {
-    private final PassRegistry registry;
-    private final AtomicInteger passFactoryInvocations = new AtomicInteger();
-
-    CandidateDevelopmentPipeline(PassRegistry registry) {
-      this.registry = registry;
-    }
-
-    @Override
-    public PassRegistry registry() {
-      return registry;
-    }
-
-    @Override
-    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
-      return SameDomainLoopFusionCandidatePassBuilder.create(
-          instrumentation, passFactoryInvocations);
-    }
-
-    @Override
-    public BackendCompiler backendCompiler(
-        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
-      return new BackendCompiler(profile, instrumentation);
-    }
-  }
 }

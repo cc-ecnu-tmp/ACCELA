@@ -317,7 +317,8 @@ final class BenchmarkCompilerTest {
         input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
     });
 
-    assertTrue(PassRegistry.standard().candidates().isEmpty());
+    assertTrue(PassRegistry.standard().find(SyntheticCandidateRegistry.IR_CANDIDATE) == null);
+    assertTrue(PassRegistry.standard().find(SyntheticCandidateRegistry.BACKEND_CANDIDATE) == null);
     assertEquals(1, pipeline.irFactoryConstructions.get());
     assertEquals(1, pipeline.backendFactoryConstructions.get());
     String assemblyText = Files.readString(assembly);

@@ -1,0 +1,89 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ast.Node;
+import accela.ir.AST2IR;
+import accela.parse.Lexer;
+import accela.parse.Parser;
+import accela.parse.Sema;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.instrument.PassRemark;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+/** Central executable-candidate registry and provider smoke tests. */
+final class StandardCandidateIntegrationTest {
+  @Test
+  void candidateEmptyPipelineIsLazySilentAndVerifierClean() throws Exception {
+    PassRegistry registry = PassRegistry.standard();
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    accela.ir.Module module = parseTrivialModule();
+
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      PassBuilder builder = PassBuilder.withStandardCandidateImplementations(instrumentation);
+      builder.buildIRO0Pipeline(instrumentation, PipelineProfile.full(registry)).run(
+          module, builder.buildModuleAnalysisManager(), builder.buildFunctionAnalysisManager());
+    }
+
+    IRVerifier.verifyModule(module);
+    assertTrue(remarks.stream().noneMatch(remark -> remark.passId().startsWith("candidate.")));
+    assertThrows(IllegalArgumentException.class,
+        () -> PassBuilder.withStandardCandidateImplementations(PassInstrumentation.noop()));
+  }
+
+  @Test
+  void everySingleCandidateAndAllSixConstructRunAndVerify() throws Exception {
+    PassRegistry registry = PassRegistry.standard();
+    List<String> candidateIds = registry.candidates().stream().map(PassDescriptor::id).toList();
+    List<List<String>> selections = new ArrayList<>();
+    candidateIds.forEach(id -> selections.add(List.of(id)));
+    selections.add(candidateIds);
+
+    for (List<String> enabledIds : selections) {
+      PipelineProfile.Builder profileBuilder = PipelineProfile.builder(registry);
+      enabledIds.forEach(profileBuilder::enableCandidate);
+      PipelineProfile profile = profileBuilder.build();
+      List<OptimizationRemark> remarks = new ArrayList<>();
+      accela.ir.Module module = parseTrivialModule();
+
+      try (PassInstrumentation instrumentation =
+          PassInstrumentation.observed(false, remarks::add)) {
+        PassBuilder builder = PassBuilder.withStandardCandidateImplementations(instrumentation);
+        builder.buildIRO0Pipeline(instrumentation, profile).run(
+            module, builder.buildModuleAnalysisManager(), builder.buildFunctionAnalysisManager());
+      }
+
+      IRVerifier.verifyModule(module);
+      List<String> executedCandidates = remarks.stream()
+          .filter(PassRemark.class::isInstance)
+          .map(PassRemark.class::cast)
+          .map(PassRemark::passId)
+          .filter(id -> id.startsWith("candidate."))
+          .toList();
+      assertEquals(Set.copyOf(enabledIds), new LinkedHashSet<>(executedCandidates),
+          "enabled candidates were not all constructed and run: " + enabledIds);
+      for (String id : enabledIds) {
+        assertEquals(1, executedCandidates.stream().filter(id::equals).count(), id);
+      }
+    }
+  }
+
+  private static accela.ir.Module parseTrivialModule() throws Exception {
+    String source = "int main() { return 0; }";
+    Parser parser = new Parser(new Lexer(source, "<standard-candidate-smoke>").tokenize());
+    Node unit = parser.parse();
+    new Sema().analyze(unit);
+    accela.ir.Module module = new AST2IR().convert(unit);
+    IRVerifier.verifyModule(module);
+    return module;
+  }
+}

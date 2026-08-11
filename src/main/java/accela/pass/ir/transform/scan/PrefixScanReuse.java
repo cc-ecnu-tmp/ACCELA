@@ -40,7 +40,7 @@ public final class PrefixScanReuse {
 
   private PrefixScanReuse() {}
 
-  /** Descriptor composed into the post-implementation registry by the integration branch. */
+  /** Descriptor exported by the central executable-candidate registry. */
   public static PassDescriptor descriptor() {
     return new PassDescriptor(
         ID,

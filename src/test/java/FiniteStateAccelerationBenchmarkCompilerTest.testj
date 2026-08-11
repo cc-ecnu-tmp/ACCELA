@@ -2,15 +2,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import accela.backend.BackendCompiler;
-import accela.backend.instrument.BackendPassInstrumentation;
 import accela.pass.FiniteStateAccelerationCandidate;
-import accela.pass.FiniteStateAccelerationCandidatePassBuilder;
-import accela.pass.FiniteStateAccelerationCandidateRegistry;
-import accela.pass.PassBuilder;
 import accela.pass.PassRegistry;
 import accela.pass.PipelineProfile;
-import accela.pass.ir.instrument.PassInstrumentation;
 import accela.util.StrictJson;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,7 +12,6 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,7 +23,7 @@ final class FiniteStateAccelerationBenchmarkCompilerTest {
   @Test
   void allThreeFrozenStructuresRunThroughTheRealDevelopmentCompilerAndBackend()
       throws Exception {
-    PassRegistry registry = FiniteStateAccelerationCandidateRegistry.create();
+    PassRegistry registry = PassRegistry.standard();
     for (Map.Entry<String, String> source : SOURCES.entrySet()) {
       Path input = temporaryDirectory.resolve(source.getKey() + ".sy");
       Path profile = temporaryDirectory.resolve(source.getKey() + ".json");
@@ -41,14 +34,11 @@ final class FiniteStateAccelerationBenchmarkCompilerTest {
           .enableCandidate(FiniteStateAccelerationCandidate.ID)
           .build()
           .writeJson(profile);
-      CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
-
-      BenchmarkCompiler.runForTesting(new String[] {
+      BenchmarkCompiler.main(new String[] {
           input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
           "--remarks", remarks.toString()
-      }, pipeline);
+      });
 
-      assertEquals(1, pipeline.passFactoryInvocations.get());
       String emittedAssembly = Files.readString(assembly, StandardCharsets.UTF_8);
       assertTrue(emittedAssembly.contains("main:"));
       assertTrue(emittedAssembly.contains("__accela_fsa_main_"));
@@ -64,9 +54,9 @@ final class FiniteStateAccelerationBenchmarkCompilerTest {
   }
 
   @Test
-  void disabledCandidateNeverConstructsFactoryAndKeepsJudgeAssemblyIdentical()
+  void disabledCandidateIsSilentAndKeepsJudgeAssemblyIdentical()
       throws Exception {
-    PassRegistry registry = FiniteStateAccelerationCandidateRegistry.create();
+    PassRegistry registry = PassRegistry.standard();
     Path input = temporaryDirectory.resolve("disabled.sy");
     Path profile = temporaryDirectory.resolve("disabled.json");
     Path assembly = temporaryDirectory.resolve("disabled.s");
@@ -74,17 +64,14 @@ final class FiniteStateAccelerationBenchmarkCompilerTest {
     Path remarks = temporaryDirectory.resolve("disabled.jsonl");
     Files.writeString(input, SOURCES.get("affine_mod97"), StandardCharsets.UTF_8);
     PipelineProfile.full(registry).writeJson(profile);
-    CandidateDevelopmentPipeline pipeline = new CandidateDevelopmentPipeline(registry);
-
-    BenchmarkCompiler.runForTesting(new String[] {
+    BenchmarkCompiler.main(new String[] {
         input.toString(), "-o", assembly.toString(), "--profile", profile.toString(),
         "--remarks", remarks.toString()
-    }, pipeline);
+    });
     Compiler.main(new String[] {
         input.toString(), "-S", "-o", judgeAssembly.toString(), "-O1"
     });
 
-    assertEquals(0, pipeline.passFactoryInvocations.get());
     assertArrayEquals(Files.readAllBytes(judgeAssembly), Files.readAllBytes(assembly));
     assertTrue(Files.readAllLines(remarks).stream()
         .map(StrictJson::parse).map(value -> (Map<?, ?>) value)
@@ -123,30 +110,4 @@ final class FiniteStateAccelerationBenchmarkCompilerTest {
         """.formatted(transitionBody, domain);
   }
 
-  private static final class CandidateDevelopmentPipeline
-      implements BenchmarkCompiler.DevelopmentPipeline {
-    private final PassRegistry registry;
-    private final AtomicInteger passFactoryInvocations = new AtomicInteger();
-
-    CandidateDevelopmentPipeline(PassRegistry registry) {
-      this.registry = registry;
-    }
-
-    @Override
-    public PassRegistry registry() {
-      return registry;
-    }
-
-    @Override
-    public PassBuilder passBuilder(PassInstrumentation instrumentation) {
-      return FiniteStateAccelerationCandidatePassBuilder.create(
-          instrumentation, passFactoryInvocations);
-    }
-
-    @Override
-    public BackendCompiler backendCompiler(
-        PipelineProfile profile, BackendPassInstrumentation instrumentation) {
-      return new BackendCompiler(profile, instrumentation);
-    }
-  }
 }

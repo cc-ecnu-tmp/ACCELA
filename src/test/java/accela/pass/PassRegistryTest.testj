@@ -10,6 +10,7 @@ import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Type;
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
 import accela.pass.instrument.DecisionReasonCode;
 import accela.pass.instrument.DecisionRemark;
 import accela.pass.instrument.OptimizationRemark;
@@ -18,6 +19,7 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPassManager;
 import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.transform.scan.PrefixScanReuse;
 import accela.util.StrictJson;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -35,10 +37,10 @@ final class PassRegistryTest {
   @Test
   void registersEveryCurrentIrAndBackendTransformation() {
     PassRegistry registry = PassRegistry.standard();
-    assertEquals(46, registry.all().size());
-    assertEquals(46, registry.all().stream().map(PassDescriptor::id)
+    assertEquals(52, registry.all().size());
+    assertEquals(52, registry.all().stream().map(PassDescriptor::id)
         .collect(Collectors.toSet()).size());
-    assertEquals(28, registry.families().size());
+    assertEquals(34, registry.families().size());
     assertEquals(7, registry.require(PassRegistry.IR_EARLY_CSE).fullPipelineOccurrences());
     assertEquals(5, registry.require(PassRegistry.IR_SIMPLIFY_CFG).fullPipelineOccurrences());
     assertEquals(2, registry.require(PassRegistry.BACKEND_BLOCK_PLACEMENT)
@@ -52,7 +54,7 @@ final class PassRegistryTest {
         registry.all().stream().filter(PassDescriptor::required).map(PassDescriptor::id)
             .collect(Collectors.toSet()));
     assertTrue(registry.all().stream().allMatch(pass -> pass.id().startsWith("ir.")
-        || pass.id().startsWith("backend.")));
+        || pass.id().startsWith("backend.") || pass.id().startsWith("candidate.")));
     assertEquals(Set.of(PassRegistry.IR_SROA, PassRegistry.IR_GLOBAL_SROA),
         registry.forFamily(PassRegistry.FAMILY_IR_AGGREGATE_SCALARIZATION).stream()
             .map(PassDescriptor::id).collect(Collectors.toSet()));
@@ -81,9 +83,48 @@ final class PassRegistryTest {
             .stream().map(PassDescriptor::id).collect(Collectors.toSet()));
     assertEquals(Set.of(
             PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
-            PassRegistry.IR_RANKED_RECURRENCE_TABULATION),
+            PassRegistry.IR_RANKED_RECURRENCE_TABULATION,
+            ExtendedAffineSummarizationCandidate.ID,
+            FiniteStateAccelerationCandidate.ID,
+            SameDomainLoopFusionCandidate.ID,
+            IntegerLinearTransitionCandidate.ID,
+            Rrt2OnDemandMemoizationCandidate.ID,
+            PrefixScanReuse.ID),
         registry.all().stream().filter(PassDescriptor::decisionObservable)
             .map(PassDescriptor::id).collect(Collectors.toSet()));
+
+    List<PassDescriptor> candidates = registry.candidates();
+    assertEquals(List.of(
+        "candidate.extended-affine-summarization",
+        "candidate.finite-state-acceleration",
+        "candidate.same-domain-loop-fusion",
+        "candidate.integer-linear-transition",
+        "candidate.rrt2-on-demand-memoization",
+        "candidate.prefix-scan-reuse"),
+        candidates.stream().map(PassDescriptor::id).toList());
+    assertEquals(List.of(
+        ExtendedAffineSummarizationCandidate.descriptor(),
+        FiniteStateAccelerationCandidate.descriptor(),
+        SameDomainLoopFusionCandidate.descriptor(),
+        IntegerLinearTransitionCandidate.descriptor(),
+        Rrt2OnDemandMemoizationCandidate.descriptor(),
+        PrefixScanReuse.descriptor()), candidates);
+    assertEquals(List.of(
+        "ir.affine-loop-summarization#1:after",
+        "ir.affine-loop-summarization#1:before",
+        "ir.indvar-domain-simplify#1:before",
+        "ir.affine-loop-summarization#1:before",
+        "ir.ranked-recurrence-tabulation#1:before",
+        "ir.indvar-domain-simplify#1:before"),
+        candidates.stream().map(PassRegistryTest::anchorIdentity).toList());
+    assertEquals(expectedCandidateObligations(),
+        candidates.stream().map(PassDescriptor::legalityObligationIds).toList());
+    assertTrue(candidates.stream().allMatch(candidate ->
+        candidate.stage().isIr()
+            && candidate.fullPipelineOccurrences() == 1
+            && candidate.decisionObservable()
+            && !candidate.defaultEnabled()
+            && !candidate.legalityObligationIds().isEmpty()));
   }
 
   @Test
@@ -94,22 +135,31 @@ final class PassRegistryTest {
   @Test
   void exportsDeterministicV2LifecycleAndCandidateContract() throws Exception {
     PassRegistry registry = PassRegistry.standard();
-    assertEquals(registry.toJson() + "\n", Files.readString(
+    PassRegistry frozenBase = PassRegistry.of(registry.all().stream()
+        .filter(descriptor -> !descriptor.candidate())
+        .toList());
+    assertEquals(frozenBase.toJson() + "\n", Files.readString(
         Path.of("docs", "optimization", "data", "pass-registry.v2.json"),
         StandardCharsets.UTF_8));
     Map<?, ?> document = (Map<?, ?>) StrictJson.parse(registry.toJson());
     assertEquals("pass-registry.v2", document.get("schema_version"));
     List<?> passes = (List<?>) document.get("passes");
-    assertEquals(46, passes.size());
+    assertEquals(52, passes.size());
     assertTrue(passes.stream().map(item -> (Map<?, ?>) item).allMatch(pass ->
         Set.of("id", "logical_family_id", "display_name", "stage",
             "full_pipeline_occurrences", "lifecycle", "decision_observable",
             "candidate_anchor", "legality_obligation_ids").equals(pass.keySet())));
-    assertTrue(passes.stream().map(item -> (Map<?, ?>) item).allMatch(pass ->
+    assertTrue(passes.stream().map(item -> (Map<?, ?>) item)
+        .filter(pass -> !"candidate".equals(pass.get("lifecycle"))).allMatch(pass ->
         Set.of("required", "production").contains(pass.get("lifecycle"))
             && pass.get("candidate_anchor") == null
             && ((List<?>) pass.get("legality_obligation_ids")).isEmpty()));
-    assertTrue(registry.candidates().isEmpty());
+    assertTrue(passes.stream().map(item -> (Map<?, ?>) item)
+        .filter(pass -> "candidate".equals(pass.get("lifecycle"))).allMatch(pass ->
+        Boolean.TRUE.equals(pass.get("decision_observable"))
+            && pass.get("candidate_anchor") != null
+            && !((List<?>) pass.get("legality_obligation_ids")).isEmpty()));
+    assertEquals(6, registry.candidates().size());
 
     Map<?, ?> schema = (Map<?, ?>) StrictJson.parse(Files.readString(
         Path.of("tools", "benchmark", "schemas", "pass-registry.v2.json"),
@@ -140,7 +190,8 @@ final class PassRegistryTest {
     descriptors.add(candidate);
     PassRegistry registry = PassRegistry.of(descriptors);
 
-    assertEquals(List.of(candidate), registry.candidates());
+    assertEquals(candidate, registry.candidates().getLast());
+    assertEquals(PassRegistry.standard().candidates().size() + 1, registry.candidates().size());
     assertFalse(candidate.defaultEnabled());
     Map<?, ?> document = (Map<?, ?>) StrictJson.parse(registry.toJson());
     Map<?, ?> exported = ((List<?>) document.get("passes")).stream()
@@ -430,5 +481,73 @@ final class PassRegistryTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> unknown.buildIRO0Pipeline(PassInstrumentation.noop(), PipelineProfile.full(registry)));
+  }
+
+  private static String anchorIdentity(PassDescriptor descriptor) {
+    PassDescriptor.CandidateAnchor anchor = descriptor.candidateAnchor();
+    return anchor.passId() + "#" + anchor.occurrence() + ":"
+        + anchor.position().name().toLowerCase(java.util.Locale.ROOT);
+  }
+
+  private static List<List<String>> expectedCandidateObligations() {
+    return List.of(
+        List.of(
+            "candidate.extended-affine-summarization.canonical-loop",
+            "candidate.extended-affine-summarization.scev-affine-state",
+            "candidate.extended-affine-summarization.exact-trip-count",
+            "candidate.extended-affine-summarization.zero-negative-iterations",
+            "candidate.extended-affine-summarization.modulo-i32-equivalence",
+            "candidate.extended-affine-summarization.side-effect-free-body",
+            "candidate.extended-affine-summarization.live-outs",
+            "candidate.extended-affine-summarization.profitability"),
+        List.of(
+            "candidate.finite-state-acceleration.constant-finite-domain",
+            "candidate.finite-state-acceleration.transition-closure",
+            "candidate.finite-state-acceleration.deterministic-pure-transition",
+            "candidate.finite-state-acceleration.iteration-domain",
+            "candidate.finite-state-acceleration.exact-state-encoding",
+            "candidate.finite-state-acceleration.modulo-i32-equivalence",
+            "candidate.finite-state-acceleration.storage-code-size",
+            "candidate.finite-state-acceleration.profitability"),
+        List.of(
+            "candidate.same-domain-loop-fusion.adjacent-canonical-loops",
+            "candidate.same-domain-loop-fusion.identical-iteration-domain",
+            "candidate.same-domain-loop-fusion.dependence-order",
+            "candidate.same-domain-loop-fusion.alias-modref",
+            "candidate.same-domain-loop-fusion.side-effect-order",
+            "candidate.same-domain-loop-fusion.temporary-lifetime",
+            "candidate.same-domain-loop-fusion.exit-live-outs",
+            "candidate.same-domain-loop-fusion.profitability"),
+        List.of(
+            "candidate.integer-linear-transition.small-fixed-dimension",
+            "candidate.integer-linear-transition.affine-transition",
+            "candidate.integer-linear-transition.exact-trip-count",
+            "candidate.integer-linear-transition.zero-negative-iterations",
+            "candidate.integer-linear-transition.modulo-i32-equivalence",
+            "candidate.integer-linear-transition.integer-only",
+            "candidate.integer-linear-transition.side-effect-free-body",
+            "candidate.integer-linear-transition.live-outs",
+            "candidate.integer-linear-transition.profitability"),
+        List.of(
+            "candidate.rrt2-on-demand-memoization.direct-finite-recursion",
+            "candidate.rrt2-on-demand-memoization.composite-well-founded-rank",
+            "candidate.rrt2-on-demand-memoization.pure-context",
+            "candidate.rrt2-on-demand-memoization.reachable-domain",
+            "candidate.rrt2-on-demand-memoization.memo-key-injective",
+            "candidate.rrt2-on-demand-memoization.base-case-order",
+            "candidate.rrt2-on-demand-memoization.modulo-i32-equivalence",
+            "candidate.rrt2-on-demand-memoization.bounded-storage",
+            "candidate.rrt2-on-demand-memoization.no-abi-runtime-change",
+            "candidate.rrt2-on-demand-memoization.profitability"),
+        List.of(
+            "candidate.prefix-scan-reuse.repeated-prefix-domain",
+            "candidate.prefix-scan-reuse.incremental-equivalence",
+            "candidate.prefix-scan-reuse.integer-order",
+            "candidate.prefix-scan-reuse.alias-modref",
+            "candidate.prefix-scan-reuse.side-effect-free-kernel",
+            "candidate.prefix-scan-reuse.empty-domain",
+            "candidate.prefix-scan-reuse.bounds",
+            "candidate.prefix-scan-reuse.live-outs",
+            "candidate.prefix-scan-reuse.profitability"));
   }
 }

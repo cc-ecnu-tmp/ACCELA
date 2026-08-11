@@ -1,22 +1,14 @@
-import accela.backend.BackendCompiler;
-import accela.backend.instrument.BackendPassInstrumentation;
-import accela.pass.PassBuilder;
-import accela.pass.PassDescriptor;
 import accela.pass.PassRegistry;
 import accela.pass.PipelineProfile;
-import accela.pass.PrefixScanCandidatePassBuilder;
-import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.transform.scan.PrefixScanReuse;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 
 /** Executable test seam for real BenchmarkCompiler and RV64GC candidate validation. */
 public final class PrefixScanBenchmarkCompiler {
   private PrefixScanBenchmarkCompiler() {}
 
   public static void main(String[] args) throws Exception {
-    PassRegistry registry = registry();
+    PassRegistry registry = PassRegistry.standard();
     if (args.length == 2 && "--export-enabled-profile".equals(args[0])) {
       PipelineProfile.builder(registry)
           .enableCandidate(PrefixScanReuse.ID)
@@ -28,28 +20,6 @@ public final class PrefixScanBenchmarkCompiler {
       PipelineProfile.full(registry).writeJson(Path.of(args[1]));
       return;
     }
-    BenchmarkCompiler.runForTesting(args, new BenchmarkCompiler.DevelopmentPipeline() {
-      @Override
-      public PassRegistry registry() {
-        return registry;
-      }
-
-      @Override
-      public PassBuilder passBuilder(PassInstrumentation instrumentation) {
-        return PrefixScanCandidatePassBuilder.create(instrumentation);
-      }
-
-      @Override
-      public BackendCompiler backendCompiler(
-          PipelineProfile profile, BackendPassInstrumentation instrumentation) {
-        return new BackendCompiler(profile, instrumentation);
-      }
-    });
-  }
-
-  private static PassRegistry registry() {
-    List<PassDescriptor> descriptors = new ArrayList<>(PassRegistry.standard().all());
-    descriptors.add(PrefixScanReuse.descriptor());
-    return PassRegistry.of(descriptors);
+    BenchmarkCompiler.main(args);
   }
 }
