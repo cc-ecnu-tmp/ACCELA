@@ -85,9 +85,17 @@ git ls-remote https://gitlab.eduxiji.net/csc1/nscscc/compiler2026 refs/heads/mai
 
 ## 环境与构建
 
-在仓库根目录、WSL 或其他 POSIX shell 中运行。需要 Python 3.11+、JDK 21、
-`riscv64-elf-gcc`、带 plugin 支持的 `qemu-system-riscv64`、QEMU plugin headers、
-GLib 2、`pkg-config` 和 C 编译器。GCC 13.3/Clang 18 对照还需要 Docker。
+在仓库根目录的 POSIX shell 中运行。正式 campaign 的持久状态只能位于 Linux
+原生文件系统：可以使用 WSL 原生文件系统；使用 Docker Desktop 时，仓库、语料、
+构建产物、raw attempt、status 和报告必须共同位于一个 Linux named volume 中。
+Windows checkout、DrvFS/9p 和 Windows bind-mounted workspace 都不能承载正式运行。
+救援输入应通过复制或流式导入写入 named volume，并在容器内复核物理 SHA-256；
+不能直接从宿主机绑定目录运行。当前 r1 基础设施中止和 r2 Docker 迁移边界见
+[`R1_INFRASTRUCTURE_ABORT_AND_DOCKER_R2_MIGRATION.zh-CN.md`](R1_INFRASTRUCTURE_ABORT_AND_DOCKER_R2_MIGRATION.zh-CN.md)。
+
+需要 Python 3.11+、JDK 21、`riscv64-elf-gcc`、带 plugin 支持的
+`qemu-system-riscv64`、QEMU plugin headers、GLib 2、`pkg-config` 和 C 编译器。
+GCC 13.3/Clang 18 对照还需要 Docker。
 
 ```sh
 python -m venv .tmp/venv
@@ -490,12 +498,16 @@ manifest、两份协议、toolchain snapshot、run-record schema、Oracle `1.10`
 B3 `>1` 门和四级冠军规则。B2 trial 允许在自己的身份下调优；正式冻结后候选实现
 发生任何变化时必须终止旧 campaign 并重建计划。
 
-正式 campaign 只允许在 WSL 原生 Linux 文件系统的一份 clean checkout 中执行，
-不得从 DrvFS/9p 启动。一次 campaign 的 compiler build、raw attempt、status、
-normalized record 和报告必须保持同一 workspace identity。虚拟环境、Gradle
-输出和 QEMU plugin 在该 checkout 中重建；corpus 迁移必须完成物理 hash 校验。
-迁移校验没有完成时只能写明 provenance limitation，不能把 tar 成功等同于证据
-等价。
+正式 campaign 只允许在 Linux 原生存储的一份 clean checkout 中执行，不得从
+Windows bind mount、DrvFS 或 9p 启动。Docker Desktop 执行时必须以一个 Linux
+named volume 同时承载 checkout、corpus、compiler build、raw attempt、status、
+normalized record 和报告，并以该 volume 中的 checkout 作为唯一 workspace
+identity。虚拟环境、Gradle 输出和 QEMU plugin 在该 checkout 中重建；所有救援
+输入在 volume 内完成物理 hash 校验。迁移校验没有完成时只能写明 provenance
+limitation，不能把归档复制成功等同于证据等价。因基础设施故障迁移时，替代
+campaign 必须使用全新的 campaign ID、plan、status ledger 和 run ID namespace；
+旧 campaign 的 committed prefix 只能作为隔离诊断，不能与替代 campaign 的记录
+合并、补齐或排名。
 
 建议顺序是：
 

@@ -104,15 +104,17 @@
   clean-room benchmarks, versioned schemas, normalized records, reproducible
   analysis, and reader-facing reports; committed records must not contain local
   absolute paths.
-- Run formal campaigns from a native WSL Linux filesystem, never from a Windows
-  checkout exposed through DrvFS/9p. While a campaign is active, freeze the
-  Windows checkout as the return target and treat one clean, hash-equivalent WSL
-  checkout as the sole source of compiler builds, raw attempts, status ledgers,
-  and reports. Copy ignored corpora and prior diagnostic evidence with physical
-  hash verification, rebuild location-bound virtual environments and build
-  outputs inside WSL, and never combine evidence across workspace identities,
-  repository revisions, or campaign IDs. Sync results back only after the
-  campaign is terminal and revalidate both canonical and physical hashes.
+- Run formal campaigns only from Linux-native storage. A native WSL filesystem
+  is valid; under Docker Desktop the repository, corpora, compiler build, raw
+  attempts, status ledgers, and reports must all live in one Linux named volume.
+  Never run a formal campaign from a Windows checkout exposed through a bind
+  mount, DrvFS, or 9p. Treat one clean, hash-equivalent Linux checkout as the sole
+  campaign workspace, copy rescued inputs into it with physical hash verification,
+  and rebuild location-bound virtual environments and build outputs there. A
+  campaign migrated after an infrastructure failure must use a new campaign ID,
+  plan, and run namespace; never combine evidence across workspace identities,
+  repository revisions, campaign IDs, or the aborted predecessor. Export results
+  only after the campaign is terminal and revalidate canonical and physical hashes.
 - Repository control text is normalized to LF by `.gitattributes`, while the
   tracked `testsuite` corpus is explicitly byte-preserving because its committed
   line endings are part of benchmark identity. Physical SHA-256 contracts must
