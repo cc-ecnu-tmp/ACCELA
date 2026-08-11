@@ -2722,19 +2722,30 @@ def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> Non
         ) or task["candidate_ids"] or task["ranking_evidence"]:
             raise ValidationError("candidate pseudo-task carries run/profile evidence")
     by_id = {item["task_id"]: item for item in tasks}
-    if by_id["run.B1.full"]["dependencies"] or by_id["run.B1.full"]["terminal_dependencies"]:
+    always_gate = {"kind": "always", "candidate_id": None}
+    if (
+        by_id["run.B1.full"]["dependencies"]
+        or by_id["run.B1.full"]["terminal_dependencies"]
+        or by_id["run.B1.full"]["gate"] != always_gate
+    ):
         raise ValidationError("candidate B1 FULL must be the sole initial task")
     previous = None
     for candidate in candidates:
         task = by_id[f"run.B1.{candidate}"]
-        if task["dependencies"] != ["run.B1.full"] or task["terminal_dependencies"] != (
-            [] if previous is None else [previous]
+        if (
+            task["dependencies"] != ["run.B1.full"]
+            or task["terminal_dependencies"]
+            != ([] if previous is None else [previous])
+            or task["gate"] != always_gate
         ):
             raise ValidationError("candidate B1 profiles must be serial after FULL")
         previous = task["task_id"]
-    if by_id["run.B2.full"]["terminal_dependencies"] != [
-        f"run.B1.{item}" for item in candidates
-    ]:
+    if (
+        by_id["run.B2.full"]["dependencies"] != ["run.B1.full"]
+        or by_id["run.B2.full"]["terminal_dependencies"]
+        != [f"run.B1.{item}" for item in candidates]
+        or by_id["run.B2.full"]["gate"] != always_gate
+    ):
         raise ValidationError("candidate B2 FULL must wait for all terminal B1 candidates")
     previous = None
     for candidate in candidates:
@@ -2748,30 +2759,97 @@ def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> Non
             raise ValidationError("candidate B2 selection/serialization differs")
         previous = task["task_id"]
     if (
+        by_id["study.B2"]["dependencies"] != ["run.B2.full"]
+        or by_id["study.B2"]["terminal_dependencies"]
+        != [f"run.B2.{item}" for item in candidates]
+        or by_id["study.B2"]["gate"] != always_gate
+    ):
+        raise ValidationError("candidate B2 study serialization differs")
+    if (
         by_id["freeze"]["dependencies"] != ["study.B2"]
+        or by_id["freeze"]["terminal_dependencies"]
         or by_id["freeze"]["gate"]
         != {"kind": "b2_formal_complete", "candidate_id": None}
     ):
         raise ValidationError("candidate freeze must follow the exact B2 study")
-    if by_id["run.B3.full"]["dependencies"] != ["freeze"]:
+    if (
+        by_id["run.B3.full"]["dependencies"] != ["freeze"]
+        or by_id["run.B3.full"]["terminal_dependencies"]
+        or by_id["run.B3.full"]["gate"] != always_gate
+    ):
         raise ValidationError("candidate B3 FULL must depend on freeze")
+    if (
+        by_id["run.B3.gcc"]["dependencies"] != ["freeze", "run.B3.full"]
+        or by_id["run.B3.gcc"]["terminal_dependencies"]
+        or by_id["run.B3.gcc"]["gate"] != always_gate
+        or by_id["run.B3.clang"]["dependencies"] != ["freeze"]
+        or by_id["run.B3.clang"]["terminal_dependencies"] != ["run.B3.gcc"]
+        or by_id["run.B3.clang"]["gate"] != always_gate
+    ):
+        raise ValidationError("candidate B3 reference serialization differs")
+    previous_profile = "run.B3.clang"
+    for candidate in candidates:
+        task = by_id[f"run.B3.{candidate}"]
+        if (
+            task["dependencies"] != ["freeze", "run.B3.full"]
+            or task["terminal_dependencies"]
+            != [f"run.B1.{candidate}", previous_profile]
+            or task["gate"]
+            != {"kind": "b1_completed", "candidate_id": candidate}
+        ):
+            raise ValidationError("candidate B3 selection/serialization differs")
+        previous_profile = task["task_id"]
+    if (
+        by_id["study.B3"]["dependencies"] != ["run.B3.full"]
+        or by_id["study.B3"]["terminal_dependencies"]
+        != [
+            "run.B3.gcc",
+            "run.B3.clang",
+            *[f"run.B3.{item}" for item in candidates],
+        ]
+        or by_id["study.B3"]["gate"] != always_gate
+    ):
+        raise ValidationError("candidate B3 study serialization differs")
     previous_validation_study = "study.B3"
     for role in ("B4", "B5", "B6"):
+        full_task_id = f"run.{role}.full"
         if (
-            by_id[f"run.{role}.full"]["gate"]["kind"] != "b3_has_promoted"
-            or by_id[f"run.{role}.full"]["dependencies"]
-            != [previous_validation_study]
+            by_id[full_task_id]["gate"]
+            != {"kind": "b3_has_promoted", "candidate_id": None}
+            or by_id[full_task_id]["dependencies"] != [previous_validation_study]
+            or by_id[full_task_id]["terminal_dependencies"]
         ):
             raise ValidationError("candidate validation FULL gate differs")
+        previous_profile = None
         for candidate in candidates:
-            if by_id[f"run.{role}.{candidate}"]["gate"] != {
-                "kind": "b3_promoted", "candidate_id": candidate
-            }:
-                raise ValidationError("candidate B4-B6 promotion gate differs")
+            task = by_id[f"run.{role}.{candidate}"]
+            if (
+                task["dependencies"] != ["study.B3", full_task_id]
+                or task["terminal_dependencies"]
+                != ([] if previous_profile is None else [previous_profile])
+                or task["gate"]
+                != {"kind": "b3_promoted", "candidate_id": candidate}
+            ):
+                raise ValidationError(
+                    "candidate B4-B6 promotion/serialization gate differs"
+                )
+            previous_profile = task["task_id"]
+        study = by_id[f"study.{role}"]
+        if (
+            study["dependencies"] != [full_task_id]
+            or study["terminal_dependencies"]
+            != [f"run.{role}.{item}" for item in candidates]
+            or study["gate"]
+            != {"kind": "b3_has_promoted", "candidate_id": None}
+        ):
+            raise ValidationError("candidate B4-B6 study serialization differs")
         previous_validation_study = f"study.{role}"
-    if by_id["final"]["dependencies"] != ["study.B3"] or by_id["final"]["terminal_dependencies"] != [
-        "study.B4", "study.B5", "study.B6"
-    ]:
+    if (
+        by_id["final"]["dependencies"] != ["study.B3"]
+        or by_id["final"]["terminal_dependencies"]
+        != ["study.B4", "study.B5", "study.B6"]
+        or by_id["final"]["gate"] != always_gate
+    ):
         raise ValidationError("candidate final task dependencies differ")
 
 

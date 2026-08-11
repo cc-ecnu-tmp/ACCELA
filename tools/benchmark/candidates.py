@@ -2540,7 +2540,7 @@ def build_candidate_campaign_plan(
         kind="candidate_empty",
         candidate_ids_for_task=[],
         data_role="B2",
-        dependencies=[],
+        dependencies=["run.B1.full"],
         terminal_dependencies=b1_tasks,
         profile=baseline_profile,
     )
@@ -2668,7 +2668,7 @@ def build_candidate_campaign_plan(
             profile=baseline_profile,
             ranking_evidence=True,
         )
-        previous_profile = f"run.{role}.full"
+        previous_profile: str | None = None
         for candidate_id in candidate_ids:
             task_id = f"run.{role}.{candidate_id}"
             add_task(
@@ -2679,7 +2679,9 @@ def build_candidate_campaign_plan(
                 candidate_ids_for_task=[candidate_id],
                 data_role=role,
                 dependencies=["study.B3", f"run.{role}.full"],
-                terminal_dependencies=[previous_profile],
+                terminal_dependencies=(
+                    [] if previous_profile is None else [previous_profile]
+                ),
                 gate_kind="b3_promoted",
                 gate_candidate_id=candidate_id,
                 profile=single_profiles[candidate_id],
@@ -2809,6 +2811,7 @@ def _validate_campaign_run(
         or run["manifest_sha256"] != suite["manifest"]["canonical_sha256"]
     ):
         raise ValidationError(f"campaign task suite/manifest differs: {task['task_id']}")
+    _require_candidate_campaign_protocol_binding(plan=plan, task=task, run=run)
     _require_candidate_run_protocol(run, data_role=task["data_role"])
     expected_evidence = "qemu_correctness" if task["data_role"] == "B1" else "qemu_proxy"
     if run["configuration"]["evidence_level"] != expected_evidence:
@@ -2865,6 +2868,8 @@ def _require_frozen_reference_run(
         or compiler["command_sha256"] != reference["compiler_command_sha256"]
         or run["provenance"]["compiler_artifact_sha256"]
         != freeze["reference_toolchain"]["snapshot"]["physical_sha256"]
+        or run["provenance"]["pipeline_profile_sha256"]
+        != reference["profile_sha256"]
         or observed is None
         or observed["actual"] != reference["version"]
         or observed["official_expected"] != reference["version"]
@@ -2872,6 +2877,32 @@ def _require_frozen_reference_run(
     ):
         raise ValidationError(
             f"candidate reference run differs from frozen {reference['compiler_baseline']} contract"
+        )
+
+
+def _require_candidate_campaign_protocol_binding(
+    *,
+    plan: Mapping[str, Any],
+    task: Mapping[str, Any],
+    run: Mapping[str, Any],
+) -> None:
+    provenance = run["provenance"]
+    observed = (
+        provenance["measurement_protocol_id"],
+        provenance["measurement_protocol_sha256"],
+    )
+    if task["data_role"] == "B1":
+        expected = (None, None)
+        label = "B1 correctness"
+    else:
+        expected = (
+            plan["measurement_protocol"]["protocol_id"],
+            plan["measurement_protocol"]["protocol_sha256"],
+        )
+        label = f"{task['data_role']} standard-proxy"
+    if observed != expected:
+        raise ValidationError(
+            f"candidate campaign {label} protocol binding differs: {task['task_id']}"
         )
 
 
@@ -3390,6 +3421,101 @@ def _require_exact_candidate_final_derivation(
         )
 
 
+def _materialize_candidate_campaign_ineligibility(
+    *,
+    tasks: Sequence[Mapping[str, Any]],
+    statuses_by_id: dict[str, dict[str, Any]],
+    loaded_studies: Mapping[str, Mapping[str, Any]],
+    promoted: set[str],
+) -> None:
+    """Apply false gates only after their complete causal dependency prefix."""
+
+    terminal_states = {"completed", "failed", "interrupted", "ineligible"}
+    b3_study = loaded_studies.get("B3")
+    for task in tasks:
+        row = statuses_by_id[task["task_id"]]
+        gate = task["gate"]
+        gate_false_reason: str | None = None
+        gate_decided_at: str | None = None
+        if gate["kind"] == "b1_completed":
+            source = statuses_by_id[f"run.B1.{gate['candidate_id']}"]
+            if source["status"] in {"failed", "interrupted"}:
+                gate_false_reason = "b1_not_completed_correct"
+                gate_decided_at = source["completed_at"]
+        elif gate["kind"] == "b3_promoted" and b3_study is not None:
+            if gate["candidate_id"] not in promoted:
+                gate_false_reason = "b3_not_strictly_above_one"
+                gate_decided_at = b3_study["generated_at"]
+        elif gate["kind"] == "b3_has_promoted" and b3_study is not None:
+            if not promoted:
+                gate_false_reason = "no_b3_promotion"
+                gate_decided_at = b3_study["generated_at"]
+        elif gate["kind"] == "b2_formal_complete" and "B2" in loaded_studies:
+            if any(
+                not item["eligible_for_ranking"]
+                for item in loaded_studies["B2"]["candidates"]
+            ):
+                gate_false_reason = "b2_not_formal_complete"
+                gate_decided_at = loaded_studies["B2"]["generated_at"]
+        if gate_false_reason is None:
+            continue
+        if row["evidence_sha256"] is not None:
+            raise ValidationError(
+                f"candidate campaign leapfrog supplied gated evidence: {task['task_id']}"
+            )
+        prerequisite_rows = [
+            statuses_by_id[item]
+            for item in [*task["dependencies"], *task["terminal_dependencies"]]
+        ]
+        if any(item["status"] not in terminal_states for item in prerequisite_rows):
+            continue
+        completion_times = [gate_decided_at]
+        completion_times.extend(item["completed_at"] for item in prerequisite_rows)
+        if any(item is None for item in completion_times):
+            raise ValidationError(
+                f"candidate campaign terminal prerequisite lacks completion time: {task['task_id']}"
+            )
+        statuses_by_id[task["task_id"]] = {
+            **row,
+            "status": "ineligible",
+            "completed_at": _latest_evidence_timestamp(
+                [item for item in completion_times if item is not None]
+            ),
+            "ineligibility_reason": gate_false_reason,
+        }
+
+
+def _validate_candidate_diagnostic_sequence(
+    *,
+    source_status: Mapping[str, Any],
+    tasks: Sequence[Mapping[str, Any]],
+) -> None:
+    """Reject diagnostic evidence that skips its immediate serial predecessor."""
+
+    terminal_states = {"completed", "failed", "interrupted", "ineligible"}
+    previous = source_status
+    for task in tasks:
+        has_evidence = task["evidence_sha256"] is not None
+        if has_evidence or task["status"] in terminal_states:
+            if previous["status"] not in terminal_states:
+                raise ValidationError(
+                    f"candidate diagnostic evidence leapfrogs unfinished predecessor: {task['task_id']}"
+                )
+            previous_completed_at = previous["completed_at"]
+            observed_at = task["started_at"] or task["completed_at"]
+            if previous_completed_at is None or observed_at is None:
+                raise ValidationError(
+                    f"candidate diagnostic terminal lacks causal timestamps: {task['task_id']}"
+                )
+            if datetime.fromisoformat(observed_at.replace("Z", "+00:00")) < (
+                datetime.fromisoformat(previous_completed_at.replace("Z", "+00:00"))
+            ):
+                raise ValidationError(
+                    f"candidate diagnostic task starts before its dependency: {task['task_id']}"
+                )
+        previous = task
+
+
 def update_candidate_campaign_status(
     *,
     plan_path: Path,
@@ -3604,10 +3730,6 @@ def update_candidate_campaign_status(
                 binding["repo_commit"] != plan["repository"]["repo_commit"]
                 or binding["repo_dirty"]
                 or binding["tracked_diff_sha256"] is not None
-                or binding["measurement_protocol_id"]
-                != plan["measurement_protocol"]["protocol_id"]
-                or binding["measurement_protocol_sha256"]
-                != plan["measurement_protocol"]["protocol_sha256"]
                 or (
                     task["kind"] != "reference"
                     and binding["compiler_artifact_sha256"]
@@ -3924,42 +4046,12 @@ def update_candidate_campaign_status(
         }
 
     b3_study = loaded_studies.get("B3")
-    for task in plan["tasks"]:
-        row = statuses_by_id[task["task_id"]]
-        gate = task["gate"]
-        gate_false_reason: str | None = None
-        gate_decided_at: str | None = None
-        if gate["kind"] == "b1_completed":
-            source = statuses_by_id[f"run.B1.{gate['candidate_id']}"]
-            if source["status"] in {"failed", "interrupted"}:
-                gate_false_reason = "b1_not_completed_correct"
-                gate_decided_at = source["completed_at"]
-        elif gate["kind"] == "b3_promoted" and b3_study is not None:
-            if gate["candidate_id"] not in promoted:
-                gate_false_reason = "b3_not_strictly_above_one"
-                gate_decided_at = b3_study["generated_at"]
-        elif gate["kind"] == "b3_has_promoted" and b3_study is not None:
-            if not promoted:
-                gate_false_reason = "no_b3_promotion"
-                gate_decided_at = b3_study["generated_at"]
-        elif gate["kind"] == "b2_formal_complete" and "B2" in loaded_studies:
-            if any(
-                not item["eligible_for_ranking"]
-                for item in loaded_studies["B2"]["candidates"]
-            ):
-                gate_false_reason = "b2_not_formal_complete"
-                gate_decided_at = loaded_studies["B2"]["generated_at"]
-        if gate_false_reason is not None:
-            if row["evidence_sha256"] is not None:
-                raise ValidationError(
-                    f"candidate campaign leapfrog supplied gated evidence: {task['task_id']}"
-                )
-            statuses_by_id[task["task_id"]] = {
-                **row,
-                "status": "ineligible",
-                "completed_at": gate_decided_at,
-                "ineligibility_reason": gate_false_reason,
-            }
+    _materialize_candidate_campaign_ineligibility(
+        tasks=plan["tasks"],
+        statuses_by_id=statuses_by_id,
+        loaded_studies=loaded_studies,
+        promoted=promoted,
+    )
 
     terminal_states = {"completed", "failed", "interrupted", "ineligible"}
     for task in plan["tasks"]:
@@ -4274,6 +4366,10 @@ def update_candidate_campaign_status(
                 "completed_at": diagnostic_study["generated_at"],
                 "ineligibility_reason": None,
             }
+        _validate_candidate_diagnostic_sequence(
+            source_status=statuses_by_id["study.B3"],
+            tasks=[*diagnostic_tasks, diagnostic_study_task],
+        )
         diagnostic_plan = {
             "source_freeze_sha256": statuses_by_id["freeze"]["evidence_sha256"],
             "source_study_sha256": sha256_json(b3_study),
@@ -4436,26 +4532,15 @@ def update_candidate_campaign_status(
         _require_exact_candidate_final_derivation(final, expected_final)
 
     if diagnostic_plan is not None:
-        previous_terminal_time = statuses_by_id["study.B3"]["completed_at"]
         diagnostic_ready: list[str] = []
         diagnostic_active = False
         for task in [*diagnostic_plan["tasks"], diagnostic_plan["study"]]:
-            if task["started_at"] is not None:
-                if (
-                    previous_terminal_time is None
-                    or parse_time(task["started_at"])
-                    < parse_time(previous_terminal_time)
-                ):
-                    raise ValidationError(
-                        f"candidate diagnostic task starts before its dependency: {task['task_id']}"
-                    )
             if task["status"] in {
                 "completed",
                 "failed",
                 "interrupted",
                 "ineligible",
             }:
-                previous_terminal_time = task["completed_at"]
                 continue
             diagnostic_active = True
             if task["status"] == "pending" and not diagnostic_ready:
@@ -5479,10 +5564,6 @@ def build_candidate_final(
                 binding["repo_commit"] != plan["repository"]["repo_commit"]
                 or binding["repo_dirty"]
                 or binding["tracked_diff_sha256"] is not None
-                or binding["measurement_protocol_id"]
-                != plan["measurement_protocol"]["protocol_id"]
-                or binding["measurement_protocol_sha256"]
-                != plan["measurement_protocol"]["protocol_sha256"]
                 or (
                     task["kind"] != "reference"
                     and binding["compiler_artifact_sha256"]

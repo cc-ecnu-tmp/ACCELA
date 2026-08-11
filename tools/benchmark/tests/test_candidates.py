@@ -462,6 +462,415 @@ def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
     assert received["campaign_id"] == "campaign-1"
 
 
+def test_candidate_campaign_protocol_binding_is_role_specific() -> None:
+    plan = {
+        "measurement_protocol": {
+            "protocol_id": "standard-proxy",
+            "protocol_sha256": "a" * 64,
+        }
+    }
+    task = {"task_id": "run.B1.full", "data_role": "B1"}
+    run = {
+        "provenance": {
+            "measurement_protocol_id": None,
+            "measurement_protocol_sha256": None,
+        }
+    }
+    candidate_module._require_candidate_campaign_protocol_binding(
+        plan=plan, task=task, run=run
+    )
+
+    run["provenance"]["measurement_protocol_id"] = "standard-proxy"
+    run["provenance"]["measurement_protocol_sha256"] = "a" * 64
+    with pytest.raises(ValidationError, match="B1 correctness protocol binding"):
+        candidate_module._require_candidate_campaign_protocol_binding(
+            plan=plan, task=task, run=run
+        )
+
+    task = {"task_id": "run.B2.full", "data_role": "B2"}
+    candidate_module._require_candidate_campaign_protocol_binding(
+        plan=plan, task=task, run=run
+    )
+    run["provenance"]["measurement_protocol_id"] = None
+    run["provenance"]["measurement_protocol_sha256"] = None
+    with pytest.raises(ValidationError, match="B2 standard-proxy protocol binding"):
+        candidate_module._require_candidate_campaign_protocol_binding(
+            plan=plan, task=task, run=run
+        )
+
+
+@pytest.mark.parametrize(
+    ("compiler_baseline", "profile_id", "tool", "version"),
+    [
+        ("gcc_13_3_o2", "gcc-13.3-o2", "riscv-gcc", "13.3.0"),
+        ("clang_18_o3", "clang-18-o3", "clang", "18.1.3"),
+    ],
+)
+def test_candidate_reference_run_binds_exact_frozen_profile_sha(
+    compiler_baseline: str,
+    profile_id: str,
+    tool: str,
+    version: str,
+) -> None:
+    task = {"reference_profile_id": profile_id}
+    freeze = {
+        "reference_toolchain": {
+            "snapshot": {"physical_sha256": "a" * 64},
+            "baselines": [
+                {
+                    "compiler_baseline": compiler_baseline,
+                    "profile_id": profile_id,
+                    "profile_sha256": "b" * 64,
+                    "compiler_executable": "sh",
+                    "compiler_command_sha256": "c" * 64,
+                    "tool": tool,
+                    "version": version,
+                }
+            ],
+        }
+    }
+    run = {
+        "configuration": {
+            "compiler": {
+                "kind": "external",
+                "executable": "sh",
+                "command_sha256": "c" * 64,
+            },
+            "tool_versions": [
+                {
+                    "tool": tool,
+                    "actual": version,
+                    "official_expected": version,
+                    "comparison": "exact",
+                }
+            ],
+        },
+        "provenance": {
+            "compiler_artifact_sha256": "a" * 64,
+            "pipeline_profile_sha256": "b" * 64,
+        },
+    }
+    candidate_module._require_frozen_reference_run(run, task, freeze)
+    run["provenance"]["pipeline_profile_sha256"] = "d" * 64
+    with pytest.raises(
+        ValidationError, match=f"frozen {compiler_baseline} contract"
+    ):
+        candidate_module._require_frozen_reference_run(run, task, freeze)
+
+
+def test_candidate_diagnostic_sequence_rejects_supplied_suffix_evidence() -> None:
+    source = {
+        "task_id": "study.B3",
+        "status": "completed",
+        "completed_at": "2026-08-11T00:00:00Z",
+    }
+    first = {
+        "task_id": "diagnostic.pair.a+b",
+        "status": "pending",
+        "evidence_sha256": None,
+        "started_at": None,
+        "completed_at": None,
+    }
+    second = {
+        "task_id": "diagnostic.pair.a+c",
+        "status": "completed",
+        "evidence_sha256": "a" * 64,
+        "started_at": "2026-08-11T00:02:00Z",
+        "completed_at": "2026-08-11T00:03:00Z",
+    }
+    with pytest.raises(ValidationError, match="leapfrogs unfinished predecessor"):
+        candidate_module._validate_candidate_diagnostic_sequence(
+            source_status=source, tasks=[first, second]
+        )
+
+    first.update(
+        status="failed",
+        evidence_sha256="b" * 64,
+        started_at="2026-08-11T00:01:00Z",
+        completed_at="2026-08-11T00:01:30Z",
+    )
+    candidate_module._validate_candidate_diagnostic_sequence(
+        source_status=source, tasks=[first, second]
+    )
+
+
+def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_root = Path(__file__).resolve().parents[3]
+    catalog_relative = Path(
+        "docs/optimization/data/candidates/candidate-catalog.2026-r1.v1.json"
+    )
+    pass_registry_relative = Path(
+        "docs/optimization/data/candidates/pass-registry.executable-2026-r1.v2.json"
+    )
+    matrix_relative = Path(
+        "docs/optimization/data/candidates/profiles-2026-r1/matrix.json"
+    )
+    screening_relative = Path(
+        "docs/optimization/data/candidates/candidate-screening.v1.json"
+    )
+    protocol_relative = Path("docs/optimization/data/measurement-protocol.v1.json")
+    manifest_relatives = {
+        "B1": Path("docs/optimization/data/manifests/b1-official-functional-2026.manifest.json"),
+        "B2": Path("docs/optimization/data/manifests/b2-family-smoke.manifest.json"),
+        "B3": Path("docs/optimization/data/manifests/b3-official-performance-2026.manifest.json"),
+        "B4": Path("docs/optimization/data/manifests/b4-official-performance-2025-preliminary.manifest.json"),
+        "B5": Path("docs/optimization/data/manifests/b5-structural-variants.manifest.json"),
+        "B6": Path("docs/optimization/data/manifests/b6-mature-benchmarks.manifest.json"),
+    }
+
+    matrix = json.loads((source_root / matrix_relative).read_text(encoding="utf-8"))
+    screening = load_and_validate(source_root / screening_relative)
+    copied_relatives = {
+        catalog_relative,
+        pass_registry_relative,
+        matrix_relative,
+        screening_relative,
+        protocol_relative,
+        Path(screening["base_pass_registry"]["path"]),
+        *manifest_relatives.values(),
+        *(Path(item["path"]) for item in matrix["profiles"]),
+    }
+    for relative in copied_relatives:
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((source_root / relative).read_bytes())
+
+    compiler_artifact = tmp_path / "build/compiler.jar"
+    compiler_artifact.parent.mkdir()
+    compiler_artifact.write_bytes(b"candidate campaign test artifact\n")
+    raw_state_root = tmp_path / "raw-state"
+    raw_state_root.mkdir()
+    monkeypatch.setattr(
+        candidate_module,
+        "_load_and_reverify_candidate_screening",
+        lambda **kwargs: load_and_validate(kwargs["screening_path"]),
+    )
+    monkeypatch.setattr(
+        candidate_module,
+        "_clean_repository_identity",
+        lambda *_args, **_kwargs: ("a" * 40, "b" * 40),
+    )
+
+    plan = candidate_module.build_candidate_campaign_plan(
+        catalog_path=tmp_path / catalog_relative,
+        pass_registry_path=tmp_path / pass_registry_relative,
+        matrix_path=tmp_path / matrix_relative,
+        screening_path=tmp_path / screening_relative,
+        suite_paths={
+            role: tmp_path / relative
+            for role, relative in manifest_relatives.items()
+        },
+        measurement_protocol_path=tmp_path / protocol_relative,
+        compiler_artifact_path=compiler_artifact,
+        raw_state_root=raw_state_root,
+        workspace_root=tmp_path,
+        campaign_id="candidate-campaign-dag-test",
+    )
+    assert validate_document(deepcopy(plan)) == plan
+
+    by_id = {item["task_id"]: item for item in plan["tasks"]}
+    candidate_ids = plan["qualified_candidate_ids"]
+    first_candidate_id = candidate_ids[0]
+    for task_id, field, replacement, message in (
+        (
+            "run.B3.gcc",
+            "dependencies",
+            ["freeze"],
+            "B3 reference serialization",
+        ),
+        (
+            f"run.B3.{first_candidate_id}",
+            "terminal_dependencies",
+            [f"run.B1.{first_candidate_id}", "run.B3.gcc"],
+            "B3 selection/serialization",
+        ),
+        (
+            "study.B3",
+            "terminal_dependencies",
+            [
+                "run.B3.clang",
+                *[f"run.B3.{candidate_id}" for candidate_id in candidate_ids],
+            ],
+            "B3 study serialization",
+        ),
+    ):
+        tampered = deepcopy(plan)
+        next(item for item in tampered["tasks"] if item["task_id"] == task_id)[
+            field
+        ] = replacement
+        with pytest.raises(ValidationError, match=message):
+            validate_document(tampered)
+
+    for task in plan["tasks"]:
+        dependencies = [*task["dependencies"], *task["terminal_dependencies"]]
+        assert len(dependencies) == len(set(dependencies)), task["task_id"]
+
+    b2_full = by_id["run.B2.full"]
+    assert b2_full["dependencies"] == ["run.B1.full"]
+    assert b2_full["terminal_dependencies"] == [
+        f"run.B1.{candidate_id}" for candidate_id in candidate_ids
+    ]
+
+    def ready_with(overrides: dict[str, str]) -> list[str]:
+        return ready_campaign_task_ids(
+            tasks=plan["tasks"],
+            statuses=[
+                {
+                    "task_id": task["task_id"],
+                    "status": overrides.get(task["task_id"], "pending"),
+                }
+                for task in plan["tasks"]
+            ],
+        )
+
+    assert ready_with({"run.B1.full": "failed"}) == []
+    b1_terminal = {"run.B1.full": "completed"}
+    b1_terminal.update(
+        {
+            f"run.B1.{candidate_id}": (
+                "failed" if index == 0 else "completed"
+            )
+            for index, candidate_id in enumerate(candidate_ids)
+        }
+    )
+    assert ready_with(b1_terminal) == ["run.B2.full"]
+
+    ordered_task_ids = [item["task_id"] for item in plan["tasks"]]
+    for role in ("B4", "B5", "B6"):
+        full_task_id = f"run.{role}.full"
+        states = {
+            task_id: "completed"
+            for task_id in ordered_task_ids[: ordered_task_ids.index(full_task_id)]
+        }
+        assert ready_with(states) == [full_task_id]
+        states[full_task_id] = "completed"
+        previous_profile = None
+        for index, candidate_id in enumerate(candidate_ids):
+            task_id = f"run.{role}.{candidate_id}"
+            task = by_id[task_id]
+            assert task["dependencies"] == ["study.B3", full_task_id]
+            assert task["terminal_dependencies"] == (
+                [] if previous_profile is None else [previous_profile]
+            )
+            assert ready_with(states) == [task_id]
+            states[task_id] = "failed" if index == 0 else "completed"
+            previous_profile = task_id
+        assert ready_with(states) == [f"study.{role}"]
+
+    def pending_rows() -> dict[str, dict[str, Any]]:
+        return {
+            task["task_id"]: {
+                "task_id": task["task_id"],
+                "status": "pending",
+                "evidence_sha256": None,
+                "completed_at": None,
+            }
+            for task in plan["tasks"]
+        }
+
+    def complete(
+        rows: dict[str, dict[str, Any]],
+        task_id: str,
+        completed_at: str,
+        *,
+        status: str = "completed",
+    ) -> None:
+        rows[task_id]["status"] = status
+        rows[task_id]["completed_at"] = completed_at
+
+    def ready_rows(rows: dict[str, dict[str, Any]]) -> list[str]:
+        ready = ready_campaign_task_ids(
+            tasks=plan["tasks"], statuses=list(rows.values())
+        )
+        assert len(ready) <= 1
+        return ready
+
+    b1_gate_rows = pending_rows()
+    complete(b1_gate_rows, "run.B1.full", "2026-08-11T00:00:00Z")
+    for index, candidate_id in enumerate(candidate_ids):
+        complete(
+            b1_gate_rows,
+            f"run.B1.{candidate_id}",
+            f"2026-08-11T00:00:{index + 1:02d}Z",
+            status="failed" if index in {1, 4} else "completed",
+        )
+    complete(b1_gate_rows, "run.B2.full", "2026-08-11T00:00:10Z")
+    candidate_module._materialize_candidate_campaign_ineligibility(
+        tasks=plan["tasks"],
+        statuses_by_id=b1_gate_rows,
+        loaded_studies={},
+        promoted=set(),
+    )
+    assert ready_rows(b1_gate_rows) == [f"run.B2.{candidate_ids[0]}"]
+    complete(
+        b1_gate_rows,
+        f"run.B2.{candidate_ids[0]}",
+        "2026-08-11T00:01:00Z",
+    )
+    candidate_module._materialize_candidate_campaign_ineligibility(
+        tasks=plan["tasks"],
+        statuses_by_id=b1_gate_rows,
+        loaded_studies={},
+        promoted=set(),
+    )
+    assert b1_gate_rows[f"run.B2.{candidate_ids[1]}"]["completed_at"] == (
+        "2026-08-11T00:01:00Z"
+    )
+    assert ready_rows(b1_gate_rows) == [f"run.B2.{candidate_ids[2]}"]
+    for index in (2, 3):
+        complete(
+            b1_gate_rows,
+            f"run.B2.{candidate_ids[index]}",
+            f"2026-08-11T00:01:0{index}Z",
+        )
+        candidate_module._materialize_candidate_campaign_ineligibility(
+            tasks=plan["tasks"],
+            statuses_by_id=b1_gate_rows,
+            loaded_studies={},
+            promoted=set(),
+        )
+    assert b1_gate_rows[f"run.B2.{candidate_ids[4]}"]["completed_at"] == (
+        "2026-08-11T00:01:03Z"
+    )
+    assert ready_rows(b1_gate_rows) == [f"run.B2.{candidate_ids[5]}"]
+
+    b3_gate_rows = pending_rows()
+    b4_full_index = ordered_task_ids.index("run.B4.full")
+    for task_id in ordered_task_ids[: b4_full_index + 1]:
+        complete(b3_gate_rows, task_id, "2026-08-11T00:02:00Z")
+    promoted = {
+        candidate_id
+        for index, candidate_id in enumerate(candidate_ids)
+        if index not in {1, 4}
+    }
+    loaded_studies = {"B3": {"generated_at": "2026-08-11T00:01:30Z"}}
+    candidate_module._materialize_candidate_campaign_ineligibility(
+        tasks=plan["tasks"],
+        statuses_by_id=b3_gate_rows,
+        loaded_studies=loaded_studies,
+        promoted=promoted,
+    )
+    assert ready_rows(b3_gate_rows) == [f"run.B4.{candidate_ids[0]}"]
+    complete(
+        b3_gate_rows,
+        f"run.B4.{candidate_ids[0]}",
+        "2026-08-11T00:03:00Z",
+    )
+    candidate_module._materialize_candidate_campaign_ineligibility(
+        tasks=plan["tasks"],
+        statuses_by_id=b3_gate_rows,
+        loaded_studies=loaded_studies,
+        promoted=promoted,
+    )
+    assert b3_gate_rows[f"run.B4.{candidate_ids[1]}"]["completed_at"] == (
+        "2026-08-11T00:03:00Z"
+    )
+    assert ready_rows(b3_gate_rows) == [f"run.B4.{candidate_ids[2]}"]
+
+
 def test_candidate_campaign_status_dispatch_preserves_optional_none_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
