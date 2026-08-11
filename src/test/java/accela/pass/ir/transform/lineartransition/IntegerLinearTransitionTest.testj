@@ -2,6 +2,7 @@ package accela.pass.ir.transform.lineartransition;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.BasicBlock;
@@ -12,6 +13,7 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.IntegerLinearTransitionCandidate;
+import accela.pass.PassDescriptor;
 import accela.pass.PreservedAnalyses;
 import accela.pass.instrument.DecisionRemark;
 import accela.pass.instrument.DecisionStatus;
@@ -45,6 +47,31 @@ final class IntegerLinearTransitionTest {
     assertEquals(
         IntegerLinearTransitionCandidate.LEGALITY_OBLIGATION_IDS,
         descriptor.legalityObligationIds());
+  }
+
+  @Test
+  void scheduledPassRejectsAnyDescriptorDrift() {
+    PassDescriptor expected = IntegerLinearTransitionCandidate.descriptor();
+    PassDescriptor tampered = new PassDescriptor(
+        expected.id(),
+        expected.logicalFamilyId(),
+        expected.displayName() + " tampered",
+        expected.stage(),
+        expected.fullPipelineOccurrences(),
+        expected.lifecycle(),
+        expected.decisionObservable(),
+        expected.candidateAnchor(),
+        expected.legalityObligationIds());
+
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, ignored -> {})) {
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> new IntegerLinearTransition.Pass(instrumentation, tampered, 1));
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> new IntegerLinearTransition.Pass(instrumentation, expected, 2));
+    }
   }
 
   @Test

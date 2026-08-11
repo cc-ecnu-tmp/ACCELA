@@ -79,12 +79,7 @@ public final class IntegerLinearTransition {
             "integer-linear-transition candidate requires enabled instrumentation");
       }
       PassDescriptor expected = IntegerLinearTransitionCandidate.descriptor();
-      if (!descriptor.id().equals(expected.id())
-          || descriptor.stage() != PassDescriptor.Stage.IR_FUNCTION
-          || descriptor.lifecycle() != PassDescriptor.Lifecycle.CANDIDATE
-          || !descriptor.decisionObservable()
-          || !descriptor.candidateAnchor().equals(expected.candidateAnchor())
-          || !descriptor.legalityObligationIds().equals(expected.legalityObligationIds())) {
+      if (!descriptor.equals(expected)) {
         throw new IllegalArgumentException("invalid integer-linear-transition descriptor");
       }
       if (occurrence != 1) {
