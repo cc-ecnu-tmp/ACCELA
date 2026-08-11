@@ -1,6 +1,6 @@
 {
   "schema": "accela-source-snapshot.v1",
-  "captured_at": "2026-08-10T00:36:00+08:00",
+  "captured_at": "2026-08-11T13:20:35+08:00",
   "competition_repository": {
     "url": "https://gitlab.eduxiji.net/csc1/nscscc/compiler2026",
     "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
@@ -16,6 +16,11 @@
     },
     {
       "captured_at": "2026-08-10T00:36:00+08:00",
+      "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
+      "status": "success"
+    },
+    {
+      "captured_at": "2026-08-11T13:20:35+08:00",
       "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
       "status": "success"
     }
