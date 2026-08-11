@@ -1,0 +1,14 @@
+package accela.pass;
+
+import java.util.ArrayList;
+
+/** Test integration registry containing the production finite-state descriptor. */
+public final class FiniteStateAccelerationCandidateRegistry {
+  private FiniteStateAccelerationCandidateRegistry() {}
+
+  public static PassRegistry create() {
+    ArrayList<PassDescriptor> descriptors = new ArrayList<>(PassRegistry.standard().all());
+    descriptors.add(FiniteStateAccelerationCandidate.descriptor());
+    return PassRegistry.of(descriptors);
+  }
+}
