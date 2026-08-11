@@ -1,0 +1,49 @@
+import accela.backend.BackendCompiler;
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.pass.ExtendedAffineCandidateTestSupport;
+import accela.pass.PassBuilder;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import accela.pass.ir.instrument.PassInstrumentation;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Test-only command driver used by the real RV64GC QEMU acceptance check. */
+public final class ExtendedAffineCompilerDriver {
+  private ExtendedAffineCompilerDriver() {}
+
+  public static void main(String[] args) throws Exception {
+    if (args.length != 4) {
+      throw new IllegalArgumentException("usage: INPUT OUTPUT PROFILE REMARKS");
+    }
+    PassRegistry registry = ExtendedAffineCandidateTestSupport.registry();
+    PipelineProfile.builder(registry)
+        .enableCandidate(ExtendedAffineSummarizationCandidate.ID)
+        .build().writeJson(Path.of(args[2]));
+    AtomicInteger constructions = new AtomicInteger();
+    BenchmarkCompiler.runForTesting(new String[] {
+        args[0], "-o", args[1], "--profile", args[2], "--remarks", args[3]
+    }, new BenchmarkCompiler.DevelopmentPipeline() {
+      @Override
+      public PassRegistry registry() {
+        return registry;
+      }
+
+      @Override
+      public PassBuilder passBuilder(PassInstrumentation instrumentation) {
+        return ExtendedAffineCandidateTestSupport.passBuilder(
+            instrumentation, constructions);
+      }
+
+      @Override
+      public BackendCompiler backendCompiler(
+          PipelineProfile profile, BackendPassInstrumentation instrumentation) {
+        return new BackendCompiler(profile, instrumentation);
+      }
+    });
+    if (constructions.get() != 1) {
+      throw new IllegalStateException("candidate factory construction count is not one");
+    }
+  }
+}

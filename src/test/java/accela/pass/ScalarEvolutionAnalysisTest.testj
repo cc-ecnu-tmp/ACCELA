@@ -3,6 +3,7 @@ package accela.pass;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
@@ -120,6 +121,90 @@ final class ScalarEvolutionAnalysisTest {
     LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
 
     assertEquals(java.util.Optional.empty(), scev.getConstantBackedgeTakenCount(loop));
+  }
+
+  @Test
+  void projectsAffineAndQuadraticExpressionsInTheExistingScevDomain() {
+    LoopFixture fixture = loop(2, 3, 100, "slt", true);
+    BasicBlock body = fixture.function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(body.getTerminator());
+    Instruction square = builder.createMul(fixture.phi, fixture.phi);
+    Instruction twice = builder.createMul(Constant.intConst(2), fixture.phi);
+    Instruction quadratic = builder.createAdd(
+        builder.createAdd(square, twice), Constant.intConst(1));
+
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
+    SCEV.IterationPolynomial polynomial = scev.getIntegerIterationPolynomial(
+        scev.getSCEV(quadratic), loop).orElseThrow();
+
+    assertEquals(2, polynomial.degree());
+    assertEquals(
+        java.util.List.of(BigInteger.valueOf(9), BigInteger.valueOf(18), BigInteger.valueOf(9)),
+        polynomial.coefficients().stream()
+            .map(SCEV.Constant.class::cast).map(SCEV.Constant::value).toList());
+  }
+
+  @Test
+  void exposesTheSharedAdditiveDeltaWithoutClaimingItIsInvariant() {
+    LoopFixture fixture = loop(0, 1, 20, "slt", true);
+    BasicBlock entry = fixture.function.getBlocks().get(0);
+    BasicBlock body = fixture.function.getBlocks().get(2);
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(fixture.header.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() != Instruction.Opcode.PHI)
+        .findFirst().orElseThrow());
+    Instruction state = headerBuilder.createPhi(Type.INT);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    Instruction increment = bodyBuilder.createMul(Constant.intConst(3), fixture.phi);
+    Instruction update = bodyBuilder.createAdd(state, increment);
+    state.addOperand(Constant.intConst(7));
+    state.addOperand(entry);
+    state.addOperand(update);
+    state.addOperand(body);
+
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
+    SCEV delta = scev.getAdditiveRecurrenceDelta(state, update, loop).orElseThrow();
+    SCEV.IterationPolynomial polynomial =
+        scev.getIntegerIterationPolynomial(delta, loop).orElseThrow();
+
+    assertEquals(java.util.List.of(BigInteger.ZERO, BigInteger.valueOf(3)),
+        polynomial.coefficients().stream()
+            .map(SCEV.Constant.class::cast).map(SCEV.Constant::value).toList());
+  }
+
+  @Test
+  void rejectsDegreeThreeDivisionRemainderAndNonAdditiveStateUpdates() {
+    LoopFixture fixture = loop(0, 1, 20, "slt", true);
+    BasicBlock entry = fixture.function.getBlocks().get(0);
+    BasicBlock body = fixture.function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(body.getTerminator());
+    Instruction square = builder.createMul(fixture.phi, fixture.phi);
+    Instruction cube = builder.createMul(square, fixture.phi);
+    Instruction divide = builder.createSDiv(fixture.phi, Constant.intConst(3));
+    Instruction remainder = builder.createSRem(fixture.phi, Constant.intConst(3));
+    Instruction state = Instruction.createPhi(Type.INT);
+    fixture.header.insertInstructionBefore(fixture.header.getInstructions().getFirst(), state);
+    Instruction scaledState = builder.createMul(state, Constant.intConst(2));
+    state.addOperand(Constant.intConst(1));
+    state.addOperand(entry);
+    state.addOperand(scaledState);
+    state.addOperand(body);
+
+    ScalarEvolutionAnalysis.Result scev =
+        new ScalarEvolutionAnalysis().run(fixture.function, null);
+    LoopAnalysis.Loop loop = scev.getLoopInfo().getLoopFor(fixture.header);
+
+    assertTrue(scev.getIntegerIterationPolynomial(scev.getSCEV(cube), loop).isEmpty());
+    assertTrue(scev.getIntegerIterationPolynomial(scev.getSCEV(divide), loop).isEmpty());
+    assertTrue(scev.getIntegerIterationPolynomial(scev.getSCEV(remainder), loop).isEmpty());
+    assertTrue(scev.getAdditiveRecurrenceDelta(state, scaledState, loop).isEmpty());
   }
 
   private static LoopFixture loop(
