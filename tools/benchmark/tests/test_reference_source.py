@@ -16,6 +16,7 @@ from tools.benchmark.reference_source import (
     ReferenceSourceError,
     adapt_source,
     load_reference_frontend_contract,
+    select_reference_volume_mount,
 )
 from tools.benchmark.util import sha256_json
 
@@ -294,6 +295,167 @@ def test_repository_snapshot_freezes_the_reference_launcher_policy() -> None:
     )
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Docker mount paths are POSIX paths")
+def test_named_volume_selector_binds_outer_image_labels_and_safe_subpaths(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "volume" / "ACCELA"
+    output = workspace / "output"
+    support = workspace / "tools" / "qemu"
+    output.mkdir(parents=True)
+    support.mkdir(parents=True)
+    container_id = "a" * 64
+    hostname = container_id[:12]
+    image_id = "sha256:" + "b" * 64
+    volume_name = "accela_candidate_evaluation_2026_r2"
+    container_inspect = tmp_path / "container.json"
+    volume_inspect = tmp_path / "volume.json"
+    container_inspect.write_text(
+        json.dumps(
+            [
+                {
+                    "Id": container_id,
+                    "Image": image_id,
+                    "Config": {"Hostname": hostname},
+                    "Mounts": [
+                        {
+                            "Type": "volume",
+                            "Name": volume_name,
+                            "Destination": str(tmp_path / "volume"),
+                            "RW": True,
+                        }
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    volume_inspect.write_text(
+        json.dumps(
+            [
+                {
+                    "Name": volume_name,
+                    "Driver": "local",
+                    "Scope": "local",
+                    "Labels": {
+                        "org.accela.campaign": "accela-candidate-evaluation-2026-r2",
+                        "org.accela.purpose": "formal-workspace",
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    selected = select_reference_volume_mount(
+        root=workspace,
+        output_dir=output,
+        support_dir=support,
+        container_inspect_path=container_inspect,
+        volume_inspect_path=volume_inspect,
+        expected_volume_name=volume_name,
+        expected_campaign="accela-candidate-evaluation-2026-r2",
+        expected_purpose="formal-workspace",
+        expected_candidate_image_id=image_id,
+        observed_hostname=hostname,
+    )
+
+    assert selected.volume_name == volume_name
+    assert selected.output_subpath == "ACCELA/output"
+    assert selected.support_subpath == "ACCELA/tools/qemu"
+    assert selected.volume_name_sha256 == hashlib.sha256(
+        volume_name.encode("utf-8")
+    ).hexdigest()
+    assert selected.container_id_sha256 == hashlib.sha256(
+        container_id.encode("ascii")
+    ).hexdigest()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Docker mount paths are POSIX paths")
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("wrong_image", "outer-container identity"),
+        ("nested_output_bind", "share one effective Docker mount"),
+        ("wrong_volume_label", "identity or labels differ"),
+        ("unsafe_subpath", "unsafe volume subpath"),
+    ],
+)
+def test_named_volume_selector_rejects_docker_identity_and_path_drift(
+    tmp_path: Path,
+    mutation: str,
+    message: str,
+) -> None:
+    workspace = tmp_path / "volume" / "ACCELA"
+    output_name = "output,bad" if mutation == "unsafe_subpath" else "output"
+    output = workspace / output_name
+    support = workspace / "tools" / "qemu"
+    output.mkdir(parents=True)
+    support.mkdir(parents=True)
+    container_id = "a" * 64
+    hostname = container_id[:12]
+    image_id = "sha256:" + "b" * 64
+    mounts = [
+        {
+            "Type": "volume",
+            "Name": "accela_candidate_evaluation_2026_r2",
+            "Destination": str(tmp_path / "volume"),
+            "RW": True,
+        }
+    ]
+    if mutation == "nested_output_bind":
+        mounts.append(
+            {
+                "Type": "bind",
+                "Source": "/host/output",
+                "Destination": str(output),
+                "RW": True,
+            }
+        )
+    container = {
+        "Id": container_id,
+        "Image": "sha256:" + "c" * 64 if mutation == "wrong_image" else image_id,
+        "Config": {"Hostname": hostname},
+        "Mounts": mounts,
+    }
+    labels = {
+        "org.accela.campaign": "wrong"
+        if mutation == "wrong_volume_label"
+        else "accela-candidate-evaluation-2026-r2",
+        "org.accela.purpose": "formal-workspace",
+    }
+    container_inspect = tmp_path / "container.json"
+    volume_inspect = tmp_path / "volume.json"
+    container_inspect.write_text(json.dumps([container]), encoding="utf-8")
+    volume_inspect.write_text(
+        json.dumps(
+            [
+                {
+                    "Name": "accela_candidate_evaluation_2026_r2",
+                    "Driver": "local",
+                    "Scope": "local",
+                    "Labels": labels,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ReferenceSourceError, match=message):
+        select_reference_volume_mount(
+            root=workspace,
+            output_dir=output,
+            support_dir=support,
+            container_inspect_path=container_inspect,
+            volume_inspect_path=volume_inspect,
+            expected_volume_name="accela_candidate_evaluation_2026_r2",
+            expected_campaign="accela-candidate-evaluation-2026-r2",
+            expected_purpose="formal-workspace",
+            expected_candidate_image_id=image_id,
+            observed_hostname=hostname,
+        )
+
+
 def test_reference_source_rejects_launcher_contract_drift(
     reference_wrapper_workspace: dict[str, Path | str],
 ) -> None:
@@ -346,6 +508,11 @@ def test_shell_wrapper_has_no_parallel_hardcoded_frontend_or_image_override() ->
     assert "python=python3" in wrapper
     assert '"$python" -I' in wrapper
     assert "python_mode=isolated" in wrapper
+    assert "type=volume,src=$volume_name" in wrapper
+    assert "volume-subpath=$output_subpath" in wrapper
+    assert "volume-subpath=$support_subpath" in wrapper
+    assert "Docker CLI SHA-256 differs" in wrapper
+    assert "--expected-candidate-image-id" in wrapper
 
 
 @pytest.mark.skipif(POSIX_SH is None, reason="reference wrapper requires a POSIX shell")

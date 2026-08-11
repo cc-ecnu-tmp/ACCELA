@@ -174,7 +174,8 @@
       "type": "object", "additionalProperties": false,
       "required": [
         "snapshot", "compile_driver_sha256", "source_adapter_sha256",
-        "builtin_header_sha256", "image_id", "common_tool_versions",
+        "builtin_header_sha256", "image_id", "named_volume_contract",
+        "candidate_toolchain", "common_tool_versions",
         "accela_jdk_version", "baselines"
       ],
       "properties": {
@@ -183,11 +184,56 @@
         "source_adapter_sha256": {"$ref": "#/$defs/sha256"},
         "builtin_header_sha256": {"$ref": "#/$defs/sha256"},
         "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "named_volume_contract": {
+          "type": "object", "additionalProperties": false,
+          "required": ["name", "required_labels"],
+          "properties": {
+            "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,254}$"},
+            "required_labels": {
+              "type": "object", "additionalProperties": false,
+              "required": ["org.accela.campaign", "org.accela.purpose"],
+              "properties": {
+                "org.accela.campaign": {"type": "string", "minLength": 1, "maxLength": 255},
+                "org.accela.purpose": {"type": "string", "minLength": 1, "maxLength": 255}
+              }
+            }
+          }
+        },
+        "candidate_toolchain": {"$ref": "#/$defs/candidate_toolchain"},
         "common_tool_versions": {"$ref": "#/$defs/tool_versions"},
         "accela_jdk_version": {"type": "string", "minLength": 1, "maxLength": 256},
         "baselines": {
           "type": "array", "minItems": 2, "maxItems": 2,
           "items": {"$ref": "#/$defs/reference_baseline"}
+        }
+      }
+    },
+    "candidate_toolchain": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "base_image_tag", "base_image_id", "dockerfile_path", "dockerfile_sha256",
+        "docker_cli", "image_tag", "image_id", "rootfs_layers"
+      ],
+      "properties": {
+        "base_image_tag": {"type": "string", "minLength": 1, "maxLength": 256},
+        "base_image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "dockerfile_path": {"const": "tools/benchmark/candidate-toolchain.Dockerfile"},
+        "dockerfile_sha256": {"$ref": "#/$defs/sha256"},
+        "docker_cli": {
+          "type": "object", "additionalProperties": false,
+          "required": ["install_path_id", "sha256", "version", "version_output"],
+          "properties": {
+            "install_path_id": {"const": "usr-local-bin-docker-v1"},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "version": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+){2}$"},
+            "version_output": {"type": "string", "minLength": 1, "maxLength": 256}
+          }
+        },
+        "image_tag": {"type": "string", "minLength": 1, "maxLength": 256},
+        "image_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "rootfs_layers": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
         }
       }
     },

@@ -85,7 +85,7 @@ campaign，而不是 r1 的 resume。正式执行前必须满足：
 7. campaign 终止前不从 volume 汇总或发布正式报告。终止后导出时再次核对规范化
    哈希和物理哈希，且提交产物不得含宿主机绝对路径。
 
-本地 rootfs 归档经 Docker Desktop 导入为
+本地 rootfs 归档经 Docker Desktop 导入为 bootstrap 镜像
 `accela/candidate-toolchain:2026-r2`。镜像 identity 为
 `sha256:9e8d0543c848d89cd9bacd6c3cc04859d8ded988cd8f2e3565f0d09bbaedf26d`，
 其唯一 rootfs layer digest 与上述归档 SHA-256 相同。只读、无网络、移除 capability
@@ -93,6 +93,28 @@ campaign，而不是 r1 的 resume。正式执行前必须满足：
 `riscv64-elf-gcc` 15.2.0、OpenJDK 21.0.11 和 Git 2.55.0 可执行。该结果只证明
 救援工具链镜像可启动，不是 compiler build、QEMU correctness 或 formal campaign
 证据。
+
+bootstrap rootfs 中的 `/usr/bin/docker` 是指向 WSL 集成目录的绝对符号链接，进入
+普通 Docker 容器后不可执行，因此它不能直接承载 r2。生产派生镜像固定为
+`accela/candidate-toolchain:2026-r2-docker29.6.2`，identity 为
+`sha256:548c90fb7fbf0c6a632ef6d6f180183b3bf4cbf817ba3e8ef41db6069e413eb2`；其第二层
+为 `sha256:db2ea79329bf447627af7e2c48261a4f82bd2757bbbc3e8460cac6170aceab69`。
+该层把 SHA-256
+`dda0804fca9b37a16e688356049ddf51fdd4c1a435c0a41055ec81cdf121535a`、版本
+`Docker version 29.6.2, build dfc4efb` 的 Linux CLI 安装到固定优先 PATH。
+Dockerfile、base/final image、两层 digest 和 CLI identity 均由 toolchain snapshot
+绑定；冻结后的新构建若产生不同 ID，必须作为新 toolchain identity 处理，不能自动
+替换。
+
+reference launcher 在容器内不再向 daemon 提交外层 namespace 的 bind source。
+它验证当前容器、exact candidate image、socket、CLI 和 named-volume labels 后，只把
+output/support 的安全相对子路径作为 `volume-subpath` 交给 frozen reference image。
+自定义容器必须使用相同 name 与 hostname；nested bind shadow、多个有效 mount、路径
+遍历或 identity 漂移均 fail fast。原生宿主路径继续使用既有 bind transport。
+
+本次修复只闭合 candidate image、Docker CLI、named-volume 与 reference 子容器传输。
+Python 虚拟环境依赖和 Gradle distribution 的独立 hash-bound provenance 仍须在下一
+基础设施切片完成；在它们写入 freeze 合同并通过 preflight 前，仍不得生成 r2 plan。
 
 r2 plan hash 和各 run ID 当前仍为 pending。它们只能由 named-volume 内的 clean
 checkout 和实际 preflight 生成；本文不预填，也不把计划状态写成已验证状态。

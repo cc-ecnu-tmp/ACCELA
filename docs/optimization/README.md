@@ -121,6 +121,17 @@ formal run 以同一仓库快照作为 compiler artifact，因而同时绑定 dr
 header、完整 frontend argv、launcher policy、镜像和版本。launcher policy 只有
 一个代码常量；reference contract loader 与 campaign toolchain loader 都和快照
 逐字段精确比较，缺失或漂移会在编译/计划生成前失败，不能只靠文档或测试声明。
+Docker Desktop 容器内执行时，launcher 从 `/etc/hostname` 识别当前容器；自定义
+container 必须使用相同 name 与 hostname，默认 ID hostname 也受支持。随后逐项核对
+外层 frozen candidate image、`/usr/local/bin/docker` 的路径/物理哈希/版本、socket、
+唯一有效 named-volume mount 及其 campaign/purpose labels。output 与 support 必须
+解析为同一 volume 内无遍历、无逗号的相对子路径；内层 reference image 使用
+`volume-subpath`，避免把外层容器路径误当成 daemon host bind 路径。原生宿主仍保持
+既有 bind 行为。候选工具链镜像由
+`tools/benchmark/candidate-toolchain.Dockerfile` 在救援 rootfs 基础镜像上嵌入快照
+固定的 Linux Docker CLI；`scripts/build-candidate-toolchain.sh` 对 base/final image
+ID、layers、Dockerfile 及 CLI hash/version 逐项验证。冻结后的不同 image ID 不能
+冒充原镜像。
 目录型 compiler artifact 先把每个文件名规范化为 POSIX 相对路径，再按该路径的
 UTF-8 字节序排序后计算 tree hash；该顺序不依赖 Windows 路径大小写折叠，并与
 既有 Linux/WSL Unicode code-point 顺序一致。目录中出现符号链接或非常规文件会
@@ -862,7 +873,11 @@ identity。任一 raw 文件、run 路径、配置或派生 speedup 漂移都使
 
 实现后的正式调度由 `candidates campaign-plan` 一次绑定六份 manifest、筛选结果、
 candidate catalog、筛选基线与可执行两份 pass registry、profile matrix、standard
-protocol、clean commit/tree、compiler artifact 和唯一的相对 `raw_state_root`。每次
+与 cache-hotblock protocol、reference toolchain snapshot、clean commit/tree、
+compiler artifact 和唯一的相对 `raw_state_root`。计划中的 `reference_toolchain`
+必须显式固定 candidate image/base/layers、Docker CLI、named volume name/labels、
+Python/JDK/common versions 及 GCC/Clang profiles；缺失字段或全零占位 digest 会在
+计划生成或 schema semantic validation 时失败。每次
 `candidates campaign-status` 都必须同时给出当时已知的 `--run TASK=RUN_JSON` 和一个
 从这些物理 run/state 即时重放生成的唯一 `--raw-evidence-registry` 输出；status 中的
 `ready_tasks` 是唯一可执行任务集合。study、freeze、final、status 和 raw registry

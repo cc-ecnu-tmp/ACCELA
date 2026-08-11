@@ -72,6 +72,14 @@
   loader and campaign loader to match the snapshot exactly. The adapter
   is a lexical bridge, not a SysY parser, so formal cases must also pass manifest
   integrity and ACCELA compile/run/output correctness gates.
+- Under Docker Desktop, start the campaign container from the exact frozen
+  candidate-toolchain image, give a custom container the same name and hostname,
+  mount the exact labeled campaign volume read-write, and expose the Docker socket.
+  The reference launcher must verify its outer container/image, embedded Linux
+  Docker CLI path/hash/version, and the unique effective workspace volume. Inner
+  GCC/Clang containers use validated `volume-subpath` mounts; host execution keeps
+  the existing bind-mount transport. Ambiguity, nested mount shadowing, label/name
+  drift, path traversal, a missing socket, or another image is terminal.
 
 ## Evidence levels
 

@@ -402,9 +402,11 @@ def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
         "catalog.json",
         "pass-registry.json",
         "matrix.json",
-        "screening.json",
-        "protocol.json",
-        "compiler.jar",
+            "screening.json",
+            "protocol.json",
+            "hotblock-protocol.json",
+            "toolchain.json",
+            "compiler.jar",
         *(f"{role.lower()}.json" for role in ("B1", "B2", "B3", "B4", "B5", "B6")),
     ]
     _input_files(tmp_path, *names)
@@ -441,6 +443,10 @@ def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
         [
             "--measurement-protocol",
             "protocol.json",
+            "--hotblock-measurement-protocol",
+            "hotblock-protocol.json",
+            "--reference-toolchain",
+            "toolchain.json",
             "--compiler-artifact",
             "compiler.jar",
             "--raw-state-root",
@@ -458,6 +464,10 @@ def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
         for role in ("B1", "B2", "B3", "B4", "B5", "B6")
     }
     assert received["compiler_artifact_path"] == tmp_path / "compiler.jar"
+    assert received["hotblock_measurement_protocol_path"] == (
+        tmp_path / "hotblock-protocol.json"
+    )
+    assert received["reference_toolchain_path"] == tmp_path / "toolchain.json"
     assert received["raw_state_root"] == tmp_path / "raw-state"
     assert received["campaign_id"] == "campaign-1"
 
@@ -612,6 +622,10 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         "docs/optimization/data/candidates/candidate-screening.v1.json"
     )
     protocol_relative = Path("docs/optimization/data/measurement-protocol.v1.json")
+    hotblock_protocol_relative = Path(
+        "docs/optimization/data/measurement-protocol.cache-hotblock.v1.json"
+    )
+    toolchain_relative = Path("docs/optimization/data/toolchain-snapshot.json")
     manifest_relatives = {
         "B1": Path("docs/optimization/data/manifests/b1-official-functional-2026.manifest.json"),
         "B2": Path("docs/optimization/data/manifests/b2-family-smoke.manifest.json"),
@@ -629,6 +643,14 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         matrix_relative,
         screening_relative,
         protocol_relative,
+        hotblock_protocol_relative,
+        toolchain_relative,
+        Path("scripts/reference-compile.sh"),
+        Path("tools/benchmark/reference_source.py"),
+        Path("tools/benchmark/reference-toolchain.Dockerfile"),
+        Path("tools/benchmark/candidate-toolchain.Dockerfile"),
+        Path("tools/benchmark/schemas/run-record.v1.json"),
+        Path("tools/qemu/sysy-builtins.h"),
         Path(screening["base_pass_registry"]["path"]),
         *manifest_relatives.values(),
         *(Path(item["path"]) for item in matrix["profiles"]),
@@ -664,12 +686,32 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
             for role, relative in manifest_relatives.items()
         },
         measurement_protocol_path=tmp_path / protocol_relative,
+        hotblock_measurement_protocol_path=tmp_path / hotblock_protocol_relative,
+        reference_toolchain_path=tmp_path / toolchain_relative,
         compiler_artifact_path=compiler_artifact,
         raw_state_root=raw_state_root,
         workspace_root=tmp_path,
-        campaign_id="candidate-campaign-dag-test",
+        campaign_id="accela-candidate-evaluation-2026-r2",
     )
     assert validate_document(deepcopy(plan)) == plan
+    assert plan["reference_toolchain"]["named_volume_contract"][
+        "required_labels"
+    ]["org.accela.campaign"] == plan["campaign_id"]
+    assert plan["reference_toolchain"]["candidate_toolchain"]["image_id"] == (
+        "sha256:548c90fb7fbf0c6a632ef6d6f180183b3bf4cbf817ba3e8ef41db6069e413eb2"
+    )
+
+    placeholder_image = deepcopy(plan)
+    placeholder_image["reference_toolchain"]["candidate_toolchain"][
+        "image_id"
+    ] = "sha256:" + "0" * 64
+    with pytest.raises(ValidationError, match="placeholder identity"):
+        validate_document(placeholder_image)
+
+    missing_volume = deepcopy(plan)
+    del missing_volume["reference_toolchain"]["named_volume_contract"]
+    with pytest.raises(ValidationError, match="named_volume_contract.*required"):
+        validate_document(missing_volume)
 
     by_id = {item["task_id"]: item for item in plan["tasks"]}
     candidate_ids = plan["qualified_candidate_ids"]
@@ -3103,10 +3145,32 @@ def _candidate_freeze_document() -> dict[str, Any]:
             "source_adapter_sha256": "6" * 64,
             "builtin_header_sha256": "7" * 64,
             "image_id": "sha256:" + "8" * 64,
+            "named_volume_contract": {
+                "name": "accela_candidate_evaluation_campaign_1",
+                "required_labels": {
+                    "org.accela.campaign": "campaign-1",
+                    "org.accela.purpose": "formal-workspace",
+                },
+            },
+            "candidate_toolchain": {
+                "base_image_tag": "accela/candidate-toolchain:test-base",
+                "base_image_id": "sha256:" + "1" * 64,
+                "dockerfile_path": "tools/benchmark/candidate-toolchain.Dockerfile",
+                "dockerfile_sha256": "2" * 64,
+                "docker_cli": {
+                    "install_path_id": "usr-local-bin-docker-v1",
+                    "sha256": "3" * 64,
+                    "version": "29.6.2",
+                    "version_output": "Docker version 29.6.2, build dfc4efb",
+                },
+                "image_tag": "accela/candidate-toolchain:test",
+                "image_id": "sha256:" + "4" * 64,
+                "rootfs_layers": ["sha256:" + "5" * 64, "sha256:" + "6" * 64],
+            },
             "common_tool_versions": {
                 "qemu-system-riscv64": "9.2",
                 "bare-metal-linker": "2.42",
-                "python": "3.12",
+                "python": "3.14.6",
                 "glib": "2.80",
             },
             "accela_jdk_version": "21",
@@ -3188,6 +3252,13 @@ def test_candidate_freeze_enforces_counts_namespace_and_hashes() -> None:
     wrong_candidates["frozen_candidate_ids"].reverse()
     with pytest.raises(ValidationError, match="identity hash"):
         validate_document(wrong_candidates)
+
+    placeholder_image = json.loads(json.dumps(freeze))
+    placeholder_image["reference_toolchain"]["candidate_toolchain"][
+        "image_id"
+    ] = "sha256:" + "0" * 64
+    with pytest.raises(ValidationError, match="placeholder identity"):
+        validate_document(placeholder_image)
 
     same_registry_hash = deepcopy(freeze)
     same_registry_hash["snapshots"]["executable_pass_registry"][

@@ -283,6 +283,13 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
     builtin_header = tmp_path / "tools" / "qemu" / "sysy-builtins.h"
     builtin_header.parent.mkdir(parents=True)
     builtin_header.write_text("/* frozen header */\n", encoding="utf-8")
+    candidate_dockerfile = (
+        tmp_path / "tools" / "benchmark" / "candidate-toolchain.Dockerfile"
+    )
+    candidate_dockerfile.write_text(
+        "FROM accela/candidate-toolchain:test\n",
+        encoding="utf-8",
+    )
     toolchain_path.write_text(json.dumps({
         "schema": "accela-toolchain-snapshot.v1",
         "target": {"isa": "rv64gc", "abi": "lp64d", "code_model": "medany"},
@@ -295,6 +302,13 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
             "builtin_header_sha256": sha256_file(builtin_header),
             "frontend_language": "c++17",
             "launcher_contract": campaign_module.REFERENCE_LAUNCHER_CONTRACT,
+            "named_volume_contract": {
+                "name": "accela_candidate_evaluation_test",
+                "required_labels": {
+                    "org.accela.campaign": "accela-candidate-evaluation-test",
+                    "org.accela.purpose": "formal-workspace",
+                },
+            },
             "local_image_id": "sha256:" + "1" * 64,
             "gcc": {
                 "version": "13.3.0", "optimization": "-O2",
@@ -320,6 +334,21 @@ def test_campaign_plan_status_and_next_are_budgeted_and_resumable(tmp_path: Path
         "proxy_execution": {
             "qemu_system_riscv64": "11.0.3", "riscv_bare_metal_linker": "15.2.0",
             "python": "3.14.6", "glib": "2.88.3", "jdk": "21.0.11",
+            "candidate_toolchain": {
+                "base_image_tag": "accela/candidate-toolchain:test",
+                "base_image_id": "sha256:" + "2" * 64,
+                "dockerfile_path": "tools/benchmark/candidate-toolchain.Dockerfile",
+                "dockerfile_sha256": sha256_file(candidate_dockerfile),
+                "docker_cli": {
+                    "install_path": "/usr/local/bin/docker",
+                    "sha256": "3" * 64,
+                    "version": "29.6.2",
+                    "version_output": "Docker version 29.6.2, build dfc4efb",
+                },
+                "image_tag": "accela/candidate-toolchain:test-docker29.6.2",
+                "image_id": "sha256:" + "4" * 64,
+                "rootfs_layers": ["sha256:" + "5" * 64, "sha256:" + "6" * 64],
+            },
             "measurement_protocols": {
                 mode: {
                     "measurement_mode": mode,

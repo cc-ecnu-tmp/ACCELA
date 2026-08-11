@@ -12,9 +12,9 @@
     "local_image_tag": "accela/reference-toolchain:2026.08.10-cxx1",
     "local_image_id": "sha256:fe44723405d667db6f4eef5375717cae5fe68fe67313a525037e452fdab1d728",
     "compile_driver_path": "scripts/reference-compile.sh",
-    "compile_driver_sha256": "dc172807182a4e701f57d8ddc60d4569b47ba75572d64673490aec3261bd215f",
+    "compile_driver_sha256": "33f7abe2bc83f90081f4695dc99472fc83ea870d9505912a041f36e7958d483c",
     "source_adapter_path": "tools/benchmark/reference_source.py",
-    "source_adapter_sha256": "c6f612e79b09a96eefb606332f26b488476288e9149980d163d0dc47e8d31a09",
+    "source_adapter_sha256": "b6219fdd9c6d1bc481364f1b896c5df730a420700e352b4dedd2bec48b44249c",
     "builtin_header_path": "tools/qemu/sysy-builtins.h",
     "builtin_header_sha256": "d84eeb701f41d59484ff6df30c19390d015cb1edc5fe3a1acbc56d45f6b552fa",
     "frontend_language": "c++17",
@@ -29,12 +29,27 @@
       "docker_fallback_policy": "transport_unreachable_only",
       "docker_image_inspect_identity": "frozen_tag_to_exact_id",
       "docker_run_identity": "exact_image_id",
+      "docker_native_host_storage": "bind",
+      "docker_container_identity": "hostname_inspect_exact_id",
+      "docker_container_image_identity": "frozen_candidate_image_id",
+      "docker_container_storage": "single_labeled_named_volume",
+      "docker_container_mount_transport": "volume_subpath",
+      "docker_container_socket": "/var/run/docker.sock",
+      "docker_container_cli_identity": "frozen_path_sha256_version",
       "stderr_records": [
         "ACCELA_REFERENCE_PYTHON",
         "ACCELA_REFERENCE_DOCKER_CANDIDATE",
         "ACCELA_REFERENCE_DOCKER",
+        "ACCELA_REFERENCE_STORAGE",
         "ACCELA_REFERENCE_COMMAND"
       ]
+    },
+    "named_volume_contract": {
+      "name": "accela_candidate_evaluation_2026_r2",
+      "required_labels": {
+        "org.accela.campaign": "accela-candidate-evaluation-2026-r2",
+        "org.accela.purpose": "formal-workspace"
+      }
     },
     "gcc": {
       "version": "13.3.0",
@@ -137,6 +152,24 @@
         "protocol_sha256": "3a7203bb2fb31756f40bb7bf216165cf28b4595061eed33fe2b23b9a4f02d4f8",
         "protocol_path": "docs/optimization/data/measurement-protocol.cache-hotblock.v1.json"
       }
+    },
+    "candidate_toolchain": {
+      "base_image_tag": "accela/candidate-toolchain:2026-r2",
+      "base_image_id": "sha256:9e8d0543c848d89cd9bacd6c3cc04859d8ded988cd8f2e3565f0d09bbaedf26d",
+      "dockerfile_path": "tools/benchmark/candidate-toolchain.Dockerfile",
+      "dockerfile_sha256": "32bd6d063444014c8f9e1ae243a3af81145fc161681c26229aade042cd5a7f37",
+      "docker_cli": {
+        "install_path": "/usr/local/bin/docker",
+        "sha256": "dda0804fca9b37a16e688356049ddf51fdd4c1a435c0a41055ec81cdf121535a",
+        "version": "29.6.2",
+        "version_output": "Docker version 29.6.2, build dfc4efb"
+      },
+      "image_tag": "accela/candidate-toolchain:2026-r2-docker29.6.2",
+      "image_id": "sha256:548c90fb7fbf0c6a632ef6d6f180183b3bf4cbf817ba3e8ef41db6069e413eb2",
+      "rootfs_layers": [
+        "sha256:f0c5cb375e83b3dd661d3b6effd57c3eb3e1000c51fe4897896318d7b57b3055",
+        "sha256:db2ea79329bf447627af7e2c48261a4f82bd2757bbbc3e8460cac6170aceab69"
+      ]
     },
     "cache_model": "32KiB/8-way/64B/cold-per-region/LRU",
     "qemu_configuration": "virt; tcg single-thread; one vCPU; 512 MiB"

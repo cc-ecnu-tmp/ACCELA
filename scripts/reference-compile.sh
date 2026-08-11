@@ -73,11 +73,15 @@ printf 'ACCELA_REFERENCE_PYTHON python_mode=isolated version=%s\n' \
 translated_file=$output_dir/$translated_name
 argv_file=$output_dir/$argv_name
 docker_stderr_file=$output_dir/.accela-reference-docker.stderr
+container_inspect_file=$output_dir/.accela-reference-container-inspect.json
+volume_inspect_file=$output_dir/.accela-reference-volume-inspect.json
 [ ! -e "$translated_file" ] && [ ! -e "$argv_file" ] \
-  && [ ! -e "$docker_stderr_file" ] \
+  && [ ! -e "$docker_stderr_file" ] && [ ! -e "$container_inspect_file" ] \
+  && [ ! -e "$volume_inspect_file" ] \
   || fail "reference adapter temporary output already exists"
 cleanup() {
-  rm -f -- "$translated_file" "$argv_file" "$docker_stderr_file"
+  rm -f -- "$translated_file" "$argv_file" "$docker_stderr_file" \
+    "$container_inspect_file" "$volume_inspect_file"
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -87,13 +91,49 @@ if ! snapshot_values=$("$python" -I "$root/tools/benchmark/reference_source.py" 
   fail "cannot validate reference frontend contract from toolchain snapshot"
 fi
 metadata_count=$(printf '%s\n' "$snapshot_values" | awk 'END { print NR }')
-[ "$metadata_count" -eq 5 ] \
+[ "$metadata_count" -eq 12 ] \
   || fail "reference frontend contract emitted malformed metadata"
 image=$(printf '%s\n' "$snapshot_values" | sed -n '1p')
 expected_image_id=$(printf '%s\n' "$snapshot_values" | sed -n '2p')
 adapter_sha256=$(printf '%s\n' "$snapshot_values" | sed -n '3p')
 builtin_header_sha256=$(printf '%s\n' "$snapshot_values" | sed -n '4p')
 compiler_argv_sha256=$(printf '%s\n' "$snapshot_values" | sed -n '5p')
+expected_volume_name=$(printf '%s\n' "$snapshot_values" | sed -n '6p')
+expected_volume_campaign=$(printf '%s\n' "$snapshot_values" | sed -n '7p')
+expected_volume_purpose=$(printf '%s\n' "$snapshot_values" | sed -n '8p')
+expected_candidate_image_id=$(printf '%s\n' "$snapshot_values" | sed -n '9p')
+expected_docker_cli=$(printf '%s\n' "$snapshot_values" | sed -n '10p')
+expected_docker_cli_sha256=$(printf '%s\n' "$snapshot_values" | sed -n '11p')
+expected_docker_cli_version=$(printf '%s\n' "$snapshot_values" | sed -n '12p')
+
+inside_docker=false
+if [ -f /.dockerenv ]; then
+  inside_docker=true
+  [ -S /var/run/docker.sock ] \
+    || fail "Docker container reference launcher requires /var/run/docker.sock"
+  [ -z "${DOCKER_HOST+x}" ] && [ -z "${DOCKER_CONTEXT+x}" ] \
+    || fail "Docker container reference launcher rejects ambient endpoint overrides"
+  [ -f /etc/hostname ] && IFS= read -r container_hostname </etc/hostname \
+    || fail "Docker container reference launcher cannot read /etc/hostname"
+  case "$container_hostname" in
+    ''|*[!A-Za-z0-9_.-]*) \
+      fail "Docker container reference launcher hostname is invalid" ;;
+  esac
+  command -v sha256sum >/dev/null 2>&1 \
+    || fail "Docker container reference launcher requires sha256sum"
+  resolved_docker_cli=$(command -v docker) \
+    || fail "Docker container reference launcher requires the Linux Docker CLI"
+  [ "$resolved_docker_cli" = "$expected_docker_cli" ] \
+    && [ -f "$resolved_docker_cli" ] && [ ! -L "$resolved_docker_cli" ] \
+    || fail "Docker container reference launcher Docker CLI path differs"
+  observed_docker_cli_sha256=$(sha256sum "$resolved_docker_cli" | awk '{ print $1 }')
+  [ "$observed_docker_cli_sha256" = "$expected_docker_cli_sha256" ] \
+    || fail "Docker container reference launcher Docker CLI SHA-256 differs"
+  observed_docker_cli_version=$("$resolved_docker_cli" --version) \
+    || fail "Docker container reference launcher Docker CLI is not executable"
+  [ "$observed_docker_cli_version" = "$expected_docker_cli_version" ] \
+    || fail "Docker container reference launcher Docker CLI version differs"
+fi
 
 docker_transport_unreachable() {
   LC_ALL=C grep -Eiq \
@@ -144,6 +184,8 @@ if [ -z "$docker_cli" ] && command -v docker.exe >/dev/null 2>&1; then
   fi
 fi
 [ -n "$docker_cli" ] || fail "no reachable Docker daemon is available"
+[ "$inside_docker" = false ] || [ "$chosen_cli" = native ] \
+  || fail "Docker container reference launcher requires the native Linux Docker CLI"
 
 printf 'ACCELA_REFERENCE_DOCKER chosen_cli=%s server_version=%s readiness=reachable\n' \
   "$chosen_cli" "$docker_server_version" >&2
@@ -184,8 +226,56 @@ esac
 [ "$actual_image_id" = "$expected_image_id" ] \
   || fail "reference image ID mismatch: expected $expected_image_id, got $actual_image_id"
 
+storage_mode=bind
 output_mount=$(container_mount_path "$output_dir")
 support_mount=$(container_mount_path "$root/tools/qemu")
+volume_name=
+output_subpath=
+support_subpath=
+if [ "$inside_docker" = true ]; then
+  if ! "$docker_cli" container inspect "$container_hostname" \
+      >"$container_inspect_file" 2>"$docker_stderr_file"; then
+    fail "cannot inspect the current Docker container"
+  fi
+  if ! "$docker_cli" volume inspect "$expected_volume_name" \
+      >"$volume_inspect_file" 2>"$docker_stderr_file"; then
+    fail "cannot inspect the frozen campaign named volume"
+  fi
+  if ! selector_values=$("$python" -I \
+      "$root/tools/benchmark/reference_source.py" select-volume \
+      --root "$root" --output-dir "$output_dir" --support-dir "$root/tools/qemu" \
+      --container-inspect "$container_inspect_file" \
+      --volume-inspect "$volume_inspect_file" \
+      --expected-volume-name "$expected_volume_name" \
+      --expected-campaign "$expected_volume_campaign" \
+      --expected-purpose "$expected_volume_purpose" \
+      --expected-candidate-image-id "$expected_candidate_image_id" \
+      --observed-hostname "$container_hostname"); then
+    fail "cannot validate the frozen campaign named-volume mount"
+  fi
+  selector_count=$(printf '%s\n' "$selector_values" | awk 'END { print NR }')
+  [ "$selector_count" -eq 5 ] \
+    || fail "reference named-volume selector emitted malformed metadata"
+  volume_name=$(printf '%s\n' "$selector_values" | sed -n '1p')
+  output_subpath=$(printf '%s\n' "$selector_values" | sed -n '2p')
+  support_subpath=$(printf '%s\n' "$selector_values" | sed -n '3p')
+  volume_name_sha256=$(printf '%s\n' "$selector_values" | sed -n '4p')
+  container_id_sha256=$(printf '%s\n' "$selector_values" | sed -n '5p')
+  [ "$volume_name" = "$expected_volume_name" ] \
+    || fail "reference named-volume selector returned another volume"
+  case "$volume_name_sha256:$container_id_sha256" in
+    ????????????????????????????????????????????????????????????????:????????????????????????????????????????????????????????????????) ;;
+    *) fail "reference named-volume selector emitted malformed identity hashes" ;;
+  esac
+  case "$volume_name_sha256$container_id_sha256" in
+    *[!0-9a-f]*) fail "reference named-volume identity hashes are not lowercase SHA-256" ;;
+  esac
+  storage_mode=named_volume
+  printf 'ACCELA_REFERENCE_STORAGE mount_mode=named_volume volume_name_sha256=%s container_id_sha256=%s\n' \
+    "$volume_name_sha256" "$container_id_sha256" >&2
+else
+  printf 'ACCELA_REFERENCE_STORAGE mount_mode=bind\n' >&2
+fi
 
 "$python" -I "$root/tools/benchmark/reference_source.py" adapt \
   "$source_file" "$translated_file"
@@ -193,12 +283,21 @@ support_mount=$(container_mount_path "$root/tools/qemu")
 [ -f "$argv_file" ] || fail "reference contract did not create compiler argv"
 
 run_container() {
-  "$docker_cli" run --rm --network none --read-only --cap-drop ALL \
-    --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=64m \
-    --user "$(id -u):$(id -g)" \
-    --mount "type=bind,src=$output_mount,dst=/output" \
-    --mount "type=bind,src=$support_mount,dst=/support,readonly" \
-    "$expected_image_id" "$@"
+  if [ "$storage_mode" = named_volume ]; then
+    "$docker_cli" run --rm --network none --read-only --cap-drop ALL \
+      --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+      --user "$(id -u):$(id -g)" \
+      --mount "type=volume,src=$volume_name,dst=/output,volume-subpath=$output_subpath" \
+      --mount "type=volume,src=$volume_name,dst=/support,volume-subpath=$support_subpath,readonly" \
+      "$expected_image_id" "$@"
+  else
+    "$docker_cli" run --rm --network none --read-only --cap-drop ALL \
+      --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+      --user "$(id -u):$(id -g)" \
+      --mount "type=bind,src=$output_mount,dst=/output" \
+      --mount "type=bind,src=$support_mount,dst=/support,readonly" \
+      "$expected_image_id" "$@"
+  fi
 }
 
 set --

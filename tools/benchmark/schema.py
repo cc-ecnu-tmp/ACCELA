@@ -2588,6 +2588,45 @@ def _validate_candidate_oracle_structure(
             )
 
 
+def _validate_candidate_execution_toolchain(
+    toolchain: Mapping[str, Any], *, campaign_id: str, label: str
+) -> None:
+    validate_relative_path(
+        toolchain["snapshot"]["path"], label=f"{label} toolchain snapshot path"
+    )
+    volume = toolchain["named_volume_contract"]
+    labels = volume["required_labels"]
+    if (
+        labels["org.accela.campaign"] != campaign_id
+        or labels["org.accela.purpose"] != "formal-workspace"
+    ):
+        raise ValidationError(f"{label} named-volume campaign labels differ")
+    candidate = toolchain["candidate_toolchain"]
+    docker_cli = candidate["docker_cli"]
+    digests = [
+        candidate["base_image_id"][7:],
+        candidate["dockerfile_sha256"],
+        docker_cli["sha256"],
+        candidate["image_id"][7:],
+        *(item[7:] for item in candidate["rootfs_layers"]),
+    ]
+    if any(value == "0" * 64 for value in digests):
+        raise ValidationError(f"{label} candidate image contains placeholder identity")
+    if (
+        candidate["image_id"] == candidate["base_image_id"]
+        or candidate["rootfs_layers"][0] == candidate["rootfs_layers"][1]
+    ):
+        raise ValidationError(f"{label} candidate image derivation is invalid")
+    validate_relative_path(
+        candidate["dockerfile_path"], label=f"{label} candidate Dockerfile path"
+    )
+    if [item["compiler_baseline"] for item in toolchain["baselines"]] != [
+        "gcc_13_3_o2",
+        "clang_18_o3",
+    ]:
+        raise ValidationError(f"{label} reference baselines must be GCC then Clang")
+
+
 def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> None:
     if document["run_record_schema_sha256"] != schema_sha256("run-record.v1"):
         raise ValidationError("candidate campaign run-record schema binding is stale")
@@ -2605,6 +2644,11 @@ def _validate_candidate_campaign_plan_semantics(document: dict[str, Any]) -> Non
         raise ValidationError("candidate campaign raw-evidence schema binding is stale")
     if document["run_namespace"] != f"{document['campaign_id']}:":
         raise ValidationError("candidate campaign run namespace differs")
+    _validate_candidate_execution_toolchain(
+        document["reference_toolchain"],
+        campaign_id=document["campaign_id"],
+        label="candidate campaign",
+    )
     expected_counts = {"B1": 140, "B2": 20, "B3": 60, "B4": 59, "B5": 60, "B6": 88}
     suites = document["suites"]
     if [item["data_role"] for item in suites] != list(expected_counts) or any(
@@ -3165,6 +3209,11 @@ def _validate_candidate_freeze_semantics(document: dict[str, Any]) -> None:
         raise ValidationError("candidate freeze manifests must be physically distinct")
     if document["run_namespace"] != f"{document['campaign_id']}:":
         raise ValidationError("candidate freeze run namespace differs from campaign id")
+    _validate_candidate_execution_toolchain(
+        document["reference_toolchain"],
+        campaign_id=document["campaign_id"],
+        label="candidate freeze",
+    )
     protocols = document["measurement_protocols"]
     for mode in ("standard_proxy", "cache_hotblock"):
         if protocols[mode]["measurement_mode"] != mode:

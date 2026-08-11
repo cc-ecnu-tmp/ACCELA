@@ -2360,6 +2360,8 @@ def build_candidate_campaign_plan(
     screening_path: Path,
     suite_paths: Mapping[str, Path],
     measurement_protocol_path: Path,
+    hotblock_measurement_protocol_path: Path,
+    reference_toolchain_path: Path,
     compiler_artifact_path: Path,
     raw_state_root: Path,
     workspace_root: Path,
@@ -2387,6 +2389,19 @@ def build_candidate_campaign_plan(
     )
     if measurement_protocol["measurement_mode"] != "standard_proxy":
         raise ValidationError("candidate formal DAG requires standard_proxy protocol")
+    environment = build_campaign_environment_contract(
+        measurement_protocol_path=measurement_protocol_path,
+        hotblock_measurement_protocol_path=hotblock_measurement_protocol_path,
+        reference_toolchain_path=reference_toolchain_path,
+        workspace_root=workspace_root,
+    )
+    if (
+        environment["measurement_protocols"]["standard_proxy"][
+            "protocol_sha256"
+        ]
+        != sha256_json(measurement_protocol)
+    ):
+        raise ValidationError("candidate campaign standard protocol contract differs")
     _require_executable_registry_bridge(
         screening=screening,
         catalog=catalog,
@@ -2725,6 +2740,20 @@ def build_candidate_campaign_plan(
         measurement_protocol,
         label="candidate standard measurement protocol",
     )
+    toolchain_document = read_json(reference_toolchain_path)
+    if not isinstance(toolchain_document, dict):
+        raise ValidationError("candidate reference toolchain must be a JSON object")
+    toolchain_contract = dict(environment["reference_toolchain"])
+    expected_toolchain_physical = toolchain_contract.pop("snapshot_sha256")
+    toolchain_artifact = _frozen_artifact_digest(
+        root,
+        reference_toolchain_path,
+        toolchain_document,
+        label="candidate reference toolchain",
+    )
+    if toolchain_artifact["physical_sha256"] != expected_toolchain_physical:
+        raise ValidationError("candidate reference toolchain physical hash differs")
+    toolchain_contract["snapshot"] = toolchain_artifact
     executable_pass_registry_artifact = _frozen_artifact_digest(
         workspace_root,
         pass_registry_path,
@@ -2753,6 +2782,7 @@ def build_candidate_campaign_plan(
                 "protocol_sha256": sha256_json(measurement_protocol),
                 "artifact": protocol_artifact,
             },
+            "reference_toolchain": toolchain_contract,
             "artifacts": {
                 "candidate_registry": _frozen_artifact_digest(
                     workspace_root, catalog_path, catalog, label="candidate registry"

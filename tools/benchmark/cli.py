@@ -882,6 +882,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--measurement-protocol", type=_path, required=True
     )
     candidate_campaign_plan.add_argument(
+        "--hotblock-measurement-protocol", type=_path, required=True
+    )
+    candidate_campaign_plan.add_argument(
+        "--reference-toolchain", type=_path, required=True
+    )
+    candidate_campaign_plan.add_argument(
         "--compiler-artifact", type=_path, required=True
     )
     candidate_campaign_plan.add_argument(
@@ -1511,6 +1517,16 @@ def dispatch(args: argparse.Namespace) -> int:
                 args.workspace_root,
                 args.measurement_protocol,
                 label="candidate standard measurement protocol",
+            ),
+            hotblock_measurement_protocol_path=_workspace_input_path(
+                args.workspace_root,
+                args.hotblock_measurement_protocol,
+                label="candidate cache/hotblock measurement protocol",
+            ),
+            reference_toolchain_path=_workspace_input_path(
+                args.workspace_root,
+                args.reference_toolchain,
+                label="candidate reference toolchain",
             ),
             compiler_artifact_path=_workspace_artifact_path(
                 args.workspace_root,

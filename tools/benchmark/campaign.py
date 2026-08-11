@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .ablation import _require_eligible_attempt_history, _require_formal_measurement
+from .candidate_toolchain import load_candidate_toolchain_contract
 from .errors import ConfigurationError, ValidationError
 from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
 from .reference_source import (
@@ -17,6 +18,7 @@ from .reference_source import (
     REFERENCE_FRONTEND_ARGV,
     REFERENCE_LAUNCHER_CONTRACT,
     REFERENCE_SOURCE_ADAPTER_PATH,
+    validate_reference_named_volume_contract,
 )
 from .schema import load_and_validate, schema_sha256, validate_document
 from .util import (
@@ -197,6 +199,12 @@ def _reference_toolchain_contract(
         raise ValidationError("reference toolchain snapshot must use the SysY C++17 frontend contract")
     if frontends.get("launcher_contract") != REFERENCE_LAUNCHER_CONTRACT:
         raise ValidationError("reference toolchain launcher contract has drifted")
+    try:
+        volume_name, volume_campaign, volume_purpose = (
+            validate_reference_named_volume_contract(frontends)
+        )
+    except ValueError as exc:
+        raise ValidationError("reference toolchain named-volume contract has drifted") from exc
     root = workspace_root.resolve(strict=True)
     if not root.is_dir():
         raise ConfigurationError("campaign workspace root must be a directory")
@@ -358,12 +366,27 @@ def _reference_toolchain_contract(
         raise ValidationError("reference toolchain snapshot lacks common measured tool versions")
     if not isinstance(accela_jdk, str) or not accela_jdk:
         raise ValidationError("reference toolchain snapshot lacks the ACCELA JDK version")
+    candidate_toolchain = load_candidate_toolchain_contract(
+        root=root, snapshot_path=path
+    )
+    candidate_docker_cli = dict(candidate_toolchain["docker_cli"])
+    candidate_docker_cli.pop("install_path")
+    candidate_docker_cli["install_path_id"] = "usr-local-bin-docker-v1"
+    candidate_toolchain["docker_cli"] = candidate_docker_cli
     return {
         "snapshot_sha256": sha256_file(path.resolve(strict=True)),
         "compile_driver_sha256": compile_driver_sha256,
         "source_adapter_sha256": source_adapter_sha256,
         "builtin_header_sha256": builtin_header_sha256,
         "image_id": local_image_id,
+        "named_volume_contract": {
+            "name": volume_name,
+            "required_labels": {
+                "org.accela.campaign": volume_campaign,
+                "org.accela.purpose": volume_purpose,
+            },
+        },
+        "candidate_toolchain": candidate_toolchain,
         "common_tool_versions": common_tool_versions,
         "accela_jdk_version": accela_jdk,
         "baselines": baselines,

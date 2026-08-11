@@ -52,10 +52,18 @@ REFERENCE_LAUNCHER_CONTRACT = {
     "docker_fallback_policy": "transport_unreachable_only",
     "docker_image_inspect_identity": "frozen_tag_to_exact_id",
     "docker_run_identity": "exact_image_id",
+    "docker_native_host_storage": "bind",
+    "docker_container_identity": "hostname_inspect_exact_id",
+    "docker_container_image_identity": "frozen_candidate_image_id",
+    "docker_container_storage": "single_labeled_named_volume",
+    "docker_container_mount_transport": "volume_subpath",
+    "docker_container_socket": "/var/run/docker.sock",
+    "docker_container_cli_identity": "frozen_path_sha256_version",
     "stderr_records": [
         "ACCELA_REFERENCE_PYTHON",
         "ACCELA_REFERENCE_DOCKER_CANDIDATE",
         "ACCELA_REFERENCE_DOCKER",
+        "ACCELA_REFERENCE_STORAGE",
         "ACCELA_REFERENCE_COMMAND",
     ],
 }
@@ -266,6 +274,22 @@ class ReferenceFrontendContract:
     builtin_header_sha256: str
     compiler_argv_sha256: str
     compiler_argv: tuple[str, ...]
+    named_volume_name: str
+    named_volume_campaign: str
+    named_volume_purpose: str
+    candidate_image_id: str
+    docker_cli_install_path: str
+    docker_cli_sha256: str
+    docker_cli_version_output: str
+
+
+@dataclass(frozen=True)
+class ReferenceVolumeMount:
+    volume_name: str
+    output_subpath: str
+    support_subpath: str
+    volume_name_sha256: str
+    container_id_sha256: str
 
 
 @dataclass(frozen=True)
@@ -311,6 +335,218 @@ def _physical_support_hash(
     return observed_hash
 
 
+def validate_reference_named_volume_contract(
+    frontends: dict[str, object],
+) -> tuple[str, str, str]:
+    contract = frontends.get("named_volume_contract")
+    if not isinstance(contract, dict) or set(contract) != {"name", "required_labels"}:
+        raise ReferenceSourceError("reference named-volume contract is invalid")
+    name = contract.get("name")
+    labels = contract.get("required_labels")
+    if (
+        not isinstance(name, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,254}", name) is None
+        or not isinstance(labels, dict)
+        or set(labels)
+        != {"org.accela.campaign", "org.accela.purpose"}
+    ):
+        raise ReferenceSourceError("reference named-volume contract is invalid")
+    campaign = labels.get("org.accela.campaign")
+    purpose = labels.get("org.accela.purpose")
+    if (
+        not isinstance(campaign, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,254}", campaign) is None
+        or not isinstance(purpose, str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,254}", purpose) is None
+    ):
+        raise ReferenceSourceError("reference named-volume labels are invalid")
+    return name, campaign, purpose
+
+
+def _reference_candidate_runtime_contract(
+    proxy: object,
+) -> tuple[str, str, str, str]:
+    candidate = proxy.get("candidate_toolchain") if isinstance(proxy, dict) else None
+    docker_cli = candidate.get("docker_cli") if isinstance(candidate, dict) else None
+    if (
+        not isinstance(candidate, dict)
+        or not isinstance(docker_cli, dict)
+        or not isinstance(candidate.get("image_id"), str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", candidate["image_id"]) is None
+        or candidate["image_id"] == "sha256:" + "0" * 64
+        or docker_cli.get("install_path") != "/usr/local/bin/docker"
+        or not isinstance(docker_cli.get("sha256"), str)
+        or re.fullmatch(r"[0-9a-f]{64}", docker_cli["sha256"]) is None
+        or docker_cli["sha256"] == "0" * 64
+        or not isinstance(docker_cli.get("version_output"), str)
+        or re.fullmatch(
+            r"Docker version [0-9]+(?:\.[0-9]+){2}, build [0-9a-f]+",
+            docker_cli["version_output"],
+        )
+        is None
+    ):
+        raise ReferenceSourceError("candidate Docker runtime contract is invalid")
+    return (
+        candidate["image_id"],
+        docker_cli["install_path"],
+        docker_cli["sha256"],
+        docker_cli["version_output"],
+    )
+
+
+def _read_inspect_document(path: Path, *, label: str) -> dict[str, object]:
+    try:
+        payload = json.loads(path.resolve(strict=True).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ReferenceSourceError(f"{label} is not valid UTF-8 JSON") from exc
+    if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
+        raise ReferenceSourceError(f"{label} must contain exactly one object")
+    return payload[0]
+
+
+def _safe_volume_subpath(path: Path, mountpoint: Path, *, label: str) -> str:
+    try:
+        relative = path.relative_to(mountpoint)
+    except ValueError as exc:
+        raise ReferenceSourceError(f"{label} is outside the campaign volume") from exc
+    if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+        raise ReferenceSourceError(f"{label} has an invalid volume subpath")
+    value = relative.as_posix()
+    if (
+        value.startswith("/")
+        or "\\" in value
+        or any(character in value for character in ",\r\n\x00")
+    ):
+        raise ReferenceSourceError(f"{label} has an unsafe volume subpath")
+    return value
+
+
+def _effective_mount(
+    path: Path,
+    mounts: list[tuple[dict[str, object], Path]],
+    *,
+    label: str,
+) -> tuple[dict[str, object], Path]:
+    containing: list[tuple[dict[str, object], Path]] = []
+    for item, mountpoint in mounts:
+        try:
+            path.relative_to(mountpoint)
+        except ValueError:
+            continue
+        containing.append((item, mountpoint))
+    if not containing:
+        raise ReferenceSourceError(f"{label} is not backed by a Docker mount")
+    maximum_depth = max(len(mountpoint.parts) for _, mountpoint in containing)
+    effective = [row for row in containing if len(row[1].parts) == maximum_depth]
+    if len(effective) != 1:
+        raise ReferenceSourceError(f"{label} has an ambiguous effective Docker mount")
+    return effective[0]
+
+
+def select_reference_volume_mount(
+    *,
+    root: Path,
+    output_dir: Path,
+    support_dir: Path,
+    container_inspect_path: Path,
+    volume_inspect_path: Path,
+    expected_volume_name: str,
+    expected_campaign: str,
+    expected_purpose: str,
+    expected_candidate_image_id: str,
+    observed_hostname: str,
+) -> ReferenceVolumeMount:
+    """Select the one Docker named volume that owns every reference-compile path."""
+
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", observed_hostname) is None:
+        raise ReferenceSourceError("current Docker container hostname is invalid")
+    workspace = root.resolve(strict=True)
+    output = output_dir.resolve(strict=True)
+    support = support_dir.resolve(strict=True)
+    if not workspace.is_dir() or not output.is_dir() or not support.is_dir():
+        raise ReferenceSourceError("reference named-volume paths must be directories")
+
+    container = _read_inspect_document(
+        container_inspect_path, label="reference outer-container inspect"
+    )
+    container_id = container.get("Id")
+    container_name = container.get("Name")
+    config = container.get("Config")
+    mounts = container.get("Mounts")
+    if (
+        not isinstance(container_id, str)
+        or re.fullmatch(r"[0-9a-f]{64}", container_id) is None
+        or container.get("Image") != expected_candidate_image_id
+        or not isinstance(config, dict)
+        or config.get("Hostname") != observed_hostname
+        or not isinstance(mounts, list)
+    ):
+        raise ReferenceSourceError("reference outer-container identity is invalid")
+    if re.fullmatch(r"[0-9a-f]{12,64}", observed_hostname) is not None:
+        if not container_id.startswith(observed_hostname):
+            raise ReferenceSourceError("reference outer-container identity is invalid")
+    elif container_name != f"/{observed_hostname}":
+        raise ReferenceSourceError("reference outer-container name/hostname differs")
+
+    normalized_mounts: list[tuple[dict[str, object], Path]] = []
+    for item in mounts:
+        if not isinstance(item, dict):
+            raise ReferenceSourceError("reference outer-container mount record is invalid")
+        destination = item.get("Destination")
+        if not isinstance(destination, str) or not destination.startswith("/"):
+            raise ReferenceSourceError("reference outer-container mount destination is invalid")
+        mountpoint = Path(destination)
+        if not mountpoint.is_absolute() or ".." in mountpoint.parts:
+            raise ReferenceSourceError(
+                "reference outer-container mount destination is not normalized"
+            )
+        normalized_mounts.append((item, mountpoint))
+    workspace_mount = _effective_mount(
+        workspace, normalized_mounts, label="reference workspace"
+    )
+    output_mount = _effective_mount(
+        output, normalized_mounts, label="reference output"
+    )
+    support_mount = _effective_mount(
+        support, normalized_mounts, label="reference support"
+    )
+    if output_mount != workspace_mount or support_mount != workspace_mount:
+        raise ReferenceSourceError(
+            "reference paths must share one effective Docker mount"
+        )
+    mount, mountpoint = workspace_mount
+    if (
+        mount.get("Type") != "volume"
+        or mount.get("Name") != expected_volume_name
+        or mount.get("RW") is not True
+    ):
+        raise ReferenceSourceError(
+            "reference workspace is not on the required writable named volume"
+        )
+
+    volume = _read_inspect_document(
+        volume_inspect_path, label="reference named-volume inspect"
+    )
+    labels = volume.get("Labels")
+    if (
+        volume.get("Name") != expected_volume_name
+        or volume.get("Driver") != "local"
+        or volume.get("Scope") != "local"
+        or not isinstance(labels, dict)
+        or labels.get("org.accela.campaign") != expected_campaign
+        or labels.get("org.accela.purpose") != expected_purpose
+    ):
+        raise ReferenceSourceError("reference named-volume identity or labels differ")
+
+    return ReferenceVolumeMount(
+        volume_name=expected_volume_name,
+        output_subpath=_safe_volume_subpath(output, mountpoint, label="reference output"),
+        support_subpath=_safe_volume_subpath(support, mountpoint, label="reference support"),
+        volume_name_sha256=hashlib.sha256(expected_volume_name.encode("utf-8")).hexdigest(),
+        container_id_sha256=hashlib.sha256(container_id.encode("ascii")).hexdigest(),
+    )
+
+
 def load_reference_frontend_contract(
     *,
     root: Path,
@@ -334,6 +570,7 @@ def load_reference_frontend_contract(
     if snapshot.get("target") != {"isa": "rv64gc", "abi": "lp64d", "code_model": "medany"}:
         raise ReferenceSourceError("toolchain snapshot target is not RV64GC/LP64D/medany")
     frontends = snapshot.get("reference_frontends")
+    proxy = snapshot.get("proxy_execution")
     if not isinstance(frontends, dict):
         raise ReferenceSourceError("toolchain snapshot lacks reference_frontends")
     if frontends.get("frontend_language") != "c++17" or frontends.get(
@@ -342,6 +579,15 @@ def load_reference_frontend_contract(
         raise ReferenceSourceError("reference frontend language semantics have drifted")
     if frontends.get("launcher_contract") != REFERENCE_LAUNCHER_CONTRACT:
         raise ReferenceSourceError("reference launcher contract has drifted")
+    named_volume_name, named_volume_campaign, named_volume_purpose = (
+        validate_reference_named_volume_contract(frontends)
+    )
+    (
+        candidate_image_id,
+        docker_cli_install_path,
+        docker_cli_sha256,
+        docker_cli_version_output,
+    ) = _reference_candidate_runtime_contract(proxy)
 
     _physical_support_hash(
         workspace,
@@ -416,6 +662,13 @@ def load_reference_frontend_contract(
         builtin_header_sha256=builtin_header_sha256,
         compiler_argv_sha256=compiler_argv_sha256,
         compiler_argv=rendered,
+        named_volume_name=named_volume_name,
+        named_volume_campaign=named_volume_campaign,
+        named_volume_purpose=named_volume_purpose,
+        candidate_image_id=candidate_image_id,
+        docker_cli_install_path=docker_cli_install_path,
+        docker_cli_sha256=docker_cli_sha256,
+        docker_cli_version_output=docker_cli_version_output,
     )
 
 
@@ -660,6 +913,20 @@ def _parser() -> argparse.ArgumentParser:
     contract.add_argument("--frontend", choices=sorted(REFERENCE_FRONTEND_ARGV), required=True)
     contract.add_argument("--artifact-name", required=True)
     contract.add_argument("--argv-output", type=Path, required=True)
+    select_volume = commands.add_parser(
+        "select-volume",
+        help="validate the outer Docker container and select exact volume subpaths",
+    )
+    select_volume.add_argument("--root", type=Path, required=True)
+    select_volume.add_argument("--output-dir", type=Path, required=True)
+    select_volume.add_argument("--support-dir", type=Path, required=True)
+    select_volume.add_argument("--container-inspect", type=Path, required=True)
+    select_volume.add_argument("--volume-inspect", type=Path, required=True)
+    select_volume.add_argument("--expected-volume-name", required=True)
+    select_volume.add_argument("--expected-campaign", required=True)
+    select_volume.add_argument("--expected-purpose", required=True)
+    select_volume.add_argument("--expected-candidate-image-id", required=True)
+    select_volume.add_argument("--observed-hostname", required=True)
     return parser
 
 
@@ -716,6 +983,38 @@ def _contract_command(args: argparse.Namespace) -> int:
     print(contract.source_adapter_sha256)
     print(contract.builtin_header_sha256)
     print(contract.compiler_argv_sha256)
+    print(contract.named_volume_name)
+    print(contract.named_volume_campaign)
+    print(contract.named_volume_purpose)
+    print(contract.candidate_image_id)
+    print(contract.docker_cli_install_path)
+    print(contract.docker_cli_sha256)
+    print(contract.docker_cli_version_output)
+    return 0
+
+
+def _select_volume_command(args: argparse.Namespace) -> int:
+    try:
+        mount = select_reference_volume_mount(
+            root=args.root,
+            output_dir=args.output_dir,
+            support_dir=args.support_dir,
+            container_inspect_path=args.container_inspect,
+            volume_inspect_path=args.volume_inspect,
+            expected_volume_name=args.expected_volume_name,
+            expected_campaign=args.expected_campaign,
+            expected_purpose=args.expected_purpose,
+            expected_candidate_image_id=args.expected_candidate_image_id,
+            observed_hostname=args.observed_hostname,
+        )
+    except (OSError, ReferenceSourceError) as exc:
+        print(f"reference-source: {exc}", file=sys.stderr)
+        return 2
+    print(mount.volume_name)
+    print(mount.output_subpath)
+    print(mount.support_subpath)
+    print(mount.volume_name_sha256)
+    print(mount.container_id_sha256)
     return 0
 
 
@@ -725,6 +1024,8 @@ def main(argv: list[str] | None = None) -> int:
         return _adapt_command(args)
     if args.command == "contract":
         return _contract_command(args)
+    if args.command == "select-volume":
+        return _select_volume_command(args)
     raise AssertionError(f"unhandled reference-source command: {args.command}")
 
 
