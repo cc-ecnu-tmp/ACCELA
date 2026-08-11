@@ -105,6 +105,50 @@ final class SameDomainLoopFusionTest {
   }
 
   @Test
+  void rejectsFirstRecurrenceFinalValueUsedInsideSecondLoopAndReportsObligation() {
+    Fixture fixture = Fixture.independentRecurrences(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(fixture.bodies.get(1).getTerminator());
+    builder.createStore(
+        fixture.states.getFirst(),
+        fixture.address(builder, fixture.output, fixture.inductions.get(1)));
+
+    SameDomainLoopFusionMatcher.MatchResult matched = matchFirstPair(fixture);
+    assertEquals(SameDomainLoopFusionCandidate.EXIT_LIVE_OUTS, matched.rejectedObligationId());
+
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    PreservedAnalyses preserved;
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      preserved = new SameDomainLoopFusion.Pass(
+          instrumentation, SameDomainLoopFusionCandidate.descriptor(), 1)
+          .run(fixture.function, analysisManager());
+    }
+
+    assertTrue(preserved.preservesAll());
+    DecisionRemark rejection = remarks.stream()
+        .map(DecisionRemark.class::cast)
+        .filter(remark -> remark.decision() == DecisionStatus.REJECTED)
+        .findFirst()
+        .orElseThrow();
+    assertEquals(SameDomainLoopFusionCandidate.EXIT_LIVE_OUTS,
+        rejection.legalityObligationId());
+    assertPairedDecisions(remarks);
+  }
+
+  @Test
+  void rejectsFirstInductionFinalValueUsedInsideSecondLoop() {
+    Fixture fixture = Fixture.singleTemporary();
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(fixture.bodies.get(1).getTerminator());
+    builder.createStore(
+        fixture.inductions.getFirst(),
+        fixture.address(builder, fixture.secondTemporary, fixture.inductions.get(1)));
+
+    assertRejected(fixture, SameDomainLoopFusionCandidate.EXIT_LIVE_OUTS);
+  }
+
+  @Test
   void requiresTheExactDescriptorAndSingleOccurrence() {
     try (PassInstrumentation instrumentation = PassInstrumentation.enabled(false)) {
       PassDescriptor expected = SameDomainLoopFusionCandidate.descriptor();
@@ -275,6 +319,7 @@ final class SameDomainLoopFusionTest {
     final List<BasicBlock> bodies = new ArrayList<>();
     final List<Instruction> inductions = new ArrayList<>();
     final List<Instruction> compares = new ArrayList<>();
+    final List<Instruction> states = new ArrayList<>();
     final BasicBlock exit;
 
     private Fixture(int loopCount, PayloadFactory payloadFactory) {
@@ -289,7 +334,6 @@ final class SameDomainLoopFusionTest {
       }
       exit = function.addBlock("exit");
       new IRBuilder(entry).createBr(headers.getFirst());
-      List<Instruction> states = new ArrayList<>();
       for (int index = 0; index < loopCount; index++) {
         BasicBlock predecessor = index == 0 ? entry : headers.get(index - 1);
         BasicBlock next = index + 1 == loopCount ? exit : headers.get(index + 1);

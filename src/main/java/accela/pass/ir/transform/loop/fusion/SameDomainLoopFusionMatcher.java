@@ -397,6 +397,10 @@ final class SameDomainLoopFusionMatcher {
 
   private static boolean hasSupportedLiveOuts(
       CanonicalLoop first, CanonicalLoop second) {
+    if (first.header().getInstructions().stream()
+        .filter(Instruction::hasResult)
+        .flatMap(instruction -> instruction.getUses().stream())
+        .anyMatch(use -> second.loop().contains(use.getUser().getParent()))) return false;
     if (second.nextInduction().getUses().stream()
         .anyMatch(use -> use.getUser() != second.induction())) return false;
     if (first.domainInstructions().stream().anyMatch(
