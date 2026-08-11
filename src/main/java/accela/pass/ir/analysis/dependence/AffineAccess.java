@@ -20,6 +20,14 @@ final class AffineAccess {
 
   record Distance(Relation relation, List<Long> distances) {}
 
+  /**
+   * Cross-loop equality result used by sequential-loop fusion.
+   *
+   * <p>{@code firstMinusSecond} is null only when every iteration of the two loops addresses the
+   * same location. That all-to-all case is a real dependence, not an unknown result.
+   */
+  record FusionDistance(Relation relation, Long firstMinusSecond) {}
+
   private final Value root;
   private final List<Value> inductions;
   private final List<AffineIndex> indices = new ArrayList<>();
@@ -83,6 +91,40 @@ final class AffineAccess {
       distances.set(constraint.loop(), constraint.distance());
     }
     return new Distance(unknown ? Relation.UNKNOWN : Relation.DEPENDENT, distances);
+  }
+
+  /**
+   * Solves equality after treating two distinct SSA inductions as the same iteration coordinate.
+   *
+   * <p>The caller has already proved that the loops have identical, positive unit-step domains.
+   * A positive returned distance means that an access from a later first-loop iteration aliases an
+   * access from an earlier second-loop iteration, which sequential fusion would reorder.
+   */
+  FusionDistance fusionDistanceTo(
+      AffineAccess other, Value firstInduction, Value secondInduction) {
+    if (indices.size() != other.indices.size()) {
+      return new FusionDistance(Relation.UNKNOWN, null);
+    }
+    Long solvedDistance = null;
+    boolean unknown = false;
+    for (int index = 0; index < indices.size(); index++) {
+      FusionDistance constraint = indices.get(index).fusionDistanceTo(
+          other.indices.get(index), firstInduction, secondInduction);
+      if (constraint.relation() == Relation.DISJOINT) {
+        return constraint;
+      }
+      if (constraint.relation() == Relation.UNKNOWN) {
+        unknown = true;
+        continue;
+      }
+      if (constraint.firstMinusSecond() == null) continue;
+      if (solvedDistance != null
+          && solvedDistance.longValue() != constraint.firstMinusSecond().longValue()) {
+        return new FusionDistance(Relation.DISJOINT, null);
+      }
+      solvedDistance = constraint.firstMinusSecond();
+    }
+    return new FusionDistance(unknown ? Relation.UNKNOWN : Relation.DEPENDENT, solvedDistance);
   }
 
   boolean provesDistinctAtLanes(
@@ -248,6 +290,41 @@ final class AffineAccess {
         return IndexDistance.dependent(varyingLoop, delta / coefficient);
       } catch (ArithmeticException overflow) {
         return IndexDistance.unknown();
+      }
+    }
+
+    private FusionDistance fusionDistanceTo(
+        AffineIndex other, Value firstInduction, Value secondInduction) {
+      if (byteStride != other.byteStride || !analyzable || !other.analyzable) {
+        return new FusionDistance(Relation.UNKNOWN, null);
+      }
+      if (coefficient(secondInduction) != 0
+          || other.coefficient(firstInduction) != 0
+          || !sameTermsExcept(other, firstInduction, secondInduction)) {
+        return new FusionDistance(Relation.UNKNOWN, null);
+      }
+      long firstCoefficient = coefficient(firstInduction);
+      long secondCoefficient = other.coefficient(secondInduction);
+      if (firstCoefficient != secondCoefficient) {
+        return new FusionDistance(Relation.UNKNOWN, null);
+      }
+      try {
+        long offsetDelta = Math.subtractExact(other.offset, offset);
+        if (firstCoefficient == 0) {
+          return offsetDelta == 0
+              ? new FusionDistance(Relation.DEPENDENT, null)
+              : new FusionDistance(Relation.DISJOINT, null);
+        }
+        if (offsetDelta == Long.MIN_VALUE && firstCoefficient == -1) {
+          return new FusionDistance(Relation.UNKNOWN, null);
+        }
+        if (offsetDelta % firstCoefficient != 0) {
+          return new FusionDistance(Relation.DISJOINT, null);
+        }
+        return new FusionDistance(
+            Relation.DEPENDENT, offsetDelta / firstCoefficient);
+      } catch (ArithmeticException overflow) {
+        return new FusionDistance(Relation.UNKNOWN, null);
       }
     }
 

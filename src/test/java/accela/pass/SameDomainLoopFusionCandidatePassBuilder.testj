@@ -1,0 +1,24 @@
+package accela.pass;
+
+import accela.pass.ir.instrument.PassInstrumentation;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Test bridge proving lazy insertion of the production loop-fusion candidate. */
+public final class SameDomainLoopFusionCandidatePassBuilder {
+  private SameDomainLoopFusionCandidatePassBuilder() {}
+
+  public static PassBuilder create(
+      PassInstrumentation instrumentation, AtomicInteger passFactoryInvocations) {
+    PassBuilder.CandidatePassProvider provider = new PassBuilder.CandidatePassProvider(
+        Map.of(
+            SameDomainLoopFusionCandidate.ID,
+            (descriptor, occurrence) -> {
+              passFactoryInvocations.incrementAndGet();
+              return SameDomainLoopFusionCandidate.functionFactory(instrumentation)
+                  .apply(descriptor, occurrence);
+            }),
+        Map.of());
+    return new PassBuilder(provider);
+  }
+}

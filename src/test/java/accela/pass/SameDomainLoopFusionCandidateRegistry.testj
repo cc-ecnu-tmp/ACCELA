@@ -1,0 +1,14 @@
+package accela.pass;
+
+import java.util.ArrayList;
+
+/** Test integration registry containing the production same-domain-fusion descriptor. */
+public final class SameDomainLoopFusionCandidateRegistry {
+  private SameDomainLoopFusionCandidateRegistry() {}
+
+  public static PassRegistry create() {
+    ArrayList<PassDescriptor> descriptors = new ArrayList<>(PassRegistry.standard().all());
+    descriptors.add(SameDomainLoopFusionCandidate.descriptor());
+    return PassRegistry.of(descriptors);
+  }
+}
