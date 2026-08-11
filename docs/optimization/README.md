@@ -633,6 +633,9 @@ test "$python_version" = 3.14.6
 test "$glib_version" = 2.88.3
 test "$jdk_version" = 21.0.11
 
+# benchmark-link.sh 固定上述裸机工具链；正式运行前必须清除交互式覆盖。
+unset RISCV_GCC
+
 compiler_command='["sh","scripts/benchmark-compile.sh","{profile}","{source}","{artifact}","{remarks_file}"]'
 link_command='["sh","scripts/benchmark-link.sh","{artifact}","{binary}"]'
 analyzer_command='["python","-m","tools.benchmark.binary_analyzer","{binary}","--toolchain","accela","--readelf-command","riscv64-elf-readelf","--objdump-command","riscv64-elf-objdump","--remarks","{remarks_file}","--output","{analysis_file}"]'
@@ -738,6 +741,12 @@ run_oracle_leg \
   "$oracle_optimized_run" \
   candidate-screening-oracle-2026-r1:optimized
 ```
+
+正式 `scripts/benchmark-link.sh` 固定调用 `riscv64-elf-gcc` 与
+`riscv64-elf-readelf`，不接受 ambient `RISCV_GCC` 覆盖。链接显式使用
+`-fno-pie -no-pie -static`；产物只有在 readelf 证明其为 `ET_EXEC`、不存在
+`PT_INTERP`/`PT_DYNAMIC` 且不含 relocation section 后才可进入后续阶段。
+验证失败会删除该次无效 ELF 并使 attempt 终止，不能降级或重试为有效证据。
 
 不得向这两条 pre-implementation Oracle run 传 candidate catalog 或
 `--candidate-pass-registry`，也不得加入 `--baseline-timeout-run`、
@@ -856,6 +865,7 @@ test -z "$(git status --porcelain)" || {
   echo 'formal candidate run requires a clean worktree' >&2
   exit 1
 }
+unset RISCV_GCC
 repo_commit=$(git rev-parse HEAD)
 repo_root=$(git rev-parse --show-toplevel)
 standard_protocol=docs/optimization/data/measurement-protocol.v1.json

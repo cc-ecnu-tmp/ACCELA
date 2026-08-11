@@ -11,7 +11,8 @@
 ## 依赖
 
 - JDK 21，以及已构建的 ACCELA 编译器
-- 支持 RV64GC 的 `riscv64-elf-gcc`
+- 支持 RV64GC 的 `riscv64-elf-gcc`，以及用于正式 ELF 合同校验的
+  `riscv64-elf-readelf`
 - 启用了 plugin 支持的 `qemu-system-riscv64`
 - C 编译器、`pkg-config`、GLib 2 和 QEMU 的 `qemu-plugin.h`, `timeout`
 - 运行 GCC 13.3／Clang 18 对照时需要 Docker；WSL 可使用启用集成的
@@ -90,7 +91,7 @@ riscv64-elf-objdump -d build/qemu-run/NAME/program.elf
 | `QEMU_PROFILE`        | `0`                       | `0`、`instructions`、`hotblocks`、`cache` 或 `metrics`  |
 | `QEMU_COMPILER`       | `accela`                  | `accela`、`benchmark`、`gcc` 或 `clang`                  |
 | `QEMU_TIMEOUT`        | `120`                     | 单个测试点的超时秒数                                    |
-| `RISCV_GCC`           | `riscv64-elf-gcc`         | 编译/链接所用的裸机 GCC                                 |
+| `RISCV_GCC`           | `riscv64-elf-gcc`         | 仅 `qemu-run.sh` 的交互式覆盖；正式 `benchmark-link.sh` 拒绝该变量 |
 | `ACCELA_JAVA_HOME`    | `JAVA_HOME`，然后 `PATH`  | JDK 21；只填 JDK 根目录                                  |
 | `QEMU_PLUGIN_INCLUDE` | 自动发现标准目录          | `qemu-plugin.h` 所在目录                                 |
 | `ACCELA_PIPELINE_PROFILE` | 无                    | `QEMU_COMPILER=benchmark` 时必需的 profile JSON          |
