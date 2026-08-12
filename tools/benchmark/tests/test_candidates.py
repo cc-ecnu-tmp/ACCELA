@@ -1185,6 +1185,108 @@ def test_formal_candidate_main_rejects_repository_provenance_drift() -> None:
 
 
 @pytest.mark.parametrize(
+    ("task", "task_tool", "task_version", "forbidden_tool"),
+    (
+        (
+            {"kind": "candidate_empty", "reference_profile_id": None},
+            "accela-jdk",
+            "21.0.11",
+            "riscv-gcc",
+        ),
+        (
+            {"kind": "reference", "reference_profile_id": "gcc-13.3-o2"},
+            "riscv-gcc",
+            "13.3.0",
+            "accela-jdk",
+        ),
+        (
+            {"kind": "reference", "reference_profile_id": "clang-18-o3"},
+            "clang",
+            "18.1.3",
+            "accela-jdk",
+        ),
+        (
+            {"kind": "pair", "reference_profile_id": None},
+            "accela-jdk",
+            "21.0.11",
+            "riscv-gcc",
+        ),
+        (
+            {"kind": "cache_hotblock", "reference_profile_id": None},
+            "accela-jdk",
+            "21.0.11",
+            "clang",
+        ),
+    ),
+)
+def test_candidate_authorizer_requires_exact_task_toolset(
+    task: dict[str, object],
+    task_tool: str,
+    task_version: str,
+    forbidden_tool: str,
+) -> None:
+    common = {
+        "qemu-system-riscv64": "11.0.3",
+        "bare-metal-linker": "15.2.0",
+        "python": "3.14.6",
+        "glib": "2.88.3",
+    }
+    plan = {
+        "reference_toolchain": {
+            "common_tool_versions": common,
+            "accela_jdk_version": "21.0.11",
+            "baselines": [
+                {
+                    "profile_id": "gcc-13.3-o2",
+                    "tool": "riscv-gcc",
+                    "version": "13.3.0",
+                },
+                {
+                    "profile_id": "clang-18-o3",
+                    "tool": "clang",
+                    "version": "18.1.3",
+                },
+            ],
+        }
+    }
+    required = {**common, task_tool: task_version}
+
+    def run_for(versions: dict[str, str]) -> dict[str, object]:
+        return {
+            "configuration": {
+                "tool_versions": [
+                    {
+                        "tool": tool,
+                        "actual": version,
+                        "official_expected": version,
+                        "comparison": "exact",
+                    }
+                    for tool, version in versions.items()
+                ]
+            }
+        }
+
+    candidate_module._require_candidate_tool_versions(
+        plan=plan,
+        task=task,
+        run=run_for(required),
+        label="formal task",
+    )
+    for invalid in (
+        {tool: version for tool, version in required.items() if tool != task_tool},
+        {**required, forbidden_tool: "unexpected"},
+        {**required, task_tool: "mismatch"},
+    ):
+        with pytest.raises(ValidationError, match="tool versions differ"):
+            candidate_module._require_candidate_tool_versions(
+                plan=plan,
+                task=task,
+                run=run_for(invalid),
+                label="formal task",
+            )
+
+
+@pytest.mark.parametrize(
     ("data_role", "kind"),
     (("B1", "candidate_empty"), ("B3", "reference"), ("B3", "single")),
 )

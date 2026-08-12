@@ -65,6 +65,130 @@ def test_candidate_runbook_requires_exact_campaign_authorization() -> None:
     assert '--state-dir "$candidate_raw_state_root"' in runbook
     assert "GCC/Clang reference 使用" in runbook
     assert "timeout 必须是 `initial`" in runbook
+    assert 'if task["kind"] == "reference":' in runbook
+    assert 'required[baselines[0]["tool"]] = baselines[0]["version"]' in runbook
+    assert 'required["accela-jdk"] = toolchain["accela_jdk_version"]' in runbook
+    assert '--official-version "$required_tool=$required_version"' in runbook
+    assert '--tool-version "$required_tool=$actual_version"' in runbook
+    assert 'diagnostic = status["diagnostic_plan"]' in runbook
+    assert "accela-jdk:observed)" in runbook
+    assert "actual_version=$(java -XshowSettings:properties" in runbook
+    assert "candidate task must bind exactly five frozen tool versions" in runbook
+    assert '--official-version "accela-jdk=$official_jdk_version"' not in runbook
+    assert "`riscv-gcc=13.3.0` / `clang=18.1.3`" in runbook
+
+
+def _candidate_runbook_tool_contract_script() -> str:
+    readme = Path("docs/optimization/README.md").read_text(encoding="utf-8")
+    marker = 'required_tool_versions=$(\n    "$benchmark_python" -I -c \'\n'
+    start = readme.index(marker) + len(marker)
+    end = readme.index(
+        '\n\' "$candidate_plan" "$candidate_status" "$candidate_task_id"',
+        start,
+    )
+    return readme[start:end]
+
+
+@pytest.mark.parametrize(
+    ("task_id", "diagnostic_kind", "expected_fifth"),
+    (
+        ("run.B1.full", None, "accela-jdk|21.0.11|observed"),
+        ("run.B3.gcc", None, "riscv-gcc|13.3.0|frozen-reference"),
+        ("run.B3.clang", None, "clang|18.1.3|frozen-reference"),
+        ("diagnostic.pair.alpha+beta", "pair", "accela-jdk|21.0.11|observed"),
+        ("diagnostic.cache.alpha", "cache_hotblock", "accela-jdk|21.0.11|observed"),
+    ),
+)
+def test_candidate_runbook_resolves_main_and_diagnostic_tool_contracts(
+    task_id: str,
+    diagnostic_kind: str | None,
+    expected_fifth: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    plan = {
+        "campaign_id": "campaign",
+        "tasks": [
+            {
+                "task_id": "run.B1.full",
+                "task_type": "run",
+                "kind": "candidate_empty",
+                "reference_profile_id": None,
+            },
+            {
+                "task_id": "run.B3.gcc",
+                "task_type": "run",
+                "kind": "reference",
+                "reference_profile_id": "gcc-13.3-o2",
+            },
+            {
+                "task_id": "run.B3.clang",
+                "task_type": "run",
+                "kind": "reference",
+                "reference_profile_id": "clang-18-o3",
+            },
+        ],
+        "reference_toolchain": {
+            "common_tool_versions": {
+                "qemu-system-riscv64": "11.0.3",
+                "bare-metal-linker": "15.2.0",
+                "python": "3.14.6",
+                "glib": "2.88.3",
+            },
+            "accela_jdk_version": "21.0.11",
+            "baselines": [
+                {
+                    "profile_id": "gcc-13.3-o2",
+                    "tool": "riscv-gcc",
+                    "version": "13.3.0",
+                },
+                {
+                    "profile_id": "clang-18-o3",
+                    "tool": "clang",
+                    "version": "18.1.3",
+                },
+            ],
+        },
+    }
+    status = {
+        "campaign_id": "campaign",
+        "plan_sha256": sha256_json(plan),
+        "ready_tasks": [task_id],
+        "diagnostic_plan": (
+            None
+            if diagnostic_kind is None
+            else {
+                "tasks": [
+                    {
+                        "task_id": task_id,
+                        "kind": diagnostic_kind,
+                    }
+                ]
+            }
+        ),
+    }
+
+    def load_document(path: Path) -> dict:
+        return plan if path.name == "plan.json" else status
+
+    monkeypatch.setattr(campaign_module, "load_and_validate", load_document)
+    monkeypatch.setattr(
+        "tools.benchmark.schema.load_and_validate",
+        load_document,
+    )
+    monkeypatch.setattr(
+        "sys.argv",
+        ["tool-contract", "plan.json", "status.json", task_id],
+    )
+    exec(compile(_candidate_runbook_tool_contract_script(), "<runbook>", "exec"))
+    observed = set(capsys.readouterr().out.splitlines())
+    assert observed == {
+        "qemu-system-riscv64|11.0.3|observed",
+        "bare-metal-linker|15.2.0|observed",
+        "python|3.14.6|observed",
+        "glib|2.88.3|observed",
+        expected_fifth,
+    }
 
 
 def test_committed_historical_campaign_plan_is_read_only_valid() -> None:

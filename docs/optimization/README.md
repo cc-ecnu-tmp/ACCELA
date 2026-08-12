@@ -970,16 +970,122 @@ print(value)
 )
 
 formal_candidate_run() {
+  required_tool_versions=$(
+    "$benchmark_python" -I -c '
+import sys
+from pathlib import Path
+
+from tools.benchmark.schema import load_and_validate
+from tools.benchmark.util import sha256_json
+
+plan = load_and_validate(Path(sys.argv[1]))
+status = load_and_validate(Path(sys.argv[2]))
+task_id = sys.argv[3]
+if (
+    status["campaign_id"] != plan["campaign_id"]
+    or status["plan_sha256"] != sha256_json(plan)
+):
+    raise SystemExit("candidate status is not bound to the frozen plan")
+if status["ready_tasks"] != [task_id]:
+    raise SystemExit("candidate task is not the unique ready task")
+main_tasks = [item for item in plan["tasks"] if item["task_id"] == task_id]
+diagnostic = status["diagnostic_plan"]
+diagnostic_tasks = (
+    []
+    if diagnostic is None
+    else [item for item in diagnostic["tasks"] if item["task_id"] == task_id]
+)
+tasks = [*main_tasks, *diagnostic_tasks]
+if len(tasks) != 1 or (
+    main_tasks and main_tasks[0]["task_type"] != "run"
+):
+    raise SystemExit("candidate ready task is not one formal run")
+task = tasks[0]
+toolchain = plan["reference_toolchain"]
+required = dict(toolchain["common_tool_versions"])
+common = {
+    "qemu-system-riscv64",
+    "bare-metal-linker",
+    "python",
+    "glib",
+}
+if set(required) != common:
+    raise SystemExit("candidate common tool-version contract differs")
+if task["kind"] == "reference":
+    baselines = [
+        item
+        for item in toolchain["baselines"]
+        if item["profile_id"] == task["reference_profile_id"]
+    ]
+    if len(baselines) != 1:
+        raise SystemExit("candidate reference task lacks one frozen baseline")
+    required[baselines[0]["tool"]] = baselines[0]["version"]
+    sources = {tool: "observed" for tool in common}
+    sources[baselines[0]["tool"]] = "frozen-reference"
+else:
+    required["accela-jdk"] = toolchain["accela_jdk_version"]
+    sources = {tool: "observed" for tool in required}
+if len(required) != 5 or any(
+    not isinstance(tool, str)
+    or not isinstance(version, str)
+    or not tool
+    or not version
+    or "|" in tool
+    or "|" in version
+    for tool, version in required.items()
+):
+    raise SystemExit("candidate task tool-version contract is invalid")
+for tool, version in required.items():
+    print(f"{tool}|{version}|{sources[tool]}")
+' "$candidate_plan" "$candidate_status" "$candidate_task_id"
+  ) || return 1
+  test -n "$required_tool_versions" || {
+    echo 'candidate task has no frozen tool-version contract' >&2
+    return 1
+  }
   set -- "$@" \
     --execution-environment-sha256 "$execution_environment_sha256" \
     --candidate-campaign-plan "$candidate_plan" \
     --candidate-campaign-status "$candidate_status" \
-    --candidate-task-id "$candidate_task_id" \
-    --official-version "qemu-system-riscv64=$official_qemu_version" \
-    --official-version "bare-metal-linker=$official_linker_version" \
-    --official-version "python=$official_python_version" \
-    --official-version "glib=$official_glib_version" \
-    --official-version "accela-jdk=$official_jdk_version"
+    --candidate-task-id "$candidate_task_id"
+  required_tool_count=0
+  while IFS='|' read -r required_tool required_version required_source
+  do
+    case "$required_tool:$required_source" in
+      qemu-system-riscv64:observed) actual_version=$qemu_version ;;
+      bare-metal-linker:observed) actual_version=$linker_version ;;
+      python:observed) actual_version=$python_version ;;
+      glib:observed) actual_version=$glib_version ;;
+      accela-jdk:observed)
+        actual_version=$(java -XshowSettings:properties -version 2>&1 |
+          awk -F'= ' '/^[[:space:]]*java.version =/ { print $2; exit }')
+        ;;
+      riscv-gcc:frozen-reference|clang:frozen-reference)
+        # The outer candidate image does not contain the reference frontend.
+        # Its actual version is bound by the exact nested image and launcher
+        # contract that the reference compile stage verifies before execution.
+        actual_version=$required_version
+        ;;
+      *)
+        echo 'candidate task selected an unsupported tool-version source' >&2
+        return 1
+        ;;
+    esac
+    test "$actual_version" = "$required_version" || {
+      echo "$required_tool version differs from the frozen plan" >&2
+      return 1
+    }
+    set -- "$@" \
+      --tool-version "$required_tool=$actual_version" \
+      --official-version "$required_tool=$required_version"
+    required_tool_count=$((required_tool_count + 1))
+  done <<EOF
+$required_tool_versions
+EOF
+  test "$required_tool_count" -eq 5 || {
+    echo 'candidate task must bind exactly five frozen tool versions' >&2
+    return 1
+  }
   ledger_count=0
   while IFS= read -r ledger_path
   do
@@ -998,11 +1104,6 @@ formal_candidate_run() {
   "$benchmark_python" -I -m tools.benchmark "$@"
 }
 
-official_qemu_version=11.0.3
-official_linker_version=15.2.0
-official_python_version=3.14.6
-official_glib_version=2.88.3
-official_jdk_version=21.0.11
 qemu_binary=$(command -v qemu-system-riscv64)
 test -n "$qemu_binary" || {
   echo 'qemu-system-riscv64 is unavailable' >&2
@@ -1014,38 +1115,26 @@ python_version=$(
   "$benchmark_python" -I -c 'import platform; print(platform.python_version())'
 )
 glib_version=$(pkg-config --modversion glib-2.0)
-jdk_version=$(java -XshowSettings:properties -version 2>&1 |
-  awk -F'= ' '/^[[:space:]]*java.version =/ { print $2; exit }')
 for observed_version in \
-  "$qemu_version" "$linker_version" "$python_version" "$glib_version" "$jdk_version"
+  "$qemu_version" "$linker_version" "$python_version" "$glib_version"
 do
   test -n "$observed_version" || {
     echo 'failed to observe a required tool version' >&2
     exit 1
   }
 done
-for version_pair in \
-  "$qemu_version:$official_qemu_version:qemu-system-riscv64" \
-  "$linker_version:$official_linker_version:bare-metal-linker" \
-  "$python_version:$official_python_version:python" \
-  "$glib_version:$official_glib_version:glib" \
-  "$jdk_version:$official_jdk_version:accela-jdk"
-do
-  actual=${version_pair%%:*}
-  remainder=${version_pair#*:}
-  official=${remainder%%:*}
-  tool=${remainder#*:}
-  test "$actual" = "$official" || {
-    echo "$tool version differs from the frozen toolchain contract" >&2
-    exit 1
-  }
-done
 ```
 
-五项 `--tool-version` 是实际观测值；wrapper 注入的五项
-`--official-version` 是 plan/toolchain snapshot 的精确期望值。两组必须逐项相等，
-使每条 tool record 都是 `comparison=exact`；只传实际值会得到 `unknown`，并在 formal
-prelease authorizer 中被拒绝。
+每个 task 的五项 `--tool-version` 是实际观测值；wrapper 从 plan 中唯一 task 和
+validated current status 中的唯一 ready task 与 plan/toolchain snapshot 推导并注入
+恰好五项 actual/official pair。ACCELA main task 以及 diagnostic pair/cache task 使用四项
+common tool 加 `accela-jdk=21.0.11`；GCC/Clang reference task 分别使用四项 common
+tool 加 `riscv-gcc=13.3.0` / `clang=18.1.3`，不得携带 JDK。common tool 与 JDK 来自
+外层容器的实际探针；reference frontend 不存在于外层容器，其 actual version 来自
+plan 中已由 snapshot 校验的 baseline，并由 compile stage 对 exact nested image、
+launcher 与 frontend argv 的验证约束。调用者不再手工传 `--tool-version`；wrapper
+同时传 actual 与 official，生产 authorizer 再要求集合和值逐项相等且全部
+`comparison=exact`，任何遗漏、额外项或错值都在取得 run lease 前失败。
 
 B1 candidate correctness 不采集排名指标，但仍绑定 candidate catalog、物理
 pipeline profile v2 和 optimization-remark v2；candidate-empty baseline 使用同一
@@ -1075,12 +1164,7 @@ formal_candidate_run validate suite \
   --runner-command-json '["sh","scripts/benchmark-qemu-correctness.sh","{binary}","{input}"]' \
   --runner-kind qemu --environment-label proxy \
   --evidence-level qemu_correctness --jobs 4 \
-  --run-timeout 1800 --timeout-policy initial \
-  --tool-version "qemu-system-riscv64=$qemu_version" \
-  --tool-version "bare-metal-linker=$linker_version" \
-  --tool-version "python=$python_version" \
-  --tool-version "glib=$glib_version" \
-  --tool-version "accela-jdk=$jdk_version"
+  --run-timeout 1800 --timeout-policy initial
 ```
 
 下面的 standard proxy 单候选 run 必须完整列出 12 个 measurement asset，并引用同
@@ -1130,12 +1214,7 @@ formal_candidate_run run \
   --runner-kind qemu --metric-profile rv64gc-qemu-v1 \
   --run-timeout 1800 --jobs 4 \
   --timeout-policy baseline_derived --baseline-timeout-run "$baseline_run" \
-  --environment-label proxy --evidence-level qemu_proxy \
-  --tool-version "qemu-system-riscv64=$qemu_version" \
-  --tool-version "bare-metal-linker=$linker_version" \
-  --tool-version "python=$python_version" \
-  --tool-version "glib=$glib_version" \
-  --tool-version "accela-jdk=$jdk_version"
+  --environment-label proxy --evidence-level qemu_proxy
 ```
 
 对 B2/B3/B4/B5/B6 只替换 plan 绑定的 manifest、suite root、run ID、output 和同
