@@ -886,14 +886,19 @@ family/structure/size 索引；至少一个映射 structure 的 small/medium/lar
 固定 99 对和 11 个物理 Oracle 家族保持不变，也不会产生第 12 类。
 
 Oracle capture 不只读取 normalized run JSON：`--state-root` 必须指向两条 run 共用
-的原始 execution-state 根，capture 与后续 screen/freeze 都会在持有既有 lease 时
-重放 attempt journal、terminal raw files 和 run record 的 canonical/physical
-identity。任一 raw 文件、run 路径、配置或派生 speedup 漂移都使筛选失败，不能靠
-重新计算一份内部自洽 JSON 绕过资格门。
+的原始 execution-state 根。显式构造历史证据的 `oracle-capture` 与 `screen` 入口保留
+持有既有 lease 的语义；replacement formal campaign 的 plan、status、freeze、final
+和 terminal report 则只使用共享的只读 snapshot cache 重放 attempt journal、terminal
+raw files 和 run record 的 canonical/physical identity。任一 raw 文件、run 路径、
+配置或派生 speedup 漂移都使筛选失败，不能靠重新计算一份内部自洽 JSON 绕过资格门。
 
-替代 campaign 的 `campaign-plan` 只允许用严格只读 snapshot verifier 重放上述历史
-Oracle raw evidence，并在计划完成前执行最终 drift barrier；它不得获取、重新绑定或
-改写已终止 campaign 的 output/run lease metadata。
+替代 campaign 的 `campaign-plan`、`campaign-status`、`campaign-finalize`、`final`
+和 terminal report 只允许用严格只读 snapshot verifier 重放上述历史 Oracle 及已登记
+run raw evidence。每个 CLI 调用从第一次 replay 到成功发布前的最终 drift barrier
+必须复用同一 cache；它们不得获取、重新绑定或改写历史 campaign 的 output/run lease
+metadata。`campaign-status` 的 barrier 位于 raw/status 两个输出 lease 都已取得且
+create-or-existing-exact preflight 完成之后、写入任一文档之前，因此末端漂移不得发布
+半对 raw/status。
 
 实现后的正式调度由 `candidates campaign-plan` 一次绑定六份 manifest、筛选结果、
 candidate catalog、筛选基线与可执行两份 pass registry、profile matrix、standard
@@ -915,8 +920,10 @@ freeze；其输入必须包含从 genesis 到当前 status 的有序完整 ledge
 作为 `campaign-status --final` 的证据登记出 terminal completed status，最后以完全
 相同的 final 输入加上 `--report-output-dir`、terminal
 `--report-campaign-status`、完整 `--report-status-ledger` 和 r7 三个只读 root 重放
-一次。报告生成器会重新构建整个 final 并要求全文一致；不能用一份未登记进 terminal
-ledger 的 JSON 直接发布报告。
+一次。带 report 参数的第二次 `final` 调用要求 immutable final 已经存在；它不会在
+报告验证失败时先发布一份新的 final。报告生成器会重新构建整个 final 并要求全文
+一致，并在创建报告目录或写入首个文件前执行同一 raw snapshot cache 的最终 barrier；
+不能用一份未登记进 terminal ledger 的 JSON 直接发布报告。
 
 正式 B1 和代理 run 的完整候选参数不能省略。candidate driver 从冻结 plan/matrix
 解析下列变量后，先做 clean-tree、协议和工具版本 preflight：
@@ -967,7 +974,12 @@ formal_candidate_run() {
     --execution-environment-sha256 "$execution_environment_sha256" \
     --candidate-campaign-plan "$candidate_plan" \
     --candidate-campaign-status "$candidate_status" \
-    --candidate-task-id "$candidate_task_id"
+    --candidate-task-id "$candidate_task_id" \
+    --official-version "qemu-system-riscv64=$official_qemu_version" \
+    --official-version "bare-metal-linker=$official_linker_version" \
+    --official-version "python=$official_python_version" \
+    --official-version "glib=$official_glib_version" \
+    --official-version "accela-jdk=$official_jdk_version"
   ledger_count=0
   while IFS= read -r ledger_path
   do
@@ -986,6 +998,11 @@ formal_candidate_run() {
   "$benchmark_python" -I -m tools.benchmark "$@"
 }
 
+official_qemu_version=11.0.3
+official_linker_version=15.2.0
+official_python_version=3.14.6
+official_glib_version=2.88.3
+official_jdk_version=21.0.11
 qemu_binary=$(command -v qemu-system-riscv64)
 test -n "$qemu_binary" || {
   echo 'qemu-system-riscv64 is unavailable' >&2
@@ -996,10 +1013,6 @@ linker_version=$(riscv64-elf-gcc -dumpfullversion)
 python_version=$(
   "$benchmark_python" -I -c 'import platform; print(platform.python_version())'
 )
-test "$python_version" = 3.14.6 || {
-  echo 'candidate Python version differs from the workspace bootstrap contract' >&2
-  exit 1
-}
 glib_version=$(pkg-config --modversion glib-2.0)
 jdk_version=$(java -XshowSettings:properties -version 2>&1 |
   awk -F'= ' '/^[[:space:]]*java.version =/ { print $2; exit }')
@@ -1011,7 +1024,28 @@ do
     exit 1
   }
 done
+for version_pair in \
+  "$qemu_version:$official_qemu_version:qemu-system-riscv64" \
+  "$linker_version:$official_linker_version:bare-metal-linker" \
+  "$python_version:$official_python_version:python" \
+  "$glib_version:$official_glib_version:glib" \
+  "$jdk_version:$official_jdk_version:accela-jdk"
+do
+  actual=${version_pair%%:*}
+  remainder=${version_pair#*:}
+  official=${remainder%%:*}
+  tool=${remainder#*:}
+  test "$actual" = "$official" || {
+    echo "$tool version differs from the frozen toolchain contract" >&2
+    exit 1
+  }
+done
 ```
+
+五项 `--tool-version` 是实际观测值；wrapper 注入的五项
+`--official-version` 是 plan/toolchain snapshot 的精确期望值。两组必须逐项相等，
+使每条 tool record 都是 `comparison=exact`；只传实际值会得到 `unknown`，并在 formal
+prelease authorizer 中被拒绝。
 
 B1 candidate correctness 不采集排名指标，但仍绑定 candidate catalog、物理
 pipeline profile v2 和 optimization-remark v2；candidate-empty baseline 使用同一

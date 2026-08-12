@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from xml.sax.saxutils import escape as xml_escape
 
-from .candidates import validate_candidate_final_completion
+from .candidates import (
+    _ReadOnlyRawEvidenceCache,
+    _candidate_read_only_raw_verifier,
+    validate_candidate_final_completion,
+)
 from .errors import ValidationError
 from .ablation import _require_formal_measurement
 from .campaign import _require_hotblock_evidence
@@ -1773,6 +1777,8 @@ def build_candidate_report(
     winner_run_path: Path | None = None,
     comparison_paths: Mapping[str, Path] | None = None,
     hotblock_run_paths: Mapping[str, Path] | None = None,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
+    _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Emit deterministic, reader-facing candidate campaign artifacts.
 
@@ -1780,12 +1786,19 @@ def build_candidate_report(
     the 267-case single-candidate ranking already sealed in candidate-final.v1.
     """
 
+    raw_snapshot_cache, raw_evidence_verifier = (
+        _candidate_read_only_raw_verifier(
+            raw_snapshot_cache=_raw_snapshot_cache,
+            raw_evidence_verifier=_raw_evidence_verifier,
+        )
+    )
     campaign_completion = validate_candidate_final_completion(
         campaign_plan_path=campaign_plan_path,
         candidate_final_path=candidate_final_path,
         completed_status_path=completed_campaign_status_path,
         status_ledger_paths=completed_status_ledger_paths,
         workspace_root=workspace_root,
+        _raw_evidence_verifier=raw_evidence_verifier,
     )
     final = _load_version(candidate_final_path, "candidate-final.v1")
     screening = _load_version(screening_path, "candidate-screening.v1")
@@ -2868,6 +2881,8 @@ def build_candidate_report(
             },
         }
     )
+    if raw_snapshot_cache is not None:
+        raw_snapshot_cache.assert_unchanged()
     output = _prepare_report_output_directory(
         output_directory, label="candidate final report output directory"
     )

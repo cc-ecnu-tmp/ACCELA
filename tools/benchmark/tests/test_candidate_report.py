@@ -989,6 +989,8 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
     }
 
     def fake_final_completion(**arguments: Any) -> dict[str, Any]:
+        verifier = arguments.pop("_raw_evidence_verifier")
+        assert verifier is not None
         assert arguments == {
             "campaign_plan_path": campaign_plan_path,
             "candidate_final_path": final_path,
@@ -1100,6 +1102,30 @@ def test_candidate_report_is_deterministic_and_keeps_failed_diagnostics(
     summary = report.build_candidate_report(output_directory=first, **kwargs)
     repeated = report.build_candidate_report(output_directory=second, **kwargs)
     assert summary == repeated == validate_document(summary)
+    drift_input = tmp_path / "terminal-r2.run.lock"
+    drift_input.write_bytes(b"stable-terminal-r2-lock\n")
+
+    def drift_final_completion(**arguments: Any) -> dict[str, Any]:
+        verifier = arguments.pop("_raw_evidence_verifier")
+        cache = verifier.__self__
+        cache.track_file(drift_input, label="terminal r2 lease")
+        drift_input.write_bytes(b"drifted-terminal-r2-lock\n")
+        return deepcopy(campaign_completion)
+
+    monkeypatch.setattr(
+        report,
+        "validate_candidate_final_completion",
+        drift_final_completion,
+    )
+    drift_output = tmp_path / "drift-report"
+    with pytest.raises(ValidationError, match="changed during verification"):
+        report.build_candidate_report(output_directory=drift_output, **kwargs)
+    assert not drift_output.exists()
+    monkeypatch.setattr(
+        report,
+        "validate_candidate_final_completion",
+        fake_final_completion,
+    )
     normalized_strings: list[str] = []
 
     def collect_strings(value: Any) -> None:
@@ -1539,6 +1565,9 @@ def test_candidate_final_cli_dispatches_terminal_report_inputs(
         "schema_version": "candidate-final.v1",
     }
     assert len(final_calls) == len(report_calls) == 1
+    assert final_calls[0]["_raw_snapshot_cache"] is report_calls[0][
+        "_raw_snapshot_cache"
+    ]
     assert final_calls[0]["campaign_status_path"] == pre_final_status_path
     assert final_calls[0]["status_ledger_paths"] == [pre_final_ledger_path]
     called = report_calls[0]
@@ -1567,6 +1596,13 @@ def test_candidate_final_cli_dispatches_terminal_report_inputs(
     final_call_count = len(final_calls)
     assert cli.main(partial_report_arguments) == 2
     assert len(final_calls) == final_call_count
+    capsys.readouterr()
+
+    final_output_path.unlink()
+    report_call_count = len(report_calls)
+    assert cli.main(arguments) == 2
+    assert not final_output_path.exists()
+    assert len(report_calls) == report_call_count
     capsys.readouterr()
 
     final_output_path.write_bytes(b"victim-final-must-not-change\n")

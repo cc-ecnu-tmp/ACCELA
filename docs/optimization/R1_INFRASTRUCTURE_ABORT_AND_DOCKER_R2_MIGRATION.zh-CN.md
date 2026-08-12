@@ -119,6 +119,19 @@ hash-bound provenance 纳入 toolchain/campaign 合同；提交
 snapshot 和最终 drift barrier 重放历史 Oracle raw evidence，不再获取或改写已终止
 campaign 的 lease。
 
+replacement formal 链还必须把同一约束延伸到 `campaign-status` 的 raw registry/status
+双发布、`campaign-finalize`、`final`、terminal completion replay 和 final report：
+一次入口内所有 screening/Oracle、status ledger、raw registry 与 terminal run 重放必须
+复用同一个只读 snapshot cache，并在成功发布前执行最终 drift barrier。显式生成历史
+证据的 `oracle-capture`/`screen` 不属于 replacement replay，继续保留原 lease 语义。
+带 report 参数的第二次 `final` 只接受已发布且字节完全相同的 immutable final，避免
+报告验证失败时先产生一份尚未登记 terminal status 的新输出。
+
+正式 candidate run 的五项实际工具版本必须分别带同值 `--official-version`，使
+qemu-system-riscv64、bare-metal-linker、Python、glib 和 ACCELA JDK 都以
+`comparison=exact` 登记；只带 `--tool-version` 的旧示例会在 prelease authorizer
+失败，不能用于 r2。
+
 要求结论覆盖 current upstream 的一般正式评测仍须在运行前和最终报告前刷新官方
 `main`。本次 r2 则采用明确的冻结快照例外：不访问或操作 GitLab，只使用已提交
 source snapshot 中 2026-08-11 捕获的

@@ -12,6 +12,7 @@ import pytest
 
 from tools.benchmark import cli
 from tools.benchmark import candidates as candidate_module
+from tools.benchmark import execution as execution_module
 from tools.benchmark.analyzer_contract import (
     candidate_analyzer_contract,
     candidate_analyzer_stage,
@@ -136,6 +137,58 @@ def test_candidate_subcommands_are_registered() -> None:
         assert "post-implementation executable PassRegistry export" in commands.choices[
             command
         ].format_help()
+
+
+def test_formal_candidate_cli_records_all_five_tool_versions_as_exact() -> None:
+    expected = {
+        "qemu-system-riscv64": "11.0.3",
+        "bare-metal-linker": "15.2.0",
+        "python": "3.14.6",
+        "glib": "2.88.3",
+        "accela-jdk": "21.0.11",
+    }
+    actual_arguments = [f"{tool}={version}" for tool, version in expected.items()]
+    exact_records = [
+        item.as_record()
+        for item in cli._tool_versions(actual_arguments, actual_arguments)
+    ]
+    assert exact_records == [
+        {
+            "tool": tool,
+            "actual": expected[tool],
+            "official_expected": expected[tool],
+            "comparison": "exact",
+        }
+        for tool in sorted(expected)
+    ]
+    plan = {
+        "reference_toolchain": {
+            "common_tool_versions": {
+                tool: version
+                for tool, version in expected.items()
+                if tool != "accela-jdk"
+            },
+            "accela_jdk_version": expected["accela-jdk"],
+        }
+    }
+    task = {"kind": "full"}
+    candidate_module._require_candidate_tool_versions(
+        plan=plan,
+        task=task,
+        run={"configuration": {"tool_versions": exact_records}},
+        label="formal B1",
+    )
+    unknown_records = [
+        item.as_record()
+        for item in cli._tool_versions(actual_arguments, [])
+    ]
+    with pytest.raises(ValidationError, match="frozen snapshot"):
+        candidate_module._require_candidate_tool_versions(
+            plan=plan,
+            task=task,
+            run={"configuration": {"tool_versions": unknown_records}},
+            label="formal B1",
+        )
 
 
 def test_candidate_profiles_dispatch_passes_exact_workspace_inputs(
@@ -521,6 +574,46 @@ def test_candidate_prelease_raw_cache_replays_once_and_has_a_final_drift_barrier
     run_path.write_text("{\"tampered\":true}\n", encoding="utf-8")
     with pytest.raises(ValidationError, match="changed during read-only verification"):
         cache.assert_unchanged()
+
+
+def test_terminal_r2_raw_snapshot_is_read_only_for_both_execution_leases(
+    benchmark_fixture: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, _, _, _, make_options = benchmark_fixture
+    options = replace(
+        make_options(
+            output_name="candidate-r2-terminal.run.json",
+            run_id="candidate-evaluation-2026-r2:run.B1.full",
+        ),
+        max_workers=1,
+    )
+    run = run_benchmark(options)
+    run_directory = BenchmarkRun(options)._run_directory(run)
+    lock_paths = (
+        output_lease_path(options.output_path),
+        run_directory / ".run.lock",
+    )
+    lock_snapshots = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in lock_paths
+    }
+
+    def forbid_historical_lease(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("read-only terminal r2 replay entered a lease")
+
+    monkeypatch.setattr(
+        execution_module,
+        "ExclusiveFileLease",
+        forbid_historical_lease,
+    )
+    cache = candidate_module._ReadOnlyRawEvidenceCache()
+    verified = cache.verify(options.output_path, options.state_root)
+    assert verified.document["run_id"] == run["run_id"]
+    cache.assert_unchanged()
+    assert options.output_path.is_relative_to(root)
+    for path, snapshot in lock_snapshots.items():
+        assert (path.read_bytes(), path.stat().st_mtime_ns) == snapshot
 
 
 def test_candidate_campaign_plan_dispatch_passes_all_six_manifests(
@@ -1441,6 +1534,7 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     read_only_snapshot_assertions: list[Path] = []
     screening_verifiers: list[Any | None] = []
     strict_prelease_verifier = [False]
+    real_exclusive_lease_enter = ExclusiveFileLease.__enter__
     real_read_only_snapshot = (
         candidate_module.verify_run_raw_evidence_read_only_snapshot
     )
@@ -1614,58 +1708,43 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
     for lock_path, snapshot in historical_lock_snapshots.items():
         assert (lock_path.read_bytes(), lock_path.stat().st_mtime_ns) == snapshot
 
-    raw_registry = candidate_module._build_candidate_raw_evidence_registry_from_plan(
-        plan=plan,
-        run_paths={},
-        workspace_root=tmp_path,
-    )
-    raw_registry_path = tmp_path / "raw-registry.json"
-    cli._publish_immutable_json(
-        raw_registry_path,
-        raw_registry,
-        label="candidate raw registry",
-    )
-    raw_registry_artifact = candidate_module.candidate_raw_evidence_registry_artifact(
-        registry=raw_registry,
-        output_path=raw_registry_path,
-        workspace_root=tmp_path,
-    )
-    status = validate_document(
-        {
-            "schema_version": "candidate-campaign-status.v1",
-            "campaign_id": plan["campaign_id"],
-            "plan_sha256": sha256_json(plan),
-            "execution_environment_sha256": plan[
-                "execution_environment_sha256"
-            ],
-            "analyzer": plan["analyzer"],
-            "previous_status_sha256": None,
-            "state": "pending",
-            "started_at": "2026-08-12T00:00:00Z",
-            "as_of": "2026-08-12T00:01:00Z",
-            "raw_evidence_registry": raw_registry_artifact,
-            "tasks": [
-                {
-                    "task_id": item["task_id"],
-                    "status": "pending",
-                    "evidence_kind": None,
-                    "evidence_sha256": None,
-                    "evidence_physical_sha256": None,
-                    "evidence_path": None,
-                    "started_at": None,
-                    "completed_at": None,
-                    "ineligibility_reason": None,
-                }
-                for item in plan["tasks"]
-            ],
-            "ready_tasks": [plan["tasks"][1]["task_id"]],
-            "diagnostic_plan": None,
-        }
+    strict_prelease_verifier[0] = True
+    monkeypatch.setattr(
+        ExclusiveFileLease,
+        "__enter__",
+        real_exclusive_lease_enter,
     )
     plan_path = tmp_path / "plan.json"
+    raw_registry_path = tmp_path / "raw-registry.json"
     status_path = tmp_path / "status.json"
     cli._publish_immutable_json(plan_path, plan, label="candidate plan")
-    cli._publish_immutable_json(status_path, status, label="candidate status")
+    assert cli.dispatch(
+        cli.build_parser().parse_args(
+            [
+                "candidates",
+                "campaign-status",
+                "--workspace-root",
+                str(tmp_path),
+                "--plan",
+                "plan.json",
+                "--raw-evidence-registry",
+                "raw-registry.json",
+                "--started-at",
+                "2026-08-12T00:00:00Z",
+                "--as-of",
+                "2026-08-12T00:01:00Z",
+                "--output",
+                "status.json",
+            ]
+        )
+    ) == 0
+    raw_registry = load_and_validate(raw_registry_path)
+    status = load_and_validate(status_path)
+    assert status["ready_tasks"] == ["run.B1.full"]
+    assert read_only_snapshot_calls == expected_oracle_paths * 4
+    assert read_only_snapshot_assertions == expected_oracle_paths * 6
+    for lock_path, snapshot in historical_lock_snapshots.items():
+        assert (lock_path.read_bytes(), lock_path.stat().st_mtime_ns) == snapshot
     oracle_publication_root = tmp_path / oracle_capture["raw_state_root"]
     oracle_raw_output = oracle_publication_root / "candidate-raw.json"
     oracle_status_output = oracle_publication_root / "candidate-status.json"
@@ -1707,11 +1786,6 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         configuration={},
         provenance={},
     )
-    with pytest.raises(ValidationError, match="central evidence projection"):
-        candidate_module.authorize_candidate_run_prelease(authorization)
-    assert not authorization.output_path.exists()
-    assert not (authorization.output_path.parent / ".accela-benchmark-locks").exists()
-
     forged_completed_status = deepcopy(status)
     forged_full = next(
         item
@@ -1737,6 +1811,13 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
         }
     )
     forged_completed_status["state"] = "running"
+    forged_completed_status["ready_tasks"] = [
+        next(
+            item["task_id"]
+            for item in forged_completed_status["tasks"]
+            if item["status"] == "pending" and item["task_id"] != "run.B1.full"
+        )
+    ]
     forged_completed_status = validate_document(forged_completed_status)
     forged_status_path = tmp_path / "forged-completed-status.json"
     cli._publish_immutable_json(
@@ -1754,7 +1835,7 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
             )
         )
     assert not authorization.output_path.exists()
-    assert not (authorization.output_path.parent / ".accela-benchmark-locks").exists()
+    assert not output_lease_path(authorization.output_path).exists()
 
     stale_plan = deepcopy(plan)
     stale_plan["candidate_study_schema_sha256"] = "0" * 64
@@ -1925,9 +2006,7 @@ def test_candidate_campaign_plan_builds_valid_serial_b4_b6_dag(
                 )
             )
         assert not authorization.output_path.exists()
-        assert not (
-            authorization.output_path.parent / ".accela-benchmark-locks"
-        ).exists()
+        assert not output_lease_path(authorization.output_path).exists()
     protected_authorization = replace(
         authorization,
         status_path=ready_status_path,
@@ -2248,6 +2327,7 @@ def test_candidate_campaign_status_dispatch_preserves_optional_none_inputs(
 ) -> None:
     _input_files(tmp_path, "plan.json", "run.json", "study.json")
     received: dict[str, Any] = {}
+    raw_received: dict[str, Any] = {}
 
     def fake_update_candidate_campaign_status(**kwargs: Any) -> dict[str, Any]:
         received.update(kwargs)
@@ -2260,10 +2340,15 @@ def test_candidate_campaign_status_dispatch_preserves_optional_none_inputs(
     monkeypatch.setattr(
         cli, "update_candidate_campaign_status", fake_update_candidate_campaign_status
     )
+
+    def fake_raw_registry(**kwargs: Any) -> dict[str, Any]:
+        raw_received.update(kwargs)
+        return {"schema_version": "candidate-raw-evidence.v1"}
+
     monkeypatch.setattr(
         cli,
         "build_candidate_raw_evidence_registry",
-        lambda **_: {"schema_version": "candidate-raw-evidence.v1"},
+        fake_raw_registry,
     )
     args = cli.build_parser().parse_args(
         [
@@ -2303,7 +2388,63 @@ def test_candidate_campaign_status_dispatch_preserves_optional_none_inputs(
     assert received["final_path"] is None
     assert received["previous_status_path"] is None
     assert received["status_ledger_paths"] == []
+    assert received["_raw_snapshot_cache"] is raw_received[
+        "_raw_snapshot_cache"
+    ]
     assert (tmp_path / "status.json").is_file()
+
+
+def test_candidate_campaign_status_final_raw_drift_publishes_neither_document(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _input_files(tmp_path, "plan.json")
+    drift_input = tmp_path / "historical-r1.lock"
+    drift_input.write_bytes(b"stable-r1-lock\n")
+    observed_cache: list[candidate_module._ReadOnlyRawEvidenceCache] = []
+
+    def fake_raw_registry(**kwargs: Any) -> dict[str, Any]:
+        cache = kwargs["_raw_snapshot_cache"]
+        cache.track_file(drift_input, label="historical r1 lease")
+        observed_cache.append(cache)
+        return {"schema_version": "candidate-raw-evidence.v1", "runs": []}
+
+    def fake_status(**kwargs: Any) -> dict[str, Any]:
+        cache = kwargs["_raw_snapshot_cache"]
+        assert cache is observed_cache[0]
+        drift_input.write_bytes(b"drifted-r1-lock\n")
+        return {
+            "schema_version": "candidate-campaign-status.v1",
+            "campaign_id": "campaign-test",
+            "state": "pending",
+        }
+
+    monkeypatch.setattr(
+        cli, "build_candidate_raw_evidence_registry", fake_raw_registry
+    )
+    monkeypatch.setattr(cli, "update_candidate_campaign_status", fake_status)
+    args = cli.build_parser().parse_args(
+        [
+            "candidates",
+            "campaign-status",
+            "--plan",
+            "plan.json",
+            "--workspace-root",
+            str(tmp_path),
+            "--raw-evidence-registry",
+            "raw-registry.json",
+            "--started-at",
+            "2026-08-12T00:00:00Z",
+            "--as-of",
+            "2026-08-12T00:01:00Z",
+            "--output",
+            "status.json",
+        ]
+    )
+    with pytest.raises(ValidationError, match="changed during verification"):
+        cli.dispatch(args)
+    assert not (tmp_path / "raw-registry.json").exists()
+    assert not (tmp_path / "status.json").exists()
 
 
 def test_candidate_campaign_status_validation_failure_publishes_nothing(
@@ -2701,6 +2842,25 @@ def test_candidate_final_dispatch_binds_b1_and_b2_evidence(
         role: tmp_path / f"{role.lower()}.json"
         for role in ("B3", "B4", "B5", "B6")
     }
+    assert isinstance(
+        received["_raw_snapshot_cache"],
+        candidate_module._ReadOnlyRawEvidenceCache,
+    )
+    drift_input = tmp_path / "terminal-r2.run.lock"
+    drift_input.write_bytes(b"stable-terminal-r2-lock\n")
+
+    def drift_final(**kwargs: Any) -> dict[str, Any]:
+        cache = kwargs["_raw_snapshot_cache"]
+        cache.track_file(drift_input, label="terminal r2 lease")
+        drift_input.write_bytes(b"drifted-terminal-r2-lock\n")
+        return {"schema_version": "candidate-final.v1", "ranking": []}
+
+    monkeypatch.setattr(cli, "build_candidate_final", drift_final)
+    drift_args = deepcopy(args)
+    drift_args.output = Path("drift-final.json")
+    with pytest.raises(ValidationError, match="changed during verification"):
+        cli.dispatch(drift_args)
+    assert not (tmp_path / "drift-final.json").exists()
 
 
 def test_candidate_campaign_finalize_dispatch_builds_pre_b3_freeze(
@@ -2784,9 +2944,31 @@ def test_candidate_campaign_finalize_dispatch_builds_pre_b3_freeze(
         for role in ("B1", "B2", "B3", "B4", "B5", "B6")
     }
     assert received["freeze_id"] == "freeze-1"
+    assert isinstance(
+        received["_raw_snapshot_cache"],
+        candidate_module._ReadOnlyRawEvidenceCache,
+    )
     assert json.loads((tmp_path / "freeze.json").read_text(encoding="utf-8"))[
         "schema_version"
     ] == "candidate-freeze.v1"
+    drift_input = tmp_path / "historical-r1.run.lock"
+    drift_input.write_bytes(b"stable-historical-r1-lock\n")
+
+    def drift_finalize(**kwargs: Any) -> dict[str, Any]:
+        cache = kwargs["_raw_snapshot_cache"]
+        cache.track_file(drift_input, label="historical r1 lease")
+        drift_input.write_bytes(b"drifted-historical-r1-lock\n")
+        return {
+            "schema_version": "candidate-freeze.v1",
+            "frozen_candidate_ids": ["candidate.alpha"],
+        }
+
+    monkeypatch.setattr(cli, "finalize_candidate_campaign", drift_finalize)
+    drift_arguments = [*arguments]
+    drift_arguments[-1] = "drift-freeze.json"
+    with pytest.raises(ValidationError, match="changed during verification"):
+        cli.dispatch(cli.build_parser().parse_args(drift_arguments))
+    assert not (tmp_path / "drift-freeze.json").exists()
 
 
 def test_candidate_cli_rejects_duplicate_assignments_before_dispatch(

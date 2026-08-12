@@ -186,6 +186,25 @@ class _ReadOnlyRawEvidenceCache:
             snapshot.assert_unchanged()
 
 
+def _candidate_read_only_raw_verifier(
+    *,
+    raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None,
+    raw_evidence_verifier: Any | None,
+) -> tuple[_ReadOnlyRawEvidenceCache | None, Any]:
+    """Select one read-only cache or an explicitly injected verifier."""
+
+    if raw_snapshot_cache is not None and raw_evidence_verifier is not None:
+        raise ConfigurationError(
+            "candidate raw replay accepts either a snapshot cache or a verifier"
+        )
+    if raw_snapshot_cache is not None:
+        return raw_snapshot_cache, raw_snapshot_cache.verify
+    if raw_evidence_verifier is not None:
+        return None, raw_evidence_verifier
+    cache = _ReadOnlyRawEvidenceCache()
+    return cache, cache.verify
+
+
 @dataclass(frozen=True)
 class CandidateRunAuthorizationIntent:
     plan_path: Path
@@ -524,17 +543,29 @@ def build_candidate_raw_evidence_registry(
     plan_path: Path,
     run_paths: Mapping[str, Path],
     workspace_root: Path,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
+    _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Replay journals/raw files and bind every supplied campaign run immutably."""
 
+    raw_snapshot_cache, raw_evidence_verifier = (
+        _candidate_read_only_raw_verifier(
+            raw_snapshot_cache=_raw_snapshot_cache,
+            raw_evidence_verifier=_raw_evidence_verifier,
+        )
+    )
     plan = _load_version(
         plan_path, "candidate-campaign-plan.v1", label="candidate campaign plan"
     )
-    return _build_candidate_raw_evidence_registry_from_plan(
+    registry = _build_candidate_raw_evidence_registry_from_plan(
         plan=plan,
         run_paths=run_paths,
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
+    if raw_snapshot_cache is not None:
+        raw_snapshot_cache.assert_unchanged()
+    return registry
 
 
 def _build_candidate_raw_evidence_registry_from_plan(
@@ -5481,10 +5512,17 @@ def update_candidate_campaign_status(
     status_ledger_paths: Sequence[Path] = (),
     started_at: str | None = None,
     as_of: str | None = None,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
     _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Recompute the sole dependency-safe B1-through-final scheduler view."""
 
+    raw_snapshot_cache, raw_evidence_verifier = (
+        _candidate_read_only_raw_verifier(
+            raw_snapshot_cache=_raw_snapshot_cache,
+            raw_evidence_verifier=_raw_evidence_verifier,
+        )
+    )
     plan = _load_version(
         plan_path, "candidate-campaign-plan.v1", label="candidate campaign plan"
     )
@@ -5525,7 +5563,7 @@ def update_candidate_campaign_status(
         _load_and_reverify_candidate_screening(
             screening_path=root / plan["artifacts"]["screening"]["path"],
             workspace_root=root,
-            raw_evidence_verifier=_raw_evidence_verifier,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
         != screening
         or
@@ -5679,7 +5717,7 @@ def update_candidate_campaign_status(
         registry=raw_evidence_registry,
         workspace_root=root,
         expected_run_paths=run_paths,
-        raw_evidence_verifier=_raw_evidence_verifier,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     raw_evidence_registry_artifact = candidate_raw_evidence_registry_artifact(
         registry=raw_evidence_registry,
@@ -5692,7 +5730,7 @@ def update_candidate_campaign_status(
                 plan=plan,
                 registry_path=root / previous["raw_evidence_registry"]["path"],
                 workspace_root=root,
-                raw_evidence_verifier=_raw_evidence_verifier,
+                raw_evidence_verifier=raw_evidence_verifier,
             )
         )
         if previous_raw_registry_artifact != previous["raw_evidence_registry"]:
@@ -5899,7 +5937,7 @@ def update_candidate_campaign_status(
             freeze,
             workspace_root=root,
             candidate_order=candidate_ids,
-            raw_evidence_verifier=_raw_evidence_verifier,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
         if (
             freeze["campaign_id"] != plan["campaign_id"]
@@ -5916,7 +5954,7 @@ def update_candidate_campaign_status(
                 registry_path=root
                 / freeze["b2_campaign"]["raw_evidence_registry"]["path"],
                 workspace_root=root,
-                raw_evidence_verifier=_raw_evidence_verifier,
+                raw_evidence_verifier=raw_evidence_verifier,
             )
         )
         if (
@@ -6594,7 +6632,7 @@ def update_candidate_campaign_status(
             diagnostic_study_path=study_paths.get("diagnostic"),
             freeze_path=freeze_path,
             final_id=final["final_id"],
-            _raw_evidence_verifier=_raw_evidence_verifier,
+            _raw_evidence_verifier=raw_evidence_verifier,
         )
         _require_exact_candidate_final_derivation(final, expected_final)
 
@@ -6650,7 +6688,7 @@ def update_candidate_campaign_status(
             state = "running"
     if state in {"completed", "failed", "interrupted"}:
         ready_tasks = []
-    return validate_document(
+    status = validate_document(
         {
             "schema_version": "candidate-campaign-status.v1",
             "campaign_id": plan["campaign_id"],
@@ -6669,6 +6707,9 @@ def update_candidate_campaign_status(
             "diagnostic_plan": diagnostic_plan,
         }
     )
+    if raw_snapshot_cache is not None:
+        raw_snapshot_cache.assert_unchanged()
+    return status
 
 
 def _clean_repository_identity(
@@ -6934,9 +6975,17 @@ def validate_candidate_final_completion(
     completed_status_path: Path,
     status_ledger_paths: Sequence[Path],
     workspace_root: Path,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
+    _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Verify the post-final terminal ledger before publishing a final report."""
 
+    raw_snapshot_cache, raw_evidence_verifier = (
+        _candidate_read_only_raw_verifier(
+            raw_snapshot_cache=_raw_snapshot_cache,
+            raw_evidence_verifier=_raw_evidence_verifier,
+        )
+    )
     root = _candidate_workspace_root(workspace_root)
     _, plan_physical, _ = _workspace_regular_path(
         root, campaign_plan_path, label="candidate report campaign plan"
@@ -6972,6 +7021,7 @@ def validate_candidate_final_completion(
             registry_path=root
             / completed_status["raw_evidence_registry"]["path"],
             workspace_root=root,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
     )
     if (
@@ -6994,6 +7044,7 @@ def validate_candidate_final_completion(
         status=completed_status,
         ledger_paths=ledger_physical,
         workspace_root=root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     plan_sha256 = sha256_json(plan)
     final_sha256 = sha256_json(final)
@@ -7059,12 +7110,13 @@ def validate_candidate_final_completion(
         ),
         freeze_path=root / final["freeze"]["artifact"]["path"],
         final_id=final["final_id"],
+        _raw_evidence_verifier=raw_evidence_verifier,
     )
     if expected_final != final:
         raise ValidationError(
             "candidate final report content differs from the exact replayed campaign"
         )
-    return {
+    completion = {
         "campaign_id": plan["campaign_id"],
         "plan_sha256": plan_sha256,
         "candidate_final_sha256": final_sha256,
@@ -7081,6 +7133,9 @@ def validate_candidate_final_completion(
             "physical_sha256"
         ],
     }
+    if raw_snapshot_cache is not None:
+        raw_snapshot_cache.assert_unchanged()
+    return completion
 
 
 def finalize_candidate_campaign(
@@ -7101,9 +7156,17 @@ def finalize_candidate_campaign(
     compiler_artifact_path: Path,
     workspace_root: Path,
     freeze_id: str,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
+    _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Seal the completed B2 campaign into the immutable pre-B3 freeze."""
 
+    raw_snapshot_cache, raw_evidence_verifier = (
+        _candidate_read_only_raw_verifier(
+            raw_snapshot_cache=_raw_snapshot_cache,
+            raw_evidence_verifier=_raw_evidence_verifier,
+        )
+    )
     plan = _load_version(
         plan_path, "candidate-campaign-plan.v1", label="candidate campaign plan"
     )
@@ -7150,6 +7213,7 @@ def finalize_candidate_campaign(
     screening = _load_and_reverify_candidate_screening(
         screening_path=screening_path,
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     base_pass_registry = _require_executable_registry_bridge(
         screening=screening,
@@ -7169,6 +7233,7 @@ def finalize_candidate_campaign(
     oracle_capture = _load_and_reverify_candidate_oracle_capture(
         capture_path=oracle_capture_path,
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     _require_screening_capture_binding(screening, oracle_capture)
     plan_digest = sha256_json(plan)
@@ -7184,6 +7249,7 @@ def finalize_candidate_campaign(
         status=status,
         ledger_paths=status_ledger_paths,
         workspace_root=workspace_root,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     _, raw_evidence_registry_artifact = (
         _load_and_reverify_candidate_raw_evidence_registry(
@@ -7191,6 +7257,7 @@ def finalize_candidate_campaign(
             registry_path=_candidate_workspace_root(workspace_root)
             / status["raw_evidence_registry"]["path"],
             workspace_root=workspace_root,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
     )
     if raw_evidence_registry_artifact != status["raw_evidence_registry"]:
@@ -7490,7 +7557,7 @@ def finalize_candidate_campaign(
         if task["run_id"] is not None
     ):
         raise ValidationError("candidate freeze plan run id escapes its namespace")
-    return validate_document(
+    freeze = validate_document(
         {
             "schema_version": "candidate-freeze.v1",
             "freeze_id": freeze_id,
@@ -7550,6 +7617,9 @@ def finalize_candidate_campaign(
             },
         }
     )
+    if raw_snapshot_cache is not None:
+        raw_snapshot_cache.assert_unchanged()
+    return freeze
 
 
 def build_candidate_final(
@@ -7567,10 +7637,17 @@ def build_candidate_final(
     diagnostic_study_path: Path | None,
     freeze_path: Path,
     final_id: str,
+    _raw_snapshot_cache: _ReadOnlyRawEvidenceCache | None = None,
     _raw_evidence_verifier: Any | None = None,
 ) -> dict[str, Any]:
     """Build the B3/B4/B5/B6 final using equal weight for all 267 cases."""
 
+    raw_snapshot_cache, raw_evidence_verifier = (
+        _candidate_read_only_raw_verifier(
+            raw_snapshot_cache=_raw_snapshot_cache,
+            raw_evidence_verifier=_raw_evidence_verifier,
+        )
+    )
     if "B3" not in study_paths or not set(study_paths).issubset({"B3", "B4", "B5", "B6"}):
         raise ConfigurationError("candidate final requires B3 and only B3-B6 studies")
     plan = _load_version(
@@ -7595,7 +7672,7 @@ def build_candidate_final(
         status=campaign_status,
         ledger_paths=status_ledger_paths,
         workspace_root=workspace_root,
-        raw_evidence_verifier=_raw_evidence_verifier,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     status_by_id = {item["task_id"]: item for item in campaign_status["tasks"]}
     if (
@@ -7615,7 +7692,7 @@ def build_candidate_final(
             / campaign_status["raw_evidence_registry"]["path"],
             workspace_root=workspace_root,
             expected_run_paths=run_paths,
-            raw_evidence_verifier=_raw_evidence_verifier,
+            raw_evidence_verifier=raw_evidence_verifier,
         )
     )
     if raw_evidence_registry_artifact != campaign_status["raw_evidence_registry"]:
@@ -7626,7 +7703,7 @@ def build_candidate_final(
     screening = _load_and_reverify_candidate_screening(
         screening_path=screening_path,
         workspace_root=workspace_root,
-        raw_evidence_verifier=_raw_evidence_verifier,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     catalog = _load_version(
         catalog_path, "candidate-catalog.v1", label="candidate registry"
@@ -7641,7 +7718,7 @@ def build_candidate_final(
         freeze,
         workspace_root=workspace_root,
         candidate_order=[item["candidate_id"] for item in catalog["candidates"]],
-        raw_evidence_verifier=_raw_evidence_verifier,
+        raw_evidence_verifier=raw_evidence_verifier,
     )
     _require_candidate_ledger_prefix(
         binding=freeze["b2_campaign"],
@@ -8334,7 +8411,7 @@ def build_candidate_final(
         if ranking and ranking[0]["combined_case_geometric_mean_speedup"] > 1.0
         else None
     )
-    return validate_document(
+    final = validate_document(
         {
             "schema_version": "candidate-final.v1",
             "final_id": final_id,
@@ -8552,3 +8629,6 @@ def build_candidate_final(
             ),
         }
     )
+    if raw_snapshot_cache is not None:
+        raw_snapshot_cache.assert_unchanged()
+    return final

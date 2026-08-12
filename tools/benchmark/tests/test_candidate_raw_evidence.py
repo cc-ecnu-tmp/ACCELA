@@ -177,8 +177,10 @@ def raw_registry_fixture(
         state_root: Path,
         catalog: Mapping[str, Any],
         pass_registry: Mapping[str, Any],
+        raw_evidence_verifier: Any | None = None,
     ) -> tuple[dict[str, Any], VerifiedRunRawEvidence]:
         del catalog, pass_registry
+        del raw_evidence_verifier
         assert state_root == (tmp_path / "raw-state").resolve()
         run = deepcopy(runs[run_path.resolve()])
         return run, VerifiedRunRawEvidence(

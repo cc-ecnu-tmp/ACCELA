@@ -6,7 +6,7 @@ import subprocess
 import sys
 from contextlib import ExitStack
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from .audit import build_cross_suite_audit
 from .candidates import (
@@ -178,6 +178,7 @@ def _publish_candidate_status_pair(
     raw_document: Mapping[str, Any],
     status_path: Path,
     status_document: Mapping[str, Any],
+    _prepublish_barrier: Callable[[], None] | None = None,
 ) -> None:
     """Publish the raw registry followed by its status commit marker.
 
@@ -226,6 +227,8 @@ def _publish_candidate_status_pair(
                 )
             )
         preflight()
+        if _prepublish_barrier is not None:
+            _prepublish_barrier()
         _publish_immutable_json(
             raw_path,
             raw_document,
@@ -1704,6 +1707,7 @@ def dispatch(args: argparse.Namespace) -> int:
         )
         return 0
     if args.command == "candidates" and args.candidates_command == "campaign-status":
+        raw_snapshot_cache = _ReadOnlyRawEvidenceCache()
         candidate_plan_path = _workspace_input_path(
             args.workspace_root, args.plan, label="candidate campaign plan"
         )
@@ -1719,6 +1723,7 @@ def dispatch(args: argparse.Namespace) -> int:
             plan_path=candidate_plan_path,
             run_paths=candidate_run_paths,
             workspace_root=args.workspace_root,
+            _raw_snapshot_cache=raw_snapshot_cache,
         )
         raw_registry_output = _workspace_immutable_output_path(
             args.workspace_root,
@@ -1773,12 +1778,14 @@ def dispatch(args: argparse.Namespace) -> int:
             ],
             started_at=args.started_at,
             as_of=args.as_of,
+            _raw_snapshot_cache=raw_snapshot_cache,
         )
         _publish_candidate_status_pair(
             raw_path=raw_registry_output,
             raw_document=raw_registry,
             status_path=status_output,
             status_document=status,
+            _prepublish_barrier=raw_snapshot_cache.assert_unchanged,
         )
         print(
             json.dumps(
@@ -1788,6 +1795,7 @@ def dispatch(args: argparse.Namespace) -> int:
         )
         return 0
     if args.command == "candidates" and args.candidates_command == "campaign-finalize":
+        raw_snapshot_cache = _ReadOnlyRawEvidenceCache()
         freeze = finalize_candidate_campaign(
             plan_path=_workspace_input_path(
                 args.workspace_root, args.plan, label="candidate campaign plan"
@@ -1853,11 +1861,21 @@ def dispatch(args: argparse.Namespace) -> int:
             ),
             workspace_root=args.workspace_root,
             freeze_id=args.freeze_id,
+            _raw_snapshot_cache=raw_snapshot_cache,
         )
+        freeze_output_path = _workspace_immutable_output_path(
+            args.workspace_root,
+            args.output,
+            label="candidate pre-B3 freeze output",
+        )
+        _preflight_immutable_json(
+            freeze_output_path,
+            freeze,
+            label="candidate pre-B3 freeze output",
+        )
+        raw_snapshot_cache.assert_unchanged()
         _publish_immutable_json(
-            _workspace_immutable_output_path(
-                args.workspace_root, args.output, label="candidate pre-B3 freeze output"
-            ),
+            freeze_output_path,
             freeze,
             label="candidate pre-B3 freeze output",
         )
@@ -1872,6 +1890,7 @@ def dispatch(args: argparse.Namespace) -> int:
         )
         return 0
     if args.command == "candidates" and args.candidates_command == "final":
+        raw_snapshot_cache = _ReadOnlyRawEvidenceCache()
         report_only_values = (
             args.report_campaign_status,
             args.r7_freeze,
@@ -1975,10 +1994,22 @@ def dispatch(args: argparse.Namespace) -> int:
                 label="candidate pre-B3 freeze",
             ),
             final_id=args.final_id,
+            _raw_snapshot_cache=raw_snapshot_cache,
         )
         final_output_path = _workspace_immutable_output_path(
             args.workspace_root, args.output, label="candidate final output"
         )
+        _preflight_immutable_json(
+            final_output_path,
+            final,
+            label="candidate final output",
+        )
+        if args.report_output_dir is not None and not final_output_path.exists():
+            raise ConfigurationError(
+                "candidate final report requires the immutable final output "
+                "to be published before terminal status registration"
+            )
+        raw_snapshot_cache.assert_unchanged()
         _publish_immutable_json(
             final_output_path, final, label="candidate final output"
         )
@@ -2067,6 +2098,7 @@ def dispatch(args: argparse.Namespace) -> int:
                     args.r7_runs_root,
                     label="r7 runs root",
                 ),
+                _raw_snapshot_cache=raw_snapshot_cache,
             )
         receipt = {
             "schema_version": final["schema_version"],
