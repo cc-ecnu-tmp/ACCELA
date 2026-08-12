@@ -78,6 +78,14 @@ B2 的选择规则固定为：在 B3 的每个 family 内按输入字节数升�
 git ls-remote https://gitlab.eduxiji.net/csc1/nscscc/compiler2026 refs/heads/main
 ```
 
+这是要求结论覆盖 current upstream 的一般正式评测门禁。本次
+`accela-candidate-evaluation-2026-r2` 采用明确的冻结快照例外：不访问或操作
+GitLab，只使用已提交 `data/source-snapshot.json` 中 2026-08-11 捕获的
+`8e09f56a8ffb29c491aac4a31086492099af2292`、对应规则文档和语料归档身份。不得为此
+追加或改写 `refresh_history`，也不得把该决定表述为一次新的 upstream refresh。
+最终报告必须显式标记 `upstream freshness unverified`，且所有正确性、性能和候选结论
+仅对该冻结语料与规则成立；不能外推到 2026-08-11 之后的官方变更。
+
 截至当前快照，官方尚未给出决赛 SIMD/向量语义、最终 runtime、完整链接命令、
 编译/运行超时和重复测量规则。RV64GC 不含 V 扩展，故 RVV/SIMD 保持
 `Blocked`；不能自行补全规则。官方若发布新规范，应先固定其提交与哈希，再重建

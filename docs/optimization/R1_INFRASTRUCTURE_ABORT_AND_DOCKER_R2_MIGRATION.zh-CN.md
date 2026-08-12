@@ -114,12 +114,19 @@ output/support 的安全相对子路径作为 `volume-subpath` 交给 frozen ref
 
 提交 `8152c8583f2038bbbea198e4c508ffdb3ab69cc9` 已把 Python 虚拟环境依赖、Gradle
 distribution、bootstrap 输入、QEMU plugin builder 和 analyzer contract 的独立
-hash-bound provenance 纳入 toolchain/campaign 合同。该闭环不放宽后续门禁：
-`campaign-plan` 的历史 Oracle raw evidence 重放必须先切换为严格只读 snapshot 并
-通过最终 drift barrier；官方 `main` 也必须按评测手册在运行前刷新并把结果写回
-source snapshot。为避免刷新改变 clean commit/tree，刷新记录应先于最终 plan；在
-只读修复提交、刷新记录提交及对应 Docker workspace 重建完成前，不得生成 r2
-plan 或 genesis。
+hash-bound provenance 纳入 toolchain/campaign 合同；提交
+`2b16fbe35ee5c8f27c5d95c8917e04db8125d3a2` 又使 `campaign-plan` 通过严格只读
+snapshot 和最终 drift barrier 重放历史 Oracle raw evidence，不再获取或改写已终止
+campaign 的 lease。
+
+要求结论覆盖 current upstream 的一般正式评测仍须在运行前和最终报告前刷新官方
+`main`。本次 r2 则采用明确的冻结快照例外：不访问或操作 GitLab，只使用已提交
+source snapshot 中 2026-08-11 捕获的
+`8e09f56a8ffb29c491aac4a31086492099af2292` 及其规则文档、语料归档身份；不得追加或
+改写 `refresh_history`，也不得伪写新的刷新结果。最终报告必须标记
+`upstream freshness unverified`，所有结论仅对该冻结语料与规则成立，不能外推到其后
+的官方变更。在包含上述只读修复和本决定的最终 clean commit、对应 Docker workspace
+重建及所需 ignored 输入复核完成前，仍不得生成 r2 plan 或 genesis。
 
 r2 plan hash 和各 run ID 当前仍为 pending。它们只能由 named-volume 内的 clean
 checkout 和实际 preflight 生成；本文不预填，也不把计划状态写成已验证状态。
