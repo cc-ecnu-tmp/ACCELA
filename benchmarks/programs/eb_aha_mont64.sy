@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: eight-byte-limb multiprecision multiply/reduce workload shaped like 64-bit Montgomery arithmetic
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int limb_a[8]; int limb_b[8]; int product[16]; int next_a[8]; int next_b[8];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<8){int x=next_small();if(x<0){x=0-x;}limb_a[i]=(x*17+i+seed)%256;x=next_small();if(x<0){x=0-x;}limb_b[i]=(x*13+3*i+seed)%256;i=i+1;}
+  int round=0;
+  while(round<n){
+    i=0;while(i<16){product[i]=0;i=i+1;}
+    i=0;while(i<8){int j=0;while(j<8){product[i+j]=product[i+j]+limb_a[i]*limb_b[j];j=j+1;}i=i+1;}
+    i=0;while(i<15){product[i+1]=product[i+1]+product[i]/256;product[i]=product[i]%256;i=i+1;}
+    i=0;while(i<8){next_a[i]=(product[i]+limb_a[(i+1)%8]+round)%256;next_b[i]=(product[i+8]+limb_b[(i+3)%8]+17)%256;i=i+1;}
+    i=0;while(i<8){limb_a[i]=next_a[i];limb_b[i]=next_b[i];i=i+1;}
+    round=round+1;
+  }
+  int acc=0;i=0;while(i<8){acc=checksum_step(acc,limb_a[i],i);acc=checksum_step(acc,limb_b[i],i+8);i=i+1;}
+  putint(acc);putch(10);return 0;
+}

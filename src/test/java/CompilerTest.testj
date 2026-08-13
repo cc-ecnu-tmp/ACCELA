@@ -1,0 +1,63 @@
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import org.junit.jupiter.api.Test;
+
+final class CompilerTest {
+  @Test
+  void acceptsOnlyTheSingleInputInterpreterMode() {
+    assertEquals(
+        new Compiler.CompileArgument("case.sy", null),
+        Compiler.parseArguments(new String[] {"case.sy"}));
+  }
+
+  @Test
+  void acceptsTheExactJudgeFacingAssemblyArguments() {
+    assertEquals(
+        new Compiler.CompileArgument("case.sy", "case.s"),
+        Compiler.parseArguments(new String[] {
+            "case.sy", "-S", "-o", "case.s", "-O1"
+        }));
+  }
+
+  @Test
+  void rejectsProfilesUnknownOptionsAndAmbiguousArguments() {
+    assertThrows(IllegalArgumentException.class, () -> Compiler.parseArguments(new String[] {
+        "case.sy", "-S", "-o", "case.s", "-O1", "--profile", "candidate.json"
+    }));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "--unknown"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"first.sy", "second.sy"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-S", "-S"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-O1", "-O1"}));
+    assertThrows(IllegalArgumentException.class, () -> Compiler.parseArguments(new String[] {
+        "case.sy", "-o", "first.s", "-o", "second.s"
+    }));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-o", "-O1"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {""}));
+  }
+
+  @Test
+  void rejectsEveryPartialAssemblyMode() {
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-S"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-O1"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-o", "case.s"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-S", "-O1"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-S", "-o", "case.s"}));
+    assertThrows(IllegalArgumentException.class,
+        () -> Compiler.parseArguments(new String[] {"case.sy", "-O1", "-o", "case.s"}));
+    assertThrows(IllegalArgumentException.class, () -> Compiler.parseArguments(new String[] {
+        "-S", "-o", "case.s", "-O1"
+    }));
+  }
+}

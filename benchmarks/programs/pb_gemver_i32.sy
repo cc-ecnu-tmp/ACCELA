@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: rank-two matrix update followed by transpose and forward products
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int a[96][96]; int u1[96]; int v1[96]; int u2[96]; int v2[96];
+int x[96]; int y[96]; int z[96]; int w[96];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i = 0;
+  while (i < n) {
+    u1[i] = next_small(); v1[i] = next_small();
+    u2[i] = next_small(); v2[i] = next_small();
+    y[i] = next_small(); z[i] = next_small();
+    x[i] = 0; w[i] = 0;
+    int j = 0;
+    while (j < n) { a[i][j] = next_small(); j = j + 1; }
+    i = i + 1;
+  }
+  i = 0;
+  while (i < n) {
+    int j = 0;
+    while (j < n) {
+      a[i][j] = a[i][j] + u1[i] * v1[j] + u2[i] * v2[j];
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+  i = 0;
+  while (i < n) {
+    int j = 0;
+    while (j < n) { x[i] = x[i] + a[j][i] * y[j]; j = j + 1; }
+    x[i] = x[i] + z[i];
+    i = i + 1;
+  }
+  i = 0;
+  while (i < n) {
+    int j = 0;
+    while (j < n) { w[i] = w[i] + a[i][j] * x[j]; j = j + 1; }
+    i = i + 1;
+  }
+  int acc = 0;
+  i = 0;
+  while (i < n) {
+    acc = checksum_step(acc, w[i], i);
+    acc = checksum_step(acc, x[i], i + n);
+    i = i + 1;
+  }
+  putint(acc); putch(10); return 0;
+}

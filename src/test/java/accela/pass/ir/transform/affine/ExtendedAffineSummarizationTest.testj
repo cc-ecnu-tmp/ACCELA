@@ -1,0 +1,294 @@
+package accela.pass.ir.transform.affine;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.PassBuilder;
+import accela.pass.PreservedAnalyses;
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import accela.pass.instrument.DecisionRemark;
+import accela.pass.instrument.DecisionStatus;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+final class ExtendedAffineSummarizationTest {
+  @Test
+  void summarizesLinearQuadraticAndUpdatedOrderedRecurrences() {
+    for (Kind kind : Kind.values()) {
+      Fixture fixture = fixture(kind, 0, 1);
+
+      assertTrue(ExtendedAffineSummarization.run(fixture.function, analyses()));
+      IRVerifier.verifyFunction(fixture.function);
+      assertTrue(fixture.function.getBlocks().stream()
+          .anyMatch(block -> block.getLabel().contains("extended.affine.summary")));
+    }
+  }
+
+  @Test
+  void isDifferentiallyExactAcrossFallbackSummaryAndI32OverflowCases() {
+    List<Integer> bounds = List.of(-7, 0, 1, 2, 3, 4, 7, 12, 13, 14, 19, 100);
+    List<Integer> seeds = List.of(
+        Integer.MIN_VALUE, Integer.MIN_VALUE + 1, -1, 0, 1, Integer.MAX_VALUE);
+    for (Kind kind : Kind.values()) {
+      for (int bound : bounds) {
+        for (int seed : seeds) {
+          Fixture original = fixture(kind, 0, 1);
+          Fixture transformed = fixture(kind, 0, 1);
+          assertTrue(ExtendedAffineSummarization.run(transformed.function, analyses()));
+
+          assertEquals(
+              execute(original.function, bound, seed),
+              execute(transformed.function, bound, seed),
+              () -> kind + " bound=" + bound + " seed=" + seed);
+        }
+      }
+    }
+  }
+
+  @Test
+  void handlesIntMaxTripCountWithoutPreDivisionOverflow() {
+    int seed = Integer.MIN_VALUE + 17;
+    for (int count : List.of(Integer.MAX_VALUE - 2, Integer.MAX_VALUE - 1, Integer.MAX_VALUE)) {
+      for (Kind kind : Kind.values()) {
+        Fixture transformed = fixture(kind, 0, 1);
+        assertTrue(ExtendedAffineSummarization.run(transformed.function, analyses()));
+
+        int actual = execute(transformed.function, count, seed);
+        int expected = expected(kind, count, seed);
+        assertEquals(expected, actual, kind + " count=" + count);
+      }
+    }
+  }
+
+  @Test
+  void supportsPositiveStridesAndRebasesAtTheCurrentIteration() {
+    Fixture original = fixture(Kind.QUADRATIC, 2, 3);
+    Fixture transformed = fixture(Kind.QUADRATIC, 2, 3);
+
+    assertTrue(ExtendedAffineSummarization.run(transformed.function, analyses()));
+    IRVerifier.verifyFunction(transformed.function);
+    for (int bound : List.of(-1, 2, 3, 8, 29, 38, 41, 44, 47, 101)) {
+      for (int seed : List.of(Integer.MIN_VALUE, -3, 0, Integer.MAX_VALUE)) {
+        assertEquals(
+            execute(original.function, bound, seed),
+            execute(transformed.function, bound, seed),
+            () -> "bound=" + bound + " seed=" + seed);
+      }
+    }
+    assertTrue(transformed.function.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().contains("extended.affine.range")));
+  }
+
+  @Test
+  void doesNotProcessItsGeneratedSummaryAgainAndInvalidatesAnalysesOnChange() {
+    Fixture fixture = fixture(Kind.LINEAR, 0, 1);
+    int originalBlocks = fixture.function.getBlocks().size();
+
+    assertTrue(ExtendedAffineSummarization.run(fixture.function, analyses()));
+    int transformedBlocks = fixture.function.getBlocks().size();
+    assertTrue(transformedBlocks > originalBlocks);
+    assertFalse(ExtendedAffineSummarization.run(fixture.function, analyses()));
+    assertEquals(transformedBlocks, fixture.function.getBlocks().size());
+  }
+
+  @Test
+  void instrumentedPassReportsAppliedAndPreservesNoStaleAnalysis() {
+    Fixture fixture = fixture(Kind.ORDERED, 0, 1);
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    PreservedAnalyses preserved;
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      preserved = new ExtendedAffineSummarization.Pass(
+          instrumentation, ExtendedAffineSummarizationCandidate.descriptor(), 1)
+          .run(fixture.function, analyses());
+    }
+
+    assertTrue(preserved.preservesNone());
+    assertEquals(List.of(DecisionStatus.CANDIDATE, DecisionStatus.APPLIED), remarks.stream()
+        .map(DecisionRemark.class::cast).map(DecisionRemark::decision).toList());
+    IRVerifier.verifyFunction(fixture.function);
+  }
+
+  private static Fixture fixture(Kind kind, int inductionStart, int inductionStep) {
+    Function function = new Function("extended_" + kind.name().toLowerCase(), Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value seed = function.addArgument(Type.INT, "seed");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction first = headerBuilder.createPhi(Type.INT);
+    Instruction second = kind == Kind.ORDERED
+        ? headerBuilder.createPhi(Type.INT) : null;
+    Instruction induction = headerBuilder.createPhi(Type.INT);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", induction, bound), body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction nextFirst;
+    Instruction nextSecond = null;
+    switch (kind) {
+      case LINEAR -> {
+        Value linear = bodyBuilder.createAdd(
+            bodyBuilder.createMul(Constant.intConst(3), induction), Constant.intConst(5));
+        nextFirst = bodyBuilder.createAdd(first, linear);
+      }
+      case QUADRATIC -> {
+        Value square = bodyBuilder.createMul(induction, induction);
+        Value linear = bodyBuilder.createMul(Constant.intConst(2), induction);
+        Value polynomial = bodyBuilder.createAdd(
+            bodyBuilder.createAdd(square, linear), Constant.intConst(1));
+        nextFirst = bodyBuilder.createAdd(first, polynomial);
+      }
+      case ORDERED -> {
+        nextFirst = bodyBuilder.createAdd(first, Constant.intConst(2));
+        nextSecond = bodyBuilder.createAdd(second, nextFirst);
+      }
+      default -> throw new AssertionError(kind);
+    }
+    Instruction nextInduction = bodyBuilder.createAdd(
+        induction, Constant.intConst(inductionStep));
+    bodyBuilder.createBr(header);
+
+    first.addOperand(seed);
+    first.addOperand(entry);
+    first.addOperand(nextFirst);
+    first.addOperand(body);
+    if (second != null) {
+      second.addOperand(Constant.intConst(0));
+      second.addOperand(entry);
+      second.addOperand(nextSecond);
+      second.addOperand(body);
+    }
+    induction.addOperand(Constant.intConst(inductionStart));
+    induction.addOperand(entry);
+    induction.addOperand(nextInduction);
+    induction.addOperand(body);
+    new IRBuilder(exit).createRet(second == null ? first : second);
+    IRVerifier.verifyFunction(function);
+    return new Fixture(function);
+  }
+
+  private static FunctionAnalysisManager analyses() {
+    return new PassBuilder().buildFunctionAnalysisManager();
+  }
+
+  private static int execute(Function function, int bound, int seed) {
+    Map<Value, Integer> values = new IdentityHashMap<>();
+    values.put(function.getArguments().get(0), bound);
+    values.put(function.getArguments().get(1), seed);
+    BasicBlock block = function.getEntryBlock();
+    BasicBlock predecessor = null;
+    for (int steps = 0; steps < 100_000; steps++) {
+      BasicBlock current = block;
+      Map<Instruction, Integer> phiValues = new IdentityHashMap<>();
+      for (Instruction instruction : current.getInstructions()) {
+        if (instruction.getOpcode() != Instruction.Opcode.PHI) break;
+        phiValues.put(instruction, incoming(instruction, predecessor, values));
+      }
+      values.putAll(phiValues);
+      for (Instruction instruction : current.getInstructions()) {
+        switch (instruction.getOpcode()) {
+          case PHI -> { }
+          case ADD -> values.put(instruction,
+              value(instruction.getOperand(0), values) + value(instruction.getOperand(1), values));
+          case SUB -> values.put(instruction,
+              value(instruction.getOperand(0), values) - value(instruction.getOperand(1), values));
+          case MUL -> values.put(instruction,
+              value(instruction.getOperand(0), values) * value(instruction.getOperand(1), values));
+          case SDIV -> values.put(instruction,
+              value(instruction.getOperand(0), values) / value(instruction.getOperand(1), values));
+          case SREM -> values.put(instruction,
+              value(instruction.getOperand(0), values) % value(instruction.getOperand(1), values));
+          case AND -> values.put(instruction,
+              value(instruction.getOperand(0), values) & value(instruction.getOperand(1), values));
+          case ZEXT -> values.put(instruction, value(instruction.getOperand(0), values));
+          case ICMP -> values.put(instruction,
+              compare(instruction.getPredicate(),
+                  value(instruction.getOperand(0), values),
+                  value(instruction.getOperand(1), values)) ? 1 : 0);
+          case BR -> {
+            predecessor = current;
+            block = (BasicBlock) instruction.getOperand(0);
+          }
+          case CONDBR -> {
+            predecessor = current;
+            block = (BasicBlock) instruction.getOperand(
+                value(instruction.getOperand(0), values) != 0 ? 1 : 2);
+          }
+          case RET -> {
+            return value(instruction.getOperand(0), values);
+          }
+          default -> throw new AssertionError("unsupported test opcode " + instruction.getOpcode());
+        }
+      }
+    }
+    throw new AssertionError("test IR did not terminate");
+  }
+
+  private static int incoming(
+      Instruction phi, BasicBlock predecessor, Map<Value, Integer> values) {
+    for (int index = 0; index < phi.getNumOperands(); index += 2) {
+      if (phi.getOperand(index + 1) == predecessor) return value(phi.getOperand(index), values);
+    }
+    throw new AssertionError("missing phi predecessor");
+  }
+
+  private static int value(Value value, Map<Value, Integer> values) {
+    if (value instanceof Constant.Int integer) return Math.toIntExact(integer.value);
+    Integer result = values.get(value);
+    if (result == null) throw new AssertionError("missing test value " + value);
+    return result;
+  }
+
+  private static boolean compare(String predicate, int left, int right) {
+    return switch (predicate) {
+      case "eq" -> left == right;
+      case "ne" -> left != right;
+      case "slt" -> left < right;
+      case "sle" -> left <= right;
+      case "sgt" -> left > right;
+      case "sge" -> left >= right;
+      default -> throw new AssertionError("unsupported predicate " + predicate);
+    };
+  }
+
+  private static int expected(Kind kind, int count, int seed) {
+    BigInteger n = BigInteger.valueOf(count);
+    BigInteger result = switch (kind) {
+      case LINEAR -> BigInteger.valueOf(seed)
+          .add(BigInteger.valueOf(3).multiply(n.multiply(n.subtract(BigInteger.ONE)).divide(
+              BigInteger.TWO)))
+          .add(BigInteger.valueOf(5).multiply(n));
+      case QUADRATIC -> BigInteger.valueOf(seed)
+          .add(n.multiply(n.add(BigInteger.ONE)).multiply(
+              n.shiftLeft(1).add(BigInteger.ONE)).divide(BigInteger.valueOf(6)));
+      case ORDERED -> n.multiply(BigInteger.valueOf(seed))
+          .add(n.multiply(n.add(BigInteger.ONE)));
+    };
+    return result.intValue();
+  }
+
+  private enum Kind { LINEAR, QUADRATIC, ORDERED }
+
+  private record Fixture(Function function) {}
+}

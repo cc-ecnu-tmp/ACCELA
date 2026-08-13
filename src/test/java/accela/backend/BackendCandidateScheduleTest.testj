@@ -1,0 +1,216 @@
+package accela.backend;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.instrument.BackendPassInstrumentation;
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.pass.PassDescriptor;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.pass.instrument.DecisionReasonCode;
+import accela.pass.instrument.DecisionRemark;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.instrument.PassRemark;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
+import org.junit.jupiter.api.Test;
+
+final class BackendCandidateScheduleTest {
+  @Test
+  void reservesDefaultOffCandidateWithoutConstructingItAndValidatesItsAnchor() {
+    PassDescriptor anchor = new PassDescriptor(
+        "backend.test-anchor", "backend.test-anchor", "Test backend anchor",
+        PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.PRODUCTION, false, null, List.of());
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.backend.test-pass", "candidate.backend.test-pass",
+        "Test backend candidate", PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.backend.test-pass.valid-machine-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, candidate));
+    AtomicInteger constructions = new AtomicInteger();
+
+    BackendPipeline.Schedule disabled =
+        new BackendPipeline.Schedule(PipelineProfile.full(registry));
+    disabled.reserve(anchor.id(), PassDescriptor.Stage.BACKEND_FUNCTION);
+    var disabledStage = disabled.candidateFunction(candidate.id(), (descriptor, occurrence) -> {
+      constructions.incrementAndGet();
+      return "disabled";
+    });
+    disabled.verifyComplete();
+    assertTrue(disabledStage.isEmpty());
+    assertEquals(0, constructions.get());
+    assertThrows(IllegalArgumentException.class,
+        () -> disabled.reserve(candidate.id(), PassDescriptor.Stage.BACKEND_FUNCTION));
+
+    PipelineProfile enabledProfile = PipelineProfile.builder(registry)
+        .enableCandidate(candidate.id()).build();
+    BackendPipeline.Schedule enabled = new BackendPipeline.Schedule(enabledProfile);
+    enabled.reserve(anchor.id(), PassDescriptor.Stage.BACKEND_FUNCTION);
+    var enabledStage = enabled.candidateFunction(candidate.id(), (descriptor, occurrence) -> {
+      constructions.incrementAndGet();
+      return "enabled";
+    });
+    enabled.verifyComplete();
+    assertTrue(enabledStage.isPresent());
+    assertEquals("enabled", enabledStage.orElseThrow().pass());
+    assertEquals(1, constructions.get());
+
+    BackendPipeline.Schedule wrongOrder =
+        new BackendPipeline.Schedule(PipelineProfile.full(registry));
+    var ignored = wrongOrder.candidateFunction(
+        candidate.id(), (descriptor, occurrence) -> "not-created");
+    assertFalse(ignored.isPresent());
+    wrongOrder.reserve(anchor.id(), PassDescriptor.Stage.BACKEND_FUNCTION);
+    assertThrows(IllegalStateException.class, wrongOrder::verifyComplete);
+  }
+
+  @Test
+  void backendModuleCandidatesAreRejectedUntilTheyHaveATypedStateContract() {
+    PassDescriptor anchor = new PassDescriptor(
+        "backend.test-module-anchor", "backend.test-module-anchor",
+        "Test backend module anchor", PassDescriptor.Stage.BACKEND_MODULE, 1,
+        PassDescriptor.Lifecycle.PRODUCTION, false, null, List.of());
+    IllegalArgumentException error = assertThrows(
+        IllegalArgumentException.class,
+        () -> new PassDescriptor(
+            "candidate.backend.test-module-pass", "candidate.backend.test-module-pass",
+            "Test backend module candidate", PassDescriptor.Stage.BACKEND_MODULE, 1,
+            PassDescriptor.Lifecycle.CANDIDATE, true,
+            new PassDescriptor.CandidateAnchor(
+                anchor.id(), 1, PassDescriptor.AnchorPosition.BEFORE),
+            List.of("candidate.backend.test-module-pass.valid-machine-module")));
+    assertTrue(error.getMessage().contains("backend-module candidates are unsupported"));
+  }
+
+  @Test
+  void candidatesSharingABackendAnchorMustFollowRegistryOrder() {
+    PassDescriptor anchor = new PassDescriptor(
+        "backend.test-anchor", "backend.test-anchor", "Test backend anchor",
+        PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.PRODUCTION, false, null, List.of());
+    PassDescriptor.CandidateAnchor placement = new PassDescriptor.CandidateAnchor(
+        anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER);
+    PassDescriptor first = new PassDescriptor(
+        "candidate.backend.first", "candidate.backend.first", "First backend candidate",
+        PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.CANDIDATE, true, placement,
+        List.of("candidate.backend.first.valid-shape"));
+    PassDescriptor second = new PassDescriptor(
+        "candidate.backend.second", "candidate.backend.second", "Second backend candidate",
+        PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.CANDIDATE, true, placement,
+        List.of("candidate.backend.second.valid-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, first, second));
+    BackendPipeline.Schedule schedule =
+        new BackendPipeline.Schedule(PipelineProfile.full(registry));
+
+    schedule.reserve(anchor.id(), PassDescriptor.Stage.BACKEND_FUNCTION);
+    schedule.candidateFunction(second.id(), (descriptor, occurrence) -> "not-created");
+    schedule.candidateFunction(first.id(), (descriptor, occurrence) -> "not-created");
+
+    IllegalStateException exception =
+        assertThrows(IllegalStateException.class, schedule::verifyComplete);
+    assertTrue(exception.getMessage().contains("must follow registry order"));
+  }
+
+  @Test
+  void enabledBackendCandidateExecutesWithPairedDecisionsAndAnObservedSummary() {
+    PassDescriptor anchor = new PassDescriptor(
+        "backend.test-anchor", "backend.test-anchor", "Test backend anchor",
+        PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.PRODUCTION, false, null, List.of());
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.backend.test-pass", "candidate.backend.test-pass",
+        "Test backend candidate", PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.backend.test-pass.valid-machine-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, candidate));
+    PipelineProfile profile = PipelineProfile.builder(registry)
+        .enableCandidate(candidate.id())
+        .build();
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    MachineFunction function = new MachineFunction("candidate", MachineType.I32);
+    var entry = function.addBlock("entry");
+
+    try (BackendPassInstrumentation instrumentation =
+        BackendPassInstrumentation.observed(remarks::add)) {
+      BackendPipeline.Schedule schedule = new BackendPipeline.Schedule(profile);
+      schedule.reserve(anchor.id(), PassDescriptor.Stage.BACKEND_FUNCTION);
+      var stage = schedule.candidateFunction(candidate.id(), (descriptor, occurrence) ->
+          (BooleanSupplier) () -> {
+            var decisions = instrumentation.decisionEmitter(
+                descriptor, occurrence, "machine_function", "@candidate");
+            decisions.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+            var register = function.createVirtualRegister(MachineType.I32, "synthetic");
+            MachineInstr constant = new MachineInstr(MachineOpcode.CONST_INT, register);
+            constant.setType(MachineType.I32);
+            constant.addOperand(new ImmOperand(1));
+            entry.addInstruction(constant);
+            decisions.applied(DecisionReasonCode.APPLIED_PROFITABLE);
+            return true;
+          }).orElseThrow();
+      schedule.verifyComplete();
+
+      instrumentation.runFunction(
+          stage.descriptor(), stage.occurrence(), function, stage.pass());
+    }
+
+    assertEquals(3, remarks.size());
+    assertEquals(accela.pass.instrument.DecisionStatus.CANDIDATE,
+        ((DecisionRemark) remarks.get(0)).decision());
+    assertEquals(accela.pass.instrument.DecisionStatus.APPLIED,
+        ((DecisionRemark) remarks.get(1)).decision());
+    PassRemark summary = (PassRemark) remarks.get(2);
+    assertTrue(summary.changed());
+    assertEquals(Long.valueOf(1), summary.delta().get("instructions"));
+    assertEquals(accela.pass.instrument.DecisionObservability.AVAILABLE,
+        summary.decisionObservability());
+  }
+
+  @Test
+  void automaticBackendCandidateProviderRejectsUnknownAndMissingEnabledFactories() {
+    PassDescriptor anchor = new PassDescriptor(
+        "backend.test-anchor", "backend.test-anchor", "Test backend anchor",
+        PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.PRODUCTION, false, null, List.of());
+    PassDescriptor candidate = new PassDescriptor(
+        "candidate.backend.test-pass", "candidate.backend.test-pass",
+        "Test backend candidate", PassDescriptor.Stage.BACKEND_FUNCTION, 1,
+        PassDescriptor.Lifecycle.CANDIDATE, true,
+        new PassDescriptor.CandidateAnchor(
+            anchor.id(), 1, PassDescriptor.AnchorPosition.AFTER),
+        List.of("candidate.backend.test-pass.valid-machine-shape"));
+    PassRegistry registry = PassRegistry.of(List.of(anchor, candidate));
+    PipelineProfile enabled = PipelineProfile.builder(registry)
+        .enableCandidate(candidate.id())
+        .build();
+    IllegalStateException missingError = assertThrows(
+        IllegalStateException.class,
+        () -> new BackendPipeline.Schedule(
+            enabled, BackendPipeline.CandidatePassProvider.empty()));
+    assertTrue(missingError.getMessage().contains(
+        "has no registered BACKEND_FUNCTION factory"));
+
+    BackendPipeline.CandidatePassProvider unknownProvider =
+        new BackendPipeline.CandidatePassProvider(Map.of(
+            "candidate.backend.unknown", (descriptor, occurrence) -> function -> false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new BackendPipeline.Schedule(PipelineProfile.full(registry), unknownProvider));
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-catalog.v1.json",
+  "title": "ACCELA experimental optimization candidate catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "catalog_id", "pass_registry_sha256", "candidates"],
+  "properties": {
+    "schema_version": {"const": "candidate-catalog.v1"},
+    "catalog_id": {"$ref": "#/$defs/id"},
+    "pass_registry_sha256": {"$ref": "#/$defs/sha256"},
+    "candidates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/candidate"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation_id", "description"],
+      "properties": {
+        "obligation_id": {"$ref": "#/$defs/id"},
+        "description": {"type": "string", "minLength": 1, "maxLength": 1024}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_id", "display_name", "description", "stage", "remark_pass_id",
+        "required_analyses", "legality_obligations", "oracle_family_ids",
+        "qualification_status", "implementation_status", "default_enabled"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "display_name": {"type": "string", "minLength": 1, "maxLength": 256},
+        "description": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "stage": {
+          "enum": ["ir_function", "ir_module", "backend_function"]
+        },
+        "remark_pass_id": {"$ref": "#/$defs/id"},
+        "required_analyses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "legality_obligations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/obligation"}
+        },
+        "oracle_family_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "qualification_status": {"const": "qualified"},
+        "implementation_status": {"const": "implemented"},
+        "default_enabled": {"const": false}
+      }
+    }
+  }
+}

@@ -1,13 +1,48 @@
-# TODO: come up with a name
+# ACCELA
 
-## Frontend
+ACCELA is a SysY compiler for RISC-V RV64GC. The competition-facing command is
+kept deliberately small and stable:
 
-### Lexer
+```sh
+./gradlew classes --no-daemon
+java -cp build/classes/java/main Compiler testcase.sy -S -o testcase.s -O1
+```
 
-### Parser
+JDK 21 is required. The default `Compiler` entry always uses the complete
+competition pipeline and does not emit benchmark diagnostics.
 
-#### AST Design
+## Compiler pipeline
 
-### Sema
+The frontend performs lexing, parsing, semantic analysis, and AST-to-SSA IR
+lowering. Registered IR and machine passes then optimize and lower the program
+to RV64GC assembly using the LP64D ABI and `medany` code model. Required
+lowering, SSA construction/destruction, register allocation, and assembly
+emission cannot be disabled.
 
-### IRBuilder
+`BenchmarkCompiler` is the development-only entry for deterministic pass
+profiles and JSONL optimization remarks. It does not change the formal compiler
+interface. See `docs/optimization/README.md` for the profile contract and
+reproducible benchmark workflow.
+
+## Correctness and proxy performance tools
+
+The clean-room SysY corpus under `benchmarks/` contains mature workload shapes,
+structural variants, and paired semantic oracles. Regenerate and verify it with:
+
+```sh
+python benchmarks/generate.py --check
+python -m unittest discover -s benchmarks/tests -v
+```
+
+The versioned benchmark CLI inventories official packages, runs compile/link/
+execute validation, records deterministic QEMU counters, produces ablation and
+Oracle analyses, and emits normalized reports:
+
+```sh
+python -m tools.benchmark --help
+```
+
+QEMU dynamic instructions, memory accesses, and the documented L1D model are
+proxy evidence only. They must not be reported as BOOM v3 or official contest
+cycle results. See `tools/qemu/README.md` for the bare-metal runtime and plugin
+measurement boundary.

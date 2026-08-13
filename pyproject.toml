@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools==83.0.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "accela-benchmark"
+version = "0.1.0"
+description = "Reproducible, privacy-preserving benchmark orchestration for ACCELA"
+requires-python = ">=3.11"
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "portalocker>=3.1,<4",
+  "psutil>=5.9,<8",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3,<9"]
+
+[project.scripts]
+accela-benchmark = "tools.benchmark.cli:main"
+accela-binary-analyzer = "tools.benchmark.binary_analyzer:main"
+
+[tool.setuptools.packages.find]
+include = ["tools.benchmark*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"tools.benchmark" = ["schemas/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tools/benchmark/tests"]
+addopts = "-q"

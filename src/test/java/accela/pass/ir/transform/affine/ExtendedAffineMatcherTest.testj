@@ -1,0 +1,228 @@
+package accela.pass.ir.transform.affine;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.PassBuilder;
+import accela.pass.PreservedAnalyses;
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import accela.pass.instrument.DecisionRemark;
+import accela.pass.instrument.DecisionStatus;
+import accela.pass.instrument.OptimizationRemark;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.util.StrictJson;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+final class ExtendedAffineMatcherTest {
+  @Test
+  void rejectsEveryDeclaredLegalityBoundaryWithItsExactObligation() {
+    List<RejectionCase> cases = List.of(
+        new RejectionCase(Shape.NON_CANONICAL, ExtendedAffineMatcher.Failure.CANONICAL_LOOP,
+            ExtendedAffineSummarizationCandidate.CANONICAL_LOOP),
+        new RejectionCase(Shape.NON_ADDITIVE, ExtendedAffineMatcher.Failure.SCEV_AFFINE_STATE,
+            ExtendedAffineSummarizationCandidate.SCEV_AFFINE_STATE),
+        new RejectionCase(Shape.DYNAMIC_STEP, ExtendedAffineMatcher.Failure.EXACT_TRIP_COUNT,
+            ExtendedAffineSummarizationCandidate.EXACT_TRIP_COUNT),
+        new RejectionCase(Shape.NEGATIVE_START,
+            ExtendedAffineMatcher.Failure.ZERO_NEGATIVE_ITERATIONS,
+            ExtendedAffineSummarizationCandidate.ZERO_NEGATIVE_ITERATIONS),
+        new RejectionCase(Shape.DEGREE_THREE,
+            ExtendedAffineMatcher.Failure.MODULO_I32_EQUIVALENCE,
+            ExtendedAffineSummarizationCandidate.MODULO_I32_EQUIVALENCE),
+        new RejectionCase(Shape.DIVISION,
+            ExtendedAffineMatcher.Failure.MODULO_I32_EQUIVALENCE,
+            ExtendedAffineSummarizationCandidate.MODULO_I32_EQUIVALENCE),
+        new RejectionCase(Shape.REMAINDER,
+            ExtendedAffineMatcher.Failure.MODULO_I32_EQUIVALENCE,
+            ExtendedAffineSummarizationCandidate.MODULO_I32_EQUIVALENCE),
+        new RejectionCase(Shape.SIDE_EFFECT,
+            ExtendedAffineMatcher.Failure.SIDE_EFFECT_FREE_BODY,
+            ExtendedAffineSummarizationCandidate.SIDE_EFFECT_FREE_BODY),
+        new RejectionCase(Shape.NO_LIVE_OUT, ExtendedAffineMatcher.Failure.LIVE_OUTS,
+            ExtendedAffineSummarizationCandidate.LIVE_OUTS));
+
+    for (RejectionCase rejection : cases) {
+      Function function = fixture(rejection.shape, 1);
+      FunctionAnalysisManager analyses = analyses();
+      ScalarEvolutionAnalysis.Result scev =
+          analyses.getResult(ScalarEvolutionAnalysis.class, function);
+      ExtendedAffineMatcher.Inspection inspection =
+          ExtendedAffineMatcher.inspect(scev.getLoopInfo().loops().getFirst(), scev);
+
+      assertFalse(inspection.matched(), rejection.shape.toString());
+      assertEquals(rejection.failure, inspection.failure(), rejection.shape.toString());
+      assertEquals(
+          List.of(DecisionStatus.CANDIDATE, DecisionStatus.REJECTED),
+          decisions(function).stream().map(DecisionRemark::decision).toList(),
+          rejection.shape.toString());
+      assertEquals(rejection.obligation,
+          decisions(function).getLast().legalityObligationId(), rejection.shape.toString());
+    }
+  }
+
+  @Test
+  void rejectsCyclicOrderedStateAndUnprofitableExpansion() {
+    Function cyclic = fixture(Shape.CYCLIC, 2);
+    ScalarEvolutionAnalysis.Result cyclicScev =
+        analyses().getResult(ScalarEvolutionAnalysis.class, cyclic);
+    assertFalse(ExtendedAffineMatcher.inspect(
+        cyclicScev.getLoopInfo().loops().getFirst(), cyclicScev).matched());
+
+    Function tooMany = fixture(Shape.QUADRATIC, 10);
+    ScalarEvolutionAnalysis.Result scev =
+        analyses().getResult(ScalarEvolutionAnalysis.class, tooMany);
+    ExtendedAffineMatcher.Inspection inspection = ExtendedAffineMatcher.inspect(
+        scev.getLoopInfo().loops().getFirst(), scev);
+    assertTrue(inspection.matched());
+    assertFalse(ExtendedAffineProfitability.assess(inspection.plan()).profitable());
+    List<DecisionRemark> decisions = decisions(tooMany);
+    assertEquals(ExtendedAffineSummarizationCandidate.PROFITABILITY,
+        decisions.getLast().legalityObligationId());
+  }
+
+  @Test
+  void descriptorMatchesTheFrozenScreeningContractAndStableAnchor() {
+    var descriptor = ExtendedAffineSummarizationCandidate.descriptor();
+
+    assertEquals(ExtendedAffineSummarizationCandidate.ID, descriptor.id());
+    assertEquals(ExtendedAffineSummarizationCandidate.LEGALITY_OBLIGATIONS,
+        descriptor.legalityObligationIds());
+    assertEquals(accela.pass.PassDescriptor.Lifecycle.CANDIDATE, descriptor.lifecycle());
+    assertEquals(accela.pass.PassDescriptor.Stage.IR_FUNCTION, descriptor.stage());
+    assertEquals(1, descriptor.fullPipelineOccurrences());
+    assertTrue(descriptor.decisionObservable());
+    assertFalse(descriptor.defaultEnabled());
+    assertEquals(accela.pass.PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
+        descriptor.candidateAnchor().passId());
+    assertEquals(accela.pass.PassDescriptor.AnchorPosition.AFTER,
+        descriptor.candidateAnchor().position());
+  }
+
+  @Test
+  void descriptorObligationsExactlyMatchTheQualifiedScreeningEvidence() throws Exception {
+    Map<?, ?> screening = (Map<?, ?>) StrictJson.parse(Files.readString(
+        Path.of("docs", "optimization", "data", "candidates", "candidate-screening.v1.json"),
+        StandardCharsets.UTF_8));
+    Map<?, ?> screened = ((List<?>) screening.get("candidates")).stream()
+        .map(item -> (Map<?, ?>) item)
+        .filter(candidate -> ExtendedAffineSummarizationCandidate.ID.equals(
+            candidate.get("implementation_candidate_id")))
+        .findFirst().orElseThrow();
+
+    assertEquals("qualified", screened.get("qualification_status"));
+    assertEquals(ExtendedAffineSummarizationCandidate.LEGALITY_OBLIGATIONS,
+        screened.get("legality_obligation_ids"));
+  }
+
+  private static List<DecisionRemark> decisions(Function function) {
+    List<OptimizationRemark> remarks = new ArrayList<>();
+    PreservedAnalyses preserved;
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      preserved = new ExtendedAffineSummarization.Pass(
+          instrumentation, ExtendedAffineSummarizationCandidate.descriptor(), 1)
+          .run(function, analyses());
+    }
+    assertTrue(preserved.preservesAll());
+    return remarks.stream().map(DecisionRemark.class::cast).toList();
+  }
+
+  private static Function fixture(Shape shape, int stateCount) {
+    Function function = new Function("reject_" + shape.name().toLowerCase(), Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value seed = function.addArgument(Type.INT, "seed");
+    Value dynamicStep = function.addArgument(Type.INT, "step");
+    Value storage = function.addArgument(Type.PTR, "storage");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    List<Instruction> states = new ArrayList<>();
+    for (int index = 0; index < stateCount; index++) {
+      states.add(headerBuilder.createPhi(Type.INT));
+    }
+    Instruction induction = headerBuilder.createPhi(Type.INT);
+    Instruction compare = headerBuilder.createICmp(
+        shape == Shape.NON_CANONICAL ? "sle" : "slt", induction, bound);
+    headerBuilder.createCondBr(compare, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    List<Instruction> updates = new ArrayList<>();
+    for (int index = 0; index < stateCount; index++) {
+      Instruction state = states.get(index);
+      Value delta;
+      switch (shape) {
+        case DEGREE_THREE -> delta = bodyBuilder.createMul(
+            bodyBuilder.createMul(induction, induction), induction);
+        case DIVISION -> delta = bodyBuilder.createSDiv(induction, Constant.intConst(3));
+        case REMAINDER -> delta = bodyBuilder.createSRem(induction, Constant.intConst(3));
+        case QUADRATIC -> delta = bodyBuilder.createMul(induction, induction);
+        case CYCLIC -> delta = states.get((index + 1) % stateCount);
+        default -> delta = induction;
+      }
+      Instruction update = shape == Shape.NON_ADDITIVE
+          ? bodyBuilder.createMul(state, Constant.intConst(2))
+          : bodyBuilder.createAdd(state, delta);
+      updates.add(update);
+    }
+    if (shape == Shape.SIDE_EFFECT) bodyBuilder.createStore(updates.getFirst(), storage);
+    Instruction nextInduction = shape == Shape.DYNAMIC_STEP
+        ? bodyBuilder.createAdd(induction, dynamicStep)
+        : bodyBuilder.createAdd(induction, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+
+    for (int index = 0; index < stateCount; index++) {
+      states.get(index).addOperand(index == 0 ? seed : Constant.intConst(index));
+      states.get(index).addOperand(entry);
+      states.get(index).addOperand(updates.get(index));
+      states.get(index).addOperand(body);
+    }
+    induction.addOperand(Constant.intConst(shape == Shape.NEGATIVE_START ? -1 : 0));
+    induction.addOperand(entry);
+    induction.addOperand(nextInduction);
+    induction.addOperand(body);
+    new IRBuilder(exit).createRet(shape == Shape.NO_LIVE_OUT
+        ? Constant.intConst(0) : states.getFirst());
+    return function;
+  }
+
+  private static FunctionAnalysisManager analyses() {
+    return new PassBuilder().buildFunctionAnalysisManager();
+  }
+
+  private enum Shape {
+    NON_CANONICAL,
+    NON_ADDITIVE,
+    DYNAMIC_STEP,
+    NEGATIVE_START,
+    DEGREE_THREE,
+    DIVISION,
+    REMAINDER,
+    SIDE_EFFECT,
+    NO_LIVE_OUT,
+    CYCLIC,
+    QUADRATIC
+  }
+
+  private record RejectionCase(
+      Shape shape, ExtendedAffineMatcher.Failure failure, String obligation) {}
+}

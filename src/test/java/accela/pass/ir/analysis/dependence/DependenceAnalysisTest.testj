@@ -63,6 +63,105 @@ final class DependenceAnalysisTest {
     assertFalse(fixture.analyze().isSafeToJam(0, 1, 1, 4));
   }
 
+  @Test
+  void provesSameIterationFusionAndRejectsFutureProducerDependence() {
+    GlobalVariable values =
+        new GlobalVariable("values", Type.array(Type.INT, 32),
+            Constant.zero(Type.array(Type.INT, 32)), false);
+    BasicBlock first = new BasicBlock("first");
+    BasicBlock second = new BasicBlock("second");
+    Instruction firstIv = Instruction.createPhi(Type.INT);
+    Instruction secondIv = Instruction.createPhi(Type.INT);
+    first.addInstruction(firstIv);
+    second.addInstruction(secondIv);
+    IRBuilder firstBuilder = new IRBuilder(first);
+    IRBuilder secondBuilder = new IRBuilder(second);
+    Value firstAddress = firstBuilder.createGEP(
+        values.getValueType(), values,
+        new Value[] {Constant.int64Const(0), firstIv}, true);
+    firstBuilder.createStore(Constant.intConst(7), firstAddress);
+    Value sameAddress = secondBuilder.createGEP(
+        values.getValueType(), values,
+        new Value[] {Constant.int64Const(0), secondIv}, true);
+    secondBuilder.createLoad(Type.INT, sameAddress);
+
+    assertEquals(
+        DependenceAnalysis.FusionSafety.SAFE,
+        DependenceAnalysis.classifySequentialFusion(
+            firstIv, List.of(first), secondIv, List.of(second)));
+    assertTrue(DependenceAnalysis.isSameIterationAddress(
+        firstAddress, firstIv, sameAddress, secondIv));
+
+    BasicBlock futureSecond = new BasicBlock("future.second");
+    Instruction futureIv = Instruction.createPhi(Type.INT);
+    futureSecond.addInstruction(futureIv);
+    IRBuilder futureBuilder = new IRBuilder(futureSecond);
+    Value next = futureBuilder.createAdd(futureIv, Constant.intConst(1));
+    Value futureAddress = futureBuilder.createGEP(
+        values.getValueType(), values,
+        new Value[] {Constant.int64Const(0), next}, true);
+    futureBuilder.createLoad(Type.INT, futureAddress);
+    assertEquals(
+        DependenceAnalysis.FusionSafety.ORDER_VIOLATION,
+        DependenceAnalysis.classifySequentialFusion(
+            firstIv, List.of(first), futureIv, List.of(futureSecond)));
+  }
+
+  @Test
+  void rejectsPotentiallyAliasingArgumentRootsForFusion() {
+    accela.ir.Function function = new accela.ir.Function("alias", Type.INT);
+    Value leftRoot = function.addArgument(Type.PTR, "left");
+    Value rightRoot = function.addArgument(Type.PTR, "right");
+    BasicBlock first = function.addBlock("first");
+    BasicBlock second = function.addBlock("second");
+    Instruction firstIv = Instruction.createPhi(Type.INT);
+    Instruction secondIv = Instruction.createPhi(Type.INT);
+    first.addInstruction(firstIv);
+    second.addInstruction(secondIv);
+    IRBuilder firstBuilder = new IRBuilder(first);
+    IRBuilder secondBuilder = new IRBuilder(second);
+    firstBuilder.createStore(
+        Constant.intConst(1),
+        firstBuilder.createGEP(Type.INT, leftRoot, new Value[] {firstIv}, true));
+    secondBuilder.createLoad(
+        Type.INT,
+        secondBuilder.createGEP(Type.INT, rightRoot, new Value[] {secondIv}, true));
+
+    assertEquals(
+        DependenceAnalysis.FusionSafety.UNKNOWN_ALIAS_OR_MODREF,
+        DependenceAnalysis.classifySequentialFusion(
+            firstIv, List.of(first), secondIv, List.of(second)));
+  }
+
+  @Test
+  void rejectsCrossIterationAntiDependenceForFusion() {
+    Type array = Type.array(Type.INT, 32);
+    GlobalVariable values =
+        new GlobalVariable("anti", array, Constant.zero(array), false);
+    BasicBlock first = new BasicBlock("anti.first");
+    BasicBlock second = new BasicBlock("anti.second");
+    Instruction firstIv = Instruction.createPhi(Type.INT);
+    Instruction secondIv = Instruction.createPhi(Type.INT);
+    first.addInstruction(firstIv);
+    second.addInstruction(secondIv);
+    IRBuilder firstBuilder = new IRBuilder(first);
+    IRBuilder secondBuilder = new IRBuilder(second);
+    firstBuilder.createLoad(
+        Type.INT,
+        firstBuilder.createGEP(
+            array, values, new Value[] {Constant.int64Const(0), firstIv}, true));
+    Value futureIndex = secondBuilder.createAdd(secondIv, Constant.intConst(1));
+    secondBuilder.createStore(
+        Constant.intConst(9),
+        secondBuilder.createGEP(
+            array, values, new Value[] {Constant.int64Const(0), futureIndex}, true));
+
+    assertEquals(
+        DependenceAnalysis.FusionSafety.ORDER_VIOLATION,
+        DependenceAnalysis.classifySequentialFusion(
+            firstIv, List.of(first), secondIv, List.of(second)));
+  }
+
   private static final class Fixture {
     final GlobalVariable matrix =
         new GlobalVariable("matrix", MATRIX, Constant.zero(MATRIX), false);

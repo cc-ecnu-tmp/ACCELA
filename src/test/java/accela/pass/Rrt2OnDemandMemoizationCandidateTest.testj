@@ -1,0 +1,106 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.transform.recurrence.Rrt2OnDemandMemoization;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class Rrt2OnDemandMemoizationCandidateTest {
+  @Test
+  void descriptorMatchesTheQualifiedScreeningContractAndCentralRegistry() {
+    PassDescriptor descriptor = Rrt2OnDemandMemoizationCandidate.descriptor();
+
+    assertEquals("candidate.rrt2-on-demand-memoization", descriptor.id());
+    assertEquals(PassDescriptor.Stage.IR_MODULE, descriptor.stage());
+    assertEquals(PassDescriptor.Lifecycle.CANDIDATE, descriptor.lifecycle());
+    assertEquals(1, descriptor.fullPipelineOccurrences());
+    assertTrue(descriptor.decisionObservable());
+    assertFalse(descriptor.defaultEnabled());
+    assertEquals(
+        new PassDescriptor.CandidateAnchor(
+            PassRegistry.IR_RANKED_RECURRENCE_TABULATION,
+            1,
+            PassDescriptor.AnchorPosition.BEFORE),
+        descriptor.candidateAnchor());
+    assertEquals(List.of(
+        "candidate.rrt2-on-demand-memoization.direct-finite-recursion",
+        "candidate.rrt2-on-demand-memoization.composite-well-founded-rank",
+        "candidate.rrt2-on-demand-memoization.pure-context",
+        "candidate.rrt2-on-demand-memoization.reachable-domain",
+        "candidate.rrt2-on-demand-memoization.memo-key-injective",
+        "candidate.rrt2-on-demand-memoization.base-case-order",
+        "candidate.rrt2-on-demand-memoization.modulo-i32-equivalence",
+        "candidate.rrt2-on-demand-memoization.bounded-storage",
+        "candidate.rrt2-on-demand-memoization.no-abi-runtime-change",
+        "candidate.rrt2-on-demand-memoization.profitability"),
+        descriptor.legalityObligationIds());
+    assertSame(descriptor, PassRegistry.standard().require(descriptor.id()));
+  }
+
+  @Test
+  void passRejectsEveryNonCanonicalDescriptorAndOccurrence() {
+    PassDescriptor canonical = Rrt2OnDemandMemoizationCandidate.descriptor();
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, ignored -> {})) {
+      assertThrows(IllegalArgumentException.class, () -> new Rrt2OnDemandMemoization(
+          instrumentation,
+          copy(canonical, canonical.logicalFamilyId(), canonical.displayName() + " altered",
+              canonical.stage(), canonical.candidateAnchor(), canonical.legalityObligationIds()),
+          1));
+      assertThrows(IllegalArgumentException.class, () -> new Rrt2OnDemandMemoization(
+          instrumentation,
+          copy(canonical, "candidate.rrt2-alternate-family", canonical.displayName(),
+              canonical.stage(), canonical.candidateAnchor(), canonical.legalityObligationIds()),
+          1));
+      assertThrows(IllegalArgumentException.class, () -> new Rrt2OnDemandMemoization(
+          instrumentation,
+          copy(canonical, canonical.logicalFamilyId(), canonical.displayName(),
+              PassDescriptor.Stage.IR_FUNCTION, canonical.candidateAnchor(),
+              canonical.legalityObligationIds()),
+          1));
+      assertThrows(IllegalArgumentException.class, () -> new Rrt2OnDemandMemoization(
+          instrumentation,
+          copy(canonical, canonical.logicalFamilyId(), canonical.displayName(), canonical.stage(),
+              new PassDescriptor.CandidateAnchor(
+                  PassRegistry.IR_RANKED_RECURRENCE_TABULATION,
+                  1,
+                  PassDescriptor.AnchorPosition.AFTER),
+              canonical.legalityObligationIds()),
+          1));
+      assertThrows(IllegalArgumentException.class, () -> new Rrt2OnDemandMemoization(
+          instrumentation,
+          copy(canonical, canonical.logicalFamilyId(), canonical.displayName(), canonical.stage(),
+              canonical.candidateAnchor(),
+              canonical.legalityObligationIds().subList(
+                  0, canonical.legalityObligationIds().size() - 1)),
+          1));
+      assertThrows(IllegalArgumentException.class, () ->
+          new Rrt2OnDemandMemoization(instrumentation, canonical, 2));
+    }
+  }
+
+  private static PassDescriptor copy(
+      PassDescriptor source,
+      String family,
+      String displayName,
+      PassDescriptor.Stage stage,
+      PassDescriptor.CandidateAnchor anchor,
+      List<String> obligations) {
+    return new PassDescriptor(
+        source.id(),
+        family,
+        displayName,
+        stage,
+        source.fullPipelineOccurrences(),
+        source.lifecycle(),
+        source.decisionObservable(),
+        anchor,
+        obligations);
+  }
+}

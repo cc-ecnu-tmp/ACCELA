@@ -1,0 +1,28 @@
+{
+  "schema": "candidate-python-inventory.v1",
+  "platform": {
+    "machine": "x86_64",
+    "system": "Linux"
+  },
+  "python": {
+    "implementation": "CPython",
+    "version": "3.14.6"
+  },
+  "distributions": [
+    {"name": "accela-benchmark", "version": "0.1.0"},
+    {"name": "attrs", "version": "26.1.0"},
+    {"name": "iniconfig", "version": "2.3.0"},
+    {"name": "jsonschema", "version": "4.26.0"},
+    {"name": "jsonschema-specifications", "version": "2025.9.1"},
+    {"name": "packaging", "version": "26.3"},
+    {"name": "pip", "version": "26.1.2"},
+    {"name": "pluggy", "version": "1.6.0"},
+    {"name": "portalocker", "version": "3.2.0"},
+    {"name": "psutil", "version": "7.2.2"},
+    {"name": "pygments", "version": "2.20.0"},
+    {"name": "pytest", "version": "8.4.2"},
+    {"name": "referencing", "version": "0.37.0"},
+    {"name": "rpds-py", "version": "2026.6.3"},
+    {"name": "setuptools", "version": "83.0.0"}
+  ]
+}

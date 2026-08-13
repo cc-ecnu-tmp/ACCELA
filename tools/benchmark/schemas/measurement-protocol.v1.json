@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/measurement-protocol.v1.json",
+  "title": "ACCELA RV64GC QEMU measurement protocol snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "protocol_id", "measurement_mode", "target", "abi", "code_model",
+    "input_transport", "sources", "plugin_binaries", "qemu", "cache_model"
+  ],
+  "properties": {
+    "schema_version": {"const": "measurement-protocol.v1"},
+    "protocol_id": {"$ref": "#/$defs/id"},
+    "measurement_mode": {"enum": ["standard_proxy", "cache_hotblock"]},
+    "target": {"const": "rv64gc"},
+    "abi": {"const": "lp64d"},
+    "code_model": {"const": "medany"},
+    "input_transport": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "kind", "item_name", "exact_bytes", "eof", "max_input_size_bytes",
+        "guest_buffer_size_bytes", "guest_buffer_section", "transport_section_size_bytes"
+      ],
+      "properties": {
+        "kind": {"const": "fw_cfg_dma"},
+        "item_name": {"const": "opt/accela/sysy-input"},
+        "exact_bytes": {"const": true},
+        "eof": {"const": "size_delimited"},
+        "max_input_size_bytes": {"const": 4294967295},
+        "guest_buffer_size_bytes": {"const": 4096},
+        "guest_buffer_section": {"const": ".sysy_input_transport"},
+        "transport_section_size_bytes": {"const": 4112}
+      }
+    },
+    "sources": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "profile_plugin_sha256", "cache_plugin_sha256", "hotblocks_plugin_sha256",
+        "runtime_filter_sha256", "runtime_sha256", "crt_sha256", "linker_script_sha256"
+      ],
+      "properties": {
+        "profile_plugin_sha256": {"$ref": "#/$defs/sha256"},
+        "cache_plugin_sha256": {"$ref": "#/$defs/sha256"},
+        "hotblocks_plugin_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_filter_sha256": {"$ref": "#/$defs/sha256"},
+        "runtime_sha256": {"$ref": "#/$defs/sha256"},
+        "crt_sha256": {"$ref": "#/$defs/sha256"},
+        "linker_script_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "plugin_binaries": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_sha256", "cache_sha256", "hotblocks_sha256"],
+      "properties": {
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "cache_sha256": {"$ref": "#/$defs/sha256"},
+        "hotblocks_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "qemu": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "binary_sha256", "version", "machine", "cpu_model", "accelerator",
+        "memory", "plugin_log_flags", "runner_command_sha256", "runner_executable_sha256",
+        "runner_adapter", "wsl_distribution_sha256"
+      ],
+      "properties": {
+        "binary_sha256": {"$ref": "#/$defs/sha256"},
+        "version": {"type": "string", "minLength": 1, "maxLength": 256},
+        "machine": {"type": "string", "minLength": 1, "maxLength": 128},
+        "cpu_model": {"type": "string", "minLength": 1, "maxLength": 128},
+        "accelerator": {"const": "tcg"},
+        "memory": {"type": "string", "minLength": 1, "maxLength": 64},
+        "plugin_log_flags": {
+          "const": ["-d", "plugin", "-D", "{metric_file}"]
+        },
+        "runner_command_sha256": {"$ref": "#/$defs/sha256"},
+        "runner_executable_sha256": {"$ref": "#/$defs/sha256"}
+        ,"runner_adapter": {"enum": ["host", "wsl"]}
+        ,"wsl_distribution_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]}
+      }
+    },
+    "cache_model": {
+      "type": "object", "additionalProperties": false,
+      "required": ["size_bytes", "ways", "line_bytes", "replacement", "initial_state"],
+      "properties": {
+        "size_bytes": {"const": 32768},
+        "ways": {"const": 8},
+        "line_bytes": {"const": 64},
+        "replacement": {"const": "lru"},
+        "initial_state": {"const": "cold_per_timing_region"}
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

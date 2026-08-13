@@ -9,6 +9,7 @@ build/
 .idea/modules.xml
 .idea/jarRepositories.xml
 .idea/compiler.xml
+.idea/workspace.xml
 .idea/libraries/
 *.iws
 *.iml
@@ -44,3 +45,11 @@ bin/
 /.gradle-local
 /.claude
 /testsuite/perf
+/.tmp/
+/build/benchmark/
+/build/qemu-run/
+__pycache__/
+*.py[cod]
+*.egg-info/
+/.venv/
+/.pytest_cache/

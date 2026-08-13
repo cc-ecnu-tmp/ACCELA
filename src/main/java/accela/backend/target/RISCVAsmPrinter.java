@@ -21,6 +21,7 @@ public final class RISCVAsmPrinter {
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
   private final RISCVAsmEmitter asmEmitter;
+  private boolean frameLayoutModified;
 
   public RISCVAsmPrinter(
       RISCVTarget target, RISCVFrameLowering frameLowering, RISCVAsmEmitter asmEmitter) {
@@ -30,6 +31,7 @@ public final class RISCVAsmPrinter {
   }
 
   public String print(MachineModule module, Map<MachineFunction, AllocationResult> allocations) {
+    frameLayoutModified = false;
     List<String> lines = new ArrayList<>();
     lines.add(".attribute arch, \"rv64gc\"");
     emitGlobals(module.getSourceModule(), lines);
@@ -37,13 +39,18 @@ public final class RISCVAsmPrinter {
     for (MachineFunction function : module.getFunctions()) {
       AllocationResult allocation = allocations.get(function);
       for (accela.backend.machine.PhysicalRegister register : allocation.getUsedCalleeSavedRegisters()) {
-        function.getFrameInfo().addCalleeSavedRegister(register);
+        frameLayoutModified |= function.getFrameInfo().addCalleeSavedRegister(register);
       }
-      frameLowering.finalizeFrame(function);
+      frameLayoutModified |= frameLowering.finalizeFrame(function);
       emitFunction(function, allocation, lines);
     }
     if (needsMemzeroHelper(module)) emitMemzeroHelper(lines);
     return String.join("\n", lines) + "\n";
+  }
+
+  /** Returns whether the most recent print finalized any previously unresolved frame state. */
+  public boolean frameLayoutModified() {
+    return frameLayoutModified;
   }
 
   private boolean needsMemzeroHelper(MachineModule module) {

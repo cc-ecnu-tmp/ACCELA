@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-profile-matrix.v1.json",
+  "title": "ACCELA FULL versus FULL plus candidate profile matrix v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "matrix_id", "candidate_registry_sha256",
+    "pass_registry_sha256", "base_pipeline_profile", "profiles", "schedule"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-profile-matrix.v1"},
+    "matrix_id": {"$ref": "#/$defs/id"},
+    "candidate_registry_sha256": {"$ref": "#/$defs/sha256"},
+    "pass_registry_sha256": {"$ref": "#/$defs/sha256"},
+    "base_pipeline_profile": {"$ref": "#/$defs/base_profile"},
+    "profiles": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/profile"}},
+    "schedule": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/schedule"}}
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "base_profile": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_id", "profile_sha256"],
+      "properties": {
+        "profile_id": {"$ref": "#/$defs/id"},
+        "profile_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "profile": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "profile_id", "kind", "candidate_ids", "enabled_candidate_ids",
+        "profile_sha256", "path"
+      ],
+      "properties": {
+        "profile_id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["candidate_empty", "single", "pair"]},
+        "candidate_ids": {
+          "type": "array", "maxItems": 2, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "enabled_candidate_ids": {
+          "type": "array", "maxItems": 2, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "schedule": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "kind", "candidate_ids", "baseline_profile_id", "candidate_profile_id",
+        "comparison_direction"
+      ],
+      "properties": {
+        "kind": {"enum": ["single", "pair"]},
+        "candidate_ids": {
+          "type": "array", "minItems": 1, "maxItems": 2, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "baseline_profile_id": {"$ref": "#/$defs/id"},
+        "candidate_profile_id": {"$ref": "#/$defs/id"},
+        "comparison_direction": {"const": "baseline_over_variant"}
+      }
+    }
+  }
+}

@@ -44,4 +44,9 @@ public final class FunctionAnalysisManager {
     }
     functionCache.entrySet().removeIf(entry -> !pa.isPreserved(entry.getKey()));
   }
+
+  /** Conservatively invalidates every cached function-analysis result in this manager. */
+  public void invalidateAll() {
+    cache.clear();
+  }
 }

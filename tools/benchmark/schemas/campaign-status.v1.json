@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/campaign-status.v1.json",
+  "title": "ACCELA resumable 72-hour campaign status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "campaign_id", "plan_sha256", "state", "started_at", "as_of",
+    "deadline", "elapsed_wall_clock_seconds", "remaining_wall_clock_seconds",
+    "unused_budget_transferred_to_final_seconds", "promotion_decisions", "phases", "tasks"
+  ],
+  "properties": {
+    "schema_version": {"const": "campaign-status.v1"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "plan_sha256": {"$ref": "#/$defs/sha256"},
+    "state": {"enum": ["pending", "running", "completed", "failed", "budget_exhausted", "interrupted"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "as_of": {"type": "string", "format": "date-time"},
+    "deadline": {"type": "string", "format": "date-time"},
+    "elapsed_wall_clock_seconds": {"type": "number", "minimum": 0, "maximum": 259200},
+    "remaining_wall_clock_seconds": {"type": "number", "minimum": 0, "maximum": 259200},
+    "unused_budget_transferred_to_final_seconds": {"type": "number", "minimum": 0},
+    "promotion_decisions": {"$ref": "#/$defs/promotion_decisions"},
+    "phases": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": {"$ref": "#/$defs/phase_status"}
+    },
+    "tasks": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/task_status"}}
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullable_timestamp": {
+      "oneOf": [{"type": "null"}, {"type": "string", "format": "date-time"}]
+    },
+    "nullable_positive": {
+      "oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0}]
+    },
+    "study_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["phase_id", "study_id", "study_sha256", "baseline_run_id"],
+      "properties": {
+        "phase_id": {"enum": ["singleton_b2", "promotion_b3"]},
+        "study_id": {"$ref": "#/$defs/id"},
+        "study_sha256": {"$ref": "#/$defs/sha256"},
+        "baseline_run_id": {"$ref": "#/$defs/id"}
+      }
+    },
+    "smoke_decision": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "profile_id", "geometric_mean_contribution", "maximum_case_contribution",
+        "minimum_case_contribution", "correctness_failures", "selected", "reasons"
+      ],
+      "properties": {
+        "profile_id": {"$ref": "#/$defs/id"},
+        "geometric_mean_contribution": {"$ref": "#/$defs/nullable_positive"},
+        "maximum_case_contribution": {"$ref": "#/$defs/nullable_positive"},
+        "minimum_case_contribution": {"$ref": "#/$defs/nullable_positive"},
+        "correctness_failures": {"type": "integer", "minimum": 0},
+        "selected": {"type": "boolean"},
+        "reasons": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": [
+            "geometric_mean_threshold", "single_case_threshold", "regression_investigation",
+            "correctness_investigation", "minimum_top8_fill"
+          ]}
+        }
+      }
+    },
+    "confirmation_decision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["profile_id", "geometric_mean_contribution", "eligible_for_ranking", "ineligibility_reason"],
+      "properties": {
+        "profile_id": {"$ref": "#/$defs/id"},
+        "geometric_mean_contribution": {"$ref": "#/$defs/nullable_positive"},
+        "eligible_for_ranking": {"type": "boolean"},
+        "ineligibility_reason": {
+          "oneOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 128}]
+        }
+      }
+    },
+    "promotion_decisions": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "study_refs", "smoke", "promoted_profile_ids", "minimum_top8_satisfied",
+        "confirmation", "final_profile_ids", "final_pair_coverage_complete"
+      ],
+      "properties": {
+        "study_refs": {"type": "array", "items": {"$ref": "#/$defs/study_ref"}},
+        "smoke": {"type": "array", "items": {"$ref": "#/$defs/smoke_decision"}},
+        "promoted_profile_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "minimum_top8_satisfied": {"type": "boolean"},
+        "confirmation": {"type": "array", "items": {"$ref": "#/$defs/confirmation_decision"}},
+        "final_profile_ids": {
+          "type": "array", "maxItems": 5, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "final_pair_coverage_complete": {"type": "boolean"}
+      }
+    },
+    "phase_status": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "phase_id", "state", "started_at", "deadline", "completed_at",
+        "base_budget_seconds", "effective_budget_seconds", "wall_clock_seconds"
+      ],
+      "properties": {
+        "phase_id": {"enum": ["baseline_validation", "singleton_b2", "promotion_b3", "final_validation"]},
+        "state": {"enum": ["pending", "running", "completed", "failed", "budget_exhausted", "interrupted"]},
+        "started_at": {"type": "string", "format": "date-time"},
+        "deadline": {"type": "string", "format": "date-time"},
+        "completed_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "base_budget_seconds": {"enum": [43200, 86400]},
+        "effective_budget_seconds": {"type": "number", "minimum": 0},
+        "wall_clock_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "task_status": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "task_id", "selection_state", "selection_reasons", "status", "run_id",
+        "run_record_sha256", "started_at", "completed_at", "missing_reason"
+      ],
+      "properties": {
+        "task_id": {"$ref": "#/$defs/id"},
+        "selection_state": {"enum": ["awaiting_evidence", "selected", "not_selected"]},
+        "selection_reasons": {
+          "type": "array", "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
+        "status": {"enum": ["pending", "running", "completed", "failed", "interrupted", "not_selected", "budget_exhausted"]},
+        "run_id": {"$ref": "#/$defs/id"},
+        "run_record_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+        "started_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "completed_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "missing_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"enum": [
+              "not_scheduled", "dependency_incomplete", "dependency_failed", "promotion_evidence_missing",
+              "promotion_threshold_not_met", "top5_not_selected", "timeout",
+              "tool_failure", "correctness_failure"
+            ]}
+          ]
+        }
+      }
+    }
+  }
+}

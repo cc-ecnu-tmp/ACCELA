@@ -5,8 +5,10 @@ import accela.ir.Function;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import java.util.EnumMap;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Locale;
 import java.util.StringJoiner;
 
 /**
@@ -110,7 +112,7 @@ public final class IRMetrics {
       int beforeCount = opcodeCounts.getOrDefault(opcode, 0);
       int afterCount = after.opcodeCounts.getOrDefault(opcode, 0);
       if (beforeCount != afterCount && !isAlreadySummarized(opcode)) {
-        addIfChanged(changed, opcode.name().toLowerCase(), beforeCount, afterCount);
+        addIfChanged(changed, opcode.name().toLowerCase(Locale.ROOT), beforeCount, afterCount);
       }
     }
 
@@ -124,6 +126,29 @@ public final class IRMetrics {
       joiner.add(entry.getKey() + " " + before + "->" + afterValue + formatDelta(delta));
     }
     return joiner.toString();
+  }
+
+  /** Returns a stable, JSON-friendly snapshot of all generic IR counters. */
+  public Map<String, Long> asMap() {
+    LinkedHashMap<String, Long> result = new LinkedHashMap<>();
+    result.put("functions", (long) functions);
+    result.put("blocks", (long) blocks);
+    result.put("instructions", (long) instructions);
+    result.put("allocas", (long) allocas);
+    result.put("aggregate_allocas", (long) aggregateAllocas);
+    result.put("scalar_allocas", (long) scalarAllocas);
+    result.put("loads", (long) loads);
+    result.put("stores", (long) stores);
+    result.put("geps", (long) geps);
+    result.put("phis", (long) phis);
+    result.put("calls", (long) calls);
+    result.put("branches", (long) branches);
+    result.put("returns", (long) returns);
+    for (Instruction.Opcode opcode : Instruction.Opcode.values()) {
+      result.put("opcode." + opcode.name().toLowerCase(Locale.ROOT),
+          (long) opcodeCounts.getOrDefault(opcode, 0));
+    }
+    return Collections.unmodifiableMap(result);
   }
 
   private static void addIfChanged(Map<String, int[]> changed, String name, int before, int after) {

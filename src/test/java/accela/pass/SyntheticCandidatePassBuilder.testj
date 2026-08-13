@@ -1,0 +1,50 @@
+package accela.pass;
+
+import accela.ir.Constant;
+import accela.ir.Instruction;
+import accela.pass.instrument.DecisionReasonCode;
+import accela.pass.ir.instrument.PassInstrumentation;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Test-only typed provider for a candidate inserted into the real IR pipeline. */
+public final class SyntheticCandidatePassBuilder {
+  public static final int IR_RETURN_MARKER = 41;
+
+  private SyntheticCandidatePassBuilder() {}
+
+  public static PassBuilder create(
+      PassInstrumentation instrumentation, AtomicInteger factoryConstructions) {
+    PassBuilder.CandidatePassProvider provider = new PassBuilder.CandidatePassProvider(
+        Map.of(
+            SyntheticCandidateRegistry.IR_CANDIDATE,
+            (descriptor, occurrence) -> {
+              factoryConstructions.incrementAndGet();
+              return (function, analyses) -> {
+                var decisions = instrumentation.decisionEmitter(
+                    descriptor, occurrence, "function", "@" + function.getName());
+                decisions.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
+                boolean changed = false;
+                for (var block : function.getBlocks()) {
+                  Instruction terminator = block.getTerminator();
+                  if (terminator != null
+                      && terminator.getOpcode() == Instruction.Opcode.RET
+                      && terminator.getNumOperands() == 1
+                      && terminator.getOperand(0) instanceof Constant.Int value
+                      && value.value == 0) {
+                    terminator.setOperand(0, Constant.intConst(IR_RETURN_MARKER));
+                    changed = true;
+                  }
+                }
+                if (!changed) {
+                  throw new IllegalStateException(
+                      "synthetic IR candidate requires an integer return-zero target");
+                }
+                decisions.applied(DecisionReasonCode.APPLIED_CANONICALIZATION);
+                return PreservedAnalyses.none();
+              };
+            }),
+        Map.of());
+    return new PassBuilder(provider);
+  }
+}

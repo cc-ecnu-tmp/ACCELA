@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for structured_kernel/gemm_loop_order: GEMM ijk versus ikj scalar schedule; role=optimized
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int a[32][32]; int b[32][32]; int c[32][32]; int temp[32][32];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<n){int j=0;while(j<n){a[i][j]=next_small();b[i][j]=next_small();c[i][j]=0;temp[i][j]=0;j=j+1;}i=i+1;}
+
+  i=0;while(i<n){int k=0;while(k<n){int av=a[i][k];int j=0;while(j<n){c[i][j]=c[i][j]+av*b[k][j];j=j+1;}k=k+1;}i=i+1;}
+  int acc=0;int index=0;i=0;while(i<n){int j=0;while(j<n){acc=checksum_step(acc,c[i][j],index);index=index+1;j=j+1;}i=i+1;}
+  putint(acc);putch(10);return 0;
+}

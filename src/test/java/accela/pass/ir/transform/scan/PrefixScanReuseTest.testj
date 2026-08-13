@@ -1,0 +1,367 @@
+package accela.pass.ir.transform.scan;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.FunctionPassManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import accela.pass.instrument.DecisionRemark;
+import accela.pass.instrument.DecisionStatus;
+import accela.pass.instrument.OptimizationRemark;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class PrefixScanReuseTest {
+  @Test
+  void transformsForwardReverseAndWeightedStructuresWithOneMatcher() {
+    for (Shape shape : Shape.values()) {
+      Fixture fixture = new Fixture(shape, Mutation.NONE);
+      List<PrefixScanMatcher.Assessment> assessments =
+          PrefixScanMatcher.assess(fixture.function, analysisManager());
+      assertTrue(PrefixScanReuse.run(fixture.function, analysisManager()),
+          shape.name() + ": " + assessments);
+      IRVerifier.verifyFunction(fixture.function);
+      assertEquals(4, fixture.function.getBlocks().size());
+      assertTrue(fixture.outerHeader.getInstructions().stream().anyMatch(
+          instruction -> "prefix.scan.running".equals(instruction.getName())));
+      assertFalse(fixture.function.getBlocks().contains(fixture.innerHeader));
+      assertFalse(fixture.function.getBlocks().contains(fixture.innerBody));
+    }
+  }
+
+  @Test
+  void rejectsEveryDeclaredLegalityObligationAtItsProofBoundary() {
+    assertRejected(Mutation.NON_PREFIX_DOMAIN, PrefixScanReuse.REPEATED_PREFIX_DOMAIN);
+    assertRejected(Mutation.OUTER_DEPENDENT_TERM, PrefixScanReuse.INCREMENTAL_EQUIVALENCE);
+    assertRejected(Mutation.NON_ADD_REDUCTION, PrefixScanReuse.INTEGER_ORDER);
+    assertRejected(Mutation.ALIASING_OUTPUT, PrefixScanReuse.ALIAS_MODREF);
+    assertRejected(Mutation.EXTRA_STORE, PrefixScanReuse.SIDE_EFFECT_FREE_KERNEL);
+    assertRejected(Mutation.NONZERO_OUTER_START, PrefixScanReuse.EMPTY_DOMAIN);
+    assertRejected(Mutation.NON_UNIT_OUTPUT, PrefixScanReuse.BOUNDS);
+    assertRejected(Mutation.ESCAPING_INNER_VALUE, PrefixScanReuse.LIVE_OUTS);
+    assertRejected(Mutation.TINY_CONSTANT_DOMAIN, PrefixScanReuse.PROFITABILITY);
+  }
+
+  @Test
+  void rejectsCallsAndMultipleNestedScansInsteadOfPartiallyRewriting() {
+    assertRejected(Mutation.EXTRA_CALL, PrefixScanReuse.SIDE_EFFECT_FREE_KERNEL);
+
+    Function function = multipleInnerLoops();
+    List<PrefixScanMatcher.Assessment> assessments =
+        PrefixScanMatcher.assess(function, analysisManager());
+    assertEquals(1, assessments.size());
+    assertEquals(PrefixScanReuse.REPEATED_PREFIX_DOMAIN,
+        assessments.getFirst().rejectedObligation());
+    assertFalse(PrefixScanReuse.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+  }
+
+  @Test
+  void reverseIndexAndModuloAdditionAreExactAtEmptyAndOverflowBoundaries() {
+    Fixture fixture = new Fixture(Shape.REVERSE, Mutation.NONE);
+    assertTrue(PrefixScanReuse.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    long latchSubtractions = fixture.outerLatch.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.SUB)
+        .count();
+    assertEquals(2, latchSubtractions);
+    assertFalse(fixture.entry.getInstructions().stream()
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.SUB));
+    assertFalse(fixture.outerHeader.getInstructions().stream()
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.SUB));
+
+    // The latch is unreachable for N <= 0, so N - 1 is not evaluated for INT_MIN or zero.
+    assertFalse(0 < Integer.MIN_VALUE);
+    assertFalse(0 < 0);
+    assertEquals(0, reverseIndex(1, 0));
+    assertEquals(Integer.MAX_VALUE - 1, reverseIndex(Integer.MAX_VALUE, 0));
+    assertEquals(0, reverseIndex(Integer.MAX_VALUE, Integer.MAX_VALUE - 1));
+
+    int[] values = {Integer.MAX_VALUE, 7, Integer.MIN_VALUE, -19, 41};
+    assertEquals(baselineSuffix(values), incrementalSuffix(values));
+  }
+
+  @Test
+  void instrumentedPassPairsDecisionsAndInvalidatesCachedLoopAnalyses() {
+    Fixture fixture = new Fixture(Shape.FORWARD, Mutation.NONE);
+    FunctionAnalysisManager fam = analysisManager();
+    LoopAnalysis.Result before = fam.getResult(LoopAnalysis.class, fixture.function);
+    List<OptimizationRemark> remarks = new java.util.ArrayList<>();
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, remarks::add)) {
+      FunctionPassManager manager = new FunctionPassManager(instrumentation);
+      manager.addPass(
+          new PrefixScanReuse.Pass(instrumentation, PrefixScanReuse.descriptor(), 1),
+          PrefixScanReuse.descriptor(),
+          1);
+      manager.run(fixture.function, fam);
+    }
+
+    LoopAnalysis.Result after = fam.getResult(LoopAnalysis.class, fixture.function);
+    assertNotSame(before, after);
+    assertEquals(2, before.loops().size());
+    assertEquals(1, after.loops().size());
+    assertEquals(List.of(DecisionStatus.CANDIDATE, DecisionStatus.APPLIED), remarks.stream()
+        .filter(DecisionRemark.class::isInstance)
+        .map(DecisionRemark.class::cast)
+        .map(DecisionRemark::decision)
+        .toList());
+
+    Fixture rejected = new Fixture(Shape.FORWARD, Mutation.ALIASING_OUTPUT);
+    List<OptimizationRemark> rejectedRemarks = new java.util.ArrayList<>();
+    try (PassInstrumentation instrumentation =
+        PassInstrumentation.observed(false, rejectedRemarks::add)) {
+      new PrefixScanReuse.Pass(instrumentation, PrefixScanReuse.descriptor(), 1)
+          .run(rejected.function, analysisManager());
+    }
+    List<DecisionRemark> rejectedDecisions = rejectedRemarks.stream()
+        .map(DecisionRemark.class::cast)
+        .toList();
+    assertEquals(List.of(DecisionStatus.CANDIDATE, DecisionStatus.REJECTED),
+        rejectedDecisions.stream().map(DecisionRemark::decision).toList());
+    assertEquals(PrefixScanReuse.ALIAS_MODREF,
+        rejectedDecisions.getLast().legalityObligationId());
+  }
+
+  private static void assertRejected(Mutation mutation, String obligation) {
+    Fixture fixture = new Fixture(Shape.FORWARD, mutation);
+    List<PrefixScanMatcher.Assessment> assessments =
+        PrefixScanMatcher.assess(fixture.function, analysisManager());
+    assertEquals(1, assessments.size(), mutation.name());
+    assertEquals(obligation, assessments.getFirst().rejectedObligation(), mutation.name());
+    assertFalse(PrefixScanReuse.run(fixture.function, analysisManager()), mutation.name());
+    IRVerifier.verifyFunction(fixture.function);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(
+        InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    return fam;
+  }
+
+  private enum Shape {
+    FORWARD,
+    REVERSE,
+    WEIGHTED
+  }
+
+  private enum Mutation {
+    NONE,
+    NON_PREFIX_DOMAIN,
+    OUTER_DEPENDENT_TERM,
+    NON_ADD_REDUCTION,
+    ALIASING_OUTPUT,
+    EXTRA_STORE,
+    EXTRA_CALL,
+    NONZERO_OUTER_START,
+    NON_UNIT_OUTPUT,
+    ESCAPING_INNER_VALUE,
+    TINY_CONSTANT_DOMAIN
+  }
+
+  private static final class Fixture {
+    private static final Type ARRAY = Type.array(Type.INT, 64);
+
+    final accela.ir.Module module = new accela.ir.Module();
+    final GlobalVariable source =
+        new GlobalVariable("source", ARRAY, Constant.zero(ARRAY), false);
+    final GlobalVariable output =
+        new GlobalVariable("output", ARRAY, Constant.zero(ARRAY), false);
+    final Function function = new Function("scan", Type.INT);
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock outerHeader = function.addBlock("outer.header");
+    final BasicBlock innerHeader = function.addBlock("inner.header");
+    final BasicBlock innerBody = function.addBlock("inner.body");
+    final BasicBlock outerLatch = function.addBlock("outer.latch");
+    final BasicBlock exit = function.addBlock("exit");
+    final Instruction outer = Instruction.createPhi(Type.INT);
+    final Instruction inner = Instruction.createPhi(Type.INT);
+    final Instruction reduction = Instruction.createPhi(Type.INT);
+
+    Fixture(Shape shape, Mutation mutation) {
+      module.addGlobal(source);
+      module.addGlobal(output);
+      module.addFunction(function);
+      Value dynamicBound = function.addArgument(Type.INT, "bound");
+      Value bound = mutation == Mutation.TINY_CONSTANT_DOMAIN
+          ? Constant.intConst(2) : dynamicBound;
+      new IRBuilder(entry).createBr(outerHeader);
+
+      outerHeader.addInstruction(outer);
+      outer.addOperand(Constant.intConst(
+          mutation == Mutation.NONZERO_OUTER_START ? 1 : 0));
+      outer.addOperand(entry);
+      IRBuilder outerBuilder = new IRBuilder(outerHeader);
+      Instruction outerCompare = outerBuilder.createICmp("slt", outer, bound);
+      outerBuilder.createCondBr(outerCompare, innerHeader, exit);
+
+      innerHeader.addInstruction(inner);
+      innerHeader.addInstruction(reduction);
+      Value innerStart = shape == Shape.REVERSE ? outer : Constant.intConst(0);
+      inner.addOperand(innerStart);
+      inner.addOperand(outerHeader);
+      reduction.addOperand(Constant.intConst(0));
+      reduction.addOperand(outerHeader);
+      IRBuilder innerHeaderBuilder = new IRBuilder(innerHeader);
+      String predicate = shape == Shape.REVERSE ? "slt" : "sle";
+      Value innerBound = shape == Shape.REVERSE ? bound : outer;
+      if (mutation == Mutation.NON_PREFIX_DOMAIN) predicate = "ne";
+      Instruction innerCompare =
+          innerHeaderBuilder.createICmp(predicate, inner, innerBound);
+      innerHeaderBuilder.createCondBr(innerCompare, innerBody, outerLatch);
+
+      IRBuilder bodyBuilder = new IRBuilder(innerBody);
+      Value innerIndex = bodyBuilder.createSExt(inner, Type.I64);
+      Value sourcePointer = bodyBuilder.createGEP(
+          ARRAY,
+          mutation == Mutation.ALIASING_OUTPUT ? output : source,
+          new Value[] {Constant.int64Const(0), innerIndex},
+          true);
+      Instruction loaded = bodyBuilder.createLoad(Type.INT, sourcePointer);
+      Instruction innerNext = bodyBuilder.createAdd(inner, Constant.intConst(1));
+      Value term = shape == Shape.WEIGHTED
+          ? bodyBuilder.createMul(loaded, innerNext) : loaded;
+      if (mutation == Mutation.OUTER_DEPENDENT_TERM) {
+        term = bodyBuilder.createAdd(term, outer);
+      }
+      Instruction update = mutation == Mutation.NON_ADD_REDUCTION
+          ? bodyBuilder.createSub(reduction, term)
+          : bodyBuilder.createAdd(reduction, term);
+      if (mutation == Mutation.EXTRA_STORE) {
+        bodyBuilder.createStore(Constant.intConst(7), sourcePointer);
+      }
+      if (mutation == Mutation.EXTRA_CALL) {
+        Function external = new Function("observable", Type.INT);
+        module.addDeclare(external);
+        bodyBuilder.createCall(external, Type.INT);
+      }
+      bodyBuilder.createBr(innerHeader);
+      inner.addOperand(innerNext);
+      inner.addOperand(innerBody);
+      reduction.addOperand(update);
+      reduction.addOperand(innerBody);
+
+      IRBuilder latchBuilder = new IRBuilder(outerLatch);
+      Value outputIndex = latchBuilder.createSExt(outer, Type.I64);
+      if (mutation == Mutation.NON_UNIT_OUTPUT) {
+        outputIndex = latchBuilder.createMul(outputIndex, Constant.int64Const(2));
+      }
+      Value outputPointer = latchBuilder.createGEP(
+          ARRAY,
+          output,
+          new Value[] {Constant.int64Const(0), outputIndex},
+          true);
+      latchBuilder.createStore(reduction, outputPointer);
+      Instruction outerNext = latchBuilder.createAdd(outer, Constant.intConst(1));
+      latchBuilder.createBr(outerHeader);
+      outer.addOperand(outerNext);
+      outer.addOperand(outerLatch);
+
+      IRBuilder exitBuilder = new IRBuilder(exit);
+      exitBuilder.createRet(
+          mutation == Mutation.ESCAPING_INNER_VALUE ? loaded : Constant.intConst(0));
+      IRVerifier.verifyFunction(function);
+    }
+  }
+
+  private static int reverseIndex(int bound, int counter) {
+    return (bound - 1) - counter;
+  }
+
+  private static List<Integer> baselineSuffix(int[] values) {
+    java.util.ArrayList<Integer> result = new java.util.ArrayList<>();
+    for (int start = 0; start < values.length; start++) {
+      int sum = 0;
+      for (int index = start; index < values.length; index++) sum += values[index];
+      result.add(sum);
+    }
+    return result;
+  }
+
+  private static List<Integer> incrementalSuffix(int[] values) {
+    Integer[] result = new Integer[values.length];
+    int running = 0;
+    for (int counter = 0; counter < values.length; counter++) {
+      int index = reverseIndex(values.length, counter);
+      running += values[index];
+      result[index] = running;
+    }
+    return List.of(result);
+  }
+
+  private static Function multipleInnerLoops() {
+    Function function = new Function("multiple", Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock outerHeader = function.addBlock("outer.header");
+    BasicBlock firstHeader = function.addBlock("first.header");
+    BasicBlock firstBody = function.addBlock("first.body");
+    BasicBlock secondHeader = function.addBlock("second.header");
+    BasicBlock secondBody = function.addBlock("second.body");
+    BasicBlock outerLatch = function.addBlock("outer.latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(outerHeader);
+
+    Instruction outer = Instruction.createPhi(Type.INT);
+    outerHeader.addInstruction(outer);
+    outer.addOperand(Constant.intConst(0));
+    outer.addOperand(entry);
+    IRBuilder outerBuilder = new IRBuilder(outerHeader);
+    outerBuilder.createCondBr(
+        outerBuilder.createICmp("slt", outer, bound), firstHeader, exit);
+
+    Instruction first = Instruction.createPhi(Type.INT);
+    firstHeader.addInstruction(first);
+    first.addOperand(Constant.intConst(0));
+    first.addOperand(outerHeader);
+    IRBuilder firstHeaderBuilder = new IRBuilder(firstHeader);
+    firstHeaderBuilder.createCondBr(
+        firstHeaderBuilder.createICmp("slt", first, bound), firstBody, secondHeader);
+    IRBuilder firstBodyBuilder = new IRBuilder(firstBody);
+    Instruction firstNext = firstBodyBuilder.createAdd(first, Constant.intConst(1));
+    firstBodyBuilder.createBr(firstHeader);
+    first.addOperand(firstNext);
+    first.addOperand(firstBody);
+
+    Instruction second = Instruction.createPhi(Type.INT);
+    secondHeader.addInstruction(second);
+    second.addOperand(Constant.intConst(0));
+    second.addOperand(firstHeader);
+    IRBuilder secondHeaderBuilder = new IRBuilder(secondHeader);
+    secondHeaderBuilder.createCondBr(
+        secondHeaderBuilder.createICmp("slt", second, bound), secondBody, outerLatch);
+    IRBuilder secondBodyBuilder = new IRBuilder(secondBody);
+    Instruction secondNext = secondBodyBuilder.createAdd(second, Constant.intConst(1));
+    secondBodyBuilder.createBr(secondHeader);
+    second.addOperand(secondNext);
+    second.addOperand(secondBody);
+
+    IRBuilder latchBuilder = new IRBuilder(outerLatch);
+    Instruction outerNext = latchBuilder.createAdd(outer, Constant.intConst(1));
+    latchBuilder.createBr(outerHeader);
+    outer.addOperand(outerNext);
+    outer.addOperand(outerLatch);
+    new IRBuilder(exit).createRet(Constant.intConst(0));
+    IRVerifier.verifyFunction(function);
+    return function;
+  }
+}

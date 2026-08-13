@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: three dense matrix products arranged as two producers and one consumer
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int a[40][40]; int b[40][40]; int c[40][40]; int d[40][40];
+int e[40][40]; int f[40][40]; int g[40][40];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<n){int j=0;while(j<n){a[i][j]=next_small();b[i][j]=next_small();c[i][j]=next_small();d[i][j]=next_small();e[i][j]=0;f[i][j]=0;g[i][j]=0;j=j+1;}i=i+1;}
+  i=0;while(i<n){int j=0;while(j<n){int k=0;while(k<n){e[i][j]=e[i][j]+a[i][k]*b[k][j];f[i][j]=f[i][j]+c[i][k]*d[k][j];k=k+1;}j=j+1;}i=i+1;}
+  i=0;while(i<n){int j=0;while(j<n){int k=0;while(k<n){g[i][j]=g[i][j]+e[i][k]*f[k][j];k=k+1;}j=j+1;}i=i+1;}
+  int acc=0;int index=0;i=0;while(i<n){int j=0;while(j<n){acc=checksum_step(acc,g[i][j],index);index=index+1;j=j+1;}i=i+1;}
+  putint(acc);putch(10);return 0;
+}

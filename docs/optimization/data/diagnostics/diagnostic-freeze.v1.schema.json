@@ -1,0 +1,703 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diagnostic-freeze.v1.schema.json",
+  "title": "ACCELA diagnostic campaign freeze",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "freeze_id",
+    "campaign_id",
+    "classification",
+    "reason",
+    "recorded_at",
+    "evidence_cutoff_at",
+    "eligibility",
+    "source_revision",
+    "artifact_namespace",
+    "bindings",
+    "registered_terminal_runs",
+    "unregistered_partial_run",
+    "controller_observation",
+    "provenance_limitations",
+    "isolation_contract"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "diagnostic-freeze.v1.schema.json"
+    },
+    "schema_version": {
+      "const": "diagnostic-freeze.v1"
+    },
+    "freeze_id": {
+      "type": "string",
+      "pattern": "^diagnostic-freeze:[A-Za-z0-9._:-]+$"
+    },
+    "campaign_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "classification": {
+      "const": "diagnostic_aborted_direction_mismatch"
+    },
+    "reason": {
+      "const": "evaluation_direction_mismatch"
+    },
+    "recorded_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "evidence_cutoff_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diagnostic_only",
+        "ranking_eligible",
+        "promotion_eligible",
+        "auto_resume_allowed",
+        "manual_resume_allowed",
+        "report_as_formal_result"
+      ],
+      "properties": {
+        "diagnostic_only": {
+          "const": true
+        },
+        "ranking_eligible": {
+          "const": false
+        },
+        "promotion_eligible": {
+          "const": false
+        },
+        "auto_resume_allowed": {
+          "const": false
+        },
+        "manual_resume_allowed": {
+          "const": false
+        },
+        "report_as_formal_result": {
+          "const": false
+        }
+      }
+    },
+    "source_revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_commit",
+        "repository_tree",
+        "repository_dirty",
+        "workspace_class"
+      ],
+      "properties": {
+        "repository_commit": {
+          "$ref": "#/$defs/gitSha1"
+        },
+        "repository_tree": {
+          "$ref": "#/$defs/gitSha1"
+        },
+        "repository_dirty": {
+          "const": false
+        },
+        "workspace_class": {
+          "const": "wsl_native_linux"
+        }
+      }
+    },
+    "artifact_namespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root_key",
+        "contains_local_absolute_path",
+        "resolution_rule"
+      ],
+      "properties": {
+        "root_key": {
+          "const": "repository-and-ignored-r7-evidence"
+        },
+        "contains_local_absolute_path": {
+          "const": false
+        },
+        "resolution_rule": {
+          "const": "Resolve repository/ keys against the frozen Git tree and campaign/ or runs/ keys against the separately supplied frozen r7 evidence root."
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaign_plan",
+        "measurement_protocols",
+        "controllers",
+        "run_evidence_registry",
+        "status_ledger"
+      ],
+      "properties": {
+        "campaign_plan": {
+          "$ref": "#/$defs/jsonArtifact"
+        },
+        "measurement_protocols": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/jsonArtifact"
+          }
+        },
+        "controllers": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/physicalArtifact"
+          }
+        },
+        "run_evidence_registry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "artifact_key",
+            "physical_sha256",
+            "line_count",
+            "completed_count",
+            "failed_count",
+            "partial_run_registered"
+          ],
+          "properties": {
+            "artifact_key": {
+              "$ref": "#/$defs/artifactKey"
+            },
+            "physical_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "line_count": {
+              "const": 21
+            },
+            "completed_count": {
+              "const": 20
+            },
+            "failed_count": {
+              "const": 1
+            },
+            "partial_run_registered": {
+              "const": false
+            }
+          }
+        },
+        "status_ledger": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "first_sequence",
+            "last_sequence",
+            "entry_count",
+            "aggregate_fingerprint_algorithm",
+            "aggregate_fingerprint_sha256",
+            "entries"
+          ],
+          "properties": {
+            "first_sequence": {
+              "const": 0
+            },
+            "last_sequence": {
+              "const": 27
+            },
+            "entry_count": {
+              "const": 28
+            },
+            "aggregate_fingerprint_algorithm": {
+              "const": "sha256(concat(utf8(basename),NUL,raw_sha256_bytes)) in sequence order"
+            },
+            "aggregate_fingerprint_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "entries": {
+              "type": "array",
+              "minItems": 28,
+              "maxItems": 28,
+              "items": {
+                "$ref": "#/$defs/statusArtifact"
+              }
+            }
+          }
+        }
+      }
+    },
+    "registered_terminal_runs": {
+      "type": "array",
+      "minItems": 21,
+      "maxItems": 21,
+      "items": {
+        "$ref": "#/$defs/registeredRun"
+      }
+    },
+    "unregistered_partial_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "run_id",
+        "artifact_key",
+        "schema_version",
+        "state",
+        "physical_sha256",
+        "canonical_sha256",
+        "started_at",
+        "updated_at",
+        "summary",
+        "registered_in_run_evidence",
+        "represented_as_started_in_status_ledger",
+        "resume_allowed",
+        "completed_cases",
+        "pending_cases",
+        "uncommitted_work_products_policy"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "schema_version": {
+          "const": "run-record.v1"
+        },
+        "state": {
+          "const": "running"
+        },
+        "physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "started_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "total_cases",
+            "passed_cases",
+            "failed_cases",
+            "pending_cases",
+            "censored_cases",
+            "consistency_selected_cases",
+            "consistency_passed_cases"
+          ],
+          "properties": {
+            "total_cases": {
+              "const": 20
+            },
+            "passed_cases": {
+              "const": 16
+            },
+            "failed_cases": {
+              "const": 0
+            },
+            "pending_cases": {
+              "const": 4
+            },
+            "censored_cases": {
+              "const": 0
+            },
+            "consistency_selected_cases": {
+              "const": 2
+            },
+            "consistency_passed_cases": {
+              "const": 1
+            }
+          }
+        },
+        "registered_in_run_evidence": {
+          "const": false
+        },
+        "represented_as_started_in_status_ledger": {
+          "const": false
+        },
+        "resume_allowed": {
+          "const": false
+        },
+        "completed_cases": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/completedCase"
+          }
+        },
+        "pending_cases": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/pendingCase"
+          }
+        },
+        "uncommitted_work_products_policy": {
+          "const": "preserve_bytes_but_exclude_from_evidence"
+        }
+      }
+    },
+    "controller_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formal_process_count",
+        "controller_lock_present",
+        "b1_controller_lock_present",
+        "persistent_lease_files_are_active_controller_locks"
+      ],
+      "properties": {
+        "formal_process_count": {
+          "const": 0
+        },
+        "controller_lock_present": {
+          "const": false
+        },
+        "b1_controller_lock_present": {
+          "const": false
+        },
+        "persistent_lease_files_are_active_controller_locks": {
+          "const": false
+        }
+      }
+    },
+    "provenance_limitations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "effect"
+        ],
+        "properties": {
+          "code": {
+            "const": "source_to_wsl_ignored_tree_full_hash_not_completed"
+          },
+          "effect": {
+            "const": "The manifest binds the enumerated current WSL artifacts only and does not prove whole-tree equality with the migration source."
+          }
+        }
+      }
+    },
+    "isolation_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "append_status_allowed",
+        "resume_controller_allowed",
+        "synthesize_partial_terminal_allowed",
+        "import_measurements_into_candidate_campaign",
+        "promote_profiles_from_this_campaign",
+        "replacement_campaign_requires_new_identity",
+        "reusable_asset_classes",
+        "report_section"
+      ],
+      "properties": {
+        "append_status_allowed": {
+          "const": false
+        },
+        "resume_controller_allowed": {
+          "const": false
+        },
+        "synthesize_partial_terminal_allowed": {
+          "const": false
+        },
+        "import_measurements_into_candidate_campaign": {
+          "const": false
+        },
+        "promote_profiles_from_this_campaign": {
+          "const": false
+        },
+        "replacement_campaign_requires_new_identity": {
+          "const": true
+        },
+        "reusable_asset_classes": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "corpus",
+              "measurement_protocol",
+              "toolchain"
+            ]
+          }
+        },
+        "report_section": {
+          "const": "isolated_diagnostic_appendix"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gitSha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifactKey": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?!\\\\\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "physicalArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_key",
+        "physical_sha256"
+      ],
+      "properties": {
+        "artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "jsonArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_key",
+        "physical_sha256",
+        "canonical_sha256",
+        "schema_version"
+      ],
+      "properties": {
+        "artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "statusArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "artifact_key",
+        "physical_sha256",
+        "canonical_sha256",
+        "as_of",
+        "state"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 27
+        },
+        "artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "as_of": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "running"
+          ]
+        }
+      }
+    },
+    "registeredRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line",
+        "task_id",
+        "run_id",
+        "artifact_key",
+        "state",
+        "physical_sha256",
+        "canonical_sha256"
+      ],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 21
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "state": {
+          "enum": [
+            "completed",
+            "failed"
+          ]
+        },
+        "physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "completedCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "status",
+        "attempt_index",
+        "journal_event_count",
+        "journal_sha256"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "passed"
+        },
+        "attempt_index": {
+          "const": 0
+        },
+        "journal_event_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "journal_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "pendingCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "status",
+        "attempt_index",
+        "attempt_started_at",
+        "attempt_configuration_sha256",
+        "journal_metadata_artifact_key",
+        "journal_metadata_physical_sha256",
+        "journal_metadata_canonical_sha256",
+        "committed_event_count",
+        "last_committed_sequence",
+        "last_committed_event_type",
+        "last_committed_stage",
+        "last_committed_identity_sha256",
+        "last_committed_event_artifact_key",
+        "last_committed_event_filename_sha256",
+        "last_committed_event_physical_sha256",
+        "last_committed_event_canonical_sha256",
+        "terminal_event_present"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "pending"
+        },
+        "attempt_index": {
+          "const": 0
+        },
+        "attempt_started_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "attempt_configuration_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "journal_metadata_artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "journal_metadata_physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "journal_metadata_canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "committed_event_count": {
+          "const": 1
+        },
+        "last_committed_sequence": {
+          "const": 0
+        },
+        "last_committed_event_type": {
+          "const": "phase_started"
+        },
+        "last_committed_stage": {
+          "const": "compile"
+        },
+        "last_committed_identity_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "last_committed_event_artifact_key": {
+          "$ref": "#/$defs/artifactKey"
+        },
+        "last_committed_event_filename_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "last_committed_event_physical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "last_committed_event_canonical_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "terminal_event_present": {
+          "const": false
+        }
+      }
+    }
+  }
+}

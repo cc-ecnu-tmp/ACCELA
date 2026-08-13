@@ -1,8 +1,11 @@
 package accela.pass;
 
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
 import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.FunctionPass;
 import accela.pass.ir.FunctionPassManager;
 import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.ModulePass;
 import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.ModuleToFunctionPassAdaptor;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
@@ -23,7 +26,6 @@ import accela.pass.ir.transform.LICM;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.ReductionPushdown;
 import accela.pass.ir.transform.SCCP;
-import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.StrengthReduction;
 import accela.pass.ir.transform.TailRecursionElimination;
@@ -32,121 +34,66 @@ import accela.pass.ir.transform.indvars.IndVarSimplify;
 import accela.pass.ir.transform.inliner.Inliner;
 import accela.pass.ir.transform.loop.interchange.LoopInterchange;
 import accela.pass.ir.transform.loop.load.LoopLoadElimination;
-import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.rotate.LoopRotate;
+import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 import accela.pass.ir.transform.loop.unroll.LoopUnrollAndJam;
 import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
+import accela.pass.ir.transform.scan.PrefixScanReuse;
+import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiFunction;
 
-/**
- * Builds the project's default pass pipelines.
- */
+/** Builds the project's registered, reproducible IR pass pipelines. */
 public final class PassBuilder {
-  private static boolean isSimplifyCfgEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_SIMPLIFYCFG");
-    return disable == null
-        || disable.isEmpty()
-        || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
+  private final CandidatePassProvider candidatePassProvider;
+
+  /** Constructs the production pipeline with no candidate implementations registered. */
+  public PassBuilder() {
+    this(CandidatePassProvider.empty());
   }
 
-  private static boolean isSroaEnabled() {
-    // TODO: Remove me once SROA testing is finished
-    String disable = System.getenv("ACCELA_DISABLE_SROA");
-    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
+  /** Explicit candidate-provider seam used by the development compiler and focused tests. */
+  PassBuilder(CandidatePassProvider candidatePassProvider) {
+    this.candidatePassProvider = Objects.requireNonNull(
+        candidatePassProvider, "candidatePassProvider");
   }
 
-  private static boolean isMem2RegEnabled() {
-    // TODO: Remove me once SROA testing is finished      
-    String disable = System.getenv("ACCELA_DISABLE_MEM2REG");
-    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isAdceEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_ADCE");
-    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isSccpEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_SCCP");
-    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isInstSimplifyEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_INSTSIMPLIFY");
-    return disable == null || disable.isEmpty() || disable.equals("0") || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isEarlyCseEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_EARLYCSE");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isInlinerEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_INLINER");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isTailCallElimEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_TAILCALLELIM");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isLicmEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_LICM");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isLoopRotateEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_LOOP_ROTATE");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isLoopInterchangeEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_LOOP_INTERCHANGE");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isLoopStrengthReduceEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_LOOP_STRENGTH_REDUCE");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isLoopUnrollEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_LOOP_UNROLL");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isLoopUnrollAndJamEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_LOOP_UNROLL_AND_JAM");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isIndVarSimplifyEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_INDVAR_SIMPLIFY");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isAffineLoopSummarizationEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_AFFINE_LOOP_SUMMARIZATION");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
-  }
-
-  private static boolean isRankedRecurrenceTabulationEnabled() {
-    String disable = System.getenv("ACCELA_DISABLE_RRT");
-    return disable == null || disable.isEmpty() || disable.equals("0")
-        || disable.equalsIgnoreCase("false");
+  /**
+   * Creates the development-only pipeline builder containing every screened candidate factory.
+   *
+   * <p>The judge-facing compiler deliberately uses {@link #PassBuilder()} instead. Candidate
+   * implementations require decision instrumentation and remain lazily uninstantiated unless a
+   * profile explicitly enables their stable identifier.
+   */
+  public static PassBuilder withStandardCandidateImplementations(
+      PassInstrumentation instrumentation) {
+    Objects.requireNonNull(instrumentation, "instrumentation");
+    if (!instrumentation.isEnabled()) {
+      throw new IllegalArgumentException(
+          "standard candidate implementations require enabled decision instrumentation");
+    }
+    CandidatePassProvider provider = new CandidatePassProvider(
+        Map.of(
+            ExtendedAffineSummarizationCandidate.ID,
+                ExtendedAffineSummarizationCandidate.factory(instrumentation),
+            FiniteStateAccelerationCandidate.ID,
+                FiniteStateAccelerationCandidate.functionFactory(instrumentation),
+            SameDomainLoopFusionCandidate.ID,
+                SameDomainLoopFusionCandidate.functionFactory(instrumentation),
+            IntegerLinearTransitionCandidate.ID,
+                IntegerLinearTransitionCandidate.functionFactory(instrumentation),
+            PrefixScanReuse.ID,
+                PrefixScanReuse.factory(instrumentation)),
+        Map.of(
+            Rrt2OnDemandMemoizationCandidate.ID,
+                Rrt2OnDemandMemoizationCandidate.factory(instrumentation)));
+    return new PassBuilder(provider);
   }
 
   /** Creates pass instrumentation with always-on verification and optional reporting. */
@@ -170,166 +117,492 @@ public final class PassBuilder {
     return fam;
   }
 
-  /**
-   * Builds the current default IR pipeline.
-   *
-   * <p>The current pipeline first scalarizes analyzable array allocas with SROA and then promotes
-   * the resulting scalar slots with mem2reg.
-   */
+  /** Builds the production FULL pipeline. Environment variables do not alter this pipeline. */
   public ModulePassManager buildIRO0Pipeline(PassInstrumentation instrumentation) {
-    return buildIRO0Pipeline(
-        instrumentation,
-        isSimplifyCfgEnabled(),
-        isSroaEnabled(),
-        isMem2RegEnabled(),
-        isAdceEnabled());
+    return buildIRO0Pipeline(instrumentation, PipelineProfile.full());
   }
 
+  /** Builds a deterministic ablation pipeline from stable FULL-pipeline occurrence numbers. */
   public ModulePassManager buildIRO0Pipeline(
-      PassInstrumentation instrumentation, boolean enableSroa, boolean enableMem2Reg) {
-    return buildIRO0Pipeline(
-        instrumentation, isSimplifyCfgEnabled(), enableSroa, enableMem2Reg, isAdceEnabled());
-  }
+      PassInstrumentation instrumentation, PipelineProfile profile) {
+    Objects.requireNonNull(instrumentation, "instrumentation");
+    Objects.requireNonNull(profile, "profile");
+    Schedule schedule = new Schedule(profile, candidatePassProvider);
 
-  public ModulePassManager buildIRO0Pipeline(
-      PassInstrumentation instrumentation,
-      boolean enableSimplifyCfg,
-      boolean enableSroa,
-      boolean enableMem2Reg,
-      boolean enableAdce) {
-    FunctionPassManager fpm = new FunctionPassManager(instrumentation);
-    if (enableSimplifyCfg) {
-      fpm.addPass(new SimplifyCFG.Pass());
-    }
-    // TODO: Remove me once SROA testing is finished
-    if (enableSroa) {
-      fpm.addPass(new SROA.Pass());
-    }
-    if (enableMem2Reg) {
-      fpm.addPass(new Mem2Reg.Pass());
-    }
-    if (isEarlyCseEnabled()) {
-      fpm.addPass(new EarlyCSE.Pass());
-    }
-    if (isSccpEnabled()) {
-      fpm.addPass(new SCCP.Pass());
-    }
-    if (isEarlyCseEnabled()) {
-      fpm.addPass(new EarlyCSE.Pass());
-    }
-    if (isInstSimplifyEnabled()) {
-      fpm.addPass(new InstSimplify.Pass());
-    }
-    if (enableSroa) {
-      fpm.addPass(new SROA.Pass());
-    }
-    if (isSccpEnabled()) {
-      fpm.addPass(new SCCP.Pass());
-    }
-    if (isEarlyCseEnabled()) {
-      fpm.addPass(new EarlyCSE.Pass());
-    }
-    if (isInstSimplifyEnabled()) {
-      fpm.addPass(new InstSimplify.Pass());
-    }
-    fpm.addPass(new InstCombine.Pass());
-    if (enableAdce) {
-      fpm.addPass(new ADCE.Pass());
-      if (enableSimplifyCfg) {
-        fpm.addPass(new SimplifyCFG.Pass());
-      }
-    }
+    FunctionPassManager initial = new FunctionPassManager(instrumentation);
+    schedule.function(initial, PassRegistry.IR_SIMPLIFY_CFG, new SimplifyCFG.Pass());
+    schedule.function(initial, PassRegistry.IR_SROA, new SROA.Pass());
+    schedule.function(initial, PassRegistry.IR_MEM2REG, new Mem2Reg.Pass());
+    schedule.function(initial, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+    schedule.function(initial, PassRegistry.IR_SCCP, new SCCP.Pass());
+    schedule.function(initial, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+    schedule.function(initial, PassRegistry.IR_INST_SIMPLIFY, new InstSimplify.Pass());
+    schedule.function(initial, PassRegistry.IR_SROA, new SROA.Pass());
+    schedule.function(initial, PassRegistry.IR_SCCP, new SCCP.Pass());
+    schedule.function(initial, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+    schedule.function(initial, PassRegistry.IR_INST_SIMPLIFY, new InstSimplify.Pass());
+    schedule.function(initial, PassRegistry.IR_INST_COMBINE, new InstCombine.Pass());
+    schedule.function(initial, PassRegistry.IR_ADCE, new ADCE.Pass());
+    schedule.function(initial, PassRegistry.IR_SIMPLIFY_CFG, new SimplifyCFG.Pass());
 
-    ModulePassManager mpm = new ModulePassManager(instrumentation);
-    FunctionPassManager globalMemoryFpm = new FunctionPassManager(instrumentation);
-    globalMemoryFpm.addPass(new EarlyCSE.Pass());
-    FunctionPassManager postIpsccpFpm = new FunctionPassManager(instrumentation);
-    if (isIndVarSimplifyEnabled()) {
-      postIpsccpFpm.addPass(new IndVarSimplify.DomainPass());
-    }
-    if (isAffineLoopSummarizationEnabled()) {
-      postIpsccpFpm.addPass(new AffineLoopSummarization.Pass());
-    }
-    postIpsccpFpm.addPass(new ReductionPushdown.Pass());
-    if (isLoopInterchangeEnabled()) {
-      postIpsccpFpm.addPass(new LoopInterchange.Pass());
-    }
-    if (isLoopRotateEnabled()) {
-      postIpsccpFpm.addPass(new LoopRotate.Pass());
-    }
-    if (isLicmEnabled()) {
-      postIpsccpFpm.addPass(new LICM.Pass());
-      if (isEarlyCseEnabled()) {
-        postIpsccpFpm.addPass(new EarlyCSE.Pass());
-      }
-    }
-    if (isLoopUnrollAndJamEnabled()) {
-      postIpsccpFpm.addPass(new LoopUnrollAndJam.Pass());
-    }
-    if (isLoopUnrollEnabled()) {
-      postIpsccpFpm.addPass(new LoopUnroll.Pass());
-      postIpsccpFpm.addPass(new LoopUnroll.Pass());
-    }
-    if (isIndVarSimplifyEnabled()) {
-      postIpsccpFpm.addPass(new IndVarSimplify.Pass());
-      postIpsccpFpm.addPass(new InstSimplify.Pass());
-      postIpsccpFpm.addPass(new SimplifyCFG.Pass());
-    }
-    postIpsccpFpm.addPass(new GVN.Pass());
-    if (isLoopStrengthReduceEnabled()) {
-      postIpsccpFpm.addPass(new LoopStrengthReduce.Pass());
-      if (isLoopRotateEnabled()) {
-        postIpsccpFpm.addPass(new LoopRotate.LoadEliminationPass());
-        postIpsccpFpm.addPass(new LoopLoadElimination.Pass());
-        if (isIndVarSimplifyEnabled()) {
-          postIpsccpFpm.addPass(new IndVarSimplify.LFTRPass());
-        }
-      }
-      if (isLicmEnabled()) {
-        postIpsccpFpm.addPass(new LICM.Pass());
-      }
-    }
-    postIpsccpFpm.addPass(new StrengthReduction.Pass());
-    if (isLoopStrengthReduceEnabled() && enableAdce) {
-      postIpsccpFpm.addPass(new ADCE.Pass());
-    }
-    FunctionPassManager preInlineFpm = new FunctionPassManager(instrumentation);
-    preInlineFpm.addPass(new EarlyCSE.Pass());
-    if (isTailCallElimEnabled()) {
-      preInlineFpm.addPass(new TailRecursionElimination.Pass());
-    }
-    FunctionPassManager postInlineFpm = new FunctionPassManager(instrumentation);
-    postInlineFpm.addPass(new SimplifyCFG.Pass());
-    postInlineFpm.addPass(new EarlyCSE.Pass());
-    postInlineFpm.addPass(new SCCP.Pass());
-    postInlineFpm.addPass(new InstSimplify.Pass());
-    postInlineFpm.addPass(new InstCombine.Pass());
-    postInlineFpm.addPass(new ADCE.Pass());
-    postInlineFpm.addPass(new SimplifyCFG.Pass());
-    mpm.addPass(new ModuleToFunctionPassAdaptor(fpm));
-    mpm.addPass(new ModuleToFunctionPassAdaptor(globalMemoryFpm));
-    mpm.addPass(new DeadStoreElimination.Pass());
-    mpm.addPass(new ADCE.GlobalPass());
-    mpm.addPass(new GlobalOpt.Pass());
-    mpm.addPass(new SROA.GlobalPass());
-    mpm.addPass(new IPSCCP.Pass());
-    if (isRankedRecurrenceTabulationEnabled()) {
-      mpm.addPass(new RankedRecurrenceTabulation.Pass());
-    }
-    mpm.addPass(new ModuleToFunctionPassAdaptor(preInlineFpm));
-    if (isInlinerEnabled()) {
-      mpm.addPass(new Inliner.Pass());
-      mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
-      mpm.addPass(new IPSCCP.Pass());
-      mpm.addPass(new ADCE.GlobalPass());
-      mpm.addPass(new GlobalOpt.Pass());
-    }
-    mpm.addPass(new ModuleToFunctionPassAdaptor(postIpsccpFpm));
-    mpm.addPass(new ADCE.GlobalPass());
-    return mpm;
+    FunctionPassManager globalMemory = new FunctionPassManager(instrumentation);
+    schedule.function(globalMemory, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+
+    FunctionPassManager preInline = new FunctionPassManager(instrumentation);
+    schedule.function(preInline, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+    schedule.function(preInline, PassRegistry.IR_TAIL_RECURSION_ELIMINATION,
+        new TailRecursionElimination.Pass());
+
+    FunctionPassManager postInline = new FunctionPassManager(instrumentation);
+    schedule.function(postInline, PassRegistry.IR_SIMPLIFY_CFG, new SimplifyCFG.Pass());
+    schedule.function(postInline, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+    schedule.function(postInline, PassRegistry.IR_SCCP, new SCCP.Pass());
+    schedule.function(postInline, PassRegistry.IR_INST_SIMPLIFY, new InstSimplify.Pass());
+    schedule.function(postInline, PassRegistry.IR_INST_COMBINE, new InstCombine.Pass());
+    schedule.function(postInline, PassRegistry.IR_ADCE, new ADCE.Pass());
+    schedule.function(postInline, PassRegistry.IR_SIMPLIFY_CFG, new SimplifyCFG.Pass());
+
+    FunctionPassManager postIpsccp = new FunctionPassManager(instrumentation);
+    schedule.function(postIpsccp, PassRegistry.IR_INDVAR_DOMAIN_SIMPLIFY,
+        new IndVarSimplify.DomainPass());
+    schedule.functionObserved(postIpsccp, PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION,
+        (descriptor, occurrence) ->
+            instrumentation.isEnabled()
+                ? new AffineLoopSummarization.Pass(instrumentation, descriptor, occurrence)
+                : new AffineLoopSummarization.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_REDUCTION_PUSHDOWN,
+        new ReductionPushdown.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_INTERCHANGE,
+        new LoopInterchange.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_ROTATE, new LoopRotate.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LICM, new LICM.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_EARLY_CSE, new EarlyCSE.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_UNROLL_AND_JAM,
+        new LoopUnrollAndJam.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_UNROLL, new LoopUnroll.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_UNROLL, new LoopUnroll.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_INDVAR_SIMPLIFY,
+        new IndVarSimplify.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_INST_SIMPLIFY, new InstSimplify.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_SIMPLIFY_CFG, new SimplifyCFG.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_GVN, new GVN.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_STRENGTH_REDUCE,
+        new LoopStrengthReduce.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_LOAD_ROTATION,
+        new LoopRotate.LoadEliminationPass());
+    schedule.function(postIpsccp, PassRegistry.IR_LOOP_LOAD_ELIMINATION,
+        new LoopLoadElimination.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_POINTER_LFTR,
+        new IndVarSimplify.LFTRPass());
+    schedule.function(postIpsccp, PassRegistry.IR_LICM, new LICM.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_STRENGTH_REDUCTION,
+        new StrengthReduction.Pass());
+    schedule.function(postIpsccp, PassRegistry.IR_ADCE, new ADCE.Pass());
+
+    ModulePassManager module = new ModulePassManager(instrumentation);
+    module.addPass(new ModuleToFunctionPassAdaptor(initial));
+    module.addPass(new ModuleToFunctionPassAdaptor(globalMemory));
+    schedule.module(module, PassRegistry.IR_DEAD_STORE_ELIMINATION,
+        new DeadStoreElimination.Pass());
+    schedule.module(module, PassRegistry.IR_GLOBAL_DCE, new ADCE.GlobalPass());
+    schedule.module(module, PassRegistry.IR_GLOBAL_OPT, new GlobalOpt.Pass());
+    schedule.module(module, PassRegistry.IR_GLOBAL_SROA, new SROA.GlobalPass());
+    schedule.module(module, PassRegistry.IR_IPSCCP, new IPSCCP.Pass());
+    schedule.moduleObserved(module, PassRegistry.IR_RANKED_RECURRENCE_TABULATION,
+        (descriptor, occurrence) ->
+            instrumentation.isEnabled()
+                ? new RankedRecurrenceTabulation.Pass(instrumentation, descriptor, occurrence)
+                : new RankedRecurrenceTabulation.Pass());
+    module.addPass(new ModuleToFunctionPassAdaptor(preInline));
+    schedule.module(module, PassRegistry.IR_INLINER, new Inliner.Pass());
+    module.addPass(new ModuleToFunctionPassAdaptor(postInline));
+    schedule.module(module, PassRegistry.IR_IPSCCP, new IPSCCP.Pass());
+    schedule.module(module, PassRegistry.IR_GLOBAL_DCE, new ADCE.GlobalPass());
+    schedule.module(module, PassRegistry.IR_GLOBAL_OPT, new GlobalOpt.Pass());
+    module.addPass(new ModuleToFunctionPassAdaptor(postIpsccp));
+    schedule.module(module, PassRegistry.IR_GLOBAL_DCE, new ADCE.GlobalPass());
+
+    schedule.verifyComplete();
+    return module;
   }
 
   public ModulePassManager buildIRO0Pipeline() {
-    return buildIRO0Pipeline(PassInstrumentation.noop());
+    return buildIRO0Pipeline(PassInstrumentation.noop(), PipelineProfile.full());
+  }
+
+  private static IllegalStateException missingFactory(PassDescriptor descriptor) {
+    return new IllegalStateException(
+        "enabled candidate '" + descriptor.id() + "' has no registered "
+            + descriptor.stage() + " factory");
+  }
+
+  /** Typed, immutable factories for candidates inserted into the real IR pipeline. */
+  static final class CandidatePassProvider {
+    private final Map<String, BiFunction<PassDescriptor, Integer, FunctionPass>> functionFactories;
+    private final Map<String, BiFunction<PassDescriptor, Integer, ModulePass>> moduleFactories;
+
+    CandidatePassProvider(
+        Map<String, BiFunction<PassDescriptor, Integer, FunctionPass>> functionFactories,
+        Map<String, BiFunction<PassDescriptor, Integer, ModulePass>> moduleFactories) {
+      this.functionFactories = copyFactories(functionFactories, "functionFactories");
+      this.moduleFactories = copyFactories(moduleFactories, "moduleFactories");
+    }
+
+    static CandidatePassProvider empty() {
+      return new CandidatePassProvider(Map.of(), Map.of());
+    }
+
+    BiFunction<PassDescriptor, Integer, FunctionPass> functionFactory(String id) {
+      return functionFactories.get(id);
+    }
+
+    BiFunction<PassDescriptor, Integer, ModulePass> moduleFactory(String id) {
+      return moduleFactories.get(id);
+    }
+
+    void validate(PipelineProfile profile) {
+      PassRegistry registry = profile.registry();
+      validateFactories(registry, functionFactories, PassDescriptor.Stage.IR_FUNCTION);
+      validateFactories(registry, moduleFactories, PassDescriptor.Stage.IR_MODULE);
+      for (String id : profile.enabledCandidates()) {
+        PassDescriptor descriptor = registry.require(id);
+        boolean missing = switch (descriptor.stage()) {
+          case IR_FUNCTION -> !functionFactories.containsKey(id);
+          case IR_MODULE -> !moduleFactories.containsKey(id);
+          case BACKEND_FUNCTION, BACKEND_MODULE -> false;
+        };
+        if (missing) throw missingFactory(descriptor);
+      }
+    }
+
+    private static <T> Map<String, T> copyFactories(Map<String, T> source, String name) {
+      Objects.requireNonNull(source, name);
+      LinkedHashMap<String, T> copy = new LinkedHashMap<>();
+      source.forEach((id, factory) -> {
+        if (id == null || id.isBlank()) {
+          throw new IllegalArgumentException(name + " contains a blank candidate id");
+        }
+        copy.put(id, Objects.requireNonNull(factory, name + "[" + id + "]"));
+      });
+      return Map.copyOf(copy);
+    }
+
+    private static void validateFactories(
+        PassRegistry registry, Map<String, ?> factories, PassDescriptor.Stage stage) {
+      for (String id : factories.keySet()) {
+        PassDescriptor descriptor = registry.require(id);
+        if (!descriptor.candidate()) {
+          throw new IllegalArgumentException(
+              "candidate provider id is not a CANDIDATE descriptor: " + id);
+        }
+        if (descriptor.stage() != stage) {
+          throw new IllegalArgumentException(
+              "candidate provider registered '" + id + "' for " + stage
+                  + " but registry declares " + descriptor.stage());
+        }
+      }
+    }
+  }
+
+  static final class Schedule {
+    private record ScheduledOccurrence(
+        PassDescriptor descriptor,
+        int occurrence) {}
+
+    private final PipelineProfile profile;
+    private final CandidatePassProvider candidatePassProvider;
+    private final boolean automaticCandidates;
+    private final Map<String, Integer> occurrences = new LinkedHashMap<>();
+    private final Map<Object, List<ScheduledOccurrence>> sequences = new IdentityHashMap<>();
+
+    Schedule(PipelineProfile profile) {
+      this.profile = Objects.requireNonNull(profile, "profile");
+      this.candidatePassProvider = CandidatePassProvider.empty();
+      this.automaticCandidates = false;
+    }
+
+    Schedule(PipelineProfile profile, CandidatePassProvider candidatePassProvider) {
+      this.profile = Objects.requireNonNull(profile, "profile");
+      this.candidatePassProvider = Objects.requireNonNull(
+          candidatePassProvider, "candidatePassProvider");
+      candidatePassProvider.validate(profile);
+      this.automaticCandidates = true;
+    }
+
+    void function(FunctionPassManager manager, String passId, FunctionPass pass) {
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_FUNCTION);
+      int occurrence = reserve(descriptor);
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) manager.addPass(pass, descriptor, occurrence);
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
+    }
+
+    void module(ModulePassManager manager, String passId, ModulePass pass) {
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_MODULE);
+      int occurrence = reserve(descriptor);
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) manager.addPass(pass, descriptor, occurrence);
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
+    }
+
+    void candidateFunction(
+        FunctionPassManager manager,
+        String passId,
+        BiFunction<PassDescriptor, Integer, ? extends FunctionPass> factory) {
+      Objects.requireNonNull(factory, "factory");
+      PassDescriptor descriptor = candidate(passId, PassDescriptor.Stage.IR_FUNCTION);
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) {
+        manager.addPass(
+            Objects.requireNonNull(
+                factory.apply(descriptor, occurrence), "candidate function pass factory result"),
+            descriptor,
+            occurrence);
+      }
+    }
+
+    void candidateModule(
+        ModulePassManager manager,
+        String passId,
+        BiFunction<PassDescriptor, Integer, ? extends ModulePass> factory) {
+      Objects.requireNonNull(factory, "factory");
+      PassDescriptor descriptor = candidate(passId, PassDescriptor.Stage.IR_MODULE);
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) {
+        manager.addPass(
+            Objects.requireNonNull(
+                factory.apply(descriptor, occurrence), "candidate module pass factory result"),
+            descriptor,
+            occurrence);
+      }
+    }
+
+    void functionObserved(
+        FunctionPassManager manager,
+        String passId,
+        BiFunction<PassDescriptor, Integer, FunctionPass> factory) {
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_FUNCTION);
+      int occurrence = reserve(descriptor);
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) {
+        manager.addPass(factory.apply(descriptor, occurrence), descriptor, occurrence);
+      }
+      automaticFunctionCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
+    }
+
+    void moduleObserved(
+        ModulePassManager manager,
+        String passId,
+        BiFunction<PassDescriptor, Integer, ModulePass> factory) {
+      PassDescriptor descriptor = production(passId, PassDescriptor.Stage.IR_MODULE);
+      int occurrence = reserve(descriptor);
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.BEFORE);
+      record(manager, descriptor, occurrence);
+      if (profile.isEnabled(passId, occurrence)) {
+        manager.addPass(factory.apply(descriptor, occurrence), descriptor, occurrence);
+      }
+      automaticModuleCandidates(
+          manager, descriptor, occurrence, PassDescriptor.AnchorPosition.AFTER);
+    }
+
+    private void automaticFunctionCandidates(
+        FunctionPassManager manager,
+        PassDescriptor anchorDescriptor,
+        int anchorOccurrence,
+        PassDescriptor.AnchorPosition position) {
+      if (!automaticCandidates) return;
+      for (PassDescriptor candidate : candidatesAt(
+          anchorDescriptor, anchorOccurrence, position, PassDescriptor.Stage.IR_FUNCTION)) {
+        reserveAutomaticFunctionCandidate(manager, candidate);
+      }
+    }
+
+    private void automaticModuleCandidates(
+        ModulePassManager manager,
+        PassDescriptor anchorDescriptor,
+        int anchorOccurrence,
+        PassDescriptor.AnchorPosition position) {
+      if (!automaticCandidates) return;
+      for (PassDescriptor candidate : candidatesAt(
+          anchorDescriptor, anchorOccurrence, position, PassDescriptor.Stage.IR_MODULE)) {
+        reserveAutomaticModuleCandidate(manager, candidate);
+      }
+    }
+
+    private List<PassDescriptor> candidatesAt(
+        PassDescriptor anchorDescriptor,
+        int anchorOccurrence,
+        PassDescriptor.AnchorPosition position,
+        PassDescriptor.Stage stage) {
+      return profile.registry().candidates().stream()
+          .filter(candidate -> candidate.stage() == stage)
+          .filter(candidate -> candidate.candidateAnchor().passId().equals(anchorDescriptor.id()))
+          .filter(candidate -> candidate.candidateAnchor().occurrence() == anchorOccurrence)
+          .filter(candidate -> candidate.candidateAnchor().position() == position)
+          .toList();
+    }
+
+    private void reserveAutomaticFunctionCandidate(
+        FunctionPassManager manager, PassDescriptor descriptor) {
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (!profile.isEnabled(descriptor.id(), occurrence)) return;
+      BiFunction<PassDescriptor, Integer, FunctionPass> factory =
+          candidatePassProvider.functionFactory(descriptor.id());
+      if (factory == null) throw missingFactory(descriptor);
+      manager.addPass(
+          Objects.requireNonNull(
+              factory.apply(descriptor, occurrence), "candidate function pass factory result"),
+          descriptor,
+          occurrence);
+    }
+
+    private void reserveAutomaticModuleCandidate(
+        ModulePassManager manager, PassDescriptor descriptor) {
+      int occurrence = reserve(descriptor);
+      record(manager, descriptor, occurrence);
+      if (!profile.isEnabled(descriptor.id(), occurrence)) return;
+      BiFunction<PassDescriptor, Integer, ModulePass> factory =
+          candidatePassProvider.moduleFactory(descriptor.id());
+      if (factory == null) throw missingFactory(descriptor);
+      manager.addPass(
+          Objects.requireNonNull(
+              factory.apply(descriptor, occurrence), "candidate module pass factory result"),
+          descriptor,
+          occurrence);
+    }
+
+    void verifyComplete() {
+      for (PassDescriptor descriptor : profile.registry().all()) {
+        if (!descriptor.stage().isIr()) continue;
+        int actual = occurrences.getOrDefault(descriptor.id(), 0);
+        if (actual != descriptor.fullPipelineOccurrences()) {
+          throw new IllegalStateException("registered FULL occurrence count for '" + descriptor.id()
+              + "' is " + descriptor.fullPipelineOccurrences() + ", but pipeline schedules " + actual);
+        }
+      }
+      verifyCandidateAnchors();
+    }
+
+    private PassDescriptor candidate(String id, PassDescriptor.Stage stage) {
+      PassDescriptor descriptor = descriptor(id, stage);
+      if (!descriptor.candidate()) {
+        throw new IllegalArgumentException(
+            "candidate scheduling requires a CANDIDATE descriptor: " + id);
+      }
+      return descriptor;
+    }
+
+    private PassDescriptor production(String id, PassDescriptor.Stage stage) {
+      PassDescriptor descriptor = descriptor(id, stage);
+      if (descriptor.candidate()) {
+        throw new IllegalArgumentException(
+            "candidate passes must use a lazy candidate scheduling method: " + id);
+      }
+      return descriptor;
+    }
+
+    private PassDescriptor descriptor(String id, PassDescriptor.Stage stage) {
+      PassDescriptor descriptor = profile.registry().require(id);
+      if (descriptor.stage() != stage) {
+        throw new IllegalStateException("pass '" + id + "' registered for " + descriptor.stage()
+            + " but scheduled for " + stage);
+      }
+      return descriptor;
+    }
+
+    private int reserve(PassDescriptor descriptor) {
+      int occurrence = occurrences.merge(descriptor.id(), 1, Integer::sum);
+      if (occurrence > descriptor.fullPipelineOccurrences()) {
+        throw new IllegalStateException("pipeline schedules too many occurrences of '"
+            + descriptor.id() + "'");
+      }
+      return occurrence;
+    }
+
+    private void record(Object manager, PassDescriptor descriptor, int occurrence) {
+      sequences.computeIfAbsent(manager, ignored -> new ArrayList<>())
+          .add(new ScheduledOccurrence(descriptor, occurrence));
+    }
+
+    private void verifyCandidateAnchors() {
+      LinkedHashMap<PassDescriptor.CandidateAnchor, List<String>> expectedGroups =
+          new LinkedHashMap<>();
+      for (PassDescriptor descriptor : profile.registry().candidates()) {
+        if (!descriptor.stage().isIr()) continue;
+        expectedGroups.computeIfAbsent(descriptor.candidateAnchor(), ignored -> new ArrayList<>())
+            .add(descriptor.id());
+      }
+      for (Map.Entry<PassDescriptor.CandidateAnchor, List<String>> group
+          : expectedGroups.entrySet()) {
+        PassDescriptor.CandidateAnchor anchor = group.getKey();
+        List<ScheduledOccurrence> anchorSequence = null;
+        int anchorIndex = -1;
+        for (List<ScheduledOccurrence> sequence : sequences.values()) {
+          for (int index = 0; index < sequence.size(); index++) {
+            ScheduledOccurrence scheduled = sequence.get(index);
+            if (scheduled.descriptor().id().equals(anchor.passId())
+                && scheduled.occurrence() == anchor.occurrence()) {
+              if (anchorSequence != null) {
+                throw new IllegalStateException(
+                    "IR candidate anchor is scheduled in more than one pipeline fragment: "
+                        + anchor.passId() + "#" + anchor.occurrence());
+              }
+              anchorSequence = sequence;
+              anchorIndex = index;
+            }
+          }
+        }
+        List<String> actual = anchorSequence == null
+            ? List.of()
+            : candidateGroupAtAnchor(anchorSequence, anchorIndex, anchor);
+        if (!actual.equals(group.getValue())) {
+          throw new IllegalStateException(
+              "IR candidate group at " + anchor.passId() + "#" + anchor.occurrence()
+                  + " " + anchor.position() + " must follow registry order " + group.getValue()
+                  + ", but pipeline schedules " + actual);
+        }
+      }
+    }
+
+    private static List<String> candidateGroupAtAnchor(
+        List<ScheduledOccurrence> sequence,
+        int anchorIndex,
+        PassDescriptor.CandidateAnchor anchor) {
+      if (anchor.position() == PassDescriptor.AnchorPosition.BEFORE) {
+        int start = anchorIndex;
+        while (start > 0 && sharesAnchor(sequence.get(start - 1).descriptor(), anchor)) {
+          start--;
+        }
+        return sequence.subList(start, anchorIndex).stream()
+            .map(item -> item.descriptor().id())
+            .toList();
+      }
+      int end = anchorIndex + 1;
+      while (end < sequence.size() && sharesAnchor(sequence.get(end).descriptor(), anchor)) {
+        end++;
+      }
+      return sequence.subList(anchorIndex + 1, end).stream()
+          .map(item -> item.descriptor().id())
+          .toList();
+    }
+
+    private static boolean sharesAnchor(
+        PassDescriptor descriptor,
+        PassDescriptor.CandidateAnchor anchor) {
+      return descriptor.candidate() && descriptor.candidateAnchor().equals(anchor);
+    }
   }
 }

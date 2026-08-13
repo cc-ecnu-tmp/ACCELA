@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-screening.v1.json",
+  "title": "ACCELA complete candidate qualification screening v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "screening_id", "generated_at", "candidate_evidence_sha256",
+    "screening_spec_sha256", "pass_registry_sha256", "base_pass_registry", "sources",
+    "oracle_threshold", "oracle_capture_sha256",
+    "candidates", "duplicate_groups"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-screening.v1"},
+    "screening_id": {"$ref": "#/$defs/id"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "candidate_evidence_sha256": {"$ref": "#/$defs/sha256"},
+    "screening_spec_sha256": {"$ref": "#/$defs/sha256"},
+    "pass_registry_sha256": {"$ref": "#/$defs/sha256"},
+    "base_pass_registry": {"$ref": "#/$defs/artifact"},
+    "sources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_evidence", "screening_spec", "oracle_capture"],
+      "properties": {
+        "candidate_evidence": {"$ref": "#/$defs/artifact"},
+        "screening_spec": {"$ref": "#/$defs/artifact"},
+        "oracle_capture": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "oracle_threshold": {"const": 1.1},
+    "oracle_capture_sha256": {"$ref": "#/$defs/sha256"},
+    "candidates": {
+      "type": "array", "minItems": 11, "maxItems": 11,
+      "items": {"$ref": "#/$defs/candidate"}
+    },
+    "duplicate_groups": {"type": "array", "items": {"$ref": "#/$defs/duplicate_group"}}
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "nullable_positive": {
+      "oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0}]
+    },
+    "pair_tier": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "pair_id", "family", "structure_id", "size", "baseline_case_id",
+        "optimized_case_id", "eligible_for_ranking", "ineligibility_reason",
+        "baseline_metric_value", "optimized_metric_value", "speedup"
+      ],
+      "properties": {
+        "pair_id": {"$ref": "#/$defs/id"},
+        "family": {"$ref": "#/$defs/id"},
+        "structure_id": {"$ref": "#/$defs/id"},
+        "size": {"enum": ["small", "medium", "large"]},
+        "baseline_case_id": {"$ref": "#/$defs/id"},
+        "optimized_case_id": {"$ref": "#/$defs/id"},
+        "eligible_for_ranking": {"type": "boolean"},
+        "ineligibility_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"enum": [
+              "baseline_case_missing", "optimized_case_missing", "right_censored",
+              "incomplete_run", "correctness_failure"
+            ]}
+          ]
+        },
+        "baseline_metric_value": {"$ref": "#/$defs/nullable_positive"},
+        "optimized_metric_value": {"$ref": "#/$defs/nullable_positive"},
+        "speedup": {"$ref": "#/$defs/nullable_positive"}
+      }
+    },
+    "sizes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["small", "medium", "large"],
+      "properties": {
+        "small": {"$ref": "#/$defs/pair_tier"},
+        "medium": {"$ref": "#/$defs/pair_tier"},
+        "large": {"$ref": "#/$defs/pair_tier"}
+      }
+    },
+    "structure": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "oracle_family_id", "structure_id", "sizes", "paired_datasets", "eligible_for_ranking",
+        "ineligibility_reason", "geometric_mean_speedup",
+        "eligible_for_candidate_screening", "meets_threshold"
+      ],
+      "properties": {
+        "oracle_family_id": {"$ref": "#/$defs/id"},
+        "structure_id": {"$ref": "#/$defs/id"},
+        "sizes": {"$ref": "#/$defs/sizes"},
+        "paired_datasets": {"const": 3},
+        "eligible_for_ranking": {"type": "boolean"},
+        "ineligibility_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"const": "incomplete_or_incorrect_oracle"}
+          ]
+        },
+        "geometric_mean_speedup": {"$ref": "#/$defs/nullable_positive"},
+        "eligible_for_candidate_screening": {"type": "boolean"},
+        "meets_threshold": {"type": "boolean"}
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "candidate_id", "oracle_family_id", "implementation_candidate_id",
+        "family_kind", "overlaps_existing_pass_ids", "duplicate_of",
+        "eligible_oracle_structure_refs", "oracle_structures", "qualifying_oracle_structure_refs", "legality_proof_path",
+        "legality_obligation_ids", "implementation_cost", "risk",
+        "specification_status", "requires_boom_feature", "qualification_status",
+        "rejection_reasons"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "oracle_family_id": {"$ref": "#/$defs/id"},
+        "implementation_candidate_id": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]
+        },
+        "family_kind": {"enum": ["standard", "bitset", "mixed"]},
+        "overlaps_existing_pass_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "duplicate_of": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+        "eligible_oracle_structure_refs": {
+          "type": "array", "uniqueItems": true,
+          "items": {"$ref": "#/$defs/oracle_structure_ref"}
+        },
+        "oracle_structures": {
+          "type": "array", "minItems": 3, "maxItems": 4,
+          "items": {"$ref": "#/$defs/structure"}
+        },
+        "qualifying_oracle_structure_refs": {
+          "type": "array", "uniqueItems": true,
+          "items": {"$ref": "#/$defs/oracle_structure_ref"}
+        },
+        "legality_proof_path": {"enum": ["clear", "unclear"]},
+        "legality_obligation_ids": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}
+        },
+        "implementation_cost": {"enum": ["low", "medium", "high", "unknown"]},
+        "risk": {"enum": ["low", "medium", "high", "unknown"]},
+        "specification_status": {"enum": ["clear", "unclear"]},
+        "requires_boom_feature": {"type": "boolean"},
+        "qualification_status": {"enum": ["qualified", "blocked", "rejected"]},
+        "rejection_reasons": {
+          "type": "array", "uniqueItems": true,
+          "items": {"enum": [
+            "duplicate_candidate", "overlaps_existing_pipeline",
+            "no_complete_oracle_structure", "oracle_structure_below_1_10",
+            "unclear_legality", "unclear_specification", "unsupported_ir_or_backend",
+            "requires_unavailable_boom_feature", "blocked_locked_bitset_capability_gap",
+            "mixed_family_no_unified_transform"
+          ]}
+        }
+      }
+    },
+    "oracle_structure_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["oracle_family_id", "structure_id"],
+      "properties": {
+        "oracle_family_id": {"$ref": "#/$defs/id"},
+        "structure_id": {"$ref": "#/$defs/id"}
+      }
+    },
+    "duplicate_group": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_candidate_id", "duplicate_candidate_ids"],
+      "properties": {
+        "canonical_candidate_id": {"$ref": "#/$defs/id"},
+        "duplicate_candidate_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        }
+      }
+    }
+  }
+}

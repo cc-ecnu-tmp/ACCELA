@@ -1,0 +1,1 @@
+{"schema_version":1,"base":"FULL","disable":[{"pass":"backend.memory-address-folding"},{"pass":"backend.global-merge"},{"pass":"backend.global-address-materialization"}]}

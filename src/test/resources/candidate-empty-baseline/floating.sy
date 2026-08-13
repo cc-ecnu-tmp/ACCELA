@@ -1,0 +1,8 @@
+float transform(float value) {
+  return value * 1.5 + 2.0;
+}
+
+int main() {
+  putfloat(transform(getfloat()));
+  return 0;
+}

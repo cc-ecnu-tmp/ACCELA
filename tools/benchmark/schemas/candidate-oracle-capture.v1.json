@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-oracle-capture.v1.json",
+  "title": "ACCELA 99-pair candidate Oracle capture v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "capture_id", "generated_at", "candidate_evidence_sha256",
+    "oracle_plan_sha256", "sources", "evidence_class", "pair_count", "bindings", "baseline",
+    "optimized", "raw_state_root", "raw_evidence", "primary_metric_id", "metric_unit", "candidates"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-oracle-capture.v1"},
+    "capture_id": {"$ref": "#/$defs/id"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "candidate_evidence_sha256": {"$ref": "#/$defs/sha256"},
+    "oracle_plan_sha256": {"$ref": "#/$defs/sha256"},
+    "sources": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_evidence", "oracle_plan"],
+      "properties": {
+        "candidate_evidence": {"$ref": "#/$defs/artifact"},
+        "oracle_plan": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "evidence_class": {"const": "cleanroom"},
+    "pair_count": {"const": 99},
+    "bindings": {"$ref": "#/$defs/bindings"},
+    "baseline": {"$ref": "#/$defs/run_ref"},
+    "optimized": {"$ref": "#/$defs/run_ref"},
+    "raw_state_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "raw_evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["baseline", "optimized"],
+      "properties": {
+        "baseline": {"$ref": "#/$defs/raw_run_ref"},
+        "optimized": {"$ref": "#/$defs/raw_run_ref"}
+      }
+    },
+    "primary_metric_id": {"$ref": "#/$defs/id"},
+    "metric_unit": {"type": "string", "minLength": 1, "maxLength": 64},
+    "candidates": {
+      "type": "array", "minItems": 11, "maxItems": 11,
+      "items": {"$ref": "#/$defs/candidate"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "nullable_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+    "nullable_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+    "nullable_positive": {
+      "oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0}]
+    },
+    "bindings": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "repo_commit", "repo_dirty", "tracked_diff_sha256", "compiler_artifact_sha256",
+        "measurement_protocol_id", "measurement_protocol_sha256",
+        "pipeline_profile_id", "pipeline_profile_sha256"
+      ],
+      "properties": {
+        "repo_commit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+        "repo_dirty": {"type": "boolean"},
+        "tracked_diff_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "compiler_artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "measurement_protocol_id": {"$ref": "#/$defs/nullable_id"},
+        "measurement_protocol_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "pipeline_profile_id": {"$ref": "#/$defs/id"},
+        "pipeline_profile_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "run_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["run_id", "run_sha256", "configuration_sha256"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/id"},
+        "run_sha256": {"$ref": "#/$defs/sha256"},
+        "configuration_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "raw_run_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "run_record_path", "run_id", "run_canonical_sha256", "run_physical_sha256", "terminal_observed_at",
+        "terminal_journal_sha256", "terminal_journal_event_count",
+        "state_tree_sha256", "raw_evidence_sha256", "attempt_count",
+        "terminal_attempt_count"
+      ],
+      "properties": {
+        "run_record_path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "run_id": {"$ref": "#/$defs/id"},
+        "run_canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "run_physical_sha256": {"$ref": "#/$defs/sha256"},
+        "terminal_observed_at": {"type": "string", "format": "date-time"},
+        "terminal_journal_sha256": {"$ref": "#/$defs/sha256"},
+        "terminal_journal_event_count": {"type": "integer", "minimum": 1},
+        "state_tree_sha256": {"$ref": "#/$defs/sha256"},
+        "raw_evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "attempt_count": {"type": "integer", "minimum": 0},
+        "terminal_attempt_count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "pair": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "pair_id", "family", "structure_id", "size", "baseline_case_id",
+        "optimized_case_id", "eligible_for_ranking", "ineligibility_reason",
+        "baseline_metric_value", "optimized_metric_value", "speedup"
+      ],
+      "properties": {
+        "pair_id": {"$ref": "#/$defs/id"},
+        "family": {"$ref": "#/$defs/id"},
+        "structure_id": {"$ref": "#/$defs/id"},
+        "size": {"enum": ["small", "medium", "large"]},
+        "baseline_case_id": {"$ref": "#/$defs/id"},
+        "optimized_case_id": {"$ref": "#/$defs/id"},
+        "eligible_for_ranking": {"type": "boolean"},
+        "ineligibility_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"enum": [
+              "baseline_case_missing", "optimized_case_missing", "right_censored",
+              "incomplete_run", "correctness_failure"
+            ]}
+          ]
+        },
+        "baseline_metric_value": {"$ref": "#/$defs/nullable_positive"},
+        "optimized_metric_value": {"$ref": "#/$defs/nullable_positive"},
+        "speedup": {"$ref": "#/$defs/nullable_positive"}
+      }
+    },
+    "sizes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["small", "medium", "large"],
+      "properties": {
+        "small": {"$ref": "#/$defs/pair"},
+        "medium": {"$ref": "#/$defs/pair"},
+        "large": {"$ref": "#/$defs/pair"}
+      }
+    },
+    "structure": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "structure_id", "sizes", "paired_datasets", "eligible_for_ranking",
+        "ineligibility_reason", "geometric_mean_upper_bound"
+      ],
+      "properties": {
+        "structure_id": {"$ref": "#/$defs/id"},
+        "sizes": {"$ref": "#/$defs/sizes"},
+        "paired_datasets": {"const": 3},
+        "eligible_for_ranking": {"type": "boolean"},
+        "ineligibility_reason": {
+          "oneOf": [
+            {"type": "null"},
+            {"const": "incomplete_or_incorrect_oracle"}
+          ]
+        },
+        "geometric_mean_upper_bound": {"$ref": "#/$defs/nullable_positive"}
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_id", "oracle_family_id", "structures"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "oracle_family_id": {"$ref": "#/$defs/id"},
+        "structures": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": {"$ref": "#/$defs/structure"}
+        }
+      }
+    }
+  }
+}

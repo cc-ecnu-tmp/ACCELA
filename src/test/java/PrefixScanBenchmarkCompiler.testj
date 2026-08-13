@@ -1,0 +1,25 @@
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.pass.ir.transform.scan.PrefixScanReuse;
+import java.nio.file.Path;
+
+/** Executable test seam for real BenchmarkCompiler and RV64GC candidate validation. */
+public final class PrefixScanBenchmarkCompiler {
+  private PrefixScanBenchmarkCompiler() {}
+
+  public static void main(String[] args) throws Exception {
+    PassRegistry registry = PassRegistry.standard();
+    if (args.length == 2 && "--export-enabled-profile".equals(args[0])) {
+      PipelineProfile.builder(registry)
+          .enableCandidate(PrefixScanReuse.ID)
+          .build()
+          .writeJson(Path.of(args[1]));
+      return;
+    }
+    if (args.length == 2 && "--export-disabled-profile".equals(args[0])) {
+      PipelineProfile.full(registry).writeJson(Path.of(args[1]));
+      return;
+    }
+    BenchmarkCompiler.main(args);
+  }
+}

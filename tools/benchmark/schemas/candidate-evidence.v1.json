@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-evidence.v1.json",
+  "title": "ACCELA unimplemented optimization candidate evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "snapshot_id", "candidates"],
+  "properties": {
+    "schema_version": {"const": "candidate-evidence.v1"},
+    "snapshot_id": {"$ref": "#/$defs/id"},
+    "candidates": {
+      "type": "array", "minItems": 1,
+      "description": "External semantic validation resolves every plan and deduplicates selected Oracle pairs by target/source/input/output content, never by mutable IDs.",
+      "items": {"$ref": "#/$defs/candidate"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "oracle_run_binding": {
+      "type": "object",
+      "description": "The plan digest is resolved before use; run and workload IDs are selectors, not content identities.",
+      "required": ["plan_sha256", "baseline_run_id", "optimized_run_id"],
+      "properties": {
+        "plan_sha256": {"$ref": "#/$defs/sha256"},
+        "baseline_run_id": {"$ref": "#/$defs/id"},
+        "optimized_run_id": {"$ref": "#/$defs/id"}
+      }
+    },
+    "official_ref": {
+      "allOf": [
+        {"$ref": "#/$defs/oracle_run_binding"},
+        {
+          "type": "object",
+          "required": ["family_ids"],
+          "properties": {
+            "family_ids": {
+              "type": "array", "minItems": 1, "uniqueItems": true,
+              "items": {"$ref": "#/$defs/id"}
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "holdout_ref": {
+      "allOf": [
+        {"$ref": "#/$defs/oracle_run_binding"},
+        {
+          "type": "object",
+          "required": ["pair_ids"],
+          "properties": {
+            "pair_ids": {
+              "type": "array", "minItems": 1, "uniqueItems": true,
+              "items": {"$ref": "#/$defs/id"}
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "candidate_id", "cleanroom_oracle_family_id", "official_oracle_refs",
+        "holdout_or_mature_refs", "legality_proof_path", "legality_obligation_ids",
+        "implementation_cost", "risk", "specification_status", "requires_boom_feature"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "cleanroom_oracle_family_id": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]
+        },
+        "official_oracle_refs": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/official_ref"}
+        },
+        "holdout_or_mature_refs": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/holdout_ref"}
+        },
+        "legality_proof_path": {"enum": ["clear", "unclear"]},
+        "legality_obligation_ids": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        },
+        "implementation_cost": {"enum": ["low", "medium", "high", "unknown"]},
+        "risk": {"enum": ["low", "medium", "high", "unknown"]},
+        "specification_status": {"enum": ["clear", "unclear"]},
+        "requires_boom_feature": {"type": "boolean"}
+      }
+    }
+  }
+}

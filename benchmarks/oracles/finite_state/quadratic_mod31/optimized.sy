@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for finite_state/quadratic_mod31: nonlinear transition over 31 states; role=optimized
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int jump_table[31][128];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+int transition(int state){return (state*state+3)%31;}
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int s=0;while(s<31){jump_table[0][s]=transition(s);s=s+1;}
+  int level=1;while(level<31){s=0;while(s<31){jump_table[level][s]=jump_table[level-1][jump_table[level-1][s]];s=s+1;}level=level+1;}
+  int state=seed%31;int k=n;level=0;
+  while(k!=0){if(k%2!=0){state=jump_table[level][state];}k=k/2;level=level+1;}
+  putint(state);putch(10);return 0;
+}

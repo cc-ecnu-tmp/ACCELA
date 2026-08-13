@@ -1,6 +1,7 @@
 package accela.backend.target;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.MachineFunction;
@@ -17,7 +18,7 @@ final class RISCVFrameLoweringTest {
   @Test
   void omitsTheFrameForAnEmptyLeaf() {
     MachineFunction function = new MachineFunction("leaf", MachineType.I32);
-    lowering.finalizeFrame(function);
+    assertFalse(lowering.finalizeFrame(function));
 
     List<String> lines = new ArrayList<>();
     lowering.emitPrologue(function, lines);
@@ -25,6 +26,16 @@ final class RISCVFrameLoweringTest {
 
     assertEquals(0, function.getFrameInfo().getFrameSize());
     assertEquals(List.of("  ret"), lines);
+  }
+
+  @Test
+  void reportsFrameLayoutModificationOnlyWhenStateChanges() {
+    MachineFunction function = new MachineFunction("local", MachineType.I32);
+    function.getFrameInfo().createLocalSlot(MachineType.I32, 4, 4);
+
+    assertTrue(lowering.finalizeFrame(function));
+    assertFalse(lowering.finalizeFrame(function));
+    assertEquals(16, function.getFrameInfo().getFrameSize());
   }
 
   @Test

@@ -1,0 +1,92 @@
+{
+  "schema": "accela-source-snapshot.v1",
+  "captured_at": "2026-08-11T13:20:35+08:00",
+  "competition_repository": {
+    "url": "https://gitlab.eduxiji.net/csc1/nscscc/compiler2026",
+    "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
+    "last_commit_at": "2026-07-16T06:42:41Z",
+    "refresh_status": "success",
+    "refresh_error_class": null
+  },
+  "refresh_history": [
+    {
+      "captured_at": "2026-08-09T22:00:53+08:00",
+      "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
+      "status": "success"
+    },
+    {
+      "captured_at": "2026-08-10T00:36:00+08:00",
+      "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
+      "status": "success"
+    },
+    {
+      "captured_at": "2026-08-11T13:20:35+08:00",
+      "commit": "8e09f56a8ffb29c491aac4a31086492099af2292",
+      "status": "success"
+    }
+  ],
+  "documents": [
+    {
+      "id": "implementation-track-technical-plan-2026",
+      "sha256": "5549ca9005005905ec30f2fa8ba254b90bcfa73d6eabe8875747d8ff3bf5a29f"
+    },
+    {
+      "id": "competition-charter-2026",
+      "sha256": "bc60e16c3f5d5f2d51904edb4b2caa7bcd668dfd8b8441e1ba8b619c80d8f23a"
+    },
+    {
+      "id": "optimization-compliance-guidance",
+      "sha256": "a900ee0c7dcb8605b2bd5b0a56f2018d6f6bd0145493cbd84c7cf093a506ece5"
+    },
+    {
+      "id": "deep-research-report",
+      "sha256": "eecb7f1b8c6ea452b04c571fac0cc4fc8cb9fbc555c3cb382a6482bc2ee06ea9",
+      "bytes": 69036,
+      "lines": 1063
+    },
+    {
+      "id": "accela-technical-report-pre-audit",
+      "sha256": "ed60778a4d269257ca07c1c43f6b8799384a6aaf1d4782d7398a4285809c0d8d",
+      "bytes": 690218
+    }
+  ],
+  "archives": [
+    {
+      "id": "riscv-functional-2026-public",
+      "sha256": "98f563c7802a62d57eaa6ea46402ae377ffffdf726eccd86c795bed6cc9fd973"
+    },
+    {
+      "id": "functional-2025-public",
+      "sha256": "7eed5684beb02483727a6747667e161fe650b151377f8fb256d4139d0e3b78de"
+    },
+    {
+      "id": "riscv-performance-2026-public",
+      "sha256": "49fb434e9abff69bca46f0a0a1d9be7811459eeebbd7bd95f87d45d79967e0e6"
+    },
+    {
+      "id": "riscv-performance-2025-preliminary",
+      "sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0"
+    },
+    {
+      "id": "riscv-performance-2025-final",
+      "sha256": "91d1940672d1bd76dd4fc3953a896adcfd7a6f5303a0771218bcf9a9af4b27d6"
+    }
+  ],
+  "conversations": [
+    {
+      "id": "6a784d9e-c76c-83ea-abbb-a731cca063c9",
+      "title": "OI/ACM优化与ACCELA",
+      "read_status": "success",
+      "turns": 2,
+      "trust": "untrusted_historical_hypothesis",
+      "use": "compare_pre_research_priorities_with_measured_and_oracle_evidence"
+    }
+  ],
+  "known_unresolved_rules": [
+    "final_vector_language_and_simd_specification",
+    "official_final_runtime_and_complete_link_command",
+    "compiler_timeout",
+    "per_case_runtime_timeout",
+    "warmup_and_repetition_policy"
+  ]
+}

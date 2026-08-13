@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-raw-evidence.v1.json",
+  "title": "ACCELA candidate campaign raw run evidence registry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "registry_id", "campaign_id", "plan_sha256",
+    "raw_state_root", "runs"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-raw-evidence.v1"},
+    "registry_id": {"$ref": "#/$defs/id"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "plan_sha256": {"$ref": "#/$defs/sha256"},
+    "raw_state_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "runs": {
+      "type": "array", "uniqueItems": true,
+      "items": {"$ref": "#/$defs/run"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"
+    },
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "attempt": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "attempt_index", "identity_sha256", "journal_commitment_sha256",
+        "journal_event_count", "raw_files_sha256", "remark_files_sha256"
+      ],
+      "properties": {
+        "attempt_index": {"type": "integer", "minimum": 0},
+        "identity_sha256": {"$ref": "#/$defs/sha256"},
+        "journal_commitment_sha256": {"$ref": "#/$defs/sha256"},
+        "journal_event_count": {"type": "integer", "minimum": 1},
+        "raw_files_sha256": {"$ref": "#/$defs/sha256"},
+        "remark_files_sha256": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+        }
+      }
+    },
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["case_id", "attempts", "current_attempt_index"],
+      "properties": {
+        "case_id": {"$ref": "#/$defs/id"},
+        "attempts": {
+          "type": "array", "items": {"$ref": "#/$defs/attempt"}
+        },
+        "current_attempt_index": {
+          "oneOf": [{"type": "null"}, {"type": "integer", "minimum": 0}]
+        }
+      }
+    },
+    "verification": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "schema_version", "run_id", "run_canonical_sha256", "run_physical_sha256", "terminal_observed_at",
+        "terminal_journal_sha256", "terminal_journal_event_count",
+        "state_tree_sha256", "attempt_count", "terminal_attempt_count",
+        "cases", "raw_evidence_sha256"
+      ],
+      "properties": {
+        "schema_version": {"const": "benchmark-run-raw-evidence.v1"},
+        "run_id": {"$ref": "#/$defs/id"},
+        "run_canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "run_physical_sha256": {"$ref": "#/$defs/sha256"},
+        "terminal_observed_at": {"type": "string", "format": "date-time"},
+        "terminal_journal_sha256": {"$ref": "#/$defs/sha256"},
+        "terminal_journal_event_count": {"type": "integer", "minimum": 1},
+        "state_tree_sha256": {"$ref": "#/$defs/sha256"},
+        "attempt_count": {"type": "integer", "minimum": 0},
+        "terminal_attempt_count": {"type": "integer", "minimum": 0},
+        "cases": {"type": "array", "items": {"$ref": "#/$defs/case"}},
+        "raw_evidence_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_id", "run_record", "verification"],
+      "properties": {
+        "task_id": {"$ref": "#/$defs/id"},
+        "run_record": {"$ref": "#/$defs/artifact"},
+        "verification": {"$ref": "#/$defs/verification"}
+      }
+    }
+  }
+}

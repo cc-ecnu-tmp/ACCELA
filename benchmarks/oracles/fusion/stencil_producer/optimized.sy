@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: MIT
+// Provenance: ACCELA clean-room original; no upstream benchmark source copied.
+// Family description: semantic oracle for fusion/stencil_producer: non-duplicating three-point producer contraction; role=optimized
+// Input contract: two decimal integers, problem size n and deterministic seed.
+
+int a[8192]; int b[8192]; int tmp1[8192]; int tmp2[8192]; int out[8192];
+int rng_state;
+
+int next_small() {
+  rng_state = (rng_state * 25173 + 13849) % 65521;
+  return rng_state % 31 - 15;
+}
+
+int checksum_step(int acc, int value, int index) {
+  return acc * 65599 + value + index * 17;
+}
+
+
+int main() {
+  int n = getint();
+  int seed = getint();
+  rng_state = seed % 65521;
+  int i=0;while(i<n){a[i]=next_small();b[i]=next_small();tmp1[i]=0;out[i]=0;i=i+1;}
+  i=1;while(i+1<n){int t=a[i-1]+a[i]+a[i+1];out[i]=t*3+b[i];i=i+1;}
+
+  int acc=0;int i2=0;while(i2<n){acc=checksum_step(acc,out[i2],i2);i2=i2+1;}
+  putint(acc);putch(10);return 0;
+}

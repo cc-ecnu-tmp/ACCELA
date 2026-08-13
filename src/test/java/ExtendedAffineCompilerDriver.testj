@@ -1,0 +1,22 @@
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
+import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import java.nio.file.Path;
+
+/** Test-only command driver used by the real RV64GC QEMU acceptance check. */
+public final class ExtendedAffineCompilerDriver {
+  private ExtendedAffineCompilerDriver() {}
+
+  public static void main(String[] args) throws Exception {
+    if (args.length != 4) {
+      throw new IllegalArgumentException("usage: INPUT OUTPUT PROFILE REMARKS");
+    }
+    PassRegistry registry = PassRegistry.standard();
+    PipelineProfile.builder(registry)
+        .enableCandidate(ExtendedAffineSummarizationCandidate.ID)
+        .build().writeJson(Path.of(args[2]));
+    BenchmarkCompiler.main(new String[] {
+      args[0], "-o", args[1], "--profile", args[2], "--remarks", args[3]
+    });
+  }
+}

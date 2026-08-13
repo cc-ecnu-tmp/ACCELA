@@ -18,8 +18,8 @@ public final class RISCVFrameLowering {
     this.target = target;
   }
 
-  void finalizeFrame(MachineFunction function) {
-    function.getFrameInfo().finalizeLayout(target);
+  boolean finalizeFrame(MachineFunction function) {
+    return function.getFrameInfo().finalizeLayout(target);
   }
 
   void emitPrologue(MachineFunction function, List<String> lines) {

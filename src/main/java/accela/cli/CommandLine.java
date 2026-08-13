@@ -73,12 +73,13 @@ public class CommandLine {
         Class<?> clazz = target.getClass();
         Command cmdAnnot = clazz.getAnnotation(Command.class);
         if (cmdAnnot != null) {
-            this.commandName = cmdAnnot.name().isEmpty() ? clazz.getSimpleName().toLowerCase() : cmdAnnot.name();
+            this.commandName = cmdAnnot.name().isEmpty()
+                    ? clazz.getSimpleName().toLowerCase(Locale.ROOT) : cmdAnnot.name();
             this.description = cmdAnnot.description();
             this.mixinStandardHelpOptions = cmdAnnot.mixinStandardHelpOptions();
             this.version = cmdAnnot.version();
         } else {
-            this.commandName = clazz.getSimpleName().toLowerCase();
+            this.commandName = clazz.getSimpleName().toLowerCase(Locale.ROOT);
         }
 
         // Inspect fields
