@@ -1250,6 +1250,122 @@ run-terminal 使 raw verifier 失败，不能从 normalized record 懒补。
 candidate campaign 内恢复。若 campaign 因方向错误被冻结，freeze contract 优先：
 即使旧 journal 形状在通用 runner 中可恢复，也绝不 resume。
 
+## Speed-first fast candidate campaign
+
+The legacy candidate campaign remains an immutable source snapshot. New
+speed-first measurements use a different campaign ID, run namespace, clean
+repository revision, and `candidate-fast-*.v1` artifacts. `fast-bootstrap`
+imports only the sealed normalized B1 and B2 FULL records and binds both source
+and evaluation revisions. Every changed path must be an orchestration-only path
+and must not overlap any hashed compiler, runtime, manifest, profile, protocol,
+tool, or corpus component. This boundary does not claim legacy raw-ledger
+continuity.
+
+The fast path is head-only. A run receives one immutable plan, status, and
+run-index snapshot and is authorized when its task ID belongs to that snapshot's
+ready wave. It never replays an earlier status ledger or opens historical attempt
+trees. Each completed run still writes the normal ordered attempt journal and
+sealed normalized run record, then publishes one immutable plan-bound receipt.
+Status, study, audit, and final consumers read only those normalized records and
+receipts. Any hash, tool, configuration, profile, protocol, manifest, baseline,
+correctness, or metric-coverage mismatch is terminal; there is no fallback to
+the legacy authorizer.
+
+The scheduler admits at most four formal runs and every run uses exactly four
+case workers. Same-task starts are mutually exclusive; different ready tasks may
+run concurrently. Publish an append-only run index and immutable status, then
+atomically advance `candidate-fast-current-head.v1`. An interrupted publication
+may leave an unreferenced immutable artifact, but never a head that points at
+only half a generation. Use `candidates fast-next --head ...` to read the exact
+next wave and its bound status/index hashes.
+
+Run normalized-record audits at bootstrap, after B2, after B3, and before final
+publication. B2 studies all candidates. B3 promotes only candidates that are
+all-correct, ranking-eligible, and have geometric-mean speedup strictly greater
+than `1.0`. B4--B6 evaluate exactly that promoted subset; a non-promoted task is
+cancelled by the hash-bound B3 study, not by a fabricated run receipt. The final
+result and charts bind all four audits, B2--B6 studies, diagnostics, and the exact
+promoted subset. This remains QEMU proxy evidence and cannot enable an
+optimization in the judge pipeline without BOOM hardware evidence.
+
+The command family is separate from the legacy mutation path:
+
+```sh
+python3 -I -m tools.benchmark candidates fast-bootstrap --help
+python3 -I -m tools.benchmark candidates fast-index --help
+python3 -I -m tools.benchmark candidates fast-status --help
+python3 -I -m tools.benchmark candidates fast-head --help
+python3 -I -m tools.benchmark candidates fast-next --help
+python3 -I -m tools.benchmark candidates fast-study --help
+python3 -I -m tools.benchmark candidates fast-audit --help
+python3 -I -m tools.benchmark candidates fast-report --help
+python3 -I -m tools.benchmark candidates fast-final --help
+```
+
+Do not hand-author launch blueprints or the complete task array.
+`fast-launch-blueprints` derives all four complete run shapes from the
+bootstrap-bound normalized B2 FULL record, source plan, toolchain snapshot, and
+the exact measurement components supplied to `fast-bootstrap`. The required
+component IDs are the protocol asset names plus `runner_executable_standard`
+and `runner_executable_cache`; the producer verifies every hash and publishes a
+create-only committed blueprint. `fast-plan-factory` then derives the
+fixed B2--B6, all-pairs/cache diagnostic, audit, study, and final DAG from the
+validated legacy plan and fast bootstrap. Its four reusable launch blueprints
+(`accela-standard`, `accela-cache`, `reference-gcc`, `reference-clang`) contain
+complete formal run configurations and command arguments and carry one
+canonical commitment. Reference tasks bind the frozen toolchain snapshot and
+its non-file profile identity without passing an ACCELA profile. The factory
+generates all diagnostic pair profiles, an immutable fast plan, and committed launch
+templates. Before each wave, `fast-materialize-launch` resolves the exact
+baseline run through the current index and emits the concrete argv array used by
+`fast-wave`; neither step reads the legacy ledger or raw-attempt namespace.
+
+```sh
+python3 -I -m tools.benchmark candidates fast-launch-blueprints --help
+python3 -I -m tools.benchmark candidates fast-plan-factory --help
+python3 -I -m tools.benchmark candidates fast-materialize-launch --help
+python3 -I -m tools.benchmark candidates fast-wave --help
+python3 -I -m tools.benchmark candidates fast-drive --help
+```
+
+`fast-wave` holds one non-blocking campaign lease for the whole ready wave from
+the head identity recheck through the last child exit. Head publication takes the
+same lease. Consequently a second scheduler, including one that observed a
+newer generation, fails before creating logs or child processes instead of
+admitting another four-run wave.
+
+Use `fast-drive` for the production run instead of manually alternating the
+materializer, scheduler, index, study, audit, report, and head commands. It
+holds that same campaign lease until a terminal head, advances one immutable
+generation at a time, and resumes idempotently from receipts or pseudo-task
+artifacts left before a compare-and-swap head publication.
+
+`fast-report` runs only at the final-ready status. It consumes the already
+validated four-document normalized Oracle closure and its bound 99 distinct
+pairs; it never replays legacy raw Oracle evidence or reimplements screening.
+It emits one create-only Markdown file and exactly seven deterministic SVGs.
+The B3 single-candidate chart uses a paired-case bootstrap interval with seed
+`20260809` and 10,000 samples; pair interaction is a symmetric color matrix;
+Pareto is a gain-versus-text-bytes scatter with risk encoded by color and text.
+Missing normalized measurements are rendered as explicit `N/A`, never zero or
+an inferred value. The report manifest binds all files, normalized run IDs,
+Oracle capture identity, exact 267-case ranking, studies, audits, index, and
+final-ready status. `fast-final` accepts only `--report-manifest`, recomputes the
+same projection, and rejects a self-consistent manifest whose rendered bytes,
+input commitments, or ranking differ.
+
+Formal launch arguments replace the legacy plan/status/ledger authorization
+group with this complete fast group. All five options are required together and
+cannot be mixed with legacy authorization options:
+
+```sh
+--candidate-fast-plan "$fast_plan" \
+--candidate-fast-status "$fast_status" \
+--candidate-fast-index "$fast_index" \
+--candidate-fast-task-id "$candidate_task_id" \
+--candidate-fast-receipt "$candidate_receipt"
+```
+
 ## Oracle、排名与报告
 
 Oracle 是实现前资格门，同时回答“如果某类结构被理想变换，理论上可能有多少

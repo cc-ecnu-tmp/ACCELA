@@ -8,10 +8,11 @@ import sys
 import threading
 import time
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Empty
-from typing import Any
+from types import ModuleType
+from typing import Any, Mapping
 
 import pytest
 
@@ -35,7 +36,12 @@ from tools.benchmark.execution import (
 )
 from tools.benchmark.errors import ConfigurationError, ExecutionError, ValidationError
 from tools.benchmark.journal import AttemptJournal
-from tools.benchmark.lease import ExclusiveFileLease, output_lease_path
+from tools.benchmark.lease import (
+    ExclusiveFileLease,
+    candidate_task_lease_path,
+    output_lease_path,
+    run_state_lease_path,
+)
 from tools.benchmark.adapters import StageSpec
 from tools.benchmark.schema import load_and_validate, validate_document
 from tools.benchmark.protocol import capture_measurement_protocol
@@ -59,6 +65,58 @@ def _with_formal_authorization(options, *, task_id: str):
         candidate_campaign_status_path=options.manifest_path,
         candidate_status_ledger_paths=(options.manifest_path,),
         candidate_task_id=task_id,
+    )
+
+
+@dataclass(frozen=True)
+class _FakeFastRunAuthorizationIntent:
+    plan_path: Path
+    status_path: Path
+    index_path: Path
+    task_id: str
+    workspace_root: Path
+    manifest_path: Path
+    output_path: Path
+    compiler_artifact_path: Path
+    pipeline_profile_path: Path | None
+    measurement_protocol_path: Path | None
+    baseline_run_path: Path | None
+    configuration: Mapping[str, Any]
+    provenance: Mapping[str, Any]
+    run_id: str
+    receipt_path: Path
+
+
+def _install_fake_fast_campaign(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    authorize,
+    publish,
+) -> None:
+    module = ModuleType("tools.benchmark.fast_campaign")
+    module.FastRunAuthorizationIntent = _FakeFastRunAuthorizationIntent
+    module.authorize_fast_candidate_run_prelease = authorize
+    module.publish_fast_run_receipt = publish
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+
+def _with_fast_authorization(
+    options,
+    *,
+    task_id: str,
+    plan_path: Path,
+    status_path: Path,
+    index_path: Path,
+    receipt_path: Path,
+):
+    return replace(
+        options,
+        compiler_artifact_path=options.workspace_root / "fixture_tool.py",
+        candidate_fast_campaign_plan_path=plan_path,
+        candidate_fast_campaign_status_path=status_path,
+        candidate_fast_campaign_index_path=index_path,
+        candidate_fast_task_id=task_id,
+        candidate_fast_receipt_path=receipt_path,
     )
 
 
@@ -215,6 +273,451 @@ def test_formal_candidate_authorization_fails_before_state_output_or_lease(
     assert not bound.output_path.exists()
     assert not bound.state_root.exists()
     assert not lease_path.exists()
+
+
+def test_fast_candidate_authorization_group_is_complete_and_mutually_exclusive(
+    benchmark_fixture,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    base = make_options(output_name="fast-validation.json", run_id="fast-validation")
+    formal = replace(
+        base,
+        evidence_level="qemu_correctness",
+        provenance=replace(
+            base.provenance,
+            execution_environment_sha256="a" * 64,
+        ),
+    )
+    fast = _with_fast_authorization(
+        formal,
+        task_id="run.B1.fast-fixture",
+        plan_path=tmp_path / "fast-plan.json",
+        status_path=tmp_path / "fast-status.json",
+        index_path=tmp_path / "fast-index.json",
+        receipt_path=tmp_path / "fast-receipt.json",
+    )
+    _validate_options(fast)
+
+    with pytest.raises(ConfigurationError, match="fast candidate runs require"):
+        _validate_options(replace(fast, candidate_fast_campaign_index_path=None))
+    with pytest.raises(ConfigurationError, match="cannot be mixed"):
+        _validate_options(
+            replace(
+                fast,
+                candidate_campaign_plan_path=base.manifest_path,
+                candidate_campaign_status_path=base.manifest_path,
+                candidate_status_ledger_paths=(base.manifest_path,),
+                candidate_task_id="run.B1.legacy-fixture",
+            )
+        )
+
+
+def test_fast_task_leases_serialize_one_task_without_blocking_another(
+    tmp_path: Path,
+) -> None:
+    campaign_id = "fast-parallel-fixture"
+    first = candidate_task_lease_path(tmp_path, campaign_id, "run.B2.first")
+    second = candidate_task_lease_path(tmp_path, campaign_id, "run.B2.second")
+    assert first != second
+    with ExclusiveFileLease(first, "candidate task", {}):
+        with pytest.raises(ExecutionError, match="candidate task is already owned"):
+            with ExclusiveFileLease(first, "candidate task", {}):
+                pass
+        with ExclusiveFileLease(second, "candidate task", {}):
+            pass
+
+
+def test_fast_prelease_runs_inside_task_lease_before_runtime_state_creation(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    task_id = "run.B1.fast-prelease"
+    campaign_id = "fast-fixture"
+    plan_path = tmp_path / "fast-plan.json"
+    status_path = tmp_path / "fast-status.json"
+    index_path = tmp_path / "fast-index.json"
+    atomic_write_json(
+        plan_path,
+        {
+            "schema_version": "candidate-fast-campaign-plan.v1",
+            "campaign_id": campaign_id,
+        },
+    )
+    atomic_write_json(status_path, {"input": "status"})
+    atomic_write_json(index_path, {"input": "index"})
+    base = make_options(output_name="fast-prelease.json", run_id="fast-prelease")
+    options = _with_fast_authorization(
+        replace(
+            base,
+            evidence_level="qemu_correctness",
+            provenance=replace(
+                base.provenance,
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id=task_id,
+        plan_path=plan_path,
+        status_path=status_path,
+        index_path=index_path,
+        receipt_path=tmp_path / "fast-prelease-receipt.json",
+    )
+    task_lock = candidate_task_lease_path(tmp_path, campaign_id, task_id)
+
+    def reject(_intent: object) -> dict[str, Any]:
+        assert task_lock.is_file()
+        assert not options.state_root.exists()
+        assert not options.output_path.exists()
+        assert not output_lease_path(options.output_path).exists()
+        with pytest.raises(ExecutionError, match="candidate task is already owned"):
+            with ExclusiveFileLease(task_lock, "candidate task", {}):
+                pass
+        raise ValidationError("injected fast prelease rejection")
+
+    _install_fake_fast_campaign(
+        monkeypatch,
+        authorize=reject,
+        publish=lambda **_kwargs: {},
+    )
+    runner = BenchmarkRun(options)
+    assert not options.state_root.exists()
+    with pytest.raises(ValidationError, match="fast prelease rejection"):
+        runner.execute()
+    assert not options.state_root.exists()
+    assert not options.output_path.exists()
+    assert not output_lease_path(options.output_path).exists()
+    assert task_lock.is_file()
+
+
+def test_fast_terminal_receipt_recovers_exactly_without_reexecuting(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tmp_path, _, _, _, make_options = benchmark_fixture
+    task_id = "run.B1.fast-receipt"
+    plan_path = tmp_path / "fast-receipt-plan.json"
+    status_path = tmp_path / "fast-receipt-status.json"
+    index_path = tmp_path / "fast-receipt-index.json"
+    receipt_path = tmp_path / "fast-receipt.json"
+    atomic_write_json(
+        plan_path,
+        {
+            "schema_version": "candidate-fast-campaign-plan.v1",
+            "campaign_id": "fast-receipt-fixture",
+        },
+    )
+    atomic_write_json(status_path, {"input": "status"})
+    atomic_write_json(index_path, {"input": "index"})
+    base = make_options(output_name="fast-receipt-run.json", run_id="fast-receipt")
+    options = _with_fast_authorization(
+        replace(
+            base,
+            evidence_level="qemu_correctness",
+            max_workers=1,
+            provenance=replace(
+                base.provenance,
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id=task_id,
+        plan_path=plan_path,
+        status_path=status_path,
+        index_path=index_path,
+        receipt_path=receipt_path,
+    )
+    publish_attempts = 0
+    reject_first_publish = True
+
+    def authorize(intent: object) -> dict[str, Any]:
+        configuration_template = {
+            key: value
+            for key, value in intent.configuration.items()
+            if key
+            not in {
+                "baseline_timeout_run_id",
+                "baseline_timeout_run_sha256",
+            }
+        }
+        return {
+            "task_id": task_id,
+            "run_id": options.run_id,
+            "receipt_path": receipt_path.relative_to(tmp_path).as_posix(),
+            "baseline_task_id": None,
+            "expected_configuration_template_sha256": sha256_json(
+                {
+                    "configuration": configuration_template,
+                    "provenance": intent.provenance,
+                    "baseline_task_id": None,
+                }
+            ),
+        }
+
+    def publish(*, intent, run_record_path, receipt_output_path, state_root=None):
+        nonlocal publish_attempts
+        publish_attempts += 1
+        assert state_root is None
+        record = load_and_validate(run_record_path)
+        assert record["state"] == "completed"
+        document = {
+            "task_id": intent.task_id,
+            "run_physical_sha256": sha256_file(run_record_path),
+        }
+        if reject_first_publish:
+            raise InjectedTerminalPublishError("injected receipt publication crash")
+        if receipt_output_path.exists():
+            assert json.loads(receipt_output_path.read_text(encoding="utf-8")) == document
+        else:
+            atomic_write_json(receipt_output_path, document)
+        return document
+
+    _install_fake_fast_campaign(
+        monkeypatch,
+        authorize=authorize,
+        publish=publish,
+    )
+    with pytest.raises(InjectedTerminalPublishError, match="publication crash"):
+        run_benchmark(options)
+    sealed = load_and_validate(options.output_path)
+    assert sealed["state"] == "completed"
+    runner = BenchmarkRun(options)
+    run_directory = runner._run_directory(sealed)
+    assert not (run_directory / ".run.lock").exists()
+    assert run_state_lease_path(options.output_path, sealed["run_id"]).is_file()
+    attempt_directories_before = sorted(
+        path.relative_to(run_directory)
+        for path in run_directory.glob("cases/*/attempts/attempt-*")
+    )
+
+    reject_first_publish = False
+    recovered = run_benchmark(options)
+    assert recovered == sealed
+    assert publish_attempts == 2
+    assert receipt_path.is_file()
+    assert sorted(
+        path.relative_to(run_directory)
+        for path in run_directory.glob("cases/*/attempts/attempt-*")
+    ) == attempt_directories_before
+
+
+@pytest.mark.parametrize(
+    ("cancellation_reason", "expected_publications"),
+    (("infrastructure_failure", 1), ("execution_interrupted", 0)),
+)
+def test_fast_interrupted_terminal_only_publishes_nonresumable_receipt(
+    benchmark_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+    cancellation_reason: str,
+    expected_publications: int,
+) -> None:
+    *_unused, make_options = benchmark_fixture
+    runner = BenchmarkRun(
+        make_options(output_name="fast-interrupted.json", run_id="fast-interrupted")
+    )
+    published: list[object] = []
+
+    def interrupt(record: dict[str, Any], _run_directory: Path) -> dict[str, Any]:
+        record["state"] = "interrupted"
+        record["cases"][0]["cancellation_reason"] = cancellation_reason
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(runner, "_execute_locked", interrupt)
+    monkeypatch.setattr(
+        runner,
+        "_publish_fast_receipt",
+        lambda intent: published.append(intent) or {},
+    )
+    intent = object()
+    with pytest.raises(KeyboardInterrupt):
+        runner._execute_with_run_leases(fast_intent=intent)
+
+    assert published == [intent] * expected_publications
+
+
+def test_fast_execution_integrates_with_real_authorization_and_receipt_api(
+    benchmark_fixture,
+) -> None:
+    from tools.benchmark.fast_campaign import (
+        build_fast_campaign_plan,
+        build_fast_campaign_status,
+        build_fast_run_index,
+        fast_configuration_template_sha256,
+    )
+
+    tmp_path, _, _, tool, make_options = benchmark_fixture
+    campaign_id = "fast-real"
+    task_id = "run.B3.full"
+    bootstrap_path = tmp_path / "fast-real-bootstrap.json"
+    plan_path = tmp_path / "fast-real-plan.json"
+    index_path = tmp_path / "fast-real-index.json"
+    status_path = tmp_path / "fast-real-status.json"
+    receipt_path = tmp_path / "fast-real-receipt.json"
+    profile_path = tmp_path / "fast-real-profile.json"
+    atomic_write_json(
+        profile_path,
+        {"schema_version": 1, "profile_id": "fixture-profile"},
+    )
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    base = make_options(
+        output_name="fast-real-run.json",
+        run_id=f"{campaign_id}:{task_id}",
+        compile_repetitions=5,
+    )
+    options = _with_fast_authorization(
+        replace(
+            base,
+            compiler=replace(
+                base.compiler,
+                command=(*base.compiler.command, "{profile}"),
+            ),
+            pipeline_profile_path=profile_path,
+            evidence_level="qemu_correctness",
+            max_workers=4,
+            keep_going=False,
+            provenance=replace(
+                base.provenance,
+                pipeline_profile_sha256=sha256_file(profile_path),
+                execution_environment_sha256="a" * 64,
+            ),
+        ),
+        task_id=task_id,
+        plan_path=plan_path,
+        status_path=status_path,
+        index_path=index_path,
+        receipt_path=receipt_path,
+    )
+    _validate_options(options)
+    configuration = execution_module._configuration(options)
+    provenance = options.provenance.as_record()
+
+    def artifact(path: Path) -> dict[str, str]:
+        relative = path.relative_to(tmp_path).as_posix()
+        canonical = (
+            sha256_json(json.loads(path.read_text(encoding="utf-8")))
+            if path.suffix == ".json"
+            else sha256_file(path)
+        )
+        return {
+            "path": relative,
+            "canonical_sha256": canonical,
+            "physical_sha256": sha256_file(path),
+        }
+
+    def verified_artifact(artifact_id: str, path: Path) -> dict[str, Any]:
+        row: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "artifact": artifact(path),
+        }
+        row["verification_commitment_sha256"] = sha256_json(row)
+        return row
+
+    repository = {"commit": "1" * 40, "tree": "2" * 40, "dirty": False}
+    oracle_static = []
+    for artifact_id in (
+        "candidate-screening",
+        "candidate-oracle-capture",
+        "candidate-evidence",
+        "candidate-screening-spec",
+    ):
+        path = tmp_path / f"{artifact_id}.json"
+        atomic_write_json(path, {"artifact_id": artifact_id})
+        oracle_static.append(verified_artifact(artifact_id, path))
+    bootstrap = {
+        "schema_version": "candidate-fast-bootstrap.v1",
+        "bootstrap_id": "fast-real-bootstrap",
+        "campaign_id": campaign_id,
+        "created_at": "2026-08-13T00:00:00Z",
+        "source_revision": repository,
+        "evaluation_revision": repository,
+        "source_artifacts": [verified_artifact("source-profile", profile_path)],
+        "static_artifacts": [verified_artifact("compiler", tool), *oracle_static],
+        "imported_receipts": [],
+        "bootstrap_commitment_sha256": "0" * 64,
+    }
+    bootstrap["bootstrap_commitment_sha256"] = sha256_json(
+        {
+            key: value
+            for key, value in bootstrap.items()
+            if key != "bootstrap_commitment_sha256"
+        }
+    )
+    validate_document(bootstrap)
+    atomic_write_json(bootstrap_path, bootstrap)
+
+    task = {
+        "ordinal": 0,
+        "task_id": task_id,
+        "kind": "run",
+        "run_kind": "candidate_empty",
+        "stage": "B3",
+        "candidate_ids": [],
+        "data_role": "B3",
+        "measurement_mode": "qemu_correctness",
+        "dependencies": [],
+        "terminal_dependencies": [],
+        "gate": "always",
+        "static_bindings": [
+            {"artifact_id": "runner-source", "artifact": artifact(tool)},
+            *[
+                {"artifact_id": row["artifact_id"], "artifact": row["artifact"]}
+                for row in oracle_static
+            ],
+        ],
+        "output_path": options.output_path.relative_to(tmp_path).as_posix(),
+        "receipt_path": receipt_path.relative_to(tmp_path).as_posix(),
+        "run_id": options.run_id,
+        "logical_profile_id": provenance["pipeline_profile_id"],
+        "reference_profile_id": None,
+        "reference_profile_sha256": None,
+        "expected_configuration_template_sha256": (
+            fast_configuration_template_sha256(configuration, provenance, None)
+        ),
+        "baseline_task_id": None,
+        "baseline_artifact": None,
+        "ranking_evidence": False,
+        "suite_id": "fixture-suite",
+        "expected_case_count": 10,
+        "manifest": artifact(options.manifest_path),
+        "profile": artifact(profile_path),
+        "measurement_protocol": artifact(options.measurement_protocol_path),
+        "compiler_artifact": artifact(tool),
+        "execution_environment_sha256": "a" * 64,
+    }
+    plan = build_fast_campaign_plan(
+        plan_id="fast-real-plan",
+        bootstrap_path=bootstrap_path,
+        workspace_root=tmp_path,
+        tasks=[task],
+        candidate_ids=["candidate-a"],
+        created_at="2026-08-13T00:00:01Z",
+    )
+    atomic_write_json(plan_path, plan)
+    index = build_fast_run_index(
+        plan_path=plan_path,
+        receipt_paths=[],
+        workspace_root=tmp_path,
+        generated_at="2026-08-13T00:00:02Z",
+    )
+    atomic_write_json(index_path, index)
+    status = build_fast_campaign_status(
+        plan_path=plan_path,
+        index_path=index_path,
+        workspace_root=tmp_path,
+        generation=0,
+        generated_at="2026-08-13T00:00:03Z",
+    )
+    assert status["ready_tasks"] == [task_id]
+    atomic_write_json(status_path, status)
+
+    completed = run_benchmark(options)
+    assert completed["state"] == "completed"
+    receipt = load_and_validate(receipt_path)
+    assert receipt["schema_version"] == "candidate-fast-run-receipt.v1"
+    assert receipt["task_id"] == task_id
+    assert receipt["run_id"] == options.run_id
+    assert receipt["correctness"]["all_correct"] is True
+    run_directory = BenchmarkRun(options)._run_directory(completed)
+    assert not (run_directory / ".run.lock").exists()
+    assert run_state_lease_path(options.output_path, completed["run_id"]).is_file()
 
 
 def test_formal_b1_analyzer_is_absent_and_fails_before_state_creation(

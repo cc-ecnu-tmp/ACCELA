@@ -26,6 +26,25 @@ from .lease import ExclusiveFileLease, output_lease_path, path_identity
 from .adapters import StageSpec
 from .errors import BenchmarkError, ConfigurationError
 from .execution import MeasurementSpec, RunOptions, RunProvenance, ToolVersion, run_benchmark
+from .fast_campaign import (
+    build_fast_audit,
+    build_fast_bootstrap,
+    build_fast_campaign_status,
+    build_fast_diagnostic_study,
+    build_fast_final,
+    build_fast_run_index,
+    build_fast_study,
+    publish_fast_current_head,
+    publish_immutable_fast_document,
+)
+from .fast_scheduler import run_fast_wave
+from .fast_plan import (
+    build_fast_launch_blueprints,
+    build_fast_plan_factory,
+    materialize_fast_launch_spec,
+)
+from .fast_report import build_fast_report
+from .fast_driver import drive_fast_campaign
 from .inventory import inventory_cleanroom_manifest, inventory_suite, subset_manifest
 from .metrics import cache_hotblock_metrics_v1, rv64gc_qemu_v1
 from .oracle import build_oracle_plan, prepare_oracle_leg_manifest
@@ -45,6 +64,7 @@ from .util import (
     read_json,
     render_cli_error,
     sha256_artifact,
+    sha256_file,
     sha256_json,
 )
 
@@ -544,6 +564,30 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
     )
     if any(path is None for path in candidate_status_ledger_paths):
         raise AssertionError("candidate status ledger path normalization failed")
+    candidate_fast_campaign_plan_path = _workspace_input_path(
+        workspace_root,
+        getattr(args, "candidate_fast_plan", None),
+        label="fast candidate campaign plan",
+    )
+    candidate_fast_campaign_status_path = _workspace_input_path(
+        workspace_root,
+        getattr(args, "candidate_fast_status", None),
+        label="fast candidate campaign status",
+    )
+    candidate_fast_campaign_index_path = _workspace_input_path(
+        workspace_root,
+        getattr(args, "candidate_fast_index", None),
+        label="fast candidate campaign run index",
+    )
+    candidate_fast_receipt_path = (
+        None
+        if getattr(args, "candidate_fast_receipt", None) is None
+        else _workspace_output_path(
+            workspace_root,
+            args.candidate_fast_receipt,
+            label="fast candidate run receipt",
+        )
+    )
     pipeline_profile_sha256 = (
         args.pipeline_profile_sha256
         if args.pipeline_profile_sha256 is not None
@@ -606,6 +650,11 @@ def _run_options(args: argparse.Namespace, *, oracle: bool) -> RunOptions:
             path for path in candidate_status_ledger_paths if path is not None
         ),
         candidate_task_id=getattr(args, "candidate_task_id", None),
+        candidate_fast_campaign_plan_path=candidate_fast_campaign_plan_path,
+        candidate_fast_campaign_status_path=candidate_fast_campaign_status_path,
+        candidate_fast_campaign_index_path=candidate_fast_campaign_index_path,
+        candidate_fast_task_id=getattr(args, "candidate_fast_task_id", None),
+        candidate_fast_receipt_path=candidate_fast_receipt_path,
         analyzer=analyzer,
         compile_timeout_seconds=args.compile_timeout,
         compile_repetitions=args.compile_repetitions,
@@ -687,6 +736,11 @@ def _add_run_arguments(
             metavar="STATUS_JSON",
         )
         parser.add_argument("--candidate-task-id")
+        parser.add_argument("--candidate-fast-plan", type=_path)
+        parser.add_argument("--candidate-fast-status", type=_path)
+        parser.add_argument("--candidate-fast-index", type=_path)
+        parser.add_argument("--candidate-fast-task-id")
+        parser.add_argument("--candidate-fast-receipt", type=_path)
     parser.add_argument(
         "--measurement-protocol", type=_path,
         help="measurement-protocol.v1 snapshot; required for qemu_proxy evidence",
@@ -1068,6 +1122,225 @@ def build_parser() -> argparse.ArgumentParser:
     candidate_campaign_status.add_argument("--as-of")
     candidate_campaign_status.add_argument("--output", type=_path, required=True)
 
+    candidate_fast_bootstrap = candidate_commands.add_parser(
+        "fast-bootstrap",
+        help="import the sealed normalized r2 prefix into a separate fast campaign",
+    )
+    candidate_fast_bootstrap.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_bootstrap.add_argument("--bootstrap-id", required=True)
+    candidate_fast_bootstrap.add_argument("--campaign-id", required=True)
+    candidate_fast_bootstrap.add_argument("--source-plan", type=_path, required=True)
+    candidate_fast_bootstrap.add_argument("--source-status", type=_path, required=True)
+    candidate_fast_bootstrap.add_argument("--source-raw-registry", type=_path, required=True)
+    candidate_fast_bootstrap.add_argument(
+        "--source-run", action="append", required=True, metavar="TASK_ID=RUN_JSON"
+    )
+    candidate_fast_bootstrap.add_argument(
+        "--measurement-component",
+        action="append",
+        required=True,
+        metavar="ARTIFACT_ID=PATH",
+    )
+    candidate_fast_bootstrap.add_argument("--evaluation-commit", required=True)
+    candidate_fast_bootstrap.add_argument("--evaluation-tree", required=True)
+    candidate_fast_bootstrap.add_argument("--created-at")
+    candidate_fast_bootstrap.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_factory = candidate_commands.add_parser(
+        "fast-plan-factory",
+        help="derive the complete fast-v2 DAG and launch templates from frozen inputs",
+    )
+    candidate_fast_factory.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_factory.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_factory.add_argument("--source-plan", type=_path, required=True)
+    candidate_fast_factory.add_argument("--blueprints", type=_path, required=True)
+    candidate_fast_factory.add_argument("--plan-id", required=True)
+    candidate_fast_factory.add_argument("--campaign-output-root", type=_path, required=True)
+    candidate_fast_factory.add_argument("--campaign-state-root", type=_path, required=True)
+    candidate_fast_factory.add_argument("--diagnostic-profile-root", type=_path, required=True)
+    candidate_fast_factory.add_argument("--created-at")
+    candidate_fast_factory.add_argument("--output-plan", type=_path, required=True)
+    candidate_fast_factory.add_argument("--output-launch-templates", type=_path, required=True)
+
+    candidate_fast_blueprints = candidate_commands.add_parser(
+        "fast-launch-blueprints",
+        help="derive committed formal launch shapes from bootstrap B2 FULL evidence",
+    )
+    candidate_fast_blueprints.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_blueprints.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_blueprints.add_argument("--source-plan", type=_path, required=True)
+    candidate_fast_blueprints.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_materialize = candidate_commands.add_parser(
+        "fast-materialize-launch",
+        help="resolve the current fast ready wave and its exact timeout baselines",
+    )
+    candidate_fast_materialize.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_materialize.add_argument("--templates", type=_path, required=True)
+    candidate_fast_materialize.add_argument("--head", type=_path, required=True)
+    candidate_fast_materialize.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_index = candidate_commands.add_parser(
+        "fast-index", help="publish an append-only normalized run-receipt index"
+    )
+    candidate_fast_index.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_index.add_argument("--plan", type=_path, required=True)
+    candidate_fast_index.add_argument(
+        "--receipt", action="append", default=[], type=_path
+    )
+    candidate_fast_index.add_argument("--previous-index", type=_path)
+    candidate_fast_index.add_argument("--generated-at")
+    candidate_fast_index.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_status = candidate_commands.add_parser(
+        "fast-status", help="project a bounded-parallel status from the current index"
+    )
+    candidate_fast_status.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_status.add_argument("--plan", type=_path, required=True)
+    candidate_fast_status.add_argument("--index", type=_path, required=True)
+    candidate_fast_status.add_argument("--generation", type=int, required=True)
+    candidate_fast_status.add_argument("--study", action="append", default=[], type=_path)
+    candidate_fast_status.add_argument("--audit", action="append", default=[], type=_path)
+    candidate_fast_status.add_argument("--diagnostic", action="append", default=[], type=_path)
+    candidate_fast_status.add_argument("--diagnostic-study", type=_path)
+    candidate_fast_status.add_argument("--final", type=_path)
+    candidate_fast_status.add_argument("--running-task", action="append", default=[])
+    candidate_fast_status.add_argument("--generated-at")
+    candidate_fast_status.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_head = candidate_commands.add_parser(
+        "fast-head", help="atomically advance the small current-head pointer"
+    )
+    candidate_fast_head.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_head.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_head.add_argument("--plan", type=_path, required=True)
+    candidate_fast_head.add_argument("--status", type=_path, required=True)
+    candidate_fast_head.add_argument("--index", type=_path, required=True)
+    candidate_fast_head_previous = candidate_fast_head.add_mutually_exclusive_group(
+        required=True
+    )
+    candidate_fast_head_previous.add_argument("--initial", action="store_true")
+    candidate_fast_head_previous.add_argument("--previous-head", type=_path)
+    candidate_fast_head.add_argument("--previous-head-sha256")
+    candidate_fast_head.add_argument("--updated-at")
+    candidate_fast_head.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_next = candidate_commands.add_parser(
+        "fast-next", help="print the exact ready wave bound by a current head"
+    )
+    candidate_fast_next.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_next.add_argument("--head", type=_path, required=True)
+
+    candidate_fast_wave = candidate_commands.add_parser(
+        "fast-wave",
+        help="launch exactly one immutable ready wave with the fixed four-by-four bound",
+    )
+    candidate_fast_wave.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_wave.add_argument("--head", type=_path, required=True)
+    candidate_fast_wave.add_argument("--launch-spec", type=_path, required=True)
+    candidate_fast_wave.add_argument("--log-directory", type=_path, required=True)
+
+    candidate_fast_drive = candidate_commands.add_parser(
+        "fast-drive",
+        help="drive the current fast-campaign head through all run and evidence waves",
+    )
+    candidate_fast_drive.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_drive.add_argument("--head", type=_path, required=True)
+    candidate_fast_drive.add_argument("--templates", type=_path, required=True)
+    candidate_fast_drive.add_argument(
+        "--generation-directory", type=_path, required=True
+    )
+    candidate_fast_drive.add_argument("--report-directory", type=_path, required=True)
+
+    candidate_fast_audit = candidate_commands.add_parser(
+        "fast-audit", help="publish a bounded normalized-record checkpoint audit"
+    )
+    candidate_fast_audit.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_audit.add_argument(
+        "--checkpoint", required=True, choices=("bootstrap", "B2", "B3", "final")
+    )
+    candidate_fast_audit.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_audit.add_argument("--plan", type=_path, required=True)
+    candidate_fast_audit.add_argument("--index", type=_path, required=True)
+    candidate_fast_audit.add_argument("--status", type=_path, required=True)
+    candidate_fast_audit.add_argument("--generated-at")
+    candidate_fast_audit.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_study = candidate_commands.add_parser(
+        "fast-study", help="analyze one normalized FULL/candidate stage without raw replay"
+    )
+    candidate_fast_study.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_study.add_argument(
+        "--stage", required=True, choices=("B2", "B3", "B4", "B5", "B6")
+    )
+    candidate_fast_study.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_study.add_argument("--plan", type=_path, required=True)
+    candidate_fast_study.add_argument("--index", type=_path, required=True)
+    candidate_fast_study.add_argument("--baseline", type=_path, required=True)
+    candidate_fast_study.add_argument(
+        "--candidate", action="append", default=[], metavar="CANDIDATE_ID=RECEIPT"
+    )
+    candidate_fast_study.add_argument("--promotion-study", type=_path)
+    candidate_fast_study.add_argument("--generated-at")
+    candidate_fast_study.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_diagnostic_study = candidate_commands.add_parser(
+        "fast-diagnostic-study",
+        help="bind the exact B3 Top3 pair and cache diagnostic receipts",
+    )
+    candidate_fast_diagnostic_study.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_diagnostic_study.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_diagnostic_study.add_argument("--plan", type=_path, required=True)
+    candidate_fast_diagnostic_study.add_argument("--index", type=_path, required=True)
+    candidate_fast_diagnostic_study.add_argument("--b3-study", type=_path, required=True)
+    candidate_fast_diagnostic_study.add_argument(
+        "--pair", action="append", default=[], metavar="TASK_ID=RECEIPT"
+    )
+    candidate_fast_diagnostic_study.add_argument("--cache-full", type=_path, required=True)
+    candidate_fast_diagnostic_study.add_argument(
+        "--cache", action="append", default=[], metavar="CANDIDATE_ID=RECEIPT"
+    )
+    candidate_fast_diagnostic_study.add_argument("--generated-at")
+    candidate_fast_diagnostic_study.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_final = candidate_commands.add_parser(
+        "fast-final", help="build the deterministic fast-campaign final result"
+    )
+    candidate_fast_final.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_final.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_final.add_argument("--plan", type=_path, required=True)
+    candidate_fast_final.add_argument("--index", type=_path, required=True)
+    candidate_fast_final.add_argument("--status", type=_path, required=True)
+    candidate_fast_final.add_argument(
+        "--audit", action="append", required=True, metavar="CHECKPOINT=JSON"
+    )
+    candidate_fast_final.add_argument(
+        "--study", action="append", required=True, metavar="B2|B3|B4|B5|B6=JSON"
+    )
+    candidate_fast_final.add_argument("--diagnostic", action="append", required=True, type=_path)
+    candidate_fast_final.add_argument("--diagnostic-study", type=_path, required=True)
+    candidate_fast_final.add_argument("--report-manifest", type=_path, required=True)
+    candidate_fast_final.add_argument("--generated-at")
+    candidate_fast_final.add_argument("--output", type=_path, required=True)
+
+    candidate_fast_report = candidate_commands.add_parser(
+        "fast-report",
+        help="deterministically build the fast report and parseable SVG charts",
+    )
+    candidate_fast_report.add_argument("--workspace-root", type=_path, required=True)
+    candidate_fast_report.add_argument("--bootstrap", type=_path, required=True)
+    candidate_fast_report.add_argument("--plan", type=_path, required=True)
+    candidate_fast_report.add_argument("--index", type=_path, required=True)
+    candidate_fast_report.add_argument("--status", type=_path, required=True)
+    candidate_fast_report.add_argument(
+        "--audit", action="append", required=True, metavar="CHECKPOINT=JSON"
+    )
+    candidate_fast_report.add_argument(
+        "--study", action="append", required=True, metavar="B2|B3|B4|B5|B6=JSON"
+    )
+    candidate_fast_report.add_argument("--diagnostic-study", type=_path, required=True)
+    candidate_fast_report.add_argument("--output-directory", type=_path, required=True)
+
     candidate_campaign_finalize = candidate_commands.add_parser(
         "campaign-finalize", help="seal the completed formal B1/B2 evidence into the pre-B3 freeze"
     )
@@ -1251,6 +1524,332 @@ def _case_ids(arguments: argparse.Namespace) -> list[str]:
 def dispatch(args: argparse.Namespace) -> int:
     if hasattr(args, "workspace_root"):
         args.workspace_root = _resolve_workspace_root(args.workspace_root)
+    if args.command == "candidates" and args.candidates_command.startswith("fast-"):
+        command = args.candidates_command
+
+        def input_path(value: Path, label: str) -> Path:
+            path = _workspace_input_path(args.workspace_root, value, label=label)
+            assert path is not None
+            return path
+
+        def output_path(value: Path, label: str) -> Path:
+            return _workspace_output_path(args.workspace_root, value, label=label)
+
+        if command == "fast-bootstrap":
+            document = build_fast_bootstrap(
+                bootstrap_id=args.bootstrap_id,
+                campaign_id=args.campaign_id,
+                source_plan_path=input_path(args.source_plan, "fast source plan"),
+                source_status_path=input_path(args.source_status, "fast source status"),
+                source_raw_registry_path=input_path(
+                    args.source_raw_registry, "fast source raw registry"
+                ),
+                source_run_paths={
+                    task_id: input_path(Path(path), f"fast source run {task_id}")
+                    for task_id, path in _parse_assignments(
+                        args.source_run, "fast source run"
+                    ).items()
+                },
+                workspace_root=args.workspace_root,
+                evaluation_revision={
+                    "commit": args.evaluation_commit,
+                    "tree": args.evaluation_tree,
+                    "dirty": False,
+                },
+                measurement_component_paths={
+                    artifact_id: _workspace_artifact_path(
+                        args.workspace_root,
+                        Path(path),
+                        label=f"fast measurement component {artifact_id}",
+                    )
+                    for artifact_id, path in _parse_assignments(
+                        args.measurement_component, "fast measurement component"
+                    ).items()
+                },
+                created_at=args.created_at,
+            )
+            published = publish_immutable_fast_document(
+                output_path(args.output, "fast bootstrap output"), document
+            )
+            print(json.dumps({"schema_version": published["schema_version"], "imported": len(published["imported_receipts"]), "sha256": sha256_json(published)}, sort_keys=True))
+            return 0
+        if command == "fast-plan-factory":
+            plan, templates = build_fast_plan_factory(
+                workspace_root=args.workspace_root,
+                bootstrap_path=input_path(args.bootstrap, "fast bootstrap"),
+                source_plan_path=input_path(args.source_plan, "fast source plan"),
+                blueprint_path=input_path(args.blueprints, "fast launch blueprints"),
+                plan_id=args.plan_id,
+                plan_output_path=output_path(args.output_plan, "fast generated plan"),
+                launch_template_output_path=output_path(
+                    args.output_launch_templates, "fast generated launch templates"
+                ),
+                campaign_output_root=args.campaign_output_root,
+                campaign_state_root=args.campaign_state_root,
+                diagnostic_profile_root=args.diagnostic_profile_root,
+                created_at=args.created_at,
+            )
+            print(
+                json.dumps(
+                    {
+                        "schema_version": plan["schema_version"],
+                        "tasks": len(plan["tasks"]),
+                        "launch_templates": len(templates["tasks"]),
+                        "max_parallel_runs": plan["max_parallel_runs"],
+                        "jobs_per_run": plan["jobs_per_run"],
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if command == "fast-launch-blueprints":
+            document = build_fast_launch_blueprints(
+                workspace_root=args.workspace_root,
+                bootstrap_path=input_path(args.bootstrap, "fast bootstrap"),
+                source_plan_path=input_path(args.source_plan, "fast source plan"),
+                output_path=output_path(args.output, "fast launch blueprints"),
+            )
+            print(
+                json.dumps(
+                    {
+                        "schema_version": document["schema_version"],
+                        "selectors": [row["selector"] for row in document["blueprints"]],
+                        "sha256": sha256_json(document),
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if command == "fast-materialize-launch":
+            launch = materialize_fast_launch_spec(
+                workspace_root=args.workspace_root,
+                template_path=input_path(args.templates, "fast launch templates"),
+                head_path=input_path(args.head, "fast current head"),
+                output_path=output_path(args.output, "fast materialized launch"),
+            )
+            print(json.dumps({"launched": [row["task_id"] for row in launch]}, sort_keys=True))
+            return 0
+        if command == "fast-index":
+            document = build_fast_run_index(
+                plan_path=input_path(args.plan, "fast plan"),
+                receipt_paths=[input_path(path, "fast receipt") for path in args.receipt],
+                workspace_root=args.workspace_root,
+                previous_index_path=(None if args.previous_index is None else input_path(args.previous_index, "previous fast index")),
+                generated_at=args.generated_at,
+            )
+            published = publish_immutable_fast_document(
+                output_path(args.output, "fast index output"), document
+            )
+            print(json.dumps({"schema_version": published["schema_version"], "receipts": len(published["receipts"]), "sha256": sha256_json(published)}, sort_keys=True))
+            return 0
+        if command == "fast-status":
+            document = build_fast_campaign_status(
+                plan_path=input_path(args.plan, "fast plan"),
+                index_path=input_path(args.index, "fast index"),
+                workspace_root=args.workspace_root,
+                generation=args.generation,
+                study_paths=[input_path(path, "fast study") for path in args.study],
+                audit_paths=[input_path(path, "fast audit") for path in args.audit],
+                diagnostic_paths=[input_path(path, "fast diagnostic") for path in args.diagnostic],
+                diagnostic_study_path=(
+                    None
+                    if args.diagnostic_study is None
+                    else input_path(args.diagnostic_study, "fast diagnostic study")
+                ),
+                final_path=(None if args.final is None else input_path(args.final, "fast final")),
+                running_task_ids=args.running_task,
+                generated_at=args.generated_at,
+            )
+            published = publish_immutable_fast_document(
+                output_path(args.output, "fast status output"), document
+            )
+            print(json.dumps({"schema_version": published["schema_version"], "state": published["state"], "ready_tasks": published["ready_tasks"], "sha256": sha256_json(published)}, sort_keys=True))
+            return 0
+        if command == "fast-head":
+            document = publish_fast_current_head(
+                bootstrap_path=input_path(args.bootstrap, "fast bootstrap"),
+                plan_path=input_path(args.plan, "fast plan"),
+                status_path=input_path(args.status, "fast status"),
+                index_path=input_path(args.index, "fast index"),
+                workspace_root=args.workspace_root,
+                head_path=output_path(args.output, "fast current head"),
+                previous_head_path=(
+                    None
+                    if args.previous_head is None
+                    else input_path(args.previous_head, "fast previous head")
+                ),
+                expected_previous_head_sha256=args.previous_head_sha256,
+                initial=args.initial,
+                updated_at=args.updated_at,
+            )
+            print(json.dumps({"schema_version": document["schema_version"], "generation": document["generation"], "sha256": sha256_json(document)}, sort_keys=True))
+            return 0
+        if command == "fast-next":
+            head_path = input_path(args.head, "fast current head")
+            head = load_and_validate(head_path)
+            if head["schema_version"] != "candidate-fast-current-head.v1":
+                raise ConfigurationError("--head must be candidate-fast-current-head.v1")
+            status_path = input_path(Path(head["status"]["path"]), "fast head status")
+            index_path = input_path(Path(head["index"]["path"]), "fast head index")
+            status = load_and_validate(status_path)
+            index = load_and_validate(index_path)
+            if sha256_json(status) != head["status"]["canonical_sha256"] or sha256_file(status_path) != head["status"]["physical_sha256"] or sha256_json(index) != head["index"]["canonical_sha256"] or sha256_file(index_path) != head["index"]["physical_sha256"]:
+                raise ConfigurationError("fast current head artifact hash differs")
+            print(json.dumps({"campaign_id": head["campaign_id"], "generation": head["generation"], "ready_tasks": status["ready_tasks"], "status": head["status"], "index": head["index"]}, sort_keys=True))
+            return 0
+        if command == "fast-wave":
+            result = run_fast_wave(
+                workspace_root=args.workspace_root,
+                head_path=input_path(args.head, "fast current head"),
+                launch_spec_path=input_path(args.launch_spec, "fast launch specification"),
+                log_directory=args.log_directory,
+            )
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if command == "fast-drive":
+            result = drive_fast_campaign(
+                workspace_root=args.workspace_root,
+                head_path=input_path(args.head, "fast current head"),
+                launch_template_path=input_path(
+                    args.templates, "fast launch templates"
+                ),
+                generation_root=args.generation_directory,
+                report_directory=args.report_directory,
+            )
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if command == "fast-audit":
+            document = build_fast_audit(
+                checkpoint=args.checkpoint,
+                bootstrap_path=input_path(args.bootstrap, "fast bootstrap"),
+                plan_path=input_path(args.plan, "fast plan"),
+                index_path=input_path(args.index, "fast index"),
+                status_path=input_path(args.status, "fast status"),
+                workspace_root=args.workspace_root,
+                generated_at=args.generated_at,
+            )
+            published = publish_immutable_fast_document(output_path(args.output, "fast audit output"), document)
+            print(json.dumps({"schema_version": published["schema_version"], "checkpoint": published["checkpoint"], "passed": published["passed"], "sha256": sha256_json(published)}, sort_keys=True))
+            return 0
+        if command == "fast-study":
+            candidate_paths = {
+                candidate_id: input_path(Path(path), f"fast candidate receipt {candidate_id}")
+                for candidate_id, path in _parse_assignments(args.candidate, "fast candidate receipt").items()
+            }
+            keywords: dict[str, Any] = {
+                "stage": args.stage,
+                "bootstrap_path": input_path(args.bootstrap, "fast bootstrap"),
+                "plan_path": input_path(args.plan, "fast plan"),
+                "index_path": input_path(args.index, "fast index"),
+                "baseline_receipt_path": input_path(args.baseline, "fast study baseline"),
+                "candidate_receipt_paths": candidate_paths,
+                "workspace_root": args.workspace_root,
+                "generated_at": args.generated_at,
+            }
+            if args.promotion_study is not None:
+                keywords["promotion_study_path"] = input_path(args.promotion_study, "fast promotion study")
+            document = build_fast_study(**keywords)
+            published = publish_immutable_fast_document(output_path(args.output, "fast study output"), document)
+            print(json.dumps({"schema_version": published["schema_version"], "stage": published["stage"], "candidates": len(published["candidates"]), "sha256": sha256_json(published)}, sort_keys=True))
+            return 0
+        if command == "fast-diagnostic-study":
+            document = build_fast_diagnostic_study(
+                bootstrap_path=input_path(args.bootstrap, "fast bootstrap"),
+                plan_path=input_path(args.plan, "fast plan"),
+                index_path=input_path(args.index, "fast index"),
+                b3_study_path=input_path(args.b3_study, "fast B3 study"),
+                pair_receipt_paths={
+                    task_id: input_path(Path(path), f"fast diagnostic pair {task_id}")
+                    for task_id, path in _parse_assignments(
+                        args.pair, "fast diagnostic pair"
+                    ).items()
+                },
+                cache_full_receipt_path=input_path(
+                    args.cache_full, "fast diagnostic cache FULL"
+                ),
+                cache_candidate_receipt_paths={
+                    candidate_id: input_path(
+                        Path(path), f"fast diagnostic cache {candidate_id}"
+                    )
+                    for candidate_id, path in _parse_assignments(
+                        args.cache, "fast diagnostic cache"
+                    ).items()
+                },
+                workspace_root=args.workspace_root,
+                generated_at=args.generated_at,
+            )
+            published = publish_immutable_fast_document(
+                output_path(args.output, "fast diagnostic study output"), document
+            )
+            print(
+                json.dumps(
+                    {
+                        "schema_version": published["schema_version"],
+                        "top3": published["top3_candidate_ids"],
+                        "pairs": len(published["pairs"]),
+                        "sha256": sha256_json(published),
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        if command == "fast-final":
+            document = build_fast_final(
+                bootstrap_path=input_path(args.bootstrap, "fast bootstrap"),
+                plan_path=input_path(args.plan, "fast plan"),
+                index_path=input_path(args.index, "fast index"),
+                status_path=input_path(args.status, "fast status"),
+                audit_paths={key: input_path(Path(path), f"fast final audit {key}") for key, path in _parse_assignments(args.audit, "fast final audit").items()},
+                study_paths={key: input_path(Path(path), f"fast final study {key}") for key, path in _parse_assignments(args.study, "fast final study").items()},
+                diagnostic_paths=[input_path(path, "fast final diagnostic") for path in args.diagnostic],
+                diagnostic_study_path=input_path(
+                    args.diagnostic_study, "fast final diagnostic study"
+                ),
+                report_manifest_path=input_path(
+                    args.report_manifest, "fast final report manifest"
+                ),
+                workspace_root=args.workspace_root,
+                generated_at=args.generated_at,
+            )
+            published = publish_immutable_fast_document(output_path(args.output, "fast final output"), document)
+            print(json.dumps({"schema_version": published["schema_version"], "eligible": len(published["ranking"]), "sha256": sha256_json(published)}, sort_keys=True))
+            return 0
+        if command == "fast-report":
+            manifest = build_fast_report(
+                bootstrap_path=input_path(args.bootstrap, "fast report bootstrap"),
+                plan_path=input_path(args.plan, "fast report plan"),
+                index_path=input_path(args.index, "fast report index"),
+                status_path=input_path(args.status, "fast report status"),
+                audit_paths={
+                    key: input_path(Path(path), f"fast report audit {key}")
+                    for key, path in _parse_assignments(
+                        args.audit, "fast report audit"
+                    ).items()
+                },
+                study_paths={
+                    key: input_path(Path(path), f"fast report study {key}")
+                    for key, path in _parse_assignments(
+                        args.study, "fast report study"
+                    ).items()
+                },
+                diagnostic_study_path=input_path(
+                    args.diagnostic_study, "fast report diagnostic study"
+                ),
+                output_directory=args.output_directory,
+                workspace_root=args.workspace_root,
+            )
+            print(
+                json.dumps(
+                    {
+                        "schema_version": manifest["schema_version"],
+                        "files": manifest["files"],
+                        "sha256": sha256_json(manifest),
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 0
+        raise AssertionError(f"unhandled fast candidate command: {command}")
     if args.command == "protocol":
         runner_command = parse_command_json(
             args.runner_command_json, label="runner-command-json", required=True

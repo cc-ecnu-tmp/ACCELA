@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-fast-run-receipt.v1.json",
+  "title": "ACCELA terminal fast campaign run receipt v1",
+  "type": "object", "additionalProperties": false,
+  "required": [
+    "schema_version", "receipt_id", "campaign_id", "bootstrap_sha256", "plan_sha256",
+    "ordinal", "task_id", "run_id", "stage", "candidate_ids", "configuration",
+    "run_artifact", "correctness", "metrics", "terminal"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-fast-run-receipt.v1"},
+    "receipt_id": {"$ref": "#/$defs/id"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "bootstrap_sha256": {"$ref": "#/$defs/sha256"},
+    "plan_sha256": {"$ref": "#/$defs/sha256"},
+    "ordinal": {"type": "integer", "minimum": 0},
+    "task_id": {"$ref": "#/$defs/id"},
+    "run_id": {"$ref": "#/$defs/id"},
+    "stage": {"enum": ["B1", "B2", "B3", "B4", "B5", "B6", "diagnostic"]},
+    "candidate_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "configuration": {"$ref": "#/$defs/configuration"},
+    "run_artifact": {"$ref": "#/$defs/artifact"},
+    "correctness": {"$ref": "#/$defs/correctness"},
+    "metrics": {"$ref": "#/$defs/metrics"},
+    "terminal": {"$ref": "#/$defs/terminal"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "object_id": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "nullable_string": {"oneOf": [{"type": "null"}, {"type": "string", "minLength": 1, "maxLength": 2048}]},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "repository_identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["commit", "tree", "dirty"],
+      "properties": {
+        "commit": {"$ref": "#/$defs/object_id"},
+        "tree": {"$ref": "#/$defs/object_id"},
+        "dirty": {"const": false}
+      }
+    },
+    "configuration": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "configuration_sha256", "repository", "compiler_artifact_sha256",
+        "execution_environment_sha256", "manifest_sha256", "profile_sha256",
+        "protocol_sha256", "jobs"
+      ],
+      "properties": {
+        "configuration_sha256": {"$ref": "#/$defs/sha256"},
+        "repository": {"$ref": "#/$defs/repository_identity"},
+        "compiler_artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "execution_environment_sha256": {"$ref": "#/$defs/sha256"},
+        "manifest_sha256": {"$ref": "#/$defs/sha256"},
+        "profile_sha256": {"$ref": "#/$defs/sha256"},
+        "protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "jobs": {"const": 4}
+      }
+    },
+    "correctness": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "expected_cases", "passed_cases", "failed_cases", "timed_out_cases",
+        "pending_cases", "all_correct"
+      ],
+      "properties": {
+        "expected_cases": {"type": "integer", "minimum": 1},
+        "passed_cases": {"type": "integer", "minimum": 0},
+        "failed_cases": {"type": "integer", "minimum": 0},
+        "timed_out_cases": {"type": "integer", "minimum": 0},
+        "pending_cases": {"type": "integer", "minimum": 0},
+        "all_correct": {"type": "boolean"}
+      }
+    },
+    "metrics": {
+      "type": "object", "additionalProperties": false,
+      "required": ["primary_metric_id", "unit", "sample_count", "aggregate_sha256", "complete"],
+      "properties": {
+        "primary_metric_id": {"$ref": "#/$defs/id"},
+        "unit": {"type": "string", "minLength": 1, "maxLength": 64},
+        "sample_count": {"type": "integer", "minimum": 0},
+        "aggregate_sha256": {"$ref": "#/$defs/sha256"},
+        "complete": {"type": "boolean"}
+      }
+    },
+    "terminal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "completed_at", "reason", "commitment_sha256"],
+      "properties": {
+        "state": {"enum": ["completed", "failed", "cancelled"]},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "reason": {"$ref": "#/$defs/nullable_string"},
+        "commitment_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

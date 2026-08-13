@@ -53,6 +53,16 @@ _SCHEMA_FILES = {
     "candidate-freeze.v1": "candidate-freeze.v1.json",
     "candidate-final.v1": "candidate-final.v1.json",
     "candidate-report.v1": "candidate-report.v1.json",
+    "candidate-fast-bootstrap.v1": "candidate-fast-bootstrap.v1.json",
+    "candidate-fast-campaign-plan.v1": "candidate-fast-campaign-plan.v1.json",
+    "candidate-fast-run-receipt.v1": "candidate-fast-run-receipt.v1.json",
+    "candidate-fast-run-index.v1": "candidate-fast-run-index.v1.json",
+    "candidate-fast-status.v1": "candidate-fast-status.v1.json",
+    "candidate-fast-current-head.v1": "candidate-fast-current-head.v1.json",
+    "candidate-fast-audit.v1": "candidate-fast-audit.v1.json",
+    "candidate-fast-study.v1": "candidate-fast-study.v1.json",
+    "candidate-fast-diagnostic-study.v1": "candidate-fast-diagnostic-study.v1.json",
+    "candidate-fast-final.v1": "candidate-fast-final.v1.json",
     "measurement-protocol.v1": "measurement-protocol.v1.json",
     "pipeline-profile.v2": "pipeline-profile.v2.json",
 }
@@ -204,6 +214,15 @@ _LOCKED_CANDIDATE_SCREENING_CONTRACT = (
 _LOCKED_CANDIDATE_IDS = tuple(
     item[0] for item in _LOCKED_CANDIDATE_SCREENING_CONTRACT
 )
+
+_FAST_ORACLE_STATIC_ARTIFACT_IDS = frozenset(
+    {
+        "candidate-screening",
+        "candidate-oracle-capture",
+        "candidate-evidence",
+        "candidate-screening-spec",
+    }
+)
 _LOCKED_CANDIDATE_FAMILIES = {
     item[0]: item[1] for item in _LOCKED_CANDIDATE_SCREENING_CONTRACT
 }
@@ -282,6 +301,9 @@ def validate_document(document: Any, *, suite_root: Path | None = None, verify_f
             rendered += f"; and {len(errors) - 10} more"
         raise ValidationError(rendered)
 
+    if version.startswith("candidate-fast-"):
+        _validate_candidate_fast_artifact_tree(document)
+
     if version == "benchmark-manifest.v1":
         _validate_manifest_semantics(document, suite_root=suite_root, verify_files=verify_files)
     elif version == "run-record.v1":
@@ -330,6 +352,26 @@ def validate_document(document: Any, *, suite_root: Path | None = None, verify_f
         _validate_candidate_final_semantics(document)
     elif version == "candidate-report.v1":
         _validate_candidate_report_semantics(document)
+    elif version == "candidate-fast-bootstrap.v1":
+        _validate_candidate_fast_bootstrap_semantics(document)
+    elif version == "candidate-fast-campaign-plan.v1":
+        _validate_candidate_fast_plan_semantics(document)
+    elif version == "candidate-fast-run-receipt.v1":
+        _validate_candidate_fast_receipt_semantics(document)
+    elif version == "candidate-fast-run-index.v1":
+        _validate_candidate_fast_index_semantics(document)
+    elif version == "candidate-fast-status.v1":
+        _validate_candidate_fast_status_semantics(document)
+    elif version == "candidate-fast-current-head.v1":
+        _validate_candidate_fast_head_semantics(document)
+    elif version == "candidate-fast-audit.v1":
+        _validate_candidate_fast_audit_semantics(document)
+    elif version == "candidate-fast-study.v1":
+        _validate_candidate_fast_study_semantics(document)
+    elif version == "candidate-fast-diagnostic-study.v1":
+        _validate_candidate_fast_diagnostic_study_semantics(document)
+    elif version == "candidate-fast-final.v1":
+        _validate_candidate_fast_final_semantics(document)
     return document
 
 
@@ -4013,6 +4055,1069 @@ def _validate_candidate_final_semantics(document: dict[str, Any]) -> None:
         else "no_winning_candidate"
     ):
         raise ValidationError("candidate final winner gate is inconsistent")
+
+
+def _candidate_fast_require_unique(values: list[Any], label: str) -> None:
+    if len(values) != len(set(values)):
+        raise ValidationError(f"{label} must be unique")
+
+
+def _validate_candidate_fast_artifact_tree(
+    value: Any, location: str = "$"
+) -> None:
+    if isinstance(value, dict):
+        if set(value) == {"path", "canonical_sha256", "physical_sha256"}:
+            validate_relative_path(value["path"], label=f"{location} artifact path")
+            if (
+                value["canonical_sha256"] == "0" * 64
+                or value["physical_sha256"] == "0" * 64
+            ):
+                raise ValidationError(f"{location}: fast artifact identity is a placeholder")
+        for key, item in value.items():
+            _validate_candidate_fast_artifact_tree(item, f"{location}.{key}")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_candidate_fast_artifact_tree(item, f"{location}[{index}]")
+
+
+def _candidate_fast_validate_commitment(
+    document: Mapping[str, Any], field: str, label: str
+) -> None:
+    payload = {key: value for key, value in document.items() if key != field}
+    if document[field] != sha256_json(payload):
+        raise ValidationError(f"{label} commitment differs from its canonical payload")
+
+
+def _candidate_fast_validate_named_artifacts(
+    rows: list[dict[str, Any]], label: str, *, verify_commitment: bool = False
+) -> None:
+    _candidate_fast_require_unique(
+        [row["artifact_id"] for row in rows], f"{label} artifact ids"
+    )
+    _candidate_fast_require_unique(
+        [row["artifact"]["path"] for row in rows], f"{label} artifact paths"
+    )
+    if verify_commitment:
+        for row in rows:
+            expected = sha256_json(
+                {"artifact_id": row["artifact_id"], "artifact": row["artifact"]}
+            )
+            if row["verification_commitment_sha256"] != expected:
+                raise ValidationError(
+                    f"{label} artifact verification commitment differs"
+                )
+
+
+def _validate_candidate_fast_bootstrap_semantics(document: dict[str, Any]) -> None:
+    source = document["source_artifacts"]
+    static = document["static_artifacts"]
+    _candidate_fast_validate_named_artifacts(
+        source, "fast bootstrap source", verify_commitment=True
+    )
+    _candidate_fast_validate_named_artifacts(
+        static, "fast bootstrap static", verify_commitment=True
+    )
+    static_ids = {row["artifact_id"] for row in static}
+    if not _FAST_ORACLE_STATIC_ARTIFACT_IDS <= static_ids:
+        raise ValidationError(
+            "fast bootstrap lacks the fixed Oracle qualification artifact set"
+        )
+    _candidate_fast_require_unique(
+        [row["artifact_id"] for row in source + static],
+        "fast bootstrap combined artifact ids",
+    )
+    imported = document["imported_receipts"]
+    _candidate_fast_require_unique(
+        [row["task_id"] for row in imported],
+        "fast bootstrap imported task ids",
+    )
+    _candidate_fast_require_unique(
+        [row["run_id"] for row in imported],
+        "fast bootstrap imported run ids",
+    )
+    _candidate_fast_require_unique(
+        [row["run_artifact"]["path"] for row in imported],
+        "fast bootstrap imported run paths",
+    )
+    for row in imported:
+        payload = {
+            key: value
+            for key, value in row.items()
+            if key != "verification_commitment_sha256"
+        }
+        if row["verification_commitment_sha256"] != sha256_json(payload):
+            raise ValidationError(
+                "fast bootstrap imported receipt verification commitment differs"
+            )
+    _candidate_fast_validate_commitment(
+        document, "bootstrap_commitment_sha256", "fast bootstrap"
+    )
+
+
+def _validate_candidate_fast_plan_semantics(document: dict[str, Any]) -> None:
+    tasks = document["tasks"]
+    ordinals = [task["ordinal"] for task in tasks]
+    if ordinals != list(range(len(tasks))):
+        raise ValidationError(
+            "fast campaign plan task ordinals must be contiguous and start at zero"
+        )
+    task_ids = [task["task_id"] for task in tasks]
+    _candidate_fast_require_unique(task_ids, "fast campaign plan task ids")
+    _candidate_fast_require_unique(
+        [task["output_path"] for task in tasks],
+        "fast campaign plan output paths",
+    )
+    run_tasks = [task for task in tasks if task["kind"] in {"run", "diagnostic"}]
+    _candidate_fast_require_unique(
+        [task["run_id"] for task in run_tasks], "fast campaign plan run ids"
+    )
+    _candidate_fast_require_unique(
+        [task["receipt_path"] for task in run_tasks],
+        "fast campaign plan receipt paths",
+    )
+    candidate_ids = set(document["candidate_ids"])
+    known_ordinals = {task_id: ordinal for ordinal, task_id in enumerate(task_ids)}
+    suite_bindings: dict[str, tuple[int, str]] = {}
+    profile_bindings: dict[str, str] = {}
+    protocol_bindings: dict[str, str] = {}
+    execution_environments: set[str] = set()
+    authorization_fields = (
+        "run_id",
+        "logical_profile_id",
+        "expected_configuration_template_sha256",
+        "suite_id",
+        "expected_case_count",
+        "manifest",
+        "measurement_protocol",
+        "compiler_artifact",
+        "execution_environment_sha256",
+        "receipt_path",
+    )
+    for task in tasks:
+        selected = set(task["candidate_ids"])
+        if not selected <= candidate_ids:
+            raise ValidationError(
+                "fast campaign task references a candidate absent from candidate_ids"
+            )
+        dependencies = task["dependencies"]
+        terminal_dependencies = task["terminal_dependencies"]
+        if set(dependencies) & set(terminal_dependencies):
+            raise ValidationError(
+                "fast campaign success and terminal dependencies must be disjoint"
+            )
+        for dependency in dependencies + terminal_dependencies:
+            if dependency not in known_ordinals:
+                raise ValidationError(
+                    "fast campaign task references an unknown dependency"
+                )
+            if known_ordinals[dependency] >= task["ordinal"]:
+                raise ValidationError(
+                    "fast campaign task dependencies must precede the task"
+                )
+        kind = task["kind"]
+        if (
+            kind == "diagnostic"
+            and (task["stage"] != "diagnostic" or task["data_role"] != "B3")
+        ) or (
+            kind != "diagnostic" and task["stage"] != task["data_role"]
+        ):
+            raise ValidationError(
+                "fast campaign task stage/data-role contract differs"
+            )
+        stage = task["stage"]
+        mode = task["measurement_mode"]
+        if kind == "run":
+            if task["run_kind"] is None:
+                raise ValidationError("fast run task requires an exact run kind")
+            if stage not in {"B1", "B2", "B3", "B4", "B5", "B6"}:
+                raise ValidationError("fast run task must target B1-B6")
+            if mode not in {
+                "qemu_correctness",
+                "standard_proxy",
+                "cache_hotblock",
+            }:
+                raise ValidationError("fast run task requires a measurement mode")
+        elif kind == "study":
+            if stage not in {"B2", "B3", "B4", "B5", "B6", "diagnostic"} or mode != "none":
+                raise ValidationError("fast study task must be an unmeasured campaign study")
+        elif kind == "audit":
+            if stage not in {"bootstrap", "B2", "B3", "final"} or mode != "none":
+                raise ValidationError("fast audit task has an invalid checkpoint")
+        elif kind == "diagnostic":
+            if stage != "diagnostic" or mode not in {
+                "standard_proxy",
+                "cache_hotblock",
+                "analysis",
+            }:
+                raise ValidationError("fast diagnostic task has an invalid mode")
+        elif stage != "final" or mode != "none":
+            raise ValidationError("fast final task must be an unmeasured final task")
+        if kind != "run" and task["run_kind"] is not None:
+            raise ValidationError("fast pseudo-task cannot carry a run kind")
+        if kind in {"run", "diagnostic"}:
+            if any(task[field] is None for field in authorization_fields):
+                raise ValidationError(
+                    "fast measured task lacks an exact run authorization identity"
+                )
+            if task["run_id"] != f"{document['campaign_id']}:{task['task_id']}":
+                raise ValidationError(
+                    "fast measured task run id escapes the campaign namespace"
+                )
+            if task["expected_configuration_template_sha256"] == "0" * 64:
+                raise ValidationError(
+                    "fast measured task configuration identity is a placeholder"
+                )
+            if task["execution_environment_sha256"] == "0" * 64:
+                raise ValidationError(
+                    "fast measured task execution environment is a placeholder"
+                )
+            execution_environments.add(task["execution_environment_sha256"])
+            run_kind = task["run_kind"]
+            if run_kind != "reference" and task["profile"] is None:
+                raise ValidationError(
+                    "fast non-reference measured task lacks an exact profile artifact"
+                )
+            if kind == "diagnostic" and (
+                task["reference_profile_id"] is not None
+                or task["reference_profile_sha256"] is not None
+            ):
+                raise ValidationError(
+                    "fast diagnostic task cannot carry a reference profile identity"
+                )
+            suite_binding = (
+                task["expected_case_count"],
+                sha256_json(task["manifest"]),
+            )
+            previous_suite = suite_bindings.setdefault(task["suite_id"], suite_binding)
+            if previous_suite != suite_binding:
+                raise ValidationError(
+                    "fast measured tasks disagree on an exact suite binding"
+                )
+            profile_binding = (
+                task["reference_profile_sha256"]
+                if run_kind == "reference"
+                else sha256_json(task["profile"])
+            )
+            previous_profile = profile_bindings.setdefault(
+                task["logical_profile_id"], profile_binding
+            )
+            if previous_profile != profile_binding:
+                raise ValidationError(
+                    "fast measured tasks disagree on an exact logical profile binding"
+                )
+            protocol_binding = sha256_json(task["measurement_protocol"])
+            previous_protocol = protocol_bindings.setdefault(mode, protocol_binding)
+            if previous_protocol != protocol_binding:
+                raise ValidationError(
+                    "fast measured tasks disagree on an exact protocol binding"
+                )
+            baseline_task_id = task["baseline_task_id"]
+            baseline_artifact = task["baseline_artifact"]
+            if baseline_artifact is not None and baseline_task_id is None:
+                raise ValidationError(
+                    "fast baseline artifact requires a baseline task identity"
+                )
+            if run_kind == "single":
+                if len(task["candidate_ids"]) != 1 or baseline_task_id is None:
+                    raise ValidationError(
+                        "fast single run requires one candidate and a baseline task"
+                    )
+                if (
+                    task["reference_profile_id"] is not None
+                    or task["reference_profile_sha256"] is not None
+                    or task["profile"] is None
+                ):
+                    raise ValidationError(
+                        "fast single run must bind a candidate profile only"
+                    )
+            elif run_kind == "candidate_empty":
+                if (
+                    task["candidate_ids"]
+                    or baseline_task_id is not None
+                    or baseline_artifact is not None
+                    or task["reference_profile_id"] is not None
+                    or task["reference_profile_sha256"] is not None
+                    or task["profile"] is None
+                ):
+                    raise ValidationError("fast candidate-empty run contract differs")
+            elif run_kind == "reference":
+                if (
+                    task["candidate_ids"]
+                    or baseline_task_id is not None
+                    or baseline_artifact is not None
+                    or task["reference_profile_id"] is None
+                    or task["reference_profile_sha256"] is None
+                    or task["reference_profile_sha256"] == "0" * 64
+                    or task["profile"] is not None
+                ):
+                    raise ValidationError("fast reference run contract differs")
+                snapshot_bindings = [
+                    row["artifact"]
+                    for row in task["static_bindings"]
+                    if row["artifact_id"] == "reference-toolchain-snapshot"
+                ]
+                if (
+                    len(snapshot_bindings) != 1
+                    or task["compiler_artifact"] != snapshot_bindings[0]
+                ):
+                    raise ValidationError(
+                        "fast reference run compiler must bind the frozen toolchain snapshot"
+                    )
+            if baseline_task_id in known_ordinals:
+                if known_ordinals[baseline_task_id] >= task["ordinal"]:
+                    raise ValidationError(
+                        "fast measured task baseline must precede the task"
+                    )
+                if baseline_task_id not in dependencies:
+                    raise ValidationError(
+                        "fast measured task must success-depend on its baseline"
+                    )
+                if baseline_artifact is not None:
+                    raise ValidationError(
+                        "same-plan fast baseline must resolve dynamically through the run index"
+                    )
+                baseline_task = tasks[known_ordinals[baseline_task_id]]
+                if (
+                    baseline_task["kind"] not in {"run", "diagnostic"}
+                    or any(
+                        baseline_task[field] != task[field]
+                        for field in (
+                            "suite_id",
+                            "expected_case_count",
+                            "manifest",
+                            "measurement_protocol",
+                            "compiler_artifact",
+                            "execution_environment_sha256",
+                        )
+                    )
+                    or (
+                        kind == "run"
+                        and (
+                            baseline_task["kind"] != "run"
+                            or baseline_task["run_kind"] != "candidate_empty"
+                            or baseline_task["stage"] != stage
+                            or baseline_task["measurement_mode"] != mode
+                        )
+                    )
+                    or (
+                        kind == "diagnostic"
+                        and mode == "standard_proxy"
+                        and (
+                            baseline_task["kind"] != "run"
+                            or baseline_task["run_kind"] != "candidate_empty"
+                            or baseline_task["stage"] != "B3"
+                            or baseline_task["measurement_mode"] != mode
+                        )
+                    )
+                    or (
+                        kind == "diagnostic"
+                        and mode == "cache_hotblock"
+                        and (
+                            baseline_task["kind"] != "diagnostic"
+                            or baseline_task["task_id"] != "diagnostic.cache.full"
+                            or baseline_task["candidate_ids"]
+                            or baseline_task["measurement_mode"] != mode
+                        )
+                    )
+                ):
+                    raise ValidationError(
+                        "same-plan fast baseline differs from the exact measured contract"
+                    )
+            elif baseline_task_id is not None and baseline_artifact is None:
+                raise ValidationError(
+                    "imported fast baseline task requires an exact bootstrap artifact"
+                )
+            if task["ranking_evidence"] and (
+                kind != "run"
+                or stage not in {"B3", "B4", "B5", "B6"}
+                or mode != "standard_proxy"
+                or baseline_task_id is None
+            ):
+                raise ValidationError(
+                    "fast ranking evidence must be a baseline-bound B3-B6 standard run"
+                )
+            if task["reference_profile_id"] is not None:
+                if task["candidate_ids"] or task["ranking_evidence"]:
+                    raise ValidationError(
+                        "fast reference run cannot carry candidate or ranking evidence"
+                    )
+                if task["reference_profile_id"] != task["logical_profile_id"]:
+                    raise ValidationError(
+                        "fast reference run profile identities must agree"
+                    )
+        else:
+            if any(task[field] is not None for field in authorization_fields) or any(
+                task[field] is not None
+                for field in (
+                    "profile",
+                    "reference_profile_id",
+                    "reference_profile_sha256",
+                )
+            ):
+                raise ValidationError(
+                    "fast pseudo-task cannot carry run authorization identities"
+                )
+            if (
+                task["baseline_task_id"] is not None
+                or task["baseline_artifact"] is not None
+                or task["ranking_evidence"]
+            ):
+                raise ValidationError(
+                    "fast pseudo-task cannot carry baseline or ranking evidence"
+                )
+        _candidate_fast_validate_named_artifacts(
+            task["static_bindings"], f"fast campaign task {task['task_id']} static"
+        )
+        task_static_ids = {row["artifact_id"] for row in task["static_bindings"]}
+        if not _FAST_ORACLE_STATIC_ARTIFACT_IDS <= task_static_ids:
+            raise ValidationError(
+                "fast campaign task lacks the fixed Oracle qualification bindings"
+            )
+    diagnostic_tasks = [task for task in tasks if task["kind"] == "diagnostic"]
+    if diagnostic_tasks:
+        b3_studies = [
+            task
+            for task in tasks
+            if task["kind"] == "study"
+            and task["stage"] == "B3"
+            and task["task_id"] == "study.B3"
+        ]
+        diagnostic_studies = [
+            task
+            for task in tasks
+            if task["kind"] == "study"
+            and task["stage"] == "diagnostic"
+            and task["task_id"] == "study.diagnostic"
+        ]
+        b3_full = [
+            task
+            for task in tasks
+            if task["kind"] == "run"
+            and task["stage"] == "B3"
+            and task["run_kind"] == "candidate_empty"
+        ]
+        if len(b3_studies) != 1 or len(diagnostic_studies) != 1 or len(b3_full) != 1:
+            raise ValidationError(
+                "fast diagnostics require exact B3, B3 FULL, and diagnostic study tasks"
+            )
+        expected_pairs = {
+            f"diagnostic.pair.{'+'.join(sorted(pair))}": sorted(pair)
+            for pair in combinations(document["candidate_ids"], 2)
+        }
+        expected_cache = {
+            "diagnostic.cache.full": [],
+            **{
+                f"diagnostic.cache.{candidate_id}": [candidate_id]
+                for candidate_id in document["candidate_ids"]
+            },
+        }
+        by_diagnostic_id = {task["task_id"]: task for task in diagnostic_tasks}
+        if len(by_diagnostic_id) != len(diagnostic_tasks) or set(by_diagnostic_id) != (
+            set(expected_pairs) | set(expected_cache)
+        ):
+            raise ValidationError(
+                "fast diagnostic plan must contain exactly all candidate pairs and cache tasks"
+            )
+        for task_id, expected_candidates in expected_pairs.items():
+            task = by_diagnostic_id[task_id]
+            if (
+                task["measurement_mode"] != "standard_proxy"
+                or task["candidate_ids"] != expected_candidates
+                or task["gate"] != "diagnostic_top3"
+                or task["baseline_task_id"] != b3_full[0]["task_id"]
+                or not {"study.B3", b3_full[0]["task_id"]} <= set(task["dependencies"])
+                or task["ranking_evidence"]
+            ):
+                raise ValidationError("fast diagnostic pair plan contract differs")
+        for task_id, expected_candidates in expected_cache.items():
+            task = by_diagnostic_id[task_id]
+            is_full = task_id == "diagnostic.cache.full"
+            if (
+                task["measurement_mode"] != "cache_hotblock"
+                or task["candidate_ids"] != expected_candidates
+                or task["ranking_evidence"]
+                or (
+                    is_full
+                    and (
+                        task["gate"] != "dependencies_succeeded"
+                        or task["baseline_task_id"] is not None
+                        or task["dependencies"] != ["study.B3"]
+                    )
+                )
+                or (
+                    not is_full
+                    and (
+                        task["gate"] != "diagnostic_top3"
+                        or task["baseline_task_id"] != "diagnostic.cache.full"
+                        or not {"study.B3", "diagnostic.cache.full"}
+                        <= set(task["dependencies"])
+                    )
+                )
+            ):
+                raise ValidationError("fast diagnostic cache plan contract differs")
+        diagnostic_task_ids = [task["task_id"] for task in diagnostic_tasks]
+        diagnostic_study = diagnostic_studies[0]
+        if (
+            diagnostic_study["dependencies"]
+            or diagnostic_study["terminal_dependencies"] != diagnostic_task_ids
+            or diagnostic_study["gate"] != "dependencies_terminal"
+        ):
+            raise ValidationError("fast diagnostic study must terminal-depend on every diagnostic task")
+        final_tasks = [task for task in tasks if task["kind"] == "final"]
+        if len(final_tasks) != 1 or "study.diagnostic" not in final_tasks[0]["dependencies"]:
+            raise ValidationError("fast final must success-depend on the diagnostic study")
+        diagnostic_ids = set(diagnostic_task_ids) | {"study.diagnostic"}
+        if any(
+            task["stage"] in {"B4", "B5", "B6"}
+            and diagnostic_ids.intersection(task["dependencies"] + task["terminal_dependencies"])
+            for task in tasks
+        ):
+            raise ValidationError("fast B4-B6 tasks must remain parallel with diagnostics")
+    if len(execution_environments) > 1:
+        raise ValidationError(
+            "fast measured tasks must share one execution environment identity"
+        )
+    _candidate_fast_validate_commitment(
+        document, "plan_commitment_sha256", "fast campaign plan"
+    )
+
+
+def _validate_candidate_fast_receipt_semantics(document: dict[str, Any]) -> None:
+    configuration = document["configuration"]
+    expected_configuration_sha256 = sha256_json(
+        {
+            key: value
+            for key, value in configuration.items()
+            if key != "configuration_sha256"
+        }
+    )
+    if configuration["configuration_sha256"] != expected_configuration_sha256:
+        raise ValidationError(
+            "fast run receipt configuration digest differs from its canonical payload"
+        )
+    correctness = document["correctness"]
+    observed_cases = sum(
+        correctness[key]
+        for key in (
+            "passed_cases",
+            "failed_cases",
+            "timed_out_cases",
+            "pending_cases",
+        )
+    )
+    if observed_cases != correctness["expected_cases"]:
+        raise ValidationError(
+            "fast run receipt correctness counts must equal expected_cases"
+        )
+    expected_all_correct = (
+        correctness["passed_cases"] == correctness["expected_cases"]
+        and correctness["failed_cases"] == 0
+        and correctness["timed_out_cases"] == 0
+        and correctness["pending_cases"] == 0
+    )
+    if correctness["all_correct"] != expected_all_correct:
+        raise ValidationError(
+            "fast run receipt all_correct differs from correctness counts"
+        )
+    metrics = document["metrics"]
+    if metrics["complete"] and metrics["sample_count"] == 0:
+        raise ValidationError(
+            "fast run receipt complete metrics require at least one sample"
+        )
+    terminal = document["terminal"]
+    if terminal["state"] == "completed":
+        if terminal["reason"] is not None or correctness["pending_cases"] != 0:
+            raise ValidationError(
+                "completed fast run receipt cannot retain a reason or pending cases"
+            )
+        if correctness["all_correct"] and (
+            not metrics["complete"]
+            or metrics["sample_count"] != correctness["expected_cases"]
+        ):
+            raise ValidationError(
+                "correct completed fast run requires one complete metric sample per case"
+            )
+    elif terminal["reason"] is None:
+        raise ValidationError("failed or cancelled fast run receipt requires a reason")
+    payload = dict(document)
+    payload_terminal = dict(terminal)
+    payload_terminal.pop("commitment_sha256")
+    payload["terminal"] = payload_terminal
+    if terminal["commitment_sha256"] != sha256_json(payload):
+        raise ValidationError(
+            "fast run terminal commitment differs from its canonical payload"
+        )
+
+
+def _validate_candidate_fast_index_semantics(document: dict[str, Any]) -> None:
+    receipts = document["receipts"]
+    ordinals = [row["ordinal"] for row in receipts]
+    if ordinals != sorted(ordinals) or len(ordinals) != len(set(ordinals)):
+        raise ValidationError(
+            "fast run index receipts must be in strict plan-ordinal order"
+        )
+    _candidate_fast_require_unique(
+        [row["task_id"] for row in receipts], "fast run index task ids"
+    )
+    _candidate_fast_require_unique(
+        [row["run_id"] for row in receipts], "fast run index run ids"
+    )
+    _candidate_fast_require_unique(
+        [row["receipt"]["path"] for row in receipts],
+        "fast run index receipt paths",
+    )
+    _candidate_fast_validate_commitment(
+        document, "index_commitment_sha256", "fast run index"
+    )
+
+
+def _validate_candidate_fast_status_semantics(document: dict[str, Any]) -> None:
+    tasks = document["tasks"]
+    ordinals = [task["ordinal"] for task in tasks]
+    if ordinals != list(range(len(tasks))):
+        raise ValidationError(
+            "fast campaign status task ordinals must be contiguous and start at zero"
+        )
+    task_ids = [task["task_id"] for task in tasks]
+    _candidate_fast_require_unique(task_ids, "fast campaign status task ids")
+    known = set(task_ids)
+    ready = [task["task_id"] for task in tasks if task["state"] == "ready"]
+    if document["ready_tasks"] != ready:
+        raise ValidationError(
+            "fast campaign ready_tasks must equal ready task rows in plan order"
+        )
+    if sum(task["state"] == "running" for task in tasks) > 4:
+        raise ValidationError("fast campaign status cannot have more than four running tasks")
+    terminal_states = {"completed", "failed", "cancelled"}
+    for task in tasks:
+        terminal = task["state"] in terminal_states
+        if terminal != (task["receipt"] is not None):
+            raise ValidationError(
+                "fast campaign terminal task rows must bind exactly one receipt artifact"
+            )
+        if terminal != (task["terminal_commitment_sha256"] is not None):
+            raise ValidationError(
+                "fast campaign terminal task rows must bind exactly one commitment"
+            )
+        if any(blocker not in known for blocker in task["blocked_by"]):
+            raise ValidationError("fast campaign task is blocked by an unknown task")
+        if task["state"] != "pending" and task["blocked_by"]:
+            raise ValidationError("only pending fast campaign tasks may be blocked")
+    if document["state"] == "complete":
+        if any(task["state"] not in terminal_states for task in tasks):
+            raise ValidationError("complete fast campaign status requires terminal tasks")
+        if document["final"] is None:
+            raise ValidationError("complete fast campaign status requires final evidence")
+    elif document["state"] == "failed":
+        if not any(task["state"] == "failed" for task in tasks):
+            raise ValidationError("failed fast campaign status requires a failed task")
+        if document["ready_tasks"]:
+            raise ValidationError("failed fast campaign status cannot expose ready tasks")
+    for label in ("studies", "audits", "diagnostics"):
+        _candidate_fast_validate_named_artifacts(document[label], f"fast status {label}")
+    _candidate_fast_validate_commitment(
+        document, "status_commitment_sha256", "fast campaign status"
+    )
+
+
+def _validate_candidate_fast_head_semantics(document: dict[str, Any]) -> None:
+    if document["status"]["path"] == document["index"]["path"]:
+        raise ValidationError("fast campaign head status and index paths must differ")
+    _candidate_fast_validate_commitment(
+        document, "head_commitment_sha256", "fast campaign current head"
+    )
+
+
+def _validate_candidate_fast_audit_semantics(document: dict[str, Any]) -> None:
+    receipts = document["scope_receipts"]
+    ordinals = [row["ordinal"] for row in receipts]
+    if ordinals != sorted(ordinals) or len(ordinals) != len(set(ordinals)):
+        raise ValidationError("fast audit receipts must be in strict plan-ordinal order")
+    _candidate_fast_require_unique(
+        [row["task_id"] for row in receipts], "fast audit task ids"
+    )
+    if document["checkpoint"] == "bootstrap" and receipts:
+        raise ValidationError("fast bootstrap audit cannot claim run receipts")
+    checks = document["checks"]
+    _candidate_fast_require_unique(
+        [check["check_id"] for check in checks], "fast audit check ids"
+    )
+    if document["passed"] != all(check["outcome"] == "passed" for check in checks):
+        raise ValidationError("fast audit passed flag differs from check outcomes")
+    _candidate_fast_validate_commitment(
+        document, "audit_commitment_sha256", "fast campaign audit"
+    )
+
+
+def _validate_candidate_fast_study_semantics(document: dict[str, Any]) -> None:
+    candidates = document["candidates"]
+    candidate_ids = [row["candidate_id"] for row in candidates]
+    _candidate_fast_require_unique(candidate_ids, "fast study candidate ids")
+    planned = document["planned_candidate_ids"]
+    evaluated = document["evaluated_candidate_ids"]
+    if not set(evaluated) <= set(planned):
+        raise ValidationError(
+            "fast study evaluated candidates must be a subset of planned candidates"
+        )
+    if document["stage"] in {"B2", "B3"} and evaluated != planned:
+        raise ValidationError(
+            "fast B2/B3 study must evaluate every planned candidate in plan order"
+        )
+    if candidate_ids != evaluated:
+        raise ValidationError(
+            "fast study candidate rows must equal evaluated candidates in plan order"
+        )
+    receipt_rows = [document["baseline"]] + [row["receipt"] for row in candidates]
+    _candidate_fast_require_unique(
+        [row["task_id"] for row in receipt_rows], "fast study receipt task ids"
+    )
+    _candidate_fast_require_unique(
+        [row["run_id"] for row in receipt_rows], "fast study receipt run ids"
+    )
+    for row in candidates:
+        per_cases = row["per_cases"]
+        case_ids = [item["case_id"] for item in per_cases]
+        if (
+            len(case_ids) != len(set(case_ids))
+            or len(per_cases) != row["comparable_case_count"]
+        ):
+            raise ValidationError(
+                "fast study per-case rows must exactly cover comparable cases"
+            )
+        expected_geometric_mean = (
+            None
+            if not per_cases
+            else math.exp(
+                sum(math.log(item["speedup"]) for item in per_cases)
+                / len(per_cases)
+            )
+        )
+        if (
+            expected_geometric_mean is None
+        ) != (row["geometric_mean_speedup"] is None) or (
+            expected_geometric_mean is not None
+            and not math.isclose(
+                float(row["geometric_mean_speedup"]),
+                expected_geometric_mean,
+                rel_tol=1e-12,
+            )
+        ):
+            raise ValidationError(
+                "fast study geometric mean differs from per-case evidence"
+            )
+        static_values = (
+            row["static_text_bytes_full"],
+            row["static_text_bytes_full_plus_candidate"],
+            row["static_text_ratio"],
+        )
+        if any(value is None for value in static_values) != all(
+            value is None for value in static_values
+        ):
+            raise ValidationError(
+                "fast study static text evidence must be all null or complete"
+            )
+        if static_values[0] is not None and not math.isclose(
+            float(static_values[2]),
+            float(static_values[0]) / float(static_values[1]),
+            rel_tol=1e-12,
+        ):
+            raise ValidationError(
+                "fast study static text ratio differs from its byte totals"
+            )
+        expected_eligible = (
+            row["correctness_passed"]
+            and row["metrics_complete"]
+            and row["comparable_case_count"] > 0
+            and row["geometric_mean_speedup"] is not None
+        )
+        if row["eligible"] != expected_eligible:
+            raise ValidationError(
+                "fast study eligibility differs from correctness and metric evidence"
+            )
+        if row["eligible"] != (row["ineligibility_reason"] is None):
+            raise ValidationError(
+                "fast study eligibility differs from ineligibility reason"
+            )
+    _candidate_fast_validate_commitment(
+        document, "study_commitment_sha256", "fast campaign study"
+    )
+
+
+def _validate_candidate_fast_diagnostic_study_semantics(
+    document: dict[str, Any],
+) -> None:
+    top3 = document["top3_candidate_ids"]
+    expected_pairs = [
+        sorted(pair) for pair in combinations(top3, 2)
+    ]
+    pairs = document["pairs"]
+    if [row["candidate_ids"] for row in pairs] != expected_pairs:
+        raise ValidationError(
+            "fast diagnostic study pairs must equal the exact Top3 combinations"
+        )
+    cache_candidates = document["cache_candidates"]
+    if [row["candidate_id"] for row in cache_candidates] != top3:
+        raise ValidationError(
+            "fast diagnostic cache candidates must equal Top3 ranking order"
+        )
+    if document["cache_full"]["receipt"]["task_id"] != "diagnostic.cache.full":
+        raise ValidationError("fast diagnostic study lacks exact cache FULL evidence")
+    if any(
+        row["receipt"]["task_id"]
+        != f"diagnostic.pair.{'+'.join(row['candidate_ids'])}"
+        for row in pairs
+    ):
+        raise ValidationError("fast diagnostic pair receipt identity differs")
+    if any(
+        row["receipt"]["task_id"] != f"diagnostic.cache.{row['candidate_id']}"
+        for row in cache_candidates
+    ):
+        raise ValidationError("fast diagnostic cache receipt identity differs")
+    receipt_rows = [
+        *[row["receipt"] for row in pairs],
+        document["cache_full"]["receipt"],
+        *[row["receipt"] for row in cache_candidates],
+    ]
+    _candidate_fast_require_unique(
+        [row["task_id"] for row in receipt_rows],
+        "fast diagnostic study task ids",
+    )
+    _candidate_fast_require_unique(
+        [row["run_id"] for row in receipt_rows],
+        "fast diagnostic study run ids",
+    )
+    for row in pairs:
+        expected_eligible = (
+            row["terminal_state"] == "completed"
+            and row["correctness_passed"]
+            and row["metrics_complete"]
+            and row["comparable_case_count"] > 0
+            and row["pair_geometric_mean_speedup"] is not None
+            and row["expected_multiplicative_speedup"] is not None
+            and row["delta_ln_geometric_mean"] is not None
+        )
+        if row["eligible"] != expected_eligible or row["eligible"] != (
+            row["ineligibility_reason"] is None
+        ):
+            raise ValidationError(
+                "fast diagnostic pair eligibility differs from normalized evidence"
+            )
+        if not expected_eligible and any(
+            row[field] is not None
+            for field in (
+                "pair_geometric_mean_speedup",
+                "expected_multiplicative_speedup",
+                "delta_ln_geometric_mean",
+            )
+        ):
+            raise ValidationError(
+                "ineligible fast diagnostic pair cannot claim interaction metrics"
+            )
+        expected_reason = None
+        if row["terminal_state"] != "completed":
+            expected_reason = "terminal_failure"
+        elif not row["correctness_passed"]:
+            expected_reason = "correctness_failure"
+        elif not row["metrics_complete"]:
+            expected_reason = "metrics_incomplete"
+        elif row["comparable_case_count"] == 0:
+            expected_reason = "no_comparable_cases"
+        if row["ineligibility_reason"] != expected_reason:
+            raise ValidationError(
+                "fast diagnostic pair ineligibility reason differs from evidence"
+            )
+    for row in [document["cache_full"], *cache_candidates]:
+        if row["terminal_state"] != "completed" and (
+            row["correctness_passed"] or row["metrics_complete"]
+        ):
+            raise ValidationError(
+                "non-completed fast cache diagnostic cannot claim complete evidence"
+            )
+    _candidate_fast_validate_commitment(
+        document,
+        "diagnostic_study_commitment_sha256",
+        "fast campaign diagnostic study",
+    )
+
+
+def _validate_candidate_fast_final_semantics(document: dict[str, Any]) -> None:
+    if document["report_manifest"]["path"] in {
+        artifact["path"] for artifact in document["report_artifacts"].values()
+    }:
+        raise ValidationError(
+            "fast final report manifest must be distinct from report artifacts"
+        )
+    candidates = document["candidates"]
+    candidate_ids = [row["candidate_id"] for row in candidates]
+    _candidate_fast_require_unique(candidate_ids, "fast final candidate ids")
+    planned = document["planned_candidate_ids"]
+    if candidate_ids != planned:
+        raise ValidationError(
+            "fast final candidate rows must equal planned candidates in plan order"
+        )
+    by_id = {row["candidate_id"]: row for row in candidates}
+    promoted = [
+        row["candidate_id"]
+        for row in candidates
+        if row["stages"]["B3"]["eligible"]
+        and row["stages"]["B3"]["geometric_mean_speedup"] is not None
+        and row["stages"]["B3"]["geometric_mean_speedup"] > 1.0
+    ]
+    if document["promoted_candidate_ids"] != promoted:
+        raise ValidationError(
+            "fast final promoted candidates differ from the strict B3 > 1.0 gate"
+        )
+    validation_studies = [document["studies"][stage] for stage in ("B4", "B5", "B6")]
+    if promoted and any(artifact is None for artifact in validation_studies):
+        raise ValidationError(
+            "fast final promoted candidates require B4-B6 study artifacts"
+        )
+    if not promoted and any(artifact is not None for artifact in validation_studies):
+        raise ValidationError(
+            "fast final without promoted candidates cannot claim B4-B6 studies"
+        )
+    eligible: list[dict[str, Any]] = []
+    for row in candidates:
+        stages = row["stages"]
+        for stage in ("B2", "B3", "B4", "B5", "B6"):
+            result = stages[stage]
+            if result is not None and result["eligible"] != (
+                result["geometric_mean_speedup"] is not None
+            ):
+                raise ValidationError(
+                    "fast final stage eligibility differs from its speedup evidence"
+                )
+        is_promoted = row["candidate_id"] in set(promoted)
+        validation_results = [stages[stage] for stage in ("B4", "B5", "B6")]
+        if not is_promoted:
+            if any(result is not None for result in validation_results):
+                raise ValidationError(
+                    "fast final non-promoted candidate cannot claim B4-B6 evidence"
+                )
+            if row["ineligibility_reasons"] != ["not_promoted_by_B3"]:
+                raise ValidationError(
+                    "fast final non-promoted candidate requires the exact B3 reason"
+                )
+            if (
+                row["eligible_for_final"]
+                or row["combined_geometric_mean_speedup"] is not None
+                or row["combined_static_text_bytes_full_plus_candidate"] is not None
+                or row["combined_static_text_ratio"] is not None
+                or row["rank"] is not None
+            ):
+                raise ValidationError(
+                    "fast final non-promoted candidate cannot be ranked"
+                )
+            continue
+        if any(result is None for result in validation_results):
+            raise ValidationError(
+                "fast final promoted candidate requires B4-B6 evidence"
+            )
+        all_stages_eligible = all(
+            stages[stage]["eligible"]
+            for stage in ("B2", "B3", "B4", "B5", "B6")
+        )
+        expected_eligible = (
+            all_stages_eligible
+            and row["combined_case_count"] == 267
+            and row["combined_static_text_bytes_full_plus_candidate"] is not None
+            and row["combined_static_text_ratio"] is not None
+        )
+        if row["eligible_for_final"] != expected_eligible:
+            raise ValidationError(
+                "fast final eligibility differs from bound stage evidence"
+            )
+        if row["eligible_for_final"]:
+            if (
+                row["rank"] is None
+                or row["combined_geometric_mean_speedup"] is None
+                or row["b3_geometric_mean_speedup"]
+                != stages["B3"]["geometric_mean_speedup"]
+                or row["ineligibility_reasons"]
+            ):
+                raise ValidationError(
+                    "eligible fast final candidate requires speedup, rank, and no reasons"
+                )
+            eligible.append(row)
+        else:
+            failing_stages = [
+                stage
+                for stage in ("B2", "B3", "B4", "B5", "B6")
+                if not stages[stage]["eligible"]
+            ]
+            reasons = row["ineligibility_reasons"]
+            stage_reasons_match = len(reasons) == len(failing_stages) and all(
+                reason.startswith(f"{stage}:")
+                for reason, stage in zip(reasons, failing_stages)
+            )
+            expected_nonstage_reason = (
+                "combined_case_count_not_267"
+                if row["combined_case_count"] != 267
+                else "missing_static_text_evidence"
+            )
+            if (
+                row["rank"] is not None
+                or row["combined_geometric_mean_speedup"] is not None
+                or row["combined_static_text_bytes_full_plus_candidate"] is not None
+                or row["combined_static_text_ratio"] is not None
+                or (
+                    not stage_reasons_match
+                    if failing_stages
+                    else reasons != [expected_nonstage_reason]
+                )
+            ):
+                raise ValidationError(
+                    "ineligible promoted fast final candidate reason differs"
+                )
+    ranking = document["ranking"]
+    if [row["rank"] for row in ranking] != list(range(1, len(ranking) + 1)):
+        raise ValidationError("fast final ranking must be contiguous and start at one")
+    if {row["candidate_id"] for row in ranking} != {
+        row["candidate_id"] for row in eligible
+    }:
+        raise ValidationError("fast final ranking must contain every eligible candidate")
+    expected_order = sorted(
+        eligible,
+        key=lambda row: (
+            -row["combined_geometric_mean_speedup"],
+            -row["b3_geometric_mean_speedup"],
+            row["combined_static_text_bytes_full_plus_candidate"],
+            row["candidate_id"],
+        ),
+    )
+    if [row["candidate_id"] for row in ranking] != [
+        row["candidate_id"] for row in expected_order
+    ]:
+        raise ValidationError(
+            "fast final ranking differs from speedup-descending stable-id order"
+        )
+    for rank in ranking:
+        candidate = by_id[rank["candidate_id"]]
+        if candidate["rank"] != rank["rank"]:
+            raise ValidationError("fast final candidate and ranking ranks differ")
+        if (
+            candidate["combined_geometric_mean_speedup"]
+            != rank["combined_geometric_mean_speedup"]
+            or candidate["b3_geometric_mean_speedup"]
+            != rank["b3_geometric_mean_speedup"]
+            or candidate["combined_static_text_bytes_full_plus_candidate"]
+            != rank["combined_static_text_bytes_full_plus_candidate"]
+            or candidate["combined_static_text_ratio"]
+            != rank["combined_static_text_ratio"]
+        ):
+            raise ValidationError("fast final candidate and ranking evidence differs")
+        if rank["stable_id_tiebreak"] != rank["candidate_id"]:
+            raise ValidationError("fast final stable-id tiebreak differs")
+    expected_winner = (
+        ranking[0]["candidate_id"]
+        if ranking and ranking[0]["combined_geometric_mean_speedup"] > 1.0
+        else None
+    )
+    if document["winner_candidate_id"] != expected_winner:
+        raise ValidationError("fast final winner differs from the strict > 1.0 gate")
+    _candidate_fast_validate_commitment(
+        document, "final_commitment_sha256", "fast campaign final"
+    )
 
 
 def _validate_ablation_semantics(document: dict[str, Any]) -> None:

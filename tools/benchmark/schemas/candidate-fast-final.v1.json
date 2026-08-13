@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-fast-final.v1.json",
+  "title": "ACCELA deterministic fast campaign final result v1",
+  "type": "object", "additionalProperties": false,
+  "required": [
+    "schema_version", "final_id", "campaign_id", "generated_at", "evidence_level",
+    "bootstrap", "plan", "index", "status", "audits", "studies", "diagnostics", "diagnostic_study",
+    "planned_candidate_ids", "promoted_candidate_ids", "candidates", "ranking", "winner_candidate_id",
+    "report_manifest", "report_artifacts", "final_commitment_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-fast-final.v1"},
+    "final_id": {"$ref": "#/$defs/id"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "evidence_level": {"const": "qemu_proxy"},
+    "bootstrap": {"$ref": "#/$defs/artifact"},
+    "plan": {"$ref": "#/$defs/artifact"},
+    "index": {"$ref": "#/$defs/artifact"},
+    "status": {"$ref": "#/$defs/artifact"},
+    "audits": {"$ref": "#/$defs/audit_map"},
+    "studies": {"$ref": "#/$defs/study_map"},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/named_artifact"}},
+    "diagnostic_study": {"$ref": "#/$defs/artifact"},
+    "planned_candidate_ids": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "promoted_candidate_ids": {
+      "type": "array", "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}},
+    "ranking": {"type": "array", "items": {"$ref": "#/$defs/rank"}},
+    "winner_candidate_id": {"$ref": "#/$defs/nullable_id"},
+    "report_manifest": {"$ref": "#/$defs/artifact"},
+    "report_artifacts": {"$ref": "#/$defs/report_artifacts"},
+    "final_commitment_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullable_positive": {"oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0}]},
+    "nullable_rank": {"oneOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]},
+    "nullable_id": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/id"}]},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "named_artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "artifact"],
+      "properties": {
+        "artifact_id": {"$ref": "#/$defs/id"},
+        "artifact": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "audit_map": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bootstrap", "B2", "B3", "final"],
+      "properties": {
+        "bootstrap": {"$ref": "#/$defs/artifact"},
+        "B2": {"$ref": "#/$defs/artifact"},
+        "B3": {"$ref": "#/$defs/artifact"},
+        "final": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "study_map": {
+      "type": "object", "additionalProperties": false,
+      "required": ["B2", "B3", "B4", "B5", "B6"],
+      "properties": {
+        "B2": {"$ref": "#/$defs/artifact"}, "B3": {"$ref": "#/$defs/artifact"},
+        "B4": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]},
+        "B5": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]},
+        "B6": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]}
+      }
+    },
+    "stage_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["study_sha256", "receipt_sha256", "eligible", "geometric_mean_speedup"],
+      "properties": {
+        "study_sha256": {"$ref": "#/$defs/sha256"},
+        "receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "eligible": {"type": "boolean"},
+        "geometric_mean_speedup": {"$ref": "#/$defs/nullable_positive"}
+      }
+    },
+    "stage_map": {
+      "type": "object", "additionalProperties": false,
+      "required": ["B2", "B3", "B4", "B5", "B6"],
+      "properties": {
+        "B2": {"$ref": "#/$defs/stage_result"}, "B3": {"$ref": "#/$defs/stage_result"},
+        "B4": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stage_result"}]},
+        "B5": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stage_result"}]},
+        "B6": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stage_result"}]}
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "candidate_id", "stages", "eligible_for_final", "ineligibility_reasons",
+        "combined_case_count", "combined_geometric_mean_speedup",
+        "b3_geometric_mean_speedup", "combined_static_text_bytes_full_plus_candidate",
+        "combined_static_text_ratio", "rank"
+      ],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "stages": {"$ref": "#/$defs/stage_map"},
+        "eligible_for_final": {"type": "boolean"},
+        "ineligibility_reasons": {
+          "type": "array", "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256}
+        },
+        "combined_geometric_mean_speedup": {"$ref": "#/$defs/nullable_positive"},
+        "combined_case_count": {"type": "integer", "minimum": 0},
+        "b3_geometric_mean_speedup": {"$ref": "#/$defs/nullable_positive"},
+        "combined_static_text_bytes_full_plus_candidate": {"$ref": "#/$defs/nullable_positive"},
+        "combined_static_text_ratio": {"$ref": "#/$defs/nullable_positive"},
+        "rank": {"$ref": "#/$defs/nullable_rank"}
+      }
+    },
+    "rank": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "rank", "candidate_id", "combined_geometric_mean_speedup",
+        "b3_geometric_mean_speedup", "combined_static_text_bytes_full_plus_candidate",
+        "combined_static_text_ratio", "stable_id_tiebreak"
+      ],
+      "properties": {
+        "rank": {"type": "integer", "minimum": 1},
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "combined_geometric_mean_speedup": {"type": "number", "exclusiveMinimum": 0},
+        "b3_geometric_mean_speedup": {"type": "number", "exclusiveMinimum": 0},
+        "combined_static_text_bytes_full_plus_candidate": {"type": "number", "exclusiveMinimum": 0},
+        "combined_static_text_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "stable_id_tiebreak": {"$ref": "#/$defs/id"}
+      }
+    },
+    "report_artifacts": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "report", "single_candidate_chart", "suite_chart", "ranking_chart",
+        "pair_heatmap", "oracle_capture_chart", "cache_hotblock_chart",
+        "pareto_chart"
+      ],
+      "properties": {
+        "report": {"$ref": "#/$defs/artifact"},
+        "single_candidate_chart": {"$ref": "#/$defs/artifact"},
+        "ranking_chart": {"$ref": "#/$defs/artifact"},
+        "suite_chart": {"$ref": "#/$defs/artifact"},
+        "pair_heatmap": {"$ref": "#/$defs/artifact"},
+        "oracle_capture_chart": {"$ref": "#/$defs/artifact"},
+        "cache_hotblock_chart": {"$ref": "#/$defs/artifact"},
+        "pareto_chart": {"$ref": "#/$defs/artifact"}
+      }
+    }
+  }
+}

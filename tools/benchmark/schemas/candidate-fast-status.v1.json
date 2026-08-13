@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-fast-status.v1.json",
+  "title": "ACCELA fast campaign resumable status snapshot v1",
+  "type": "object", "additionalProperties": false,
+  "required": [
+    "schema_version", "status_id", "campaign_id", "generation", "generated_at",
+    "bootstrap", "plan", "index", "state", "tasks", "ready_tasks", "studies",
+    "audits", "diagnostics", "diagnostic_study", "final", "status_commitment_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-fast-status.v1"},
+    "status_id": {"$ref": "#/$defs/id"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "generation": {"type": "integer", "minimum": 0},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "bootstrap": {"$ref": "#/$defs/artifact"},
+    "plan": {"$ref": "#/$defs/artifact"},
+    "index": {"$ref": "#/$defs/artifact"},
+    "state": {"enum": ["running", "complete", "failed"]},
+    "tasks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/task_status"}},
+    "ready_tasks": {
+      "type": "array", "maxItems": 4, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "studies": {"type": "array", "items": {"$ref": "#/$defs/named_artifact"}},
+    "audits": {"type": "array", "items": {"$ref": "#/$defs/named_artifact"}},
+    "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/named_artifact"}},
+    "diagnostic_study": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]},
+    "final": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]},
+    "status_commitment_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "nullable_sha256": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "named_artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "artifact"],
+      "properties": {
+        "artifact_id": {"$ref": "#/$defs/id"},
+        "artifact": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "task_status": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "ordinal", "task_id", "stage", "state", "receipt",
+        "terminal_commitment_sha256", "blocked_by"
+      ],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "task_id": {"$ref": "#/$defs/id"},
+        "stage": {"enum": ["bootstrap", "B1", "B2", "B3", "B4", "B5", "B6", "diagnostic", "final"]},
+        "state": {"enum": ["pending", "ready", "running", "completed", "failed", "cancelled"]},
+        "receipt": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/artifact"}]},
+        "terminal_commitment_sha256": {"$ref": "#/$defs/nullable_sha256"},
+        "blocked_by": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+      }
+    }
+  }
+}

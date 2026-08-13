@@ -35,7 +35,13 @@ from .journal import (
     RunTerminalSnapshot,
     durable_create_json,
 )
-from .lease import ExclusiveFileLease, output_lease_path, path_identity
+from .lease import (
+    ExclusiveFileLease,
+    candidate_task_lease_path,
+    output_lease_path,
+    path_identity,
+    run_state_lease_path,
+)
 from .metrics import ANALYZER_METRICS, rv64gc_qemu_v1
 from .process import ProcessResult, extract_metric, first_mismatch_offset, run_process
 from .protocol import resolve_measurement_protocol_assets, verify_measurement_protocol
@@ -185,6 +191,11 @@ class RunOptions:
     candidate_campaign_status_path: Path | None = None
     candidate_status_ledger_paths: tuple[Path, ...] = ()
     candidate_task_id: str | None = None
+    candidate_fast_campaign_plan_path: Path | None = None
+    candidate_fast_campaign_status_path: Path | None = None
+    candidate_fast_campaign_index_path: Path | None = None
+    candidate_fast_task_id: str | None = None
+    candidate_fast_receipt_path: Path | None = None
     analyzer: StageSpec | None = None
     compile_timeout_seconds: float = 120.0
     compile_repetitions: int = 5
@@ -360,14 +371,37 @@ def _validate_options(options: RunOptions) -> None:
             raise ConfigurationError(
                 "formal candidate analyzer contract differs"
             )
-    authorization_values = (
+    legacy_authorization_values = (
         options.candidate_campaign_plan_path,
         options.candidate_campaign_status_path,
         options.candidate_task_id,
     )
-    has_authorization = any(value is not None for value in authorization_values) or bool(
+    has_legacy_authorization = any(
+        value is not None for value in legacy_authorization_values
+    ) or bool(
         options.candidate_status_ledger_paths
     )
+    fast_authorization_values = (
+        options.candidate_fast_campaign_plan_path,
+        options.candidate_fast_campaign_status_path,
+        options.candidate_fast_campaign_index_path,
+        options.candidate_fast_task_id,
+        options.candidate_fast_receipt_path,
+    )
+    has_fast_authorization = any(
+        value is not None for value in fast_authorization_values
+    )
+    if has_legacy_authorization and has_fast_authorization:
+        raise ConfigurationError(
+            "legacy and fast candidate campaign authorization cannot be mixed"
+        )
+    if has_fast_authorization and any(
+        value is None for value in fast_authorization_values
+    ):
+        raise ConfigurationError(
+            "fast candidate runs require plan, current status, run index, task id, and receipt path"
+        )
+    has_authorization = has_legacy_authorization or has_fast_authorization
     candidate_scoped = (
         options.candidate_registry_path is not None
         or options.candidate_pass_registry_path is not None
@@ -386,8 +420,12 @@ def _validate_options(options: RunOptions) -> None:
             raise ConfigurationError(
                 "candidate campaign authorization requires execution environment provenance"
             )
-    elif (
-        any(value is None for value in authorization_values)
+    elif has_fast_authorization and options.compiler_artifact_path is None:
+        raise ConfigurationError(
+            "fast candidate runs require a compiler artifact path"
+        )
+    elif not has_fast_authorization and (
+        any(value is None for value in legacy_authorization_values)
         or not options.candidate_status_ledger_paths
         or options.compiler_artifact_path is None
     ):
@@ -2267,7 +2305,13 @@ class BenchmarkCompiler:
 class BenchmarkRun:
     def __init__(self, options: RunOptions) -> None:
         _validate_options(options)
-        if options.provenance.execution_environment_sha256 is not None:
+        self._fast_authorization_enabled = (
+            options.candidate_fast_campaign_plan_path is not None
+        )
+        if (
+            options.provenance.execution_environment_sha256 is not None
+            and not self._fast_authorization_enabled
+        ):
             assert options.candidate_campaign_plan_path is not None
             assert options.candidate_campaign_status_path is not None
             assert options.candidate_task_id is not None
@@ -2302,7 +2346,8 @@ class BenchmarkRun:
             raise ConfigurationError("workspace_root and suite_root must be directories")
         self.output_path = options.output_path.resolve()
         self.state_root = options.state_root.resolve()
-        self.state_root.mkdir(parents=True, exist_ok=True)
+        if not self._fast_authorization_enabled:
+            self.state_root.mkdir(parents=True, exist_ok=True)
         self.manifest = load_and_validate(
             self.manifest_path,
             suite_root=self.suite_root,
@@ -2389,16 +2434,25 @@ class BenchmarkRun:
         self.consistency_selected = {case["id"] for case in selected_order[:selected_count]}
         self._write_lock = threading.Lock()
         self.cancellation_event = threading.Event()
+        self.compiler: BenchmarkCompiler | None = (
+            None if self._fast_authorization_enabled else self._create_compiler()
+        )
+
+    def _create_compiler(self) -> BenchmarkCompiler:
         compiler_record = self.configuration["compiler"]
         assert isinstance(compiler_record, dict)
-        self.compiler = BenchmarkCompiler(
-            cache=(CompileCache(self.state_root) if options.reuse_compile_cache else None),
+        return BenchmarkCompiler(
+            cache=(
+                CompileCache(self.state_root)
+                if self.options.reuse_compile_cache
+                else None
+            ),
             renderer=self.renderer,
-            stage=options.compiler,
-            timeout_seconds=options.compile_timeout_seconds,
+            stage=self.options.compiler,
+            timeout_seconds=self.options.compile_timeout_seconds,
             workspace_root=self.workspace_root,
             privacy_roots=self.privacy_roots,
-            artifact_suffix=options.artifact_suffix,
+            artifact_suffix=self.options.artifact_suffix,
             stage_fingerprint=sha256_json(
                 {
                     "stage": compiler_record,
@@ -2414,11 +2468,18 @@ class BenchmarkRun:
                     "tool_versions": self.configuration["tool_versions"],
                 }
             ),
-            repetitions=options.compile_repetitions,
-            reuse_cache=options.reuse_compile_cache,
+            repetitions=self.options.compile_repetitions,
+            reuse_cache=self.options.reuse_compile_cache,
             cancellation_event=self.cancellation_event,
             candidate_remark_contract=self.candidate_remark_contract,
         )
+
+    def _require_compiler(self) -> BenchmarkCompiler:
+        if self.compiler is None:
+            raise ExecutionError(
+                "benchmark compiler storage was not initialized after authorization"
+            )
+        return self.compiler
 
     def _case_timeout_plan(
         self,
@@ -3197,7 +3258,7 @@ class BenchmarkRun:
             cache_hit,
             compile_stdout,
             compile_stderr,
-        ) = self.compiler.compile(
+        ) = self._require_compiler().compile(
             case=case,
             source=source,
             context_paths=paths,
@@ -3764,7 +3825,168 @@ class BenchmarkRun:
         self._seal_run_terminal(record, run_directory, state=state)
         return record
 
-    def execute(self) -> dict[str, Any]:
+    def _fast_authorization_context(
+        self,
+    ) -> tuple[object, str, dict[str, str]]:
+        from .fast_campaign import FastRunAuthorizationIntent
+
+        plan_path = self.options.candidate_fast_campaign_plan_path
+        status_path = self.options.candidate_fast_campaign_status_path
+        index_path = self.options.candidate_fast_campaign_index_path
+        task_id = self.options.candidate_fast_task_id
+        assert plan_path is not None
+        assert status_path is not None
+        assert index_path is not None
+        assert task_id is not None
+        assert self.options.compiler_artifact_path is not None
+
+        resolved_plan = (
+            plan_path if plan_path.is_absolute() else self.workspace_root / plan_path
+        ).resolve(strict=True)
+        resolved_status = (
+            status_path
+            if status_path.is_absolute()
+            else self.workspace_root / status_path
+        ).resolve(strict=True)
+        resolved_index = (
+            index_path
+            if index_path.is_absolute()
+            else self.workspace_root / index_path
+        ).resolve(strict=True)
+        physical_sha256 = {
+            "plan": sha256_file(resolved_plan),
+            "status": sha256_file(resolved_status),
+            "index": sha256_file(resolved_index),
+        }
+        plan = read_json(resolved_plan)
+        if (
+            not isinstance(plan, dict)
+            or plan.get("schema_version") != "candidate-fast-campaign-plan.v1"
+            or not isinstance(plan.get("campaign_id"), str)
+            or not plan["campaign_id"]
+        ):
+            raise ValidationError(
+                "fast candidate campaign plan lacks a valid campaign identity"
+            )
+        if sha256_file(resolved_plan) != physical_sha256["plan"]:
+            raise ExecutionError(
+                "fast candidate campaign plan changed while acquiring its identity"
+            )
+        intent = FastRunAuthorizationIntent(
+            plan_path=resolved_plan,
+            status_path=resolved_status,
+            index_path=resolved_index,
+            task_id=task_id,
+            workspace_root=self.workspace_root,
+            manifest_path=self.manifest_path,
+            output_path=self.output_path,
+            compiler_artifact_path=self.options.compiler_artifact_path,
+            pipeline_profile_path=self.options.pipeline_profile_path,
+            measurement_protocol_path=self.options.measurement_protocol_path,
+            baseline_run_path=self.options.baseline_timeout_path,
+            configuration=self.configuration,
+            provenance=self.provenance,
+            run_id=self.options.run_id,
+            receipt_path=self.options.candidate_fast_receipt_path,
+        )
+        return intent, plan["campaign_id"], physical_sha256
+
+    @staticmethod
+    def _assert_fast_authorization_inputs_unchanged(
+        intent: object,
+        expected_sha256: Mapping[str, str],
+    ) -> None:
+        for field, key in (
+            ("plan_path", "plan"),
+            ("status_path", "status"),
+            ("index_path", "index"),
+        ):
+            path = getattr(intent, field)
+            if sha256_file(path) != expected_sha256[key]:
+                raise ExecutionError(
+                    "fast candidate authorization input changed while the task lease was held"
+                )
+
+    def _publish_fast_receipt(self, intent: object) -> dict[str, Any]:
+        from .fast_campaign import publish_fast_run_receipt
+
+        receipt_path = self.options.candidate_fast_receipt_path
+        assert receipt_path is not None
+        receipt_output_path = (
+            receipt_path
+            if receipt_path.is_absolute()
+            else self.workspace_root / receipt_path
+        ).absolute()
+        return publish_fast_run_receipt(
+            intent=intent,
+            run_record_path=self.output_path,
+            receipt_output_path=receipt_output_path,
+        )
+
+    def _validate_fast_authorized_task(self, task: Mapping[str, Any]) -> None:
+        task_id = self.options.candidate_fast_task_id
+        receipt_path = self.options.candidate_fast_receipt_path
+        assert task_id is not None
+        assert receipt_path is not None
+        if task.get("task_id") != task_id:
+            raise ExecutionError(
+                "fast candidate authorization returned a different task"
+            )
+        if self.options.run_id is None:
+            raise ValidationError("fast candidate run requires its planned run id")
+        configuration_template = {
+            key: value
+            for key, value in self.configuration.items()
+            if key
+            not in {
+                "baseline_timeout_run_id",
+                "baseline_timeout_run_sha256",
+            }
+        }
+        expected_template_sha256 = sha256_json(
+            {
+                "configuration": configuration_template,
+                "provenance": self.provenance,
+                "baseline_task_id": task.get("baseline_task_id"),
+            }
+        )
+        if (
+            task.get("expected_configuration_template_sha256")
+            != expected_template_sha256
+        ):
+            raise ValidationError(
+                "fast candidate task expected configuration template differs"
+            )
+        expected_run_id = task.get("run_id")
+        if not isinstance(expected_run_id, str) or expected_run_id != self.options.run_id:
+            raise ValidationError("fast candidate task run id differs")
+        physical_receipt = (
+            receipt_path
+            if receipt_path.is_absolute()
+            else self.workspace_root / receipt_path
+        ).absolute()
+        try:
+            receipt_relative = physical_receipt.relative_to(self.workspace_root)
+        except ValueError as exc:
+            raise ValidationError(
+                "fast candidate receipt path must remain inside workspace_root"
+            ) from exc
+        validate_relative_path(
+            receipt_relative.as_posix(), label="fast candidate receipt path"
+        )
+        if task.get("receipt_path") != receipt_relative.as_posix():
+            raise ValidationError("fast candidate task receipt path differs")
+
+    def _initialize_runtime_storage(self) -> None:
+        self.state_root.mkdir(parents=True, exist_ok=True)
+        if self.compiler is None:
+            self.compiler = self._create_compiler()
+
+    def _execute_with_run_leases(
+        self,
+        *,
+        fast_intent: object | None,
+    ) -> dict[str, Any]:
         lease_metadata = {
             "run_id": self.options.run_id,
             "manifest_sha256": self.manifest_sha256,
@@ -3786,13 +4008,75 @@ class BenchmarkRun:
                 "configuration_sha256": record["configuration_sha256"],
             }
             output_lease.bind(bound_metadata)
+            run_lease_path = (
+                run_directory / ".run.lock"
+                if fast_intent is None
+                else run_state_lease_path(self.output_path, record["run_id"])
+            )
             with ExclusiveFileLease(
-                run_directory / ".run.lock",
+                run_lease_path,
                 "execution state",
                 bound_metadata,
             ):
-                self._bind_state_identity(record, run_directory)
-                return self._execute_locked(record, run_directory)
+                try:
+                    self._bind_state_identity(record, run_directory)
+                    result = self._execute_locked(record, run_directory)
+                except BaseException as execution_error:
+                    publish_interrupted = record.get("state") == "interrupted" and any(
+                        case.get("cancellation_reason") == "infrastructure_failure"
+                        for case in record.get("cases", [])
+                    )
+                    if fast_intent is not None and (
+                        record.get("state") in {"completed", "failed"}
+                        or publish_interrupted
+                    ):
+                        try:
+                            self._publish_fast_receipt(fast_intent)
+                        except BaseException as receipt_error:
+                            raise BaseExceptionGroup(
+                                "benchmark execution and fast receipt publication failed",
+                                [execution_error, receipt_error],
+                            ) from execution_error
+                    raise
+                if fast_intent is not None:
+                    self._publish_fast_receipt(fast_intent)
+                return result
+
+    def execute(self) -> dict[str, Any]:
+        if not self._fast_authorization_enabled:
+            self._initialize_runtime_storage()
+            return self._execute_with_run_leases(fast_intent=None)
+
+        from .fast_campaign import authorize_fast_candidate_run_prelease
+
+        intent, campaign_id, input_sha256 = self._fast_authorization_context()
+        task_id = self.options.candidate_fast_task_id
+        assert task_id is not None
+        task_lease_metadata = {
+            "campaign_id": campaign_id,
+            "task_id": task_id,
+            "plan_physical_sha256": input_sha256["plan"],
+            "status_physical_sha256": input_sha256["status"],
+            "index_physical_sha256": input_sha256["index"],
+            "manifest_sha256": self.manifest_sha256,
+            "configuration_sha256": self.configuration_sha256,
+            "output_path_sha256": path_identity(self.output_path),
+        }
+        with ExclusiveFileLease(
+            candidate_task_lease_path(self.workspace_root, campaign_id, task_id),
+            "candidate task",
+            task_lease_metadata,
+        ):
+            self._assert_fast_authorization_inputs_unchanged(intent, input_sha256)
+            task = authorize_fast_candidate_run_prelease(intent)
+            self._assert_fast_authorization_inputs_unchanged(intent, input_sha256)
+            if not isinstance(task, dict):
+                raise ExecutionError(
+                    "fast candidate authorization did not return a task"
+                )
+            self._validate_fast_authorized_task(task)
+            self._initialize_runtime_storage()
+            return self._execute_with_run_leases(fast_intent=intent)
 
 
 def run_benchmark(options: RunOptions) -> dict[str, Any]:

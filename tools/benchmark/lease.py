@@ -10,7 +10,7 @@ import portalocker
 import psutil
 
 from .errors import ExecutionError
-from .util import canonical_json_bytes, sha256_bytes, utc_now
+from .util import canonical_json_bytes, sha256_bytes, sha256_json, utc_now
 
 
 def path_identity(path: Path) -> str:
@@ -23,6 +23,59 @@ def path_identity(path: Path) -> str:
 def output_lease_path(output_path: Path) -> Path:
     identity = path_identity(output_path)
     return output_path.parent / ".accela-benchmark-locks" / f"output-{identity}.lock"
+
+
+def run_state_lease_path(output_path: Path, run_id: str) -> Path:
+    """Return the active-writer lock for one normalized output/run identity.
+
+    The lock deliberately lives outside the raw run-state tree.  Its bytes and
+    lifetime are coordination details, not historical benchmark evidence.
+    """
+
+    identity = sha256_json(
+        {
+            "schema_version": "benchmark-run-state-lock-identity.v1",
+            "output_path_sha256": path_identity(output_path),
+            "run_id": run_id,
+        }
+    )
+    return output_path.parent / ".accela-benchmark-locks" / f"run-{identity}.lock"
+
+
+def candidate_task_lease_path(
+    workspace_root: Path,
+    campaign_id: str,
+    task_id: str,
+) -> Path:
+    """Return the active fast-campaign lock shared by one logical task."""
+
+    identity = sha256_json(
+        {
+            "schema_version": "candidate-fast-task-lock-identity.v1",
+            "workspace_root_sha256": path_identity(workspace_root),
+            "campaign_id": campaign_id,
+            "task_id": task_id,
+        }
+    )
+    return workspace_root / ".accela-benchmark-locks" / f"task-{identity}.lock"
+
+
+def candidate_wave_lease_path(workspace_root: Path, campaign_id: str) -> Path:
+    """Return the campaign-wide lease that serializes ready-wave ownership.
+
+    Task leases permit four different tasks to execute together.  This wider
+    lease prevents two schedulers, including schedulers observing different
+    head generations, from each admitting a four-task wave concurrently.
+    """
+
+    identity = sha256_json(
+        {
+            "schema_version": "candidate-fast-wave-lock-identity.v1",
+            "workspace_root_sha256": path_identity(workspace_root),
+            "campaign_id": campaign_id,
+        }
+    )
+    return workspace_root / ".accela-benchmark-locks" / f"wave-{identity}.lock"
 
 
 @dataclass

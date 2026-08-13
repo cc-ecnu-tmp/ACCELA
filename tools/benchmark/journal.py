@@ -643,6 +643,12 @@ def durable_create_json(destination: Path, value: Mapping[str, Any]) -> None:
     _durable_create(destination, canonical_json_bytes(value) + b"\n")
 
 
+def durable_create_bytes(destination: Path, payload: bytes) -> None:
+    """Publish immutable non-JSON evidence with the journal durability contract."""
+
+    _durable_create(destination, payload)
+
+
 @dataclass(frozen=True)
 class JournalSnapshot:
     events: tuple[dict[str, Any], ...]

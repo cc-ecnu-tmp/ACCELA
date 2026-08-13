@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accela.invalid/schemas/candidate-fast-run-index.v1.json",
+  "title": "ACCELA fast campaign ordered receipt index v1",
+  "type": "object", "additionalProperties": false,
+  "required": [
+    "schema_version", "index_id", "campaign_id", "generated_at", "bootstrap_sha256",
+    "plan_sha256", "receipts", "index_commitment_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "candidate-fast-run-index.v1"},
+    "index_id": {"$ref": "#/$defs/id"},
+    "campaign_id": {"$ref": "#/$defs/id"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "bootstrap_sha256": {"$ref": "#/$defs/sha256"},
+    "plan_sha256": {"$ref": "#/$defs/sha256"},
+    "receipts": {"type": "array", "items": {"$ref": "#/$defs/receipt_ref"}},
+    "index_commitment_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/+-]*$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "canonical_sha256", "physical_sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/path"},
+        "canonical_sha256": {"$ref": "#/$defs/sha256"},
+        "physical_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "receipt_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["ordinal", "task_id", "run_id", "receipt", "terminal_commitment_sha256"],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 0},
+        "task_id": {"$ref": "#/$defs/id"},
+        "run_id": {"$ref": "#/$defs/id"},
+        "receipt": {"$ref": "#/$defs/artifact"},
+        "terminal_commitment_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

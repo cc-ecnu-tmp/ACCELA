@@ -47,6 +47,29 @@
   candidate ID. The current campaign has no BOOM run and cannot enable a
   candidate by default.
 - A profile with any correctness failure is ineligible for a performance ranking.
+- The speed-first candidate campaign is a separate evidence class and campaign
+  namespace. It may import only the sealed normalized B1 and B2 FULL records of
+  an older campaign through a dual-revision bootstrap whose changed paths are
+  restricted to orchestration code and do not overlap measurement components.
+  It must never claim raw-ledger continuity across revisions.
+- Fast campaign authorization consumes one immutable plan/status/run-index
+  snapshot and checks task membership in a bounded ready wave. It must not
+  reopen historical raw attempt trees or status ledgers. Keep at most four
+  concurrent formal runs and exactly four case workers per run. Coordinate each
+  task, output, run state, and mutable current-head update with OS-backed locks;
+  lock files are active-writer metadata, not historical evidence.
+- Every fast run still preserves the normal fail-fast attempt journal and sealed
+  normalized run record. Publish an immutable, plan-bound terminal receipt before
+  advancing the append-only run index. Later status, study, audit, and final
+  consumers may read only normalized run records and receipts. They must reject
+  hash, configuration, tool, profile, protocol, manifest, baseline, correctness,
+  metric-coverage, or repository drift without falling back to the legacy path.
+- Run bounded normalized-record audits at bootstrap, after B2, after B3, and
+  before final publication. B2 evaluates every candidate. B3 promotes only an
+  all-correct, ranking-eligible candidate with geometric-mean speedup strictly
+  greater than 1.0; B4--B6 must evaluate exactly that promoted subset. Record
+  non-promoted task cancellation against the B3 study rather than fabricating a
+  run receipt.
 - Started benchmark attempts are immutable, hash-bound physical evidence. Persist
   ordered phase-start, phase-result, and terminal journal events before merging
   normalized records; reject missing, orphaned, tampered, or configuration-drifted
