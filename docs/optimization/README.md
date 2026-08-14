@@ -22,6 +22,8 @@ single candidates. A complete B2–B6 run then performs the greedy combination p
 final verification profile. Failed cases remain in the report and make that profile unrankable;
 they are never silently skipped. Use `--no-diagnostics` to skip the B3 pairs and
 `--skip-build` only when the current checkout has already been built.
+Pass `--environment-label Ubuntu-Dev-RH2288V3` only on the authenticated dedicated host; other
+labels produce provisional metrics and cannot authorize integration.
 
 Required tools are JDK 21, Python 3.11+, `riscv64-elf-gcc`, `riscv64-elf-readelf`,
 `qemu-system-riscv64` with plugin headers, GLib 2, `pkg-config`, and a C compiler.

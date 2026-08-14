@@ -611,6 +611,7 @@ def _report(
     output_root: Path,
     stages: list[str],
     candidate_ids: list[str],
+    environment_label: str = "unclassified",
     pair_rows: list[dict[str, object]] | None = None,
     combination_rows: list[dict[str, object]] | None = None,
     final_row: dict[str, object] | None = None,
@@ -618,6 +619,7 @@ def _report(
 ) -> dict[str, object]:
     baseline = _metric_row(output_root, stages, "baseline")
     full_scope = set(("B2", "B3", "B4", "B5", "B6")).issubset(stages)
+    formal_host = environment_label == "Ubuntu-Dev-RH2288V3"
     rankings: list[dict[str, object]] = []
     for candidate_id in candidate_ids:
         metrics = _metric_row(output_root, stages, candidate_id)
@@ -626,6 +628,7 @@ def _report(
             {
                 "candidate_id": candidate_id,
                 "eligible": not reasons,
+                "formal_eligible": not reasons and full_scope and formal_host,
                 "rejection_reasons": reasons,
             }
         )
@@ -636,8 +639,10 @@ def _report(
 
     result = {
         "status": "completed",
+        "measurement_environment": environment_label,
         "stages": stages,
-        "formal_scope_complete": full_scope,
+        "stage_scope_complete": full_scope,
+        "formal_measurement": full_scope and formal_host,
         "ranking": rankings,
         "single_candidate_ranking": rankings,
         "pair_diagnostics": pair_rows or [],
@@ -654,7 +659,10 @@ def _report(
     lines = [
         "# ACCELA candidate evaluation",
         "",
-        f"Stages: {', '.join(stages)}. Formal B2–B6 scope: {'yes' if full_scope else 'no'}.",
+        f"Measurement environment: `{environment_label}`.",
+        "",
+        f"Stages: {', '.join(stages)}. Stage-complete B2–B6 scope: {'yes' if full_scope else 'no'}. "
+        f"Formal Ubuntu measurement: {'yes' if full_scope and formal_host else 'no'}.",
         "",
         "## Single candidates",
         "",
@@ -757,6 +765,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--jobs", type=_positive, default=4)
     parser.add_argument("--stages", nargs="+", choices=tuple(STAGES), default=list(STAGES))
     parser.add_argument("--output-root", type=Path, default=Path(".tmp/simple-evaluation"))
+    parser.add_argument("--environment-label", default="unclassified")
     parser.add_argument("--compile-timeout", type=_positive, default=180)
     parser.add_argument("--run-timeout", type=_positive, default=1800)
     parser.add_argument("--skip-build", action="store_true")
@@ -921,6 +930,8 @@ def main(argv: list[str] | None = None) -> int:
                     "profile_id": final_id,
                     "selected_candidates": selected,
                     "eligible": not final_reasons,
+                    "formal_eligible": not final_reasons
+                    and args.environment_label == "Ubuntu-Dev-RH2288V3",
                     "rejection_reasons": final_reasons,
                 }
                 if final_reasons:
@@ -929,11 +940,17 @@ def main(argv: list[str] | None = None) -> int:
                         "selected_candidates": [],
                         "reasons": final_reasons,
                     }
-                else:
+                elif args.environment_label == "Ubuntu-Dev-RH2288V3":
                     final_decision = {
                         "decision": "integrate",
                         "selected_candidates": selected,
                         "reasons": [],
+                    }
+                else:
+                    final_decision = {
+                        "decision": "provisional-only",
+                        "selected_candidates": selected,
+                        "reasons": ["formal Ubuntu evaluation was not run"],
                     }
             else:
                 final_row = {
@@ -941,6 +958,7 @@ def main(argv: list[str] | None = None) -> int:
                     "profile_id": "baseline",
                     "selected_candidates": [],
                     "eligible": False,
+                    "formal_eligible": False,
                     "rejection_reasons": ["no candidate passed greedy combination gates"],
                 }
                 final_decision = {
@@ -952,6 +970,7 @@ def main(argv: list[str] | None = None) -> int:
         output_root,
         args.stages,
         list(candidates),
+        environment_label=args.environment_label,
         pair_rows=pair_rows,
         combination_rows=combination_rows,
         final_row=final_row,
