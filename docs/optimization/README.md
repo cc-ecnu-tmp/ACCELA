@@ -21,7 +21,9 @@ Required tools are JDK 21, Python 3.11+, `riscv64-elf-gcc`, `riscv64-elf-readelf
 QEMU results are proxy measurements and must not be described as BOOM hardware speedups.
 The preliminary B4 `fft0` entry is excluded because its bundled 100+100 input is paired with
 an unrelated 99,999-element expected output. `if-combine2` and `if-combine3` are also excluded:
-both programs call `getint` twice, but their bundled inputs contain only one integer.
+both programs call `getint` twice, but their bundled inputs contain only one integer. `03_sort1`
+is excluded because its 30,000,010-element global array produces a 120 MB guest image whose
+startup exceeds the 30-minute QEMU proxy limit for every profile.
 
 ## Dedicated evaluation machine
 

@@ -175,7 +175,7 @@ def _case_result(
         record["error"] = str(exc)
         record["elapsed_seconds"] = time.monotonic() - started
         _write_json(result_path, record)
-        raise
+        raise RuntimeError(f"{spec.stage}/{spec.profile_id}/{case_id}: {exc}") from exc
     _write_json(result_path, record)
     return record
 

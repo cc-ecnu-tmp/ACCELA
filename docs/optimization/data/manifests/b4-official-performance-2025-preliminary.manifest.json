@@ -37,18 +37,6 @@
       }
     },
     {
-      "id": "rv64gc:03_sort1",
-      "source": {
-        "path": "03_sort1.sy"
-      },
-      "input": {
-        "path": "03_sort1.in"
-      },
-      "expected_output": {
-        "path": "03_sort1.out"
-      }
-    },
-    {
       "id": "rv64gc:03_sort2",
       "source": {
         "path": "03_sort2.sy"

@@ -41,7 +41,12 @@ class EvaluateCandidatesTest(unittest.TestCase):
         )
         case_ids = {case["id"] for case in manifest["cases"]}
         self.assertTrue(
-            {"rv64gc:fft0", "rv64gc:if-combine2", "rv64gc:if-combine3"}.isdisjoint(case_ids)
+            {
+                "rv64gc:03_sort1",
+                "rv64gc:fft0",
+                "rv64gc:if-combine2",
+                "rv64gc:if-combine3",
+            }.isdisjoint(case_ids)
         )
 
 
