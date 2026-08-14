@@ -19,3 +19,30 @@ current checkout has already been built.
 Required tools are JDK 21, Python 3.11+, `riscv64-elf-gcc`, `riscv64-elf-readelf`,
 `qemu-system-riscv64` with plugin headers, GLib 2, `pkg-config`, and a C compiler.
 QEMU results are proxy measurements and must not be described as BOOM hardware speedups.
+
+## Dedicated evaluation machine
+
+Create the upload archive from a Linux checkout containing both official suites:
+
+```sh
+sh scripts/package-evaluation.sh
+```
+
+Upload `accela-evaluation.tar.zst`, then run on the 64-thread evaluation machine:
+
+```sh
+mkdir accela-evaluation
+tar --zstd -xf accela-evaluation.tar.zst -C accela-evaluation
+cd accela-evaluation
+docker compose build
+MAX_RUNS=6 JOBS=4 docker compose up --abort-on-container-exit
+```
+
+Progress bars are printed for every active profile. Results remain on the host in `results/`.
+Package them and copy the archive back:
+
+```sh
+tar --zstd -cf accela-results.tar.zst -C results .
+# Run this from the development machine:
+scp USER@EVALUATION_HOST:/path/to/accela-evaluation/accela-results.tar.zst .
+```

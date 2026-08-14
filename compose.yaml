@@ -1,0 +1,16 @@
+services:
+  evaluation:
+    build:
+      context: .
+    init: true
+    command:
+      - --max-runs
+      - ${MAX_RUNS:-6}
+      - --jobs
+      - ${JOBS:-4}
+      - --skip-build
+      - --output-root
+      - /results
+    volumes:
+      - ./results:/results
+    stop_grace_period: 30s

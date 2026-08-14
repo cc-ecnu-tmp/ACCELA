@@ -171,6 +171,8 @@ def _run_profile(spec: RunSpec) -> dict[str, object]:
     if not isinstance(cases, list) or not cases:
         raise RuntimeError(f"manifest contains no cases: {spec.manifest_path}")
     results: list[dict[str, object]] = []
+    total = len(cases)
+    step = max(1, math.ceil(total / 20))
     with ThreadPoolExecutor(max_workers=spec.jobs) as executor:
         futures = {
             executor.submit(_case_result, root, spec, case, index): str(case["id"])
@@ -179,6 +181,15 @@ def _run_profile(spec: RunSpec) -> dict[str, object]:
         try:
             for future in as_completed(futures):
                 results.append(future.result())
+                done = len(results)
+                if done == 1 or done == total or done % step == 0:
+                    width = 24
+                    filled = width * done // total
+                    bar = "#" * filled + "-" * (width - filled)
+                    print(
+                        f"[{bar}] {done:>3}/{total:<3} {spec.stage}/{spec.profile_id}",
+                        flush=True,
+                    )
         except Exception:
             for future in futures:
                 future.cancel()

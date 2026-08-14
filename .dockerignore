@@ -1,0 +1,7 @@
+.git
+.gradle
+.tmp/simple-evaluation
+build
+results
+*.tar.zst
+**/__pycache__
