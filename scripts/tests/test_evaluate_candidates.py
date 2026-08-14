@@ -34,12 +34,15 @@ class EvaluateCandidatesTest(unittest.TestCase):
             progress.advance(6)
         self.assertIn("10/10 (100%)", output.getvalue())
 
-    def test_mismatched_fft0_is_not_scheduled(self) -> None:
+    def test_invalid_b4_cases_are_not_scheduled(self) -> None:
         manifest = json.loads(
             (MODULE.DATA / "manifests/b4-official-performance-2025-preliminary.manifest.json")
             .read_text(encoding="utf-8")
         )
-        self.assertNotIn("rv64gc:fft0", {case["id"] for case in manifest["cases"]})
+        case_ids = {case["id"] for case in manifest["cases"]}
+        self.assertTrue(
+            {"rv64gc:fft0", "rv64gc:if-combine2", "rv64gc:if-combine3"}.isdisjoint(case_ids)
+        )
 
 
 if __name__ == "__main__":

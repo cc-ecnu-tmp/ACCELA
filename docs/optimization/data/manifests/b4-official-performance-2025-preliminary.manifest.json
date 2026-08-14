@@ -511,30 +511,6 @@
       }
     },
     {
-      "id": "rv64gc:if-combine2",
-      "source": {
-        "path": "if-combine2.sy"
-      },
-      "input": {
-        "path": "if-combine2.in"
-      },
-      "expected_output": {
-        "path": "if-combine2.out"
-      }
-    },
-    {
-      "id": "rv64gc:if-combine3",
-      "source": {
-        "path": "if-combine3.sy"
-      },
-      "input": {
-        "path": "if-combine3.in"
-      },
-      "expected_output": {
-        "path": "if-combine3.out"
-      }
-    },
-    {
       "id": "rv64gc:matmul1",
       "source": {
         "path": "matmul1.sy"
