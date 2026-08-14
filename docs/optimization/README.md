@@ -19,6 +19,8 @@ current checkout has already been built.
 Required tools are JDK 21, Python 3.11+, `riscv64-elf-gcc`, `riscv64-elf-readelf`,
 `qemu-system-riscv64` with plugin headers, GLib 2, `pkg-config`, and a C compiler.
 QEMU results are proxy measurements and must not be described as BOOM hardware speedups.
+The preliminary B4 `fft0` entry is excluded because its bundled 100+100 input is paired with
+an unrelated 99,999-element expected output.
 
 ## Dedicated evaluation machine
 

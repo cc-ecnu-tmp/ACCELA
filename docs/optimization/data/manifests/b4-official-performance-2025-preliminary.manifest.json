@@ -145,18 +145,6 @@
       }
     },
     {
-      "id": "rv64gc:fft0",
-      "source": {
-        "path": "fft0.sy"
-      },
-      "input": {
-        "path": "fft0.in"
-      },
-      "expected_output": {
-        "path": "fft0.out"
-      }
-    },
-    {
       "id": "rv64gc:fft1",
       "source": {
         "path": "fft1.sy"

@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import json
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -32,6 +33,13 @@ class EvaluateCandidatesTest(unittest.TestCase):
             progress.advance(4)
             progress.advance(6)
         self.assertIn("10/10 (100%)", output.getvalue())
+
+    def test_mismatched_fft0_is_not_scheduled(self) -> None:
+        manifest = json.loads(
+            (MODULE.DATA / "manifests/b4-official-performance-2025-preliminary.manifest.json")
+            .read_text(encoding="utf-8")
+        )
+        self.assertNotIn("rv64gc:fft0", {case["id"] for case in manifest["cases"]})
 
 
 if __name__ == "__main__":
