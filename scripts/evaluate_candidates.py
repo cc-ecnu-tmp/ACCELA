@@ -32,12 +32,12 @@ STAGES = {
     "B6": ("b6-mature-benchmarks.manifest.json", "benchmarks"),
 }
 CANDIDATE_ORDER = (
-    "candidate.sysy-region-memory-forwarding",
-    "candidate.function-specialization",
-    "candidate.array-object-promotion",
-    "candidate.nested-address-recurrence",
-    "candidate.cost-model-loop-tiling",
-    "candidate.rv64-word-pressure",
+    "candidate.extended-affine-summarization",
+    "candidate.finite-state-acceleration",
+    "candidate.same-domain-loop-fusion",
+    "candidate.integer-linear-transition",
+    "candidate.rrt2-on-demand-memoization",
+    "candidate.prefix-scan-reuse",
 )
 INSTRUCTION_RE = re.compile(r"(?:^|\s)instructions=(\d+)(?:\s|$)")
 

@@ -2,12 +2,13 @@
 
 ACCELA uses one evaluator with no campaign contracts, hashes, ledgers, receipts, or audit chain.
 It compiles, links, executes, checks exact output, records QEMU dynamic instructions, and ranks
-the six experiment candidates over B2--B6.  The active profile directory contains only
-`baseline.json` plus one profile for each of `candidate.sysy-region-memory-forwarding`,
-`candidate.function-specialization`, `candidate.array-object-promotion`,
-`candidate.nested-address-recurrence`, `candidate.cost-model-loop-tiling`, and
-`candidate.rv64-word-pressure`; all six are default-off and are enabled only by
-`BenchmarkCompiler` profiles.
+the six active candidates over B2--B6.  The active profile directory contains only
+`baseline.json` plus one profile for each of `candidate.extended-affine-summarization`,
+`candidate.finite-state-acceleration`, `candidate.same-domain-loop-fusion`,
+`candidate.integer-linear-transition`, `candidate.rrt2-on-demand-memoization`, and
+`candidate.prefix-scan-reuse`; all six are default-off and are enabled only by
+`BenchmarkCompiler` profiles.  The formally selected nested row-major address recurrence is
+now part of the production `ir.loop-strength-reduce` pass and has no candidate profile.
 
 Run from a Linux-native checkout:
 

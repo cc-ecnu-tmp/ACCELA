@@ -53,15 +53,15 @@ class EvaluateCandidatesTest(unittest.TestCase):
         self.assertEqual(
             MODULE._canonical_candidates(
                 [
-                    "candidate.nested-address-recurrence",
-                    "candidate.array-object-promotion",
-                    "candidate.sysy-region-memory-forwarding",
+                    "candidate.integer-linear-transition",
+                    "candidate.same-domain-loop-fusion",
+                    "candidate.extended-affine-summarization",
                 ]
             ),
             [
-                "candidate.sysy-region-memory-forwarding",
-                "candidate.array-object-promotion",
-                "candidate.nested-address-recurrence",
+                "candidate.extended-affine-summarization",
+                "candidate.same-domain-loop-fusion",
+                "candidate.integer-linear-transition",
             ],
         )
 

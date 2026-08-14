@@ -34,8 +34,7 @@ final class LocalSpillRewriter {
     Set<VirtualRegister> effectiveSpills =
         expandOverfullCallArgumentSpills(function, spilledRegisters, target);
     Map<VirtualRegister, MachineInstr> rematerializable =
-        new LinkedHashMap<>(function.rematerializationRecipes());
-    rematerializable.putAll(findRematerializableGlobalAddresses(function, effectiveSpills));
+        findRematerializableGlobalAddresses(function, effectiveSpills);
     Map<VirtualRegister, StackSlot> slots = new LinkedHashMap<>();
     for (VirtualRegister register : effectiveSpills) {
       if (rematerializable.containsKey(register)) continue;

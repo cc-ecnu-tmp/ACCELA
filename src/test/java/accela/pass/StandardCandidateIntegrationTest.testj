@@ -43,9 +43,7 @@ final class StandardCandidateIntegrationTest {
   @Test
   void everySingleCandidateAndAllSixConstructRunAndVerify() throws Exception {
     PassRegistry registry = PassRegistry.standard();
-    List<String> candidateIds = registry.candidates().stream()
-        .filter(candidate -> candidate.stage().isIr())
-        .map(PassDescriptor::id).toList();
+    List<String> candidateIds = registry.candidates().stream().map(PassDescriptor::id).toList();
     List<List<String>> selections = new ArrayList<>();
     candidateIds.forEach(id -> selections.add(List.of(id)));
     selections.add(candidateIds);

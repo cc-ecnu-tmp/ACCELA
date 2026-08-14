@@ -9,7 +9,6 @@ import accela.parse.Sema;
 import accela.pass.PassBuilder;
 import accela.pass.PassRegistry;
 import accela.pass.PipelineProfile;
-import accela.pass.candidate.Rv64WordPressureCandidate;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
@@ -40,13 +39,7 @@ public final class BenchmarkCompiler {
     @Override
     public BackendCompiler backendCompiler(
         PipelineProfile profile, BackendPassInstrumentation instrumentation) {
-      return new BackendCompiler(
-          profile,
-          instrumentation,
-          new accela.backend.BackendPipeline.CandidatePassProvider(
-              java.util.Map.of(
-                  Rv64WordPressureCandidate.ID,
-                  Rv64WordPressureCandidate.factory(instrumentation))));
+      return new BackendCompiler(profile, instrumentation);
     }
   };
 

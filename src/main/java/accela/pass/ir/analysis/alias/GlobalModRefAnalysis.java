@@ -96,36 +96,6 @@ public final class GlobalModRefAnalysis {
       return isDefinition(module, callee) && functionEffects.get(callee).isPure();
     }
 
-    public FunctionMemorySummary summary(Function function) {
-      if (function == null || function.getModule() != module) {
-        throw new IllegalArgumentException("function is not part of the analyzed module");
-      }
-      return FunctionMemorySummary.forFunction(this, function);
-    }
-
-    boolean readsArgument(Function function, int index) {
-      return effects(function).readArguments.get(index);
-    }
-
-    boolean writesArgument(Function function, int index) {
-      return effects(function).writtenArguments.get(index);
-    }
-
-    boolean escapesArgument(Function function, int index) {
-      return effects(function).escapedArguments.get(index);
-    }
-
-    boolean hasUnknownEffects(Function function) {
-      MemoryEffects effects = effects(function);
-      return effects.unknownRead || effects.unknownWrite;
-    }
-
-    private MemoryEffects effects(Function function) {
-      MemoryEffects result = functionEffects.get(function);
-      if (result == null) throw new IllegalArgumentException("unknown function in memory summary");
-      return result;
-    }
-
     private MemoryEffects callEffects(Instruction call) {
       return effectsForCall(module, functionEffects, call);
     }
