@@ -1,4 +1,5 @@
 #include <qemu-plugin.h>
+#include "plugin-compat.h"
 #include "runtime-filter.h"
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
@@ -48,8 +49,8 @@ static void end_main(unsigned int cpu, void *data) {
   if (accela_region_end_main(&region) == 1) accumulate(cpu);
 }
 
-static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
-  (void) id;
+ACCELA_TB_TRANS_DECL(instrument) {
+  ACCELA_TB_TRANS_UNUSED_CONTEXT;
   size_t count = qemu_plugin_tb_n_insns(tb);
   if (qemu_plugin_insn_vaddr(qemu_plugin_tb_get_insn(tb, 0)) < 0x80000000ULL)
     return;
@@ -80,9 +81,8 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   }
 }
 
-static void report(qemu_plugin_id_t id, void *data) {
-  (void) id;
-  (void) data;
+ACCELA_ATEXIT_DECL(report) {
+  ACCELA_ATEXIT_UNUSED_CONTEXT;
   if (!accela_region_complete(&region)) {
     g_autofree char *error = g_strdup_printf(
         "profile_error=%s\n", region.error == NULL ? "unknown" : region.error);
@@ -111,7 +111,7 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
       scoreboard, struct counters, loads);
   store_count = qemu_plugin_scoreboard_u64_in_struct(
       scoreboard, struct counters, stores);
-  qemu_plugin_register_vcpu_tb_trans_cb(id, instrument);
-  qemu_plugin_register_atexit_cb(id, report, NULL);
+  ACCELA_REGISTER_TB_TRANS(id, instrument);
+  ACCELA_REGISTER_ATEXIT(id, report);
   return 0;
 }

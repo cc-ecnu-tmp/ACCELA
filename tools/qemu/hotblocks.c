@@ -1,4 +1,5 @@
 #include <qemu-plugin.h>
+#include "plugin-compat.h"
 #include "runtime-filter.h"
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
@@ -48,8 +49,8 @@ static void end_main(unsigned int cpu, void *data) {
   if (accela_region_end_main(&region) == 1) snapshot(cpu);
 }
 
-static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
-  (void) id;
+ACCELA_TB_TRANS_DECL(instrument) {
+  ACCELA_TB_TRANS_UNUSED_CONTEXT;
   size_t count = qemu_plugin_tb_n_insns(tb);
   struct qemu_plugin_insn *first = qemu_plugin_tb_get_insn(tb, 0);
   if (qemu_plugin_insn_vaddr(first) < 0x80000000ULL) return;
@@ -88,9 +89,8 @@ static gint hottest_first(gconstpointer left, gconstpointer right) {
   return a_dynamic < b_dynamic ? 1 : a_dynamic > b_dynamic ? -1 : 0;
 }
 
-static void report(qemu_plugin_id_t id, void *data) {
-  (void) id;
-  (void) data;
+ACCELA_ATEXIT_DECL(report) {
+  ACCELA_ATEXIT_UNUSED_CONTEXT;
   if (!accela_region_complete(&region)) {
     g_autofree char *error = g_strdup_printf(
         "hotblocks_error=%s\n", region.error == NULL ? "unknown" : region.error);
@@ -125,7 +125,7 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
   if (!info->system_emulation || g_strcmp0(info->target_name, "riscv64"))
     return -1;
   blocks = g_ptr_array_new();
-  qemu_plugin_register_vcpu_tb_trans_cb(id, instrument);
-  qemu_plugin_register_atexit_cb(id, report, NULL);
+  ACCELA_REGISTER_TB_TRANS(id, instrument);
+  ACCELA_REGISTER_ATEXIT(id, report);
   return 0;
 }

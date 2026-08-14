@@ -1,4 +1,5 @@
 #include <qemu-plugin.h>
+#include "plugin-compat.h"
 #include "runtime-filter.h"
 
 QEMU_PLUGIN_EXPORT int qemu_plugin_version = QEMU_PLUGIN_VERSION;
@@ -79,8 +80,8 @@ static void access_memory(unsigned int cpu, qemu_plugin_meminfo_t info,
   else region_misses++;
 }
 
-static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
-  (void) id;
+ACCELA_TB_TRANS_DECL(instrument) {
+  ACCELA_TB_TRANS_UNUSED_CONTEXT;
   size_t count = qemu_plugin_tb_n_insns(tb);
   for (size_t index = 0; index < count; index++) {
     struct qemu_plugin_insn *instruction = qemu_plugin_tb_get_insn(tb, index);
@@ -105,9 +106,8 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   }
 }
 
-static void report(qemu_plugin_id_t id, void *data) {
-  (void) id;
-  (void) data;
+ACCELA_ATEXIT_DECL(report) {
+  ACCELA_ATEXIT_UNUSED_CONTEXT;
   if (!accela_region_complete(&region)) {
     g_autofree char *error = g_strdup_printf(
         "cache_error=%s\n", region.error == NULL ? "unknown" : region.error);
@@ -131,7 +131,7 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
   (void) argv;
   if (!info->system_emulation || g_strcmp0(info->target_name, "riscv64"))
     return -1;
-  qemu_plugin_register_vcpu_tb_trans_cb(id, instrument);
-  qemu_plugin_register_atexit_cb(id, report, NULL);
+  ACCELA_REGISTER_TB_TRANS(id, instrument);
+  ACCELA_REGISTER_ATEXIT(id, report);
   return 0;
 }
