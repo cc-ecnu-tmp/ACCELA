@@ -17,7 +17,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 WORKDIR /workspace
 COPY . .
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew classes --no-daemon --dependency-verification=off \
+    sh ./gradlew classes --no-daemon --dependency-verification=off \
     && sh scripts/build-qemu-plugins.sh
 
 ENTRYPOINT ["python3", "scripts/evaluate_candidates.py"]
