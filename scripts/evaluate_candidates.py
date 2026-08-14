@@ -168,6 +168,25 @@ def _case_result(
     case: dict[str, object],
     index: int,
 ) -> dict[str, object]:
+    """Run one case and keep only its bounded result in the evaluation output."""
+
+    case_id = str(case["id"])
+    case_dir = Path(spec.output_root) / spec.stage / _slug(spec.profile_id) / f"{index:04d}-{_slug(case_id)}"
+    try:
+        return _case_result_impl(root, spec, case, index)
+    finally:
+        # Assembly, ELF, compiler logs, and QEMU traces are intermediate
+        # evidence.  The contract keeps only summary.json and REPORT.md so a
+        # complete campaign cannot exhaust the dedicated host disk.
+        shutil.rmtree(case_dir, ignore_errors=True)
+
+
+def _case_result_impl(
+    root: Path,
+    spec: RunSpec,
+    case: dict[str, object],
+    index: int,
+) -> dict[str, object]:
     case_id = str(case["id"])
     case_dir = Path(spec.output_root) / spec.stage / _slug(spec.profile_id) / f"{index:04d}-{_slug(case_id)}"
     result_path = case_dir / "result.json"
