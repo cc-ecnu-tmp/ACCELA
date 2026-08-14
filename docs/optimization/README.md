@@ -65,6 +65,5 @@ Package them and copy the archive back:
 
 ```sh
 tar --zstd -cf accela-results.tar.zst -C results .
-# Run this from the development machine:
-scp USER@EVALUATION_HOST:/path/to/accela-evaluation/accela-results.tar.zst .
+# Transfer the archive through the configured SSH skill server alias.
 ```
