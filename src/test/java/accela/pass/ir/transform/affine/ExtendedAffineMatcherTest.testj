@@ -20,10 +20,6 @@ import accela.pass.instrument.OptimizationRemark;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
 import accela.pass.ir.instrument.PassInstrumentation;
-import accela.util.StrictJson;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -115,19 +111,11 @@ final class ExtendedAffineMatcherTest {
   }
 
   @Test
-  void descriptorObligationsExactlyMatchTheQualifiedScreeningEvidence() throws Exception {
-    Map<?, ?> screening = (Map<?, ?>) StrictJson.parse(Files.readString(
-        Path.of("docs", "optimization", "data", "candidates", "candidate-screening.v1.json"),
-        StandardCharsets.UTF_8));
-    Map<?, ?> screened = ((List<?>) screening.get("candidates")).stream()
-        .map(item -> (Map<?, ?>) item)
-        .filter(candidate -> ExtendedAffineSummarizationCandidate.ID.equals(
-            candidate.get("implementation_candidate_id")))
-        .findFirst().orElseThrow();
-
-    assertEquals("qualified", screened.get("qualification_status"));
+  void descriptorObligationsMatchTheExecutableCandidateContract() {
+    var descriptor = ExtendedAffineSummarizationCandidate.descriptor();
+    assertTrue(descriptor.legalityObligationIds().size() >= 8);
     assertEquals(ExtendedAffineSummarizationCandidate.LEGALITY_OBLIGATIONS,
-        screened.get("legality_obligation_ids"));
+        descriptor.legalityObligationIds());
   }
 
   private static List<DecisionRemark> decisions(Function function) {

@@ -35,7 +35,7 @@ import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 
 /** Registered RISC-V backend pipeline with deterministic ablation points. */
-final class BackendPipeline {
+public final class BackendPipeline {
   private final PipelineProfile profile;
   private final BackendPassInstrumentation instrumentation;
   private final CandidatePassProvider candidatePassProvider;
@@ -200,16 +200,16 @@ final class BackendPipeline {
       List<CandidateStage<CandidateFunctionPass>> afterCandidates) {}
 
   @FunctionalInterface
-  interface CandidateFunctionPass {
+  public interface CandidateFunctionPass {
     boolean run(MachineFunction function);
   }
 
   /** Typed, immutable factories for candidates inserted into the real backend pipeline. */
-  static final class CandidatePassProvider {
+  public static final class CandidatePassProvider {
     private final Map<String, BiFunction<PassDescriptor, Integer, CandidateFunctionPass>>
         functionFactories;
 
-    CandidatePassProvider(
+    public CandidatePassProvider(
         Map<String, BiFunction<PassDescriptor, Integer, CandidateFunctionPass>>
             functionFactories) {
       Objects.requireNonNull(functionFactories, "functionFactories");

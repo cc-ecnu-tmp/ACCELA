@@ -4,6 +4,7 @@ import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.Instruction;
+import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
@@ -27,15 +28,35 @@ public final class LoopStrengthReduce {
   private LoopStrengthReduce() {}
 
   public static boolean run(Function function, FunctionAnalysisManager fam) {
+    return runWithInductions(
+        function, fam, fam.getResult(InductionVariableAnalysis.class, function).inductions(), false);
+  }
+
+  /** Candidate-only variant that also visits inductions whose preheader is another loop. */
+  public static boolean runNested(Function function, FunctionAnalysisManager fam) {
+    List<InductionVariableAnalysis.Induction> nested = fam
+        .getResult(InductionVariableAnalysis.class, function).allInductions().stream()
+        .filter(induction -> induction.predecessor() != induction.loop().header()
+            && isNested(induction, fam.getResult(LoopAnalysis.class, function).loops()))
+        .toList();
+    return runWithInductions(
+        function, fam, nested, true);
+  }
+
+  private static boolean runWithInductions(
+      Function function,
+      FunctionAnalysisManager fam,
+      List<InductionVariableAnalysis.Induction> inductions,
+      boolean nestedOnly) {
     Map<LoopAnalysis.Loop, Integer> transformed = new IdentityHashMap<>();
     Map<LoopAnalysis.Loop, Integer> nested = new IdentityHashMap<>();
     boolean changed = false;
-    for (var induction :
-        fam.getResult(InductionVariableAnalysis.class, function).inductions()) {
+    for (var induction : inductions) {
       LoopAnalysis.Loop loop = induction.loop();
       if (containsCall(loop)
           || induction.phi().getNumOperands() != 4
-          || loop.header().getPredecessors().size() != 2) continue;
+          || loop.header().getPredecessors().size() != 2
+          || (nestedOnly && induction.step() <= 0)) continue;
       Map<Object, PointerRecurrence.Result> recurrences = new HashMap<>();
       List<AddressStream> addressStreams = new ArrayList<>();
       PointerRecurrence.Result exitRecurrence = null;
@@ -44,6 +65,7 @@ public final class LoopStrengthReduce {
         for (Instruction gep : List.copyOf(block.getInstructions())) {
           int varyingIndex = candidateIndex(gep, induction);
           if (varyingIndex < 0) continue;
+          if (nestedOnly && !isRowMajorNestedAddress(gep, varyingIndex)) continue;
           Object key = expressionKey(gep, induction.phi());
           PointerRecurrence.Result existing = recurrences.get(key);
           if (existing != null) {
@@ -87,6 +109,28 @@ public final class LoopStrengthReduce {
       }
     }
     return changed;
+  }
+
+  private static boolean isNested(
+      InductionVariableAnalysis.Induction induction,
+      List<LoopAnalysis.Loop> loops) {
+    return loops.stream().anyMatch(outer -> outer != induction.loop()
+        && outer.contains(induction.predecessor())
+        && outer.contains(induction.loop().header())
+        && outer.blocks().size() > induction.loop().blocks().size());
+  }
+
+  private static boolean isRowMajorNestedAddress(Instruction gep, int varyingIndex) {
+    if (!gep.isGepInbounds() || varyingIndex < 1 || !AffineGep.isDirectMemoryAddress(gep)) {
+      return false;
+    }
+    Type source = gep.getGepSourceType();
+    int rank = 0;
+    while (source != null && source.isArray()) {
+      rank++;
+      source = source.innerType;
+    }
+    return rank >= 2 && AffineGep.byteStride(gep, varyingIndex) > 0;
   }
 
   private static OffsetMatch findOffset(

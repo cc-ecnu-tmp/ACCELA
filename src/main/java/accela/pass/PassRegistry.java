@@ -6,6 +6,12 @@ import static accela.pass.PassDescriptor.Stage.IR_FUNCTION;
 import static accela.pass.PassDescriptor.Stage.IR_MODULE;
 
 import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import accela.pass.candidate.ArrayObjectPromotionCandidate;
+import accela.pass.candidate.CostModelLoopTilingCandidate;
+import accela.pass.candidate.FunctionSpecializationCandidate;
+import accela.pass.candidate.NestedAddressRecurrenceCandidate;
+import accela.pass.candidate.Rv64WordPressureCandidate;
+import accela.pass.candidate.SysYRegionMemoryForwardingCandidate;
 import accela.pass.ir.transform.scan.PrefixScanReuse;
 import accela.util.StrictJson;
 import java.io.IOException;
@@ -299,6 +305,12 @@ public final class PassRegistry {
     passes.add(IntegerLinearTransitionCandidate.descriptor());
     passes.add(Rrt2OnDemandMemoizationCandidate.descriptor());
     passes.add(PrefixScanReuse.descriptor());
+    passes.add(SysYRegionMemoryForwardingCandidate.descriptor());
+    passes.add(FunctionSpecializationCandidate.descriptor());
+    passes.add(ArrayObjectPromotionCandidate.descriptor());
+    passes.add(NestedAddressRecurrenceCandidate.descriptor());
+    passes.add(CostModelLoopTilingCandidate.descriptor());
+    passes.add(Rv64WordPressureCandidate.descriptor());
     return new PassRegistry(passes);
   }
 

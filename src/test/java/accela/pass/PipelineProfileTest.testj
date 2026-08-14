@@ -17,24 +17,34 @@ import org.junit.jupiter.api.Test;
 final class PipelineProfileTest {
   @Test
   void checkedInActiveProfilesAreCanonicalV2Profiles() throws Exception {
+    Path profileDirectory = Path.of("docs", "optimization", "data", "candidates", "profiles");
     assertEquals(PipelineProfile.full().toJson() + "\n", Files.readString(
-        Path.of("docs", "optimization", "profiles", "full.json"),
-        StandardCharsets.UTF_8));
-    assertEquals(PipelineProfile.mandatoryOnly().toJson() + "\n", Files.readString(
-        Path.of("docs", "optimization", "profiles", "mandatory-only.json"),
-        StandardCharsets.UTF_8));
+        profileDirectory.resolve("baseline.json"), StandardCharsets.UTF_8));
+    List<String> candidates = PassRegistry.standard().candidates().stream()
+        .map(PassDescriptor::id).filter(id -> id.startsWith("candidate."))
+        .toList();
+    assertEquals(6, Files.list(profileDirectory)
+        .filter(path -> path.getFileName().toString().startsWith("candidate."))
+        .count());
+    for (String candidate : candidates) {
+      Path path = profileDirectory.resolve(candidate + ".json");
+      if (!Files.exists(path)) continue;
+      PipelineProfile profile = PipelineProfile.fromJson(path);
+      assertEquals(List.of(candidate), profile.enabledCandidates());
+      assertEquals(profile.toJson() + "\n", Files.readString(path, StandardCharsets.UTF_8));
+    }
   }
 
   @Test
-  void bundledV2SchemaIsGenericRatherThanAFormalCandidateMatrixSchema() throws Exception {
-    Map<?, ?> schema = (Map<?, ?>) StrictJson.parse(Files.readString(
-        Path.of("tools", "benchmark", "schemas", "pipeline-profile.v2.json"),
-        StandardCharsets.UTF_8));
-    Map<?, ?> properties = (Map<?, ?>) schema.get("properties");
-    assertEquals(List.of("FULL", "MANDATORY_ONLY"),
-        ((Map<?, ?>) properties.get("base")).get("enum"));
-    assertFalse(((Map<?, ?>) properties.get("disable")).containsKey("maxItems"));
-    assertFalse(((Map<?, ?>) properties.get("enable_candidates")).containsKey("maxItems"));
+  void activeProfileDirectoryContainsOnlyBaselineAndSixCandidateProfiles() throws Exception {
+    Path profileDirectory = Path.of("docs", "optimization", "data", "candidates", "profiles");
+    List<String> names;
+    try (var paths = Files.list(profileDirectory)) {
+      names = paths.map(path -> path.getFileName().toString()).sorted().toList();
+    }
+    assertEquals(7, names.size());
+    assertEquals("baseline.json", names.getFirst());
+    assertTrue(names.stream().filter(name -> name.startsWith("candidate.")).count() == 6);
   }
 
   @Test

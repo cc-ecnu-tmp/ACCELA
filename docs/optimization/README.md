@@ -2,7 +2,12 @@
 
 ACCELA uses one evaluator with no campaign contracts, hashes, ledgers, receipts, or audit chain.
 It compiles, links, executes, checks exact output, records QEMU dynamic instructions, and ranks
-the six implemented candidates over B2--B6.
+the six experiment candidates over B2--B6.  The active profile directory contains only
+`baseline.json` plus one profile for each of `candidate.sysy-region-memory-forwarding`,
+`candidate.function-specialization`, `candidate.array-object-promotion`,
+`candidate.nested-address-recurrence`, `candidate.cost-model-loop-tiling`, and
+`candidate.rv64-word-pressure`; all six are default-off and are enabled only by
+`BenchmarkCompiler` profiles.
 
 Run from a Linux-native checkout:
 
@@ -18,7 +23,11 @@ current checkout has already been built.
 
 Required tools are JDK 21, Python 3.11+, `riscv64-elf-gcc`, `riscv64-elf-readelf`,
 `qemu-system-riscv64` with plugin headers, GLib 2, `pkg-config`, and a C compiler.
-QEMU results are proxy measurements and must not be described as BOOM hardware speedups.
+QEMU dynamic-instruction counts are proxy measurements and must not be described as BOOM
+hardware speedups.  A candidate is rankable only when every case compiles, links, runs, matches
+the complete output (including the uint8 return trailer), and produces a valid instruction count.
+Promotion additionally requires B3 geometric mean > 1, combined B3--B6 geometric mean > 1, no
+stage below 0.99, and an improvement over the current production combination.
 The preliminary B4 `fft0` entry is excluded because its bundled 100+100 input is paired with
 an unrelated 99,999-element expected output. `if-combine2` and `if-combine3` are also excluded:
 both programs call `getint` twice, but their bundled inputs contain only one integer. `03_sort1`
@@ -33,7 +42,10 @@ Create the upload archive from a Linux checkout containing both official suites:
 sh scripts/package-evaluation.sh
 ```
 
-Upload `accela-evaluation.tar.zst`, then run on the 64-thread evaluation machine:
+Upload `accela-evaluation.tar.zst`, then run on the authenticated Ubuntu evaluation machine.
+Before measuring, verify CPU, memory, disk, Docker, toolchain, and the checkout filesystem; stop
+if any prerequisite is unavailable.  Run the formal measurement from a Linux-native filesystem,
+never from DrvFS/9p:
 
 ```sh
 mkdir accela-evaluation

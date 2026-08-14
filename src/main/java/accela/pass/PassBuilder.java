@@ -1,6 +1,11 @@
 package accela.pass;
 
 import accela.pass.candidate.ExtendedAffineSummarizationCandidate;
+import accela.pass.candidate.ArrayObjectPromotionCandidate;
+import accela.pass.candidate.CostModelLoopTilingCandidate;
+import accela.pass.candidate.FunctionSpecializationCandidate;
+import accela.pass.candidate.NestedAddressRecurrenceCandidate;
+import accela.pass.candidate.SysYRegionMemoryForwardingCandidate;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.FunctionPassManager;
@@ -89,10 +94,20 @@ public final class PassBuilder {
             IntegerLinearTransitionCandidate.ID,
                 IntegerLinearTransitionCandidate.functionFactory(instrumentation),
             PrefixScanReuse.ID,
-                PrefixScanReuse.factory(instrumentation)),
+                PrefixScanReuse.factory(instrumentation),
+            SysYRegionMemoryForwardingCandidate.ID,
+                SysYRegionMemoryForwardingCandidate.factory(instrumentation),
+            ArrayObjectPromotionCandidate.ID,
+                ArrayObjectPromotionCandidate.factory(instrumentation),
+            NestedAddressRecurrenceCandidate.ID,
+                NestedAddressRecurrenceCandidate.factory(instrumentation),
+            CostModelLoopTilingCandidate.ID,
+                CostModelLoopTilingCandidate.factory(instrumentation)),
         Map.of(
             Rrt2OnDemandMemoizationCandidate.ID,
-                Rrt2OnDemandMemoizationCandidate.factory(instrumentation)));
+                Rrt2OnDemandMemoizationCandidate.factory(instrumentation),
+            FunctionSpecializationCandidate.ID,
+                FunctionSpecializationCandidate.factory(instrumentation)));
     return new PassBuilder(provider);
   }
 
