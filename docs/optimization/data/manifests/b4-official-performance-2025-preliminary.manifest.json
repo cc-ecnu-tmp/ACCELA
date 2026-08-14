@@ -1,3747 +1,704 @@
 {
   "cases": [
     {
-      "expected_output": {
-        "path": "01_mm1.out",
-        "sha256": "e4e5241d1785105bd95ab6ca40727a4a624cec177b804d36dcd74338858eabff",
-        "size_bytes": 13
-      },
-      "family": "01_mm",
       "id": "rv64gc:01_mm1",
-      "input": {
-        "path": "01_mm1.in",
-        "sha256": "b5d1bef81d939c3a744c64e32968eb1bad6a3b23fe0130e17a36542c730f21b8",
-        "size_bytes": 68324
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "01_mm1.sy",
-        "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-        "size_bytes": 1429
+        "path": "01_mm1.sy"
       },
-      "source_group": "sg-19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "01_mm1.in"
+      },
+      "expected_output": {
+        "path": "01_mm1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "01_mm2.out",
-        "sha256": "1c3a268007cf3ccb66467154a239fba38ff46e496a4d6bc2872f7a744bed84ad",
-        "size_bytes": 12
-      },
-      "family": "01_mm",
       "id": "rv64gc:01_mm2",
-      "input": {
-        "path": "01_mm2.in",
-        "sha256": "759ab96e41b080d93acf5caedbc7d0beacba3fa389338fba37eb336483f8f7e2",
-        "size_bytes": 197624
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "01_mm2.sy",
-        "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-        "size_bytes": 1429
+        "path": "01_mm2.sy"
       },
-      "source_group": "sg-19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "01_mm2.in"
+      },
+      "expected_output": {
+        "path": "01_mm2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "01_mm3.out",
-        "sha256": "98be250c00e36408cd7b589d5e9b9df2aaef43d6f06e0fc8125fc6ebb0b3b749",
-        "size_bytes": 13
-      },
-      "family": "01_mm",
       "id": "rv64gc:01_mm3",
-      "input": {
-        "path": "01_mm3.in",
-        "sha256": "d5cbaf96bb5d625bb1df4a20758a7eaeeaeea8799ac8b96c413c28fa02d6d25c",
-        "size_bytes": 148546
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "01_mm3.sy",
-        "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-        "size_bytes": 1429
+        "path": "01_mm3.sy"
       },
-      "source_group": "sg-19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "01_mm3.in"
+      },
+      "expected_output": {
+        "path": "01_mm3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "03_sort1.out",
-        "sha256": "cedfd13f9ef0f73f082bf9458a65fd8c9b465ec133f93d2f0833a08d68ff92bd",
-        "size_bytes": 13
-      },
-      "family": "03_sort",
       "id": "rv64gc:03_sort1",
-      "input": {
-        "path": "03_sort1.in",
-        "sha256": "c468b9214e10347079d44e907a37943b4283d7543693f882bb704c7495c2e6f5",
-        "size_bytes": 1081
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "03_sort1.sy",
-        "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-        "size_bytes": 2145
+        "path": "03_sort1.sy"
       },
-      "source_group": "sg-7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "03_sort1.in"
+      },
+      "expected_output": {
+        "path": "03_sort1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "03_sort2.out",
-        "sha256": "66f35f540604fa6397edff2b9276dbdb15fab22ed53b1189d50fbac4dce7ce72",
-        "size_bytes": 12
-      },
-      "family": "03_sort",
       "id": "rv64gc:03_sort2",
-      "input": {
-        "path": "03_sort2.in",
-        "sha256": "115753ae6e270e29bf620e0f1cc8d3dbf66c4ea808dc159d4a6f52d5d2bf0697",
-        "size_bytes": 138898307
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "03_sort2.sy",
-        "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-        "size_bytes": 2145
+        "path": "03_sort2.sy"
       },
-      "source_group": "sg-7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "03_sort2.in"
+      },
+      "expected_output": {
+        "path": "03_sort2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "03_sort3.out",
-        "sha256": "698e9198483deeeb9c93dad638fb71c5522d63bc9751b0ee91c30aaef765823e",
-        "size_bytes": 12
-      },
-      "family": "03_sort",
       "id": "rv64gc:03_sort3",
-      "input": {
-        "path": "03_sort3.in",
-        "sha256": "e351ba0bbd29015195b0413f1d34892849620517e390b2b757ef2cfde8cfd976",
-        "size_bytes": 33149885
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "03_sort3.sy",
-        "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-        "size_bytes": 2145
+        "path": "03_sort3.sy"
       },
-      "source_group": "sg-7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "03_sort3.in"
+      },
+      "expected_output": {
+        "path": "03_sort3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "04_spmv1.out",
-        "sha256": "940b0f45ebd0b0d784cd20b6e838ee7ecb11ee40927befebfc8e34f7a13c6e7e",
-        "size_bytes": 549211
-      },
-      "family": "04_spmv",
       "id": "rv64gc:04_spmv1",
-      "input": {
-        "path": "04_spmv1.in",
-        "sha256": "bce207ae7a6bc634761f7b61841dafcc9b0ec46b360994b059a07a915169596a",
-        "size_bytes": 10206332
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "04_spmv1.sy",
-        "sha256": "951eb68cbaed9f8aca8034d9d15c4cf2539aa1221565df281764c920fa9e5f71",
-        "size_bytes": 884
+        "path": "04_spmv1.sy"
       },
-      "source_group": "sg-951eb68cbaed9f8aca8034d9d15c4cf2539aa1221565df281764c920fa9e5f71",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "04_spmv1.in"
+      },
+      "expected_output": {
+        "path": "04_spmv1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "04_spmv2.out",
-        "sha256": "40d143c08db3600084ff99f80b01d81b692d8b34f0e90c432c4baa50eae405b9",
-        "size_bytes": 5512
-      },
-      "family": "04_spmv",
       "id": "rv64gc:04_spmv2",
-      "input": {
-        "path": "04_spmv2.in",
-        "sha256": "6008a001c8979e544cce09f702723d57cf03be27be2e7ee65335ffa8447b2530",
-        "size_bytes": 18330
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "04_spmv2.sy",
-        "sha256": "695728929578d1563054acb488a77b4fb118c9124cf6bbbc989417224aa6a94e",
-        "size_bytes": 886
+        "path": "04_spmv2.sy"
       },
-      "source_group": "sg-695728929578d1563054acb488a77b4fb118c9124cf6bbbc989417224aa6a94e",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "04_spmv2.in"
+      },
+      "expected_output": {
+        "path": "04_spmv2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "04_spmv3.out",
-        "sha256": "29802ae7e44f8c0ea6379fad5c06ae2b6ec7ddc97c4272e53b2411cb35642006",
-        "size_bytes": 10993
-      },
-      "family": "04_spmv",
       "id": "rv64gc:04_spmv3",
-      "input": {
-        "path": "04_spmv3.in",
-        "sha256": "dee054c6639ff319d1373df2b23e4b00c0e949bc48a793adf1e8ef343f31d882",
-        "size_bytes": 7795696
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "04_spmv3.sy",
-        "sha256": "7c032616855343fb6b1c7ef44caada0ef6e45aa2b1f294b6e4c86e8b503ed13c",
-        "size_bytes": 885
+        "path": "04_spmv3.sy"
       },
-      "source_group": "sg-7c032616855343fb6b1c7ef44caada0ef6e45aa2b1f294b6e4c86e8b503ed13c",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "04_spmv3.in"
+      },
+      "expected_output": {
+        "path": "04_spmv3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "crypto-1.out",
-        "sha256": "54d4df16650632cde4f37a47fc727b946a3b3378658693d4ac5eba3e09d3b733",
-        "size_bytes": 60
-      },
-      "family": "crypto",
       "id": "rv64gc:crypto-1",
-      "input": {
-        "path": "crypto-1.in",
-        "sha256": "a231547df456d12d7e124eef65e626cb6620323cb6f811ee89d840c19e47a8c8",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "crypto-1.sy",
-        "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-        "size_bytes": 3663
+        "path": "crypto-1.sy"
       },
-      "source_group": "sg-ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "crypto-1.in"
+      },
+      "expected_output": {
+        "path": "crypto-1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "crypto-2.out",
-        "sha256": "cdec04d4fa4f42d68e08343d3a661b473800b6301230c514ca930f820cc1df51",
-        "size_bytes": 61
-      },
-      "family": "crypto",
       "id": "rv64gc:crypto-2",
-      "input": {
-        "path": "crypto-2.in",
-        "sha256": "52d2d353c3dcb74186b0bee5b7443f10c9fb3bb9f05541916c8686d958d7c23d",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "crypto-2.sy",
-        "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-        "size_bytes": 3663
+        "path": "crypto-2.sy"
       },
-      "source_group": "sg-ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "crypto-2.in"
+      },
+      "expected_output": {
+        "path": "crypto-2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "crypto-3.out",
-        "sha256": "10b404468bbd168b56f781752cbddeb82fbe2b2b8049f89333a703c583db7397",
-        "size_bytes": 58
-      },
-      "family": "crypto",
       "id": "rv64gc:crypto-3",
-      "input": {
-        "path": "crypto-3.in",
-        "sha256": "1d33fc4be89d2a0feeae71ca75408c35402a32897f0d53eee653a168aa9d365b",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "crypto-3.sy",
-        "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-        "size_bytes": 3663
+        "path": "crypto-3.sy"
       },
-      "source_group": "sg-ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "crypto-3.in"
+      },
+      "expected_output": {
+        "path": "crypto-3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "fft0.out",
-        "sha256": "0af22f350f100977d4b8211f6634b043d6dabf03baa7a0a22930e712988bc001",
-        "size_bytes": 577779
-      },
-      "family": "fft",
       "id": "rv64gc:fft0",
-      "input": {
-        "path": "fft0.in",
-        "sha256": "86e2f6f477efe6be07be588cd739b45f150161c58a4f4f546c13b23c8d6696af",
-        "size_bytes": 429
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "fft0.sy",
-        "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-        "size_bytes": 1934
+        "path": "fft0.sy"
       },
-      "source_group": "sg-a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "fft0.in"
+      },
+      "expected_output": {
+        "path": "fft0.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "fft1.out",
-        "sha256": "e32e7d5945bdd6c95011f50fee8944ce1262852907116ecb33629fc81ed51581",
-        "size_bytes": 1747280
-      },
-      "family": "fft",
       "id": "rv64gc:fft1",
-      "input": {
-        "path": "fft1.in",
-        "sha256": "eb5d6b692d543d4e8b00ca3caab3f91e5ad8a156d7858f3591d7e67d4ea85ae7",
-        "size_bytes": 555387
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "fft1.sy",
-        "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-        "size_bytes": 1934
+        "path": "fft1.sy"
       },
-      "source_group": "sg-a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "fft1.in"
+      },
+      "expected_output": {
+        "path": "fft1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "fft2.out",
-        "sha256": "79be94021cb4fea77c75e475ac5b9c7af312e1cc51704648424df6543da5e579",
-        "size_bytes": 3720
-      },
-      "family": "fft",
       "id": "rv64gc:fft2",
-      "input": {
-        "path": "fft2.in",
-        "sha256": "1570b6d5f67b17ae6f5b4213858de24e8654aed59d1f85c6d7d38f1f8952f862",
-        "size_bytes": 854277
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "fft2.sy",
-        "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-        "size_bytes": 1934
+        "path": "fft2.sy"
       },
-      "source_group": "sg-a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "fft2.in"
+      },
+      "expected_output": {
+        "path": "fft2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "gameoflife-gosper.out",
-        "sha256": "0c4bc6c22966cb063c00c91bfbe0c232a0da5535a5b5f675b66a7d7fff30c090",
-        "size_bytes": 422
-      },
-      "family": "gameoflife-gosper",
       "id": "rv64gc:gameoflife-gosper",
-      "input": {
-        "path": "gameoflife-gosper.in",
-        "sha256": "5e9c5f1f791f156ec3482151470b2491fbaa0520db004d7964a7ecac0c9b5882",
-        "size_bytes": 428
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "gameoflife-gosper.sy",
-        "sha256": "573fff0e9aca33975cd8bfdb4ebbadeac18784439a85af840b2adc2ae87f7688",
-        "size_bytes": 1909
+        "path": "gameoflife-gosper.sy"
       },
-      "source_group": "sg-573fff0e9aca33975cd8bfdb4ebbadeac18784439a85af840b2adc2ae87f7688",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "gameoflife-gosper.in"
+      },
+      "expected_output": {
+        "path": "gameoflife-gosper.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "gameoflife-oscillator.out",
-        "sha256": "6e4f5cb0f53239110bf69d29f1b251300bfedb91dabacb2830745c6719693a24",
-        "size_bytes": 2552
-      },
-      "family": "gameoflife-oscillator",
       "id": "rv64gc:gameoflife-oscillator",
-      "input": {
-        "path": "gameoflife-oscillator.in",
-        "sha256": "9cdd495224f5fa3eea564fcbc3f1bd3987cb2afe33227e806054dfc0a07142f7",
-        "size_bytes": 2561
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "gameoflife-oscillator.sy",
-        "sha256": "5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-        "size_bytes": 1910
+        "path": "gameoflife-oscillator.sy"
       },
-      "source_group": "sg-5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "gameoflife-oscillator.in"
+      },
+      "expected_output": {
+        "path": "gameoflife-oscillator.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "gameoflife-p61glidergun.out",
-        "sha256": "f6805245a9a500ebd32b958b92e3e1636b1fb451dab8d52b263f47e82e886951",
-        "size_bytes": 86622
-      },
-      "family": "gameoflife-p61glidergun",
       "id": "rv64gc:gameoflife-p61glidergun",
-      "input": {
-        "path": "gameoflife-p61glidergun.in",
-        "sha256": "977ab5a56b7fa2773760db07b1d86c73f7d439afe4394bcf35d40f0fad814f96",
-        "size_bytes": 86937
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "gameoflife-p61glidergun.sy",
-        "sha256": "5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-        "size_bytes": 1910
+        "path": "gameoflife-p61glidergun.sy"
       },
-      "source_group": "sg-5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "gameoflife-p61glidergun.in"
+      },
+      "expected_output": {
+        "path": "gameoflife-p61glidergun.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-1-01.out",
-        "sha256": "9971efef3906598c3ea892926a0d76f4a9f29ee769902dbfc070a57dfc0198b8",
-        "size_bytes": 10
-      },
-      "family": "h-1",
       "id": "rv64gc:h-1-01",
-      "input": {
-        "path": "h-1-01.in",
-        "sha256": "b80500a01f984c764f1a3b486622d0ef7cc5b13fa9bd57ec9015113eaf875597",
-        "size_bytes": 7
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-1-01.sy",
-        "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-        "size_bytes": 426
+        "path": "h-1-01.sy"
       },
-      "source_group": "sg-e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-1-01.in"
+      },
+      "expected_output": {
+        "path": "h-1-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-1-02.out",
-        "sha256": "aa66a64dcf9c571e1ce42a8bb364aae1072753781de18db8e4e9e031745c27e5",
-        "size_bytes": 9
-      },
-      "family": "h-1",
       "id": "rv64gc:h-1-02",
-      "input": {
-        "path": "h-1-02.in",
-        "sha256": "888df25ae35772424a560c7152a1de794440e0ea5cfee62828333a456a506e05",
-        "size_bytes": 4
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-1-02.sy",
-        "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-        "size_bytes": 426
+        "path": "h-1-02.sy"
       },
-      "source_group": "sg-e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-1-02.in"
+      },
+      "expected_output": {
+        "path": "h-1-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-1-03.out",
-        "sha256": "b7b529d8cbf6eff798f9242040c926f8d984cbce13ddb58330191285433431d8",
-        "size_bytes": 11
-      },
-      "family": "h-1",
       "id": "rv64gc:h-1-03",
-      "input": {
-        "path": "h-1-03.in",
-        "sha256": "98a1e72597ca31a3e6ad14fefd673b3152ade1057c6bb7f6fc9eedb41cd5ba13",
-        "size_bytes": 6
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-1-03.sy",
-        "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-        "size_bytes": 426
+        "path": "h-1-03.sy"
       },
-      "source_group": "sg-e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-1-03.in"
+      },
+      "expected_output": {
+        "path": "h-1-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-10-01.out",
-        "sha256": "85e9eb874a8a93e24b41f6c4051c2d3d640d94a7bbb41c6a35a9733113000c76",
-        "size_bytes": 17
-      },
-      "family": "h-10",
       "id": "rv64gc:h-10-01",
-      "input": {
-        "path": "h-10-01.in",
-        "sha256": "6c01bae43c3f0ece9ef97a84e9e5779c52265272d4594b0ad6a81266f8a6268b",
-        "size_bytes": 76008
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-10-01.sy",
-        "sha256": "ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-        "size_bytes": 1134
+        "path": "h-10-01.sy"
       },
-      "source_group": "sg-ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-10-01.in"
+      },
+      "expected_output": {
+        "path": "h-10-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-10-02.out",
-        "sha256": "f937e862f6b7714353908727614f88613511eda722c1324b4e1047785d298beb",
-        "size_bytes": 18
-      },
-      "family": "h-10",
       "id": "rv64gc:h-10-02",
-      "input": {
-        "path": "h-10-02.in",
-        "sha256": "0f0237443d9758098f6a1c186d759a7e1f6ec5545e4a26617f85e7392516a466",
-        "size_bytes": 126303
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-10-02.sy",
-        "sha256": "ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-        "size_bytes": 1134
+        "path": "h-10-02.sy"
       },
-      "source_group": "sg-ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-10-02.in"
+      },
+      "expected_output": {
+        "path": "h-10-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-10-03.out",
-        "sha256": "1f353b4c023fea7eb4a6c755b7ab241ae22dd793279299f81e95036aa392e257",
-        "size_bytes": 18
-      },
-      "family": "h-10",
       "id": "rv64gc:h-10-03",
-      "input": {
-        "path": "h-10-03.in",
-        "sha256": "0cc173057520da3dbcce2b451da78b8c4e0473ce4c65d7cdb593bfba496c8664",
-        "size_bytes": 197038
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-10-03.sy",
-        "sha256": "8a70e7642ef393b8fff118d12afd29766392f3fd615c70ee3fe2b1539cba6eb8",
-        "size_bytes": 1133
+        "path": "h-10-03.sy"
       },
-      "source_group": "sg-8a70e7642ef393b8fff118d12afd29766392f3fd615c70ee3fe2b1539cba6eb8",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-10-03.in"
+      },
+      "expected_output": {
+        "path": "h-10-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-11-01.out",
-        "sha256": "d4ca2f722a4a1fc908fae7f3da99fe194d0b69bad5b16dc99a113be3ce305b37",
-        "size_bytes": 221
-      },
-      "family": "h-11",
       "id": "rv64gc:h-11-01",
-      "input": {
-        "path": "h-11-01.in",
-        "sha256": "69b81f4c08981840a129b409a4ff91793f9dbbf1544540170642f82a4aeec988",
-        "size_bytes": 8033169
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-11-01.sy",
-        "sha256": "d10743135da4300b634e21aee9ddb37f837bc3be11445c97c2c66a224ac1d308",
-        "size_bytes": 2349
+        "path": "h-11-01.sy"
       },
-      "source_group": "sg-d10743135da4300b634e21aee9ddb37f837bc3be11445c97c2c66a224ac1d308",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-11-01.in"
+      },
+      "expected_output": {
+        "path": "h-11-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-11-02.out",
-        "sha256": "360c59c6df8acbae97081a2cd0bb8f1a4ef0cf4a867e25980ae03bd6ce894968",
-        "size_bytes": 219
-      },
-      "family": "h-11",
       "id": "rv64gc:h-11-02",
-      "input": {
-        "path": "h-11-02.in",
-        "sha256": "7f0f333b71ffb8ac4f39989d875c8a17c8ecd5be9f97bc238467868124bee7e0",
-        "size_bytes": 3571565
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-11-02.sy",
-        "sha256": "b52e6cb38598b396b03117bee2b2af0d5e92c256698824ab082af93e2248a329",
-        "size_bytes": 2461
+        "path": "h-11-02.sy"
       },
-      "source_group": "sg-b52e6cb38598b396b03117bee2b2af0d5e92c256698824ab082af93e2248a329",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-11-02.in"
+      },
+      "expected_output": {
+        "path": "h-11-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-11-03.out",
-        "sha256": "b8577cda99ed6581c84f4814e551fbff8c871c87254ed494604415a858363c8d",
-        "size_bytes": 2418
-      },
-      "family": "h-11",
       "id": "rv64gc:h-11-03",
-      "input": {
-        "path": "h-11-03.in",
-        "sha256": "2178ef5d3bb454157835b909c79d1d2c4509bb26000e837313c786a6e58446bc",
-        "size_bytes": 14281201
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-11-03.sy",
-        "sha256": "3c764b04081874990fe088ff829356f4f711cdd51023678d31967ac1b939e963",
-        "size_bytes": 2350
+        "path": "h-11-03.sy"
       },
-      "source_group": "sg-3c764b04081874990fe088ff829356f4f711cdd51023678d31967ac1b939e963",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-11-03.in"
+      },
+      "expected_output": {
+        "path": "h-11-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-2-01.out",
-        "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-        "size_bytes": 5
-      },
-      "family": "h-2",
       "id": "rv64gc:h-2-01",
-      "input": null,
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-2-01.sy",
-        "sha256": "33873e68e9f4b441102827687c5ebc4c74e82a98b0accdb8d43fe38c7508abdf",
-        "size_bytes": 938
+        "path": "h-2-01.sy"
       },
-      "source_group": "sg-33873e68e9f4b441102827687c5ebc4c74e82a98b0accdb8d43fe38c7508abdf",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": null,
+      "expected_output": {
+        "path": "h-2-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-2-02.out",
-        "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-        "size_bytes": 5
-      },
-      "family": "h-2",
       "id": "rv64gc:h-2-02",
-      "input": null,
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-2-02.sy",
-        "sha256": "62cb9acd19cf0075e8440a33d074654bce916ef6464bd60b8898a771add33664",
-        "size_bytes": 937
+        "path": "h-2-02.sy"
       },
-      "source_group": "sg-62cb9acd19cf0075e8440a33d074654bce916ef6464bd60b8898a771add33664",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": null,
+      "expected_output": {
+        "path": "h-2-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-2-03.out",
-        "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-        "size_bytes": 5
-      },
-      "family": "h-2",
       "id": "rv64gc:h-2-03",
-      "input": null,
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-2-03.sy",
-        "sha256": "ddde13814df7cf024f7eccd37666fe7d03588e545fe481b8e3a184ea82445fb2",
-        "size_bytes": 933
+        "path": "h-2-03.sy"
       },
-      "source_group": "sg-ddde13814df7cf024f7eccd37666fe7d03588e545fe481b8e3a184ea82445fb2",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": null,
+      "expected_output": {
+        "path": "h-2-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-4-01.out",
-        "sha256": "e35790dbe1063e8d6155a039c83efd5769a25c632433b799b022ea1b92fe2c8b",
-        "size_bytes": 24
-      },
-      "family": "h-4",
       "id": "rv64gc:h-4-01",
-      "input": {
-        "path": "h-4-01.in",
-        "sha256": "0736cdfead1015cc6a05caa3d01dccc32a9b874b261a137fc55ad2977e5300ec",
-        "size_bytes": 62
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-4-01.sy",
-        "sha256": "226e3cbf32ae30698d5e10a7536f2c0ef953504e9af475c38d0412e69b9c184a",
-        "size_bytes": 844
+        "path": "h-4-01.sy"
       },
-      "source_group": "sg-226e3cbf32ae30698d5e10a7536f2c0ef953504e9af475c38d0412e69b9c184a",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-4-01.in"
+      },
+      "expected_output": {
+        "path": "h-4-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-4-02.out",
-        "sha256": "9cba191fa98f3426dd1c3d596937c330b5b2086b04a6bf01e37831d03db47546",
-        "size_bytes": 26
-      },
-      "family": "h-4",
       "id": "rv64gc:h-4-02",
-      "input": {
-        "path": "h-4-02.in",
-        "sha256": "0da2b87e78dee209c5ec8f44eb725a18c920669008e928e91818f24377262757",
-        "size_bytes": 100
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-4-02.sy",
-        "sha256": "552a647972f2f67ce82a71e1b2181caa2890c0d98c78f96ea6347ed6d9310c3b",
-        "size_bytes": 847
+        "path": "h-4-02.sy"
       },
-      "source_group": "sg-552a647972f2f67ce82a71e1b2181caa2890c0d98c78f96ea6347ed6d9310c3b",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-4-02.in"
+      },
+      "expected_output": {
+        "path": "h-4-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-4-03.out",
-        "sha256": "d70bdbef55076c53c8692faeee29dd5906977a175f7914086c694c29b9d03a8b",
-        "size_bytes": 26
-      },
-      "family": "h-4",
       "id": "rv64gc:h-4-03",
-      "input": {
-        "path": "h-4-03.in",
-        "sha256": "c270e39239d1c89abfc33204aecadf6aeec4b9ec701d9760203e3cfabf6c9785",
-        "size_bytes": 104
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-4-03.sy",
-        "sha256": "44973ff49ac6ef72ebd7302bc0784407b4c6902f48121318698dbd1ba3883419",
-        "size_bytes": 843
+        "path": "h-4-03.sy"
       },
-      "source_group": "sg-44973ff49ac6ef72ebd7302bc0784407b4c6902f48121318698dbd1ba3883419",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-4-03.in"
+      },
+      "expected_output": {
+        "path": "h-4-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-5-01.out",
-        "sha256": "61cb731f1d8aa924497feae401930af3a2aa62c338327a97795487ce20dfaab4",
-        "size_bytes": 50
-      },
-      "family": "h-5",
       "id": "rv64gc:h-5-01",
-      "input": {
-        "path": "h-5-01.in",
-        "sha256": "42ded1eeb985ffe01ec7337e1e1e50dddd5fffb3ee7a406de52446376a340890",
-        "size_bytes": 5714588
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-5-01.sy",
-        "sha256": "43e06133c788a444a494c061d0ccfd0171c1023a41d67923f36b2b8f9c65085b",
-        "size_bytes": 1138
+        "path": "h-5-01.sy"
       },
-      "source_group": "sg-43e06133c788a444a494c061d0ccfd0171c1023a41d67923f36b2b8f9c65085b",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-5-01.in"
+      },
+      "expected_output": {
+        "path": "h-5-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-5-02.out",
-        "sha256": "c6ab67dbf351e88bad44f8f58b8b14a5035397f0e72eba1f231e02e83cccecea",
-        "size_bytes": 36
-      },
-      "family": "h-5",
       "id": "rv64gc:h-5-02",
-      "input": {
-        "path": "h-5-02.in",
-        "sha256": "6f6bcbeaa64602fe02c7a80f18f816a0fbee890a7efd8dae714fb3a24662d5e3",
-        "size_bytes": 5713932
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-5-02.sy",
-        "sha256": "0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-        "size_bytes": 1139
+        "path": "h-5-02.sy"
       },
-      "source_group": "sg-0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-5-02.in"
+      },
+      "expected_output": {
+        "path": "h-5-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-5-03.out",
-        "sha256": "f806303798b174abc7853416fb358825b8b2b759fe6fd8d05c6192d90139c01e",
-        "size_bytes": 34
-      },
-      "family": "h-5",
       "id": "rv64gc:h-5-03",
-      "input": {
-        "path": "h-5-03.in",
-        "sha256": "f985b7c118bf8279d751f1b21a937ae074760b57a187fdc5003a8db764cac665",
-        "size_bytes": 5714879
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-5-03.sy",
-        "sha256": "0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-        "size_bytes": 1139
+        "path": "h-5-03.sy"
       },
-      "source_group": "sg-0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-5-03.in"
+      },
+      "expected_output": {
+        "path": "h-5-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-7-01.out",
-        "sha256": "9c5147a8f83f593c3008fa0cc76645d7c91dbe13b83ba21142b497045bacd8ab",
-        "size_bytes": 88817
-      },
-      "family": "h-7",
       "id": "rv64gc:h-7-01",
-      "input": {
-        "path": "h-7-01.in",
-        "sha256": "7ac9c4df2f1dafeb08c3a213e50b5b6c700e6e3820a2d04b00d2c1e7875b5ce8",
-        "size_bytes": 9522516
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-7-01.sy",
-        "sha256": "b680d01f5303ac7c290e353f800caf89729c91e2d4714bf2b8d67655441fd84c",
-        "size_bytes": 752
+        "path": "h-7-01.sy"
       },
-      "source_group": "sg-b680d01f5303ac7c290e353f800caf89729c91e2d4714bf2b8d67655441fd84c",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-7-01.in"
+      },
+      "expected_output": {
+        "path": "h-7-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-8-01.out",
-        "sha256": "d67d1d6280de19770176233f361fe1c30ada04af7ced340437ff7c993b3ac3cc",
-        "size_bytes": 399
-      },
-      "family": "h-8",
       "id": "rv64gc:h-8-01",
-      "input": {
-        "path": "h-8-01.in",
-        "sha256": "3cc875d0b7e20f963937c61f7cca8a8eb28615e7f83e4b01ecd61ace30ded4f6",
-        "size_bytes": 3922815
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-8-01.sy",
-        "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-        "size_bytes": 1986
+        "path": "h-8-01.sy"
       },
-      "source_group": "sg-b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-8-01.in"
+      },
+      "expected_output": {
+        "path": "h-8-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-8-02.out",
-        "sha256": "2331a892dd2b09ad170a0ba8ba48f6c73e91ae969d5c2f6534a00baa7c2671e0",
-        "size_bytes": 399
-      },
-      "family": "h-8",
       "id": "rv64gc:h-8-02",
-      "input": {
-        "path": "h-8-02.in",
-        "sha256": "a36c2c506c1aa6fe2ac3b1296a51b2f7288847ee4147292cae69a62a4ab7237a",
-        "size_bytes": 3922815
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-8-02.sy",
-        "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-        "size_bytes": 1986
+        "path": "h-8-02.sy"
       },
-      "source_group": "sg-b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-8-02.in"
+      },
+      "expected_output": {
+        "path": "h-8-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-8-03.out",
-        "sha256": "319b2dae44b434beda8d0152026111cb105ceb1c8c647bdc7714845fee7345f6",
-        "size_bytes": 399
-      },
-      "family": "h-8",
       "id": "rv64gc:h-8-03",
-      "input": {
-        "path": "h-8-03.in",
-        "sha256": "ae3c43414fac104ddd18e476b4e8b8c999364fa8902ff5537797aaf33f99ecb5",
-        "size_bytes": 3922815
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-8-03.sy",
-        "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-        "size_bytes": 1986
+        "path": "h-8-03.sy"
       },
-      "source_group": "sg-b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-8-03.in"
+      },
+      "expected_output": {
+        "path": "h-8-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-9-01.out",
-        "sha256": "ff01041be80ef3503ea388a666a2b1cefd0bacb8ff26edc4ca0a96dc51f9e202",
-        "size_bytes": 122
-      },
-      "family": "h-9",
       "id": "rv64gc:h-9-01",
-      "input": {
-        "path": "h-9-01.in",
-        "sha256": "4cef0e028356b38d7b5b449da40d31d6c7d520d9e39e87a57e17ac89381f1e83",
-        "size_bytes": 13
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-9-01.sy",
-        "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-        "size_bytes": 938
+        "path": "h-9-01.sy"
       },
-      "source_group": "sg-a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-9-01.in"
+      },
+      "expected_output": {
+        "path": "h-9-01.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-9-02.out",
-        "sha256": "7ba1f88561d0ad1bbf5bc565bcc5a304952f80d56515956289e63f1ebc8a57e1",
-        "size_bytes": 94
-      },
-      "family": "h-9",
       "id": "rv64gc:h-9-02",
-      "input": {
-        "path": "h-9-02.in",
-        "sha256": "e1409dc34b2f5775f581736763009804205078c0630c78c7a6caf9b790435362",
-        "size_bytes": 12
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-9-02.sy",
-        "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-        "size_bytes": 938
+        "path": "h-9-02.sy"
       },
-      "source_group": "sg-a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-9-02.in"
+      },
+      "expected_output": {
+        "path": "h-9-02.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "h-9-03.out",
-        "sha256": "025588e625b74fafa0a08c59ded615d890fafc117fbeed8085ce8d13dd87be19",
-        "size_bytes": 82
-      },
-      "family": "h-9",
       "id": "rv64gc:h-9-03",
-      "input": {
-        "path": "h-9-03.in",
-        "sha256": "9ae75f8ea30201e269eb2957c3fa6052a1692e915e662ad7bae087fb74e6178d",
-        "size_bytes": 12
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "h-9-03.sy",
-        "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-        "size_bytes": 938
+        "path": "h-9-03.sy"
       },
-      "source_group": "sg-a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "h-9-03.in"
+      },
+      "expected_output": {
+        "path": "h-9-03.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "if-combine1.out",
-        "sha256": "113e742df2af4e727ca95ba3ce454800bb6b59f4f3e936df25a68d015e7aa546",
-        "size_bytes": 8
-      },
-      "family": "if-combine",
       "id": "rv64gc:if-combine1",
-      "input": {
-        "path": "if-combine1.in",
-        "sha256": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58",
-        "size_bytes": 4
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "if-combine1.sy",
-        "sha256": "742c2f136722ddefaab2dc95ec7e9155d603b8a92b3d47cc17e162d56216128c",
-        "size_bytes": 64120
+        "path": "if-combine1.sy"
       },
-      "source_group": "sg-742c2f136722ddefaab2dc95ec7e9155d603b8a92b3d47cc17e162d56216128c",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "if-combine1.in"
+      },
+      "expected_output": {
+        "path": "if-combine1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "if-combine2.out",
-        "sha256": "ecc118b8b9aff36bc29148a0318d9107f40469150eeec394756560342c4deea9",
-        "size_bytes": 8
-      },
-      "family": "if-combine",
       "id": "rv64gc:if-combine2",
-      "input": {
-        "path": "if-combine2.in",
-        "sha256": "2d5c043a952d70ef9564858b25a01a30613abfb3d1562f67ef8d089646bbf786",
-        "size_bytes": 7
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "if-combine2.sy",
-        "sha256": "ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-        "size_bytes": 83338
+        "path": "if-combine2.sy"
       },
-      "source_group": "sg-ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "if-combine2.in"
+      },
+      "expected_output": {
+        "path": "if-combine2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "if-combine3.out",
-        "sha256": "655b8cb8e5f088b7386fe9d8e826f6d4c06bbee7c9aaf05844715a02a650c000",
-        "size_bytes": 7
-      },
-      "family": "if-combine",
       "id": "rv64gc:if-combine3",
-      "input": {
-        "path": "if-combine3.in",
-        "sha256": "eea5daac8b1d1b7b82edaaa7fadadf6b48a439a874efd036fb0666e68c17462e",
-        "size_bytes": 7
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "if-combine3.sy",
-        "sha256": "ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-        "size_bytes": 83338
+        "path": "if-combine3.sy"
       },
-      "source_group": "sg-ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "if-combine3.in"
+      },
+      "expected_output": {
+        "path": "if-combine3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "matmul1.out",
-        "sha256": "f806b0c98bcf665df259ec7e13cd9a0ef5cd9e496d3ac0f599bfbe448610cfde",
-        "size_bytes": 11
-      },
-      "family": "matmul",
       "id": "rv64gc:matmul1",
-      "input": {
-        "path": "matmul1.in",
-        "sha256": "66991e42613890ca16c01412caee3e026dce758fdfae6eb4c16e96c90ac25656",
-        "size_bytes": 137439
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "matmul1.sy",
-        "sha256": "ab644d05a34b0b8c814dec966985856aedb83a5e70038811635347c5c7da7a09",
-        "size_bytes": 1555
+        "path": "matmul1.sy"
       },
-      "source_group": "sg-ab644d05a34b0b8c814dec966985856aedb83a5e70038811635347c5c7da7a09",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "matmul1.in"
+      },
+      "expected_output": {
+        "path": "matmul1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "matmul2.out",
-        "sha256": "5858bdf289b1b5c17186c0ea5bce009697f5557a684b90ac78855e0e32e4dedc",
-        "size_bytes": 11
-      },
-      "family": "matmul",
       "id": "rv64gc:matmul2",
-      "input": {
-        "path": "matmul2.in",
-        "sha256": "58aa89290034d5f302a0cc354cef6ffde3fad0462af29dae15fb5527b53c6edc",
-        "size_bytes": 307946
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "matmul2.sy",
-        "sha256": "6cb4c2c6e5fd041eab1c40630316c4fa9b004d9ec2d7dd6dd9eb375592bfc0c3",
-        "size_bytes": 1555
+        "path": "matmul2.sy"
       },
-      "source_group": "sg-6cb4c2c6e5fd041eab1c40630316c4fa9b004d9ec2d7dd6dd9eb375592bfc0c3",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "matmul2.in"
+      },
+      "expected_output": {
+        "path": "matmul2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "matmul3.out",
-        "sha256": "6c809d41b75e49ab361c77673aa43396bf90a4e217b49de2aa2f02a4ae207c41",
-        "size_bytes": 11
-      },
-      "family": "matmul",
       "id": "rv64gc:matmul3",
-      "input": {
-        "path": "matmul3.in",
-        "sha256": "26d08896d98085aa9e4f246335e616ed5deb2da4fdd9f0c3619812d3f3dbf76a",
-        "size_bytes": 214025
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "matmul3.sy",
-        "sha256": "0ddb47b495e11ff38a16a4346aaf132e8a0607197524128c5e580db40f5223ef",
-        "size_bytes": 1555
+        "path": "matmul3.sy"
       },
-      "source_group": "sg-0ddb47b495e11ff38a16a4346aaf132e8a0607197524128c5e580db40f5223ef",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "matmul3.in"
+      },
+      "expected_output": {
+        "path": "matmul3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "shuffle0.out",
-        "sha256": "1d09862573672f850e2897c94b7d12b8888d04876e9f62023dce26e997a3ce21",
-        "size_bytes": 510573
-      },
-      "family": "shuffle",
       "id": "rv64gc:shuffle0",
-      "input": {
-        "path": "shuffle0.in",
-        "sha256": "33050194afa5402eed7e985810d9050686644b325ba1f7ad2e5db1dc01db328a",
-        "size_bytes": 1666862
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "shuffle0.sy",
-        "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-        "size_bytes": 1671
+        "path": "shuffle0.sy"
       },
-      "source_group": "sg-f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "shuffle0.in"
+      },
+      "expected_output": {
+        "path": "shuffle0.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "shuffle1.out",
-        "sha256": "b3d2069e723ebb343ddac01f8f7486306691b8470166b47cab7bb24e859bc58d",
-        "size_bytes": 553272
-      },
-      "family": "shuffle",
       "id": "rv64gc:shuffle1",
-      "input": {
-        "path": "shuffle1.in",
-        "sha256": "c357b6be80e1cc26022d839c1fa4641cb7c0fbad4d4e67db634ca71ebcda0b5f",
-        "size_bytes": 15767020
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "shuffle1.sy",
-        "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-        "size_bytes": 1671
+        "path": "shuffle1.sy"
       },
-      "source_group": "sg-f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "shuffle1.in"
+      },
+      "expected_output": {
+        "path": "shuffle1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "shuffle2.out",
-        "sha256": "bd9ca84d3429ad9d9ec7bd4160964c5338589d1e96d45cbaac17a68d99c2f4fd",
-        "size_bytes": 360074
-      },
-      "family": "shuffle",
       "id": "rv64gc:shuffle2",
-      "input": {
-        "path": "shuffle2.in",
-        "sha256": "d2f5af514fde5450845ac7cc65c9cf88e5642773ec01fd6220658d431f8736ee",
-        "size_bytes": 4111444
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "shuffle2.sy",
-        "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-        "size_bytes": 1671
+        "path": "shuffle2.sy"
       },
-      "source_group": "sg-f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "shuffle2.in"
+      },
+      "expected_output": {
+        "path": "shuffle2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "sl1.out",
-        "sha256": "b478e50347cd916bfd27f5fdc9ddce69f5fd82c305f0dd6cea053a1d18c29548",
-        "size_bytes": 1797
-      },
-      "family": "sl",
       "id": "rv64gc:sl1",
-      "input": {
-        "path": "sl1.in",
-        "sha256": "2ae50707ccc788d1b3fda2ce981f15d458aa2fbd071057616d56aa93e76d991a",
-        "size_bytes": 6
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "sl1.sy",
-        "sha256": "c6fa44c09d45f0f0073b5c7a4814512b34193bfd51f7c4991f2cdc4511fa19c0",
-        "size_bytes": 884
+        "path": "sl1.sy"
       },
-      "source_group": "sg-c6fa44c09d45f0f0073b5c7a4814512b34193bfd51f7c4991f2cdc4511fa19c0",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "sl1.in"
+      },
+      "expected_output": {
+        "path": "sl1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "sl2.out",
-        "sha256": "b7d29e0f0fa4bf8cfbd678958c009d17f46d31d8ecc0f6f6f2cbae98a7c980e2",
-        "size_bytes": 2297
-      },
-      "family": "sl",
       "id": "rv64gc:sl2",
-      "input": {
-        "path": "sl2.in",
-        "sha256": "6d6d1031f21c91715089f5daccb5e33b6d26a4ce501dd4de677cd7b04889df7f",
-        "size_bytes": 6
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "sl2.sy",
-        "sha256": "edf5048dcc578a12807656a435a87c7a2eb0fb257aa374c41d9f9e100dfd24e6",
-        "size_bytes": 884
+        "path": "sl2.sy"
       },
-      "source_group": "sg-edf5048dcc578a12807656a435a87c7a2eb0fb257aa374c41d9f9e100dfd24e6",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "sl2.in"
+      },
+      "expected_output": {
+        "path": "sl2.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "sl3.out",
-        "sha256": "783644a474daf583b6128b07e7f7bb1824f296571dce2cfc8b110f36ec5b7465",
-        "size_bytes": 797
-      },
-      "family": "sl",
       "id": "rv64gc:sl3",
-      "input": {
-        "path": "sl3.in",
-        "sha256": "b0699ac9ad9290780b59b3b2724ed16d306f4a4e69c3865c966ece49369ab425",
-        "size_bytes": 6
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "sl3.sy",
-        "sha256": "fcf726b23b9722a98fac1891a1e0ef0a14e7752fece012737ae5760612075b52",
-        "size_bytes": 884
+        "path": "sl3.sy"
       },
-      "source_group": "sg-fcf726b23b9722a98fac1891a1e0ef0a14e7752fece012737ae5760612075b52",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "sl3.in"
+      },
+      "expected_output": {
+        "path": "sl3.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "sort_search.out",
-        "sha256": "80b97a46b795a443cbca4732dc7122cfdd2bf8a730b9da7caf51c8ca481d131a",
-        "size_bytes": 23
-      },
-      "family": "sort_search",
       "id": "rv64gc:sort_search",
+      "source": {
+        "path": "sort_search.sy"
+      },
       "input": null,
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
-      "source": {
-        "path": "sort_search.sy",
-        "sha256": "567941c06b7fdd626490ef164d4cb7f0c224c5018daeab3191b884e81b921171",
-        "size_bytes": 1765
-      },
-      "source_group": "sg-567941c06b7fdd626490ef164d4cb7f0c224c5018daeab3191b884e81b921171",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "expected_output": {
+        "path": "sort_search.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "transpose0.out",
-        "sha256": "e9e95c09e33ce8246dc4b47c7f33db12250043c718e4681b971fb5e999161d23",
-        "size_bytes": 12
-      },
-      "family": "transpose",
       "id": "rv64gc:transpose0",
-      "input": {
-        "path": "transpose0.in",
-        "sha256": "2029ff2c91ce8309d74dbe7c08fff78dd3d5fcdc3cc641ee447dfc43daa9751e",
-        "size_bytes": 102
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "transpose0.sy",
-        "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-        "size_bytes": 998
+        "path": "transpose0.sy"
       },
-      "source_group": "sg-c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "transpose0.in"
+      },
+      "expected_output": {
+        "path": "transpose0.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "transpose1.out",
-        "sha256": "8c151212f7e3a9d906d9c640f85b62d0cf97ce7521e94e1d7c6876e8bcdc88be",
-        "size_bytes": 12
-      },
-      "family": "transpose",
       "id": "rv64gc:transpose1",
-      "input": {
-        "path": "transpose1.in",
-        "sha256": "39d65ada1f9f527d2b37fa32a0bd45e718f9803f046bc69ceb7eb0509c7bf64c",
-        "size_bytes": 109
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "transpose1.sy",
-        "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-        "size_bytes": 998
+        "path": "transpose1.sy"
       },
-      "source_group": "sg-c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "transpose1.in"
+      },
+      "expected_output": {
+        "path": "transpose1.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "transpose2.out",
-        "sha256": "f057b968a55998e83132fc0a74987b6f1a8ec973e39634d23858ec570111cab2",
-        "size_bytes": 13
-      },
-      "family": "transpose",
       "id": "rv64gc:transpose2",
-      "input": {
-        "path": "transpose2.in",
-        "sha256": "84223fecc983b9cba884665fa6c46b1f7ebdc7c6a3c6c320b896ca8dabe9603a",
-        "size_bytes": 1514
-      },
-      "provenance": {
-        "data_role": "B4",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "NOASSERTION"
-        },
-        "origin": {
-          "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-          "source_id": "official-compiler2025:riscv-performance-preliminary"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "transpose2.sy",
-        "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-        "size_bytes": 998
+        "path": "transpose2.sy"
       },
-      "source_group": "sg-c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-      "tags": [],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "transpose2.in"
+      },
+      "expected_output": {
+        "path": "transpose2.out"
+      }
     }
-  ],
-  "data_quality": {
-    "duplicate_file_groups": [
-      {
-        "members": [
-          {
-            "logical_id": "h-5-02",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-            "size_bytes": 1139,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-5-03",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-            "size_bytes": 1139,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-        "size_bytes": 1139
-      },
-      {
-        "members": [
-          {
-            "logical_id": "01_mm1",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-            "size_bytes": 1429,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "01_mm2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-            "size_bytes": 1429,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "01_mm3",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-            "size_bytes": 1429,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-        "size_bytes": 1429
-      },
-      {
-        "members": [
-          {
-            "logical_id": "gameoflife-oscillator",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-            "size_bytes": 1910,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "gameoflife-p61glidergun",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-            "size_bytes": 1910,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-        "size_bytes": 1910
-      },
-      {
-        "members": [
-          {
-            "logical_id": "03_sort1",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-            "size_bytes": 2145,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "03_sort2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-            "size_bytes": 2145,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "03_sort3",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-            "size_bytes": 2145,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-        "size_bytes": 2145
-      },
-      {
-        "members": [
-          {
-            "logical_id": "h-2-01",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "expected_output",
-            "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-            "size_bytes": 5,
-            "suffix": ".out"
-          },
-          {
-            "logical_id": "h-2-02",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "expected_output",
-            "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-            "size_bytes": 5,
-            "suffix": ".out"
-          },
-          {
-            "logical_id": "h-2-03",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "expected_output",
-            "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-            "size_bytes": 5,
-            "suffix": ".out"
-          }
-        ],
-        "sha256": "9f8736eebfc8bf792a4dc3c5056e2966481a8bc363caf88881bce1d601b757d9",
-        "size_bytes": 5
-      },
-      {
-        "members": [
-          {
-            "logical_id": "h-9-01",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-            "size_bytes": 938,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-9-02",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-            "size_bytes": 938,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-9-03",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-            "size_bytes": 938,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-        "size_bytes": 938
-      },
-      {
-        "members": [
-          {
-            "logical_id": "fft0",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-            "size_bytes": 1934,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "fft1",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-            "size_bytes": 1934,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "fft2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-            "size_bytes": 1934,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-        "size_bytes": 1934
-      },
-      {
-        "members": [
-          {
-            "logical_id": "h-10-01",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-            "size_bytes": 1134,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-10-02",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-            "size_bytes": 1134,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-        "size_bytes": 1134
-      },
-      {
-        "members": [
-          {
-            "logical_id": "h-8-01",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-            "size_bytes": 1986,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-8-02",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-            "size_bytes": 1986,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-8-03",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-            "size_bytes": 1986,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-        "size_bytes": 1986
-      },
-      {
-        "members": [
-          {
-            "logical_id": "transpose0",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-            "size_bytes": 998,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "transpose1",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-            "size_bytes": 998,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "transpose2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-            "size_bytes": 998,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-        "size_bytes": 998
-      },
-      {
-        "members": [
-          {
-            "logical_id": "h-1-01",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-            "size_bytes": 426,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-1-02",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-            "size_bytes": 426,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "h-1-03",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-            "size_bytes": 426,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-        "size_bytes": 426
-      },
-      {
-        "members": [
-          {
-            "logical_id": "crypto-1",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-            "size_bytes": 3663,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "crypto-2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-            "size_bytes": 3663,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "crypto-3",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-            "size_bytes": 3663,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-        "size_bytes": 3663
-      },
-      {
-        "members": [
-          {
-            "logical_id": "shuffle0",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-            "size_bytes": 1671,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "shuffle1",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-            "size_bytes": 1671,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "shuffle2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-            "size_bytes": 1671,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-        "size_bytes": 1671
-      },
-      {
-        "members": [
-          {
-            "logical_id": "if-combine2",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-            "size_bytes": 83338,
-            "suffix": ".sy"
-          },
-          {
-            "logical_id": "if-combine3",
-            "provenance": {
-              "data_role": "B4",
-              "derived_from": null,
-              "license": {
-                "spdx_expression": "NOASSERTION"
-              },
-              "origin": {
-                "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-                "source_id": "official-compiler2025:riscv-performance-preliminary"
-              },
-              "validity": {
-                "reason": "verified",
-                "status": "included"
-              }
-            },
-            "role": "source",
-            "sha256": "ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-            "size_bytes": 83338,
-            "suffix": ".sy"
-          }
-        ],
-        "sha256": "ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-        "size_bytes": 83338
-      }
-    ],
-    "duplicate_group_count": 14,
-    "family_groups": [
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "01_mm",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "03_sort",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 3,
-        "family": "04_spmv",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "crypto",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "fft",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 1,
-        "distinct_source_groups": 1,
-        "family": "gameoflife-gosper",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 1,
-        "distinct_source_groups": 1,
-        "family": "gameoflife-oscillator",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 1,
-        "distinct_source_groups": 1,
-        "family": "gameoflife-p61glidergun",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "h-1",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 2,
-        "family": "h-10",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 3,
-        "family": "h-11",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 3,
-        "family": "h-2",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 3,
-        "family": "h-4",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 2,
-        "family": "h-5",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 1,
-        "distinct_source_groups": 1,
-        "family": "h-7",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "h-8",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "h-9",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 2,
-        "family": "if-combine",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 3,
-        "family": "matmul",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "shuffle",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 3,
-        "family": "sl",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 1,
-        "distinct_source_groups": 1,
-        "family": "sort_search",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 3,
-        "distinct_source_groups": 1,
-        "family": "transpose",
-        "target": "rv64gc"
-      }
-    ],
-    "orphan_count": 0,
-    "orphan_sidecars": [],
-    "source_group_count": 37,
-    "source_groups": [
-      {
-        "case_count": 2,
-        "families": [
-          "h-5"
-        ],
-        "members": [
-          "rv64gc:h-5-02",
-          "rv64gc:h-5-03"
-        ],
-        "source_group": "sg-0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a",
-        "source_sha256": "0506c04c504f1a839389d9e157e199debc1dc9ea7148038b403f8f72fc93801a"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "matmul"
-        ],
-        "members": [
-          "rv64gc:matmul3"
-        ],
-        "source_group": "sg-0ddb47b495e11ff38a16a4346aaf132e8a0607197524128c5e580db40f5223ef",
-        "source_sha256": "0ddb47b495e11ff38a16a4346aaf132e8a0607197524128c5e580db40f5223ef"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "01_mm"
-        ],
-        "members": [
-          "rv64gc:01_mm1",
-          "rv64gc:01_mm2",
-          "rv64gc:01_mm3"
-        ],
-        "source_group": "sg-19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623",
-        "source_sha256": "19e9b65feb812a93afc0992fe39dc393c5c14d5a271f6aed5d5fd8cf28d07623"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-4"
-        ],
-        "members": [
-          "rv64gc:h-4-01"
-        ],
-        "source_group": "sg-226e3cbf32ae30698d5e10a7536f2c0ef953504e9af475c38d0412e69b9c184a",
-        "source_sha256": "226e3cbf32ae30698d5e10a7536f2c0ef953504e9af475c38d0412e69b9c184a"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-2"
-        ],
-        "members": [
-          "rv64gc:h-2-01"
-        ],
-        "source_group": "sg-33873e68e9f4b441102827687c5ebc4c74e82a98b0accdb8d43fe38c7508abdf",
-        "source_sha256": "33873e68e9f4b441102827687c5ebc4c74e82a98b0accdb8d43fe38c7508abdf"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-11"
-        ],
-        "members": [
-          "rv64gc:h-11-03"
-        ],
-        "source_group": "sg-3c764b04081874990fe088ff829356f4f711cdd51023678d31967ac1b939e963",
-        "source_sha256": "3c764b04081874990fe088ff829356f4f711cdd51023678d31967ac1b939e963"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-5"
-        ],
-        "members": [
-          "rv64gc:h-5-01"
-        ],
-        "source_group": "sg-43e06133c788a444a494c061d0ccfd0171c1023a41d67923f36b2b8f9c65085b",
-        "source_sha256": "43e06133c788a444a494c061d0ccfd0171c1023a41d67923f36b2b8f9c65085b"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-4"
-        ],
-        "members": [
-          "rv64gc:h-4-03"
-        ],
-        "source_group": "sg-44973ff49ac6ef72ebd7302bc0784407b4c6902f48121318698dbd1ba3883419",
-        "source_sha256": "44973ff49ac6ef72ebd7302bc0784407b4c6902f48121318698dbd1ba3883419"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-4"
-        ],
-        "members": [
-          "rv64gc:h-4-02"
-        ],
-        "source_group": "sg-552a647972f2f67ce82a71e1b2181caa2890c0d98c78f96ea6347ed6d9310c3b",
-        "source_sha256": "552a647972f2f67ce82a71e1b2181caa2890c0d98c78f96ea6347ed6d9310c3b"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "sort_search"
-        ],
-        "members": [
-          "rv64gc:sort_search"
-        ],
-        "source_group": "sg-567941c06b7fdd626490ef164d4cb7f0c224c5018daeab3191b884e81b921171",
-        "source_sha256": "567941c06b7fdd626490ef164d4cb7f0c224c5018daeab3191b884e81b921171"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "gameoflife-gosper"
-        ],
-        "members": [
-          "rv64gc:gameoflife-gosper"
-        ],
-        "source_group": "sg-573fff0e9aca33975cd8bfdb4ebbadeac18784439a85af840b2adc2ae87f7688",
-        "source_sha256": "573fff0e9aca33975cd8bfdb4ebbadeac18784439a85af840b2adc2ae87f7688"
-      },
-      {
-        "case_count": 2,
-        "families": [
-          "gameoflife-oscillator",
-          "gameoflife-p61glidergun"
-        ],
-        "members": [
-          "rv64gc:gameoflife-oscillator",
-          "rv64gc:gameoflife-p61glidergun"
-        ],
-        "source_group": "sg-5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503",
-        "source_sha256": "5bf210f836cde244bc7c39365a531f9d0c58a495e9594c2b25d0c92a0f651503"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-2"
-        ],
-        "members": [
-          "rv64gc:h-2-02"
-        ],
-        "source_group": "sg-62cb9acd19cf0075e8440a33d074654bce916ef6464bd60b8898a771add33664",
-        "source_sha256": "62cb9acd19cf0075e8440a33d074654bce916ef6464bd60b8898a771add33664"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "04_spmv"
-        ],
-        "members": [
-          "rv64gc:04_spmv2"
-        ],
-        "source_group": "sg-695728929578d1563054acb488a77b4fb118c9124cf6bbbc989417224aa6a94e",
-        "source_sha256": "695728929578d1563054acb488a77b4fb118c9124cf6bbbc989417224aa6a94e"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "matmul"
-        ],
-        "members": [
-          "rv64gc:matmul2"
-        ],
-        "source_group": "sg-6cb4c2c6e5fd041eab1c40630316c4fa9b004d9ec2d7dd6dd9eb375592bfc0c3",
-        "source_sha256": "6cb4c2c6e5fd041eab1c40630316c4fa9b004d9ec2d7dd6dd9eb375592bfc0c3"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "if-combine"
-        ],
-        "members": [
-          "rv64gc:if-combine1"
-        ],
-        "source_group": "sg-742c2f136722ddefaab2dc95ec7e9155d603b8a92b3d47cc17e162d56216128c",
-        "source_sha256": "742c2f136722ddefaab2dc95ec7e9155d603b8a92b3d47cc17e162d56216128c"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "04_spmv"
-        ],
-        "members": [
-          "rv64gc:04_spmv3"
-        ],
-        "source_group": "sg-7c032616855343fb6b1c7ef44caada0ef6e45aa2b1f294b6e4c86e8b503ed13c",
-        "source_sha256": "7c032616855343fb6b1c7ef44caada0ef6e45aa2b1f294b6e4c86e8b503ed13c"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "03_sort"
-        ],
-        "members": [
-          "rv64gc:03_sort1",
-          "rv64gc:03_sort2",
-          "rv64gc:03_sort3"
-        ],
-        "source_group": "sg-7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191",
-        "source_sha256": "7c9cc78afaab960faa0f1c3687b80df8a219e205c2ac2495028699ac76a18191"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-10"
-        ],
-        "members": [
-          "rv64gc:h-10-03"
-        ],
-        "source_group": "sg-8a70e7642ef393b8fff118d12afd29766392f3fd615c70ee3fe2b1539cba6eb8",
-        "source_sha256": "8a70e7642ef393b8fff118d12afd29766392f3fd615c70ee3fe2b1539cba6eb8"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "04_spmv"
-        ],
-        "members": [
-          "rv64gc:04_spmv1"
-        ],
-        "source_group": "sg-951eb68cbaed9f8aca8034d9d15c4cf2539aa1221565df281764c920fa9e5f71",
-        "source_sha256": "951eb68cbaed9f8aca8034d9d15c4cf2539aa1221565df281764c920fa9e5f71"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "h-9"
-        ],
-        "members": [
-          "rv64gc:h-9-01",
-          "rv64gc:h-9-02",
-          "rv64gc:h-9-03"
-        ],
-        "source_group": "sg-a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20",
-        "source_sha256": "a1842ed91896a0056e3ae4714dc174e23f56655a4d9f20172527960d4419ca20"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "fft"
-        ],
-        "members": [
-          "rv64gc:fft0",
-          "rv64gc:fft1",
-          "rv64gc:fft2"
-        ],
-        "source_group": "sg-a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5",
-        "source_sha256": "a80e8ebc966fe169e0c83d3856ab4489a8786980120198b1623f271966c1b0a5"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "matmul"
-        ],
-        "members": [
-          "rv64gc:matmul1"
-        ],
-        "source_group": "sg-ab644d05a34b0b8c814dec966985856aedb83a5e70038811635347c5c7da7a09",
-        "source_sha256": "ab644d05a34b0b8c814dec966985856aedb83a5e70038811635347c5c7da7a09"
-      },
-      {
-        "case_count": 2,
-        "families": [
-          "h-10"
-        ],
-        "members": [
-          "rv64gc:h-10-01",
-          "rv64gc:h-10-02"
-        ],
-        "source_group": "sg-ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1",
-        "source_sha256": "ac5c17dc5ab0497086b2baa1ca75e83a725311ca5a5005b7dd4af1c9ec2764b1"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-11"
-        ],
-        "members": [
-          "rv64gc:h-11-02"
-        ],
-        "source_group": "sg-b52e6cb38598b396b03117bee2b2af0d5e92c256698824ab082af93e2248a329",
-        "source_sha256": "b52e6cb38598b396b03117bee2b2af0d5e92c256698824ab082af93e2248a329"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "h-8"
-        ],
-        "members": [
-          "rv64gc:h-8-01",
-          "rv64gc:h-8-02",
-          "rv64gc:h-8-03"
-        ],
-        "source_group": "sg-b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82",
-        "source_sha256": "b5758dc82a5043ee193b582dfecd114a61133d76cc0a75f17fc94221961dcf82"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-7"
-        ],
-        "members": [
-          "rv64gc:h-7-01"
-        ],
-        "source_group": "sg-b680d01f5303ac7c290e353f800caf89729c91e2d4714bf2b8d67655441fd84c",
-        "source_sha256": "b680d01f5303ac7c290e353f800caf89729c91e2d4714bf2b8d67655441fd84c"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "sl"
-        ],
-        "members": [
-          "rv64gc:sl1"
-        ],
-        "source_group": "sg-c6fa44c09d45f0f0073b5c7a4814512b34193bfd51f7c4991f2cdc4511fa19c0",
-        "source_sha256": "c6fa44c09d45f0f0073b5c7a4814512b34193bfd51f7c4991f2cdc4511fa19c0"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "transpose"
-        ],
-        "members": [
-          "rv64gc:transpose0",
-          "rv64gc:transpose1",
-          "rv64gc:transpose2"
-        ],
-        "source_group": "sg-c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc",
-        "source_sha256": "c766b9712e4b3d36e6ea3a77d5c59c077e949e49d7e68c420d57cf8f4c643acc"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-11"
-        ],
-        "members": [
-          "rv64gc:h-11-01"
-        ],
-        "source_group": "sg-d10743135da4300b634e21aee9ddb37f837bc3be11445c97c2c66a224ac1d308",
-        "source_sha256": "d10743135da4300b634e21aee9ddb37f837bc3be11445c97c2c66a224ac1d308"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "h-2"
-        ],
-        "members": [
-          "rv64gc:h-2-03"
-        ],
-        "source_group": "sg-ddde13814df7cf024f7eccd37666fe7d03588e545fe481b8e3a184ea82445fb2",
-        "source_sha256": "ddde13814df7cf024f7eccd37666fe7d03588e545fe481b8e3a184ea82445fb2"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "h-1"
-        ],
-        "members": [
-          "rv64gc:h-1-01",
-          "rv64gc:h-1-02",
-          "rv64gc:h-1-03"
-        ],
-        "source_group": "sg-e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d",
-        "source_sha256": "e1078e1081141a5bf2407ebfc334e092a1565c1b5c41fb6bae379929e27cc43d"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "crypto"
-        ],
-        "members": [
-          "rv64gc:crypto-1",
-          "rv64gc:crypto-2",
-          "rv64gc:crypto-3"
-        ],
-        "source_group": "sg-ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f",
-        "source_sha256": "ea2ec81a4bd6c009db9075663dafe0a1334e52f83c4a9fc92753458862f62f9f"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "sl"
-        ],
-        "members": [
-          "rv64gc:sl2"
-        ],
-        "source_group": "sg-edf5048dcc578a12807656a435a87c7a2eb0fb257aa374c41d9f9e100dfd24e6",
-        "source_sha256": "edf5048dcc578a12807656a435a87c7a2eb0fb257aa374c41d9f9e100dfd24e6"
-      },
-      {
-        "case_count": 3,
-        "families": [
-          "shuffle"
-        ],
-        "members": [
-          "rv64gc:shuffle0",
-          "rv64gc:shuffle1",
-          "rv64gc:shuffle2"
-        ],
-        "source_group": "sg-f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b",
-        "source_sha256": "f3c50bcdd975ee988d8f3aeb20787cc72ab67bc757e906bf06fc7bdc72f20b7b"
-      },
-      {
-        "case_count": 1,
-        "families": [
-          "sl"
-        ],
-        "members": [
-          "rv64gc:sl3"
-        ],
-        "source_group": "sg-fcf726b23b9722a98fac1891a1e0ef0a14e7752fece012737ae5760612075b52",
-        "source_sha256": "fcf726b23b9722a98fac1891a1e0ef0a14e7752fece012737ae5760612075b52"
-      },
-      {
-        "case_count": 2,
-        "families": [
-          "if-combine"
-        ],
-        "members": [
-          "rv64gc:if-combine2",
-          "rv64gc:if-combine3"
-        ],
-        "source_group": "sg-ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f",
-        "source_sha256": "ff2b36440af63a4fc40fc05f4588d892720f7e2aedd6095ef185399020fa866f"
-      }
-    ]
-  },
-  "provenance": {
-    "data_role": "B4",
-    "derived_from": null,
-    "license": {
-      "spdx_expression": "NOASSERTION"
-    },
-    "origin": {
-      "snapshot_sha256": "23b32acc70dd6423b729e30d06659fb955bc636fd4eeb01b262e74123e0816c0",
-      "source_id": "official-compiler2025:riscv-performance-preliminary"
-    },
-    "validity": {
-      "reason": "verified",
-      "status": "included"
-    }
-  },
-  "schema_version": "benchmark-manifest.v1",
-  "suite_id": "official-performance-2025-preliminary"
+  ]
 }

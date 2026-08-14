@@ -21,8 +21,7 @@ emission cannot be disabled.
 
 `BenchmarkCompiler` is the development-only entry for deterministic pass
 profiles and JSONL optimization remarks. It does not change the formal compiler
-interface. See `docs/optimization/README.md` for the profile contract and
-reproducible benchmark workflow.
+interface. See `docs/optimization/README.md` for the evaluation workflow.
 
 ## Correctness and proxy performance tools
 
@@ -34,12 +33,11 @@ python benchmarks/generate.py --check
 python -m unittest discover -s benchmarks/tests -v
 ```
 
-The versioned benchmark CLI inventories official packages, runs compile/link/
-execute validation, records deterministic QEMU counters, produces ablation and
-Oracle analyses, and emits normalized reports:
+The candidate evaluator runs compile/link/QEMU correctness and instruction-count
+comparisons with CLI-controlled parallelism:
 
 ```sh
-python -m tools.benchmark --help
+python3 scripts/evaluate_candidates.py --max-runs 6 --jobs 4
 ```
 
 QEMU dynamic instructions, memory accesses, and the documented L1D model are

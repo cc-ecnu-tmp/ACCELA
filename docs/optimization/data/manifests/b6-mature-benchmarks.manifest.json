@@ -1,4168 +1,1060 @@
 {
   "cases": [
     {
-      "expected_output": {
-        "path": "datasets/pb_2mm_i32/correctness.out",
-        "sha256": "b4e1d3617071b244a66663273d5430b42788683cfbe3b3267ab20db051ecb2f7",
-        "size_bytes": 14
-      },
-      "family": "pb_2mm_i32",
       "id": "rv64gc:pb_2mm_i32:correctness",
-      "input": {
-        "path": "datasets/pb_2mm_i32/correctness.in",
-        "sha256": "604ec21929878093339c61867df998d96a39c9d0b169df259c54c61f24e31741",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_2mm_i32.sy",
-        "sha256": "4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-        "size_bytes": 1177
+        "path": "programs/pb_2mm_i32.sy"
       },
-      "source_group": "sg-4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_2mm_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_2mm_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_2mm_i32/small.out",
-        "sha256": "2704fcd09b2988bcfd1f650653ec7a45de7e5040bb2c0dca01ef8bec596b7f04",
-        "size_bytes": 12
-      },
-      "family": "pb_2mm_i32",
       "id": "rv64gc:pb_2mm_i32:small",
-      "input": {
-        "path": "datasets/pb_2mm_i32/small.in",
-        "sha256": "82e760ec727e19d8d95b3e82d4f645eef4747f1370b420a9215282eeab322bcd",
-        "size_bytes": 7
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_2mm_i32.sy",
-        "sha256": "4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-        "size_bytes": 1177
+        "path": "programs/pb_2mm_i32.sy"
       },
-      "source_group": "sg-4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_2mm_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_2mm_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_2mm_i32/medium.out",
-        "sha256": "bf784883a20c6f1ed1fddde5bc9cabc6c02c3e3b65019a46d0da07c55ce1986c",
-        "size_bytes": 13
-      },
-      "family": "pb_2mm_i32",
       "id": "rv64gc:pb_2mm_i32:medium",
-      "input": {
-        "path": "datasets/pb_2mm_i32/medium.in",
-        "sha256": "661df891da5684d7348f5fe8c96afff74a11cd214e24fb6ba0a62fc97646e9a1",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_2mm_i32.sy",
-        "sha256": "4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-        "size_bytes": 1177
+        "path": "programs/pb_2mm_i32.sy"
       },
-      "source_group": "sg-4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_2mm_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_2mm_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_2mm_i32/large.out",
-        "sha256": "d3d147e77045681712a88cca16aef35a4ab32b7d918cb5c2b57b43479e22f1ce",
-        "size_bytes": 13
-      },
-      "family": "pb_2mm_i32",
       "id": "rv64gc:pb_2mm_i32:large",
-      "input": {
-        "path": "datasets/pb_2mm_i32/large.in",
-        "sha256": "4a1ce549cccc149433dfd66118ba597547403518c5d6e4490f9bc1a1dd07d921",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_2mm_i32.sy",
-        "sha256": "4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-        "size_bytes": 1177
+        "path": "programs/pb_2mm_i32.sy"
       },
-      "source_group": "sg-4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_2mm_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_2mm_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_3mm_i32/correctness.out",
-        "sha256": "42c887fba5f28fd08416076da3ab9138a500a2e0e016c866c37d34354d2e86ac",
-        "size_bytes": 13
-      },
-      "family": "pb_3mm_i32",
       "id": "rv64gc:pb_3mm_i32:correctness",
-      "input": {
-        "path": "datasets/pb_3mm_i32/correctness.in",
-        "sha256": "d6651a85b551f3d9c2f9d835de58e633eaab07df22a2c33fdc75c7e1d9bae33e",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_3mm_i32.sy",
-        "sha256": "c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-        "size_bytes": 1272
+        "path": "programs/pb_3mm_i32.sy"
       },
-      "source_group": "sg-c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_3mm_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_3mm_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_3mm_i32/small.out",
-        "sha256": "e27e689ea26fa279fe6b6190c66cdc1b7fd05cef09f5f787f4844c91b1758e9a",
-        "size_bytes": 14
-      },
-      "family": "pb_3mm_i32",
       "id": "rv64gc:pb_3mm_i32:small",
-      "input": {
-        "path": "datasets/pb_3mm_i32/small.in",
-        "sha256": "a46cb565f4159ee99b4437511028ac1ad1c01b835cf9c6b5883d840f6d7556b3",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_3mm_i32.sy",
-        "sha256": "c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-        "size_bytes": 1272
+        "path": "programs/pb_3mm_i32.sy"
       },
-      "source_group": "sg-c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_3mm_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_3mm_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_3mm_i32/medium.out",
-        "sha256": "976f55b07245a8a0efd6b0299793f33462715917fb84c4b16e64d26ae307449d",
-        "size_bytes": 13
-      },
-      "family": "pb_3mm_i32",
       "id": "rv64gc:pb_3mm_i32:medium",
-      "input": {
-        "path": "datasets/pb_3mm_i32/medium.in",
-        "sha256": "6a14479d2b7e19ef832f12cef3497f6ca2a13a90d4b530ce92c285d153341b78",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_3mm_i32.sy",
-        "sha256": "c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-        "size_bytes": 1272
+        "path": "programs/pb_3mm_i32.sy"
       },
-      "source_group": "sg-c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_3mm_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_3mm_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_3mm_i32/large.out",
-        "sha256": "11d015a8db9eac6c7889f7e8ef792de3ac3277762efb1769bec4860970e096e6",
-        "size_bytes": 13
-      },
-      "family": "pb_3mm_i32",
       "id": "rv64gc:pb_3mm_i32:large",
-      "input": {
-        "path": "datasets/pb_3mm_i32/large.in",
-        "sha256": "e243ac1fd54ced89f4b0ebce36589e744fa659cc4edc96c29f397edae63d6e46",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_3mm_i32.sy",
-        "sha256": "c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-        "size_bytes": 1272
+        "path": "programs/pb_3mm_i32.sy"
       },
-      "source_group": "sg-c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_3mm_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_3mm_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_atax_i32/correctness.out",
-        "sha256": "194e963c048885ba6ff6bbb74cf483a9a34d84e9ed09170109d79f82374cd71c",
-        "size_bytes": 13
-      },
-      "family": "pb_atax_i32",
       "id": "rv64gc:pb_atax_i32:correctness",
-      "input": {
-        "path": "datasets/pb_atax_i32/correctness.in",
-        "sha256": "80dded295867657064ba1207423b35d7a759296bba54fc1132c5ebba4437cb47",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_atax_i32.sy",
-        "sha256": "ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-        "size_bytes": 1364
+        "path": "programs/pb_atax_i32.sy"
       },
-      "source_group": "sg-ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_atax_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_atax_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_atax_i32/small.out",
-        "sha256": "0c887281ac7f762e5475fd1c33763e8549eefbef044929a28b1b9ba757d5cd78",
-        "size_bytes": 12
-      },
-      "family": "pb_atax_i32",
       "id": "rv64gc:pb_atax_i32:small",
-      "input": {
-        "path": "datasets/pb_atax_i32/small.in",
-        "sha256": "b2d8959d3c11575187e897df18e70093a7431ff4cfa6a3b201fabd92ee111ae4",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_atax_i32.sy",
-        "sha256": "ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-        "size_bytes": 1364
+        "path": "programs/pb_atax_i32.sy"
       },
-      "source_group": "sg-ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_atax_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_atax_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_atax_i32/medium.out",
-        "sha256": "ca2475dabd35e01ad60c034a07b46152a81a5456a057c3bf43b81d52ee9ab903",
-        "size_bytes": 14
-      },
-      "family": "pb_atax_i32",
       "id": "rv64gc:pb_atax_i32:medium",
-      "input": {
-        "path": "datasets/pb_atax_i32/medium.in",
-        "sha256": "9e6a32c6e85e9b55f5e252f0659d8403b02c1d374d9438c9af756c235d67f586",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_atax_i32.sy",
-        "sha256": "ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-        "size_bytes": 1364
+        "path": "programs/pb_atax_i32.sy"
       },
-      "source_group": "sg-ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_atax_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_atax_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_atax_i32/large.out",
-        "sha256": "a3e845900d2d42816ad546af683958a0bad501611c8c624a2fb9a01afc712961",
-        "size_bytes": 14
-      },
-      "family": "pb_atax_i32",
       "id": "rv64gc:pb_atax_i32:large",
-      "input": {
-        "path": "datasets/pb_atax_i32/large.in",
-        "sha256": "df754a1600a4ac970e75b169af379a7f2c3a7799532f65fbda023b7dc65c0e79",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_atax_i32.sy",
-        "sha256": "ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-        "size_bytes": 1364
+        "path": "programs/pb_atax_i32.sy"
       },
-      "source_group": "sg-ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_atax_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_atax_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_bicg_i32/correctness.out",
-        "sha256": "e0fc738a11cb18039923d6c705cea3aa183b217b915fbc4846ec97c381171baa",
-        "size_bytes": 13
-      },
-      "family": "pb_bicg_i32",
       "id": "rv64gc:pb_bicg_i32:correctness",
-      "input": {
-        "path": "datasets/pb_bicg_i32/correctness.in",
-        "sha256": "8948fed8b86cf4120e778bd6a8e46836885923918890a317e96126657311eab3",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_bicg_i32.sy",
-        "sha256": "a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-        "size_bytes": 1337
+        "path": "programs/pb_bicg_i32.sy"
       },
-      "source_group": "sg-a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_bicg_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_bicg_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_bicg_i32/small.out",
-        "sha256": "09bee471d654ce19560161220b7c7fb40cb78ce57a138667f1da286d59dce9a9",
-        "size_bytes": 14
-      },
-      "family": "pb_bicg_i32",
       "id": "rv64gc:pb_bicg_i32:small",
-      "input": {
-        "path": "datasets/pb_bicg_i32/small.in",
-        "sha256": "91519556ccfc24a09b407b0d286970b147353bf8f64fcb73e9e5ad9dd4712e98",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_bicg_i32.sy",
-        "sha256": "a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-        "size_bytes": 1337
+        "path": "programs/pb_bicg_i32.sy"
       },
-      "source_group": "sg-a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_bicg_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_bicg_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_bicg_i32/medium.out",
-        "sha256": "614f1936b2c1ca2d009fb05b1198be1cf984a03acff6e5049b8276b817fc1403",
-        "size_bytes": 13
-      },
-      "family": "pb_bicg_i32",
       "id": "rv64gc:pb_bicg_i32:medium",
-      "input": {
-        "path": "datasets/pb_bicg_i32/medium.in",
-        "sha256": "b4d6ddcf578db9006e9895151e052aa93fd52fe652354d16c5347af1b84c0e25",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_bicg_i32.sy",
-        "sha256": "a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-        "size_bytes": 1337
+        "path": "programs/pb_bicg_i32.sy"
       },
-      "source_group": "sg-a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_bicg_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_bicg_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_bicg_i32/large.out",
-        "sha256": "c94ff85d6413d70124c26bcba58afb6deb6af4cec5261849aec95b4dca5dad57",
-        "size_bytes": 13
-      },
-      "family": "pb_bicg_i32",
       "id": "rv64gc:pb_bicg_i32:large",
-      "input": {
-        "path": "datasets/pb_bicg_i32/large.in",
-        "sha256": "565c774b39913d8224cb8bcbcf1368a64c9cf2a17f3470679a6bd9dd9bd803a9",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_bicg_i32.sy",
-        "sha256": "a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-        "size_bytes": 1337
+        "path": "programs/pb_bicg_i32.sy"
       },
-      "source_group": "sg-a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_bicg_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_bicg_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemm_i32/correctness.out",
-        "sha256": "bb443b9327b9b7965e4e069af9797a32cb94b3220808a45bedea21f72af2807d",
-        "size_bytes": 13
-      },
-      "family": "pb_gemm_i32",
       "id": "rv64gc:pb_gemm_i32:correctness",
-      "input": {
-        "path": "datasets/pb_gemm_i32/correctness.in",
-        "sha256": "8da1335e425b49ad1d83a8ff1d3760cf26b56f41b8b0ad07eadb5f56d3c115f5",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemm_i32.sy",
-        "sha256": "6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-        "size_bytes": 1315
+        "path": "programs/pb_gemm_i32.sy"
       },
-      "source_group": "sg-6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemm_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemm_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemm_i32/small.out",
-        "sha256": "a26151bd56d271342a73ef34daa71a99e37e576e173ce76c2def5e14f411ab68",
-        "size_bytes": 12
-      },
-      "family": "pb_gemm_i32",
       "id": "rv64gc:pb_gemm_i32:small",
-      "input": {
-        "path": "datasets/pb_gemm_i32/small.in",
-        "sha256": "6342c5837ebdc1f05a1416463d2f740cdabcdb9a97eeda64a02f2be7e2215793",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemm_i32.sy",
-        "sha256": "6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-        "size_bytes": 1315
+        "path": "programs/pb_gemm_i32.sy"
       },
-      "source_group": "sg-6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemm_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemm_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemm_i32/medium.out",
-        "sha256": "a3c208609597d8d3a92d2417bf3d1645d59ba3999b18dd705b6f4b2a1fe5a2e5",
-        "size_bytes": 13
-      },
-      "family": "pb_gemm_i32",
       "id": "rv64gc:pb_gemm_i32:medium",
-      "input": {
-        "path": "datasets/pb_gemm_i32/medium.in",
-        "sha256": "44ec29808d7e8de4a4fdeb712acb541804224540f63a66b8d6c2d3890f9cf43c",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemm_i32.sy",
-        "sha256": "6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-        "size_bytes": 1315
+        "path": "programs/pb_gemm_i32.sy"
       },
-      "source_group": "sg-6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemm_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemm_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemm_i32/large.out",
-        "sha256": "88798ea19962276ab44cbb83f9a055328699b92178fb5137bc9c8838e3b8fa1e",
-        "size_bytes": 12
-      },
-      "family": "pb_gemm_i32",
       "id": "rv64gc:pb_gemm_i32:large",
-      "input": {
-        "path": "datasets/pb_gemm_i32/large.in",
-        "sha256": "7e00a64d5e1d555d73992cd72a8856482c08023d516e07d93d10a281aacc2b38",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemm_i32.sy",
-        "sha256": "6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-        "size_bytes": 1315
+        "path": "programs/pb_gemm_i32.sy"
       },
-      "source_group": "sg-6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemm_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemm_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemver_i32/correctness.out",
-        "sha256": "e1ce0b328af1042225de53abd910c6e88014e063bd28dc4b97518d03824ffaf7",
-        "size_bytes": 13
-      },
-      "family": "pb_gemver_i32",
       "id": "rv64gc:pb_gemver_i32:correctness",
-      "input": {
-        "path": "datasets/pb_gemver_i32/correctness.in",
-        "sha256": "189f0c32c73e1f4764c189ea004dbefcbd45a0738fde8f28b831bce46f927147",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemver_i32.sy",
-        "sha256": "f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-        "size_bytes": 1592
+        "path": "programs/pb_gemver_i32.sy"
       },
-      "source_group": "sg-f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemver_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemver_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemver_i32/small.out",
-        "sha256": "4ca381de3179f672a3cfb639bbe518262ef06fcb45b9bc5680b6fc1a0ebe8254",
-        "size_bytes": 13
-      },
-      "family": "pb_gemver_i32",
       "id": "rv64gc:pb_gemver_i32:small",
-      "input": {
-        "path": "datasets/pb_gemver_i32/small.in",
-        "sha256": "dd84717735343f588256a6146e9dfe99f1470325e77654338df4caa0e7384df0",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemver_i32.sy",
-        "sha256": "f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-        "size_bytes": 1592
+        "path": "programs/pb_gemver_i32.sy"
       },
-      "source_group": "sg-f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemver_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemver_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemver_i32/medium.out",
-        "sha256": "c791d2f6300069c2586946ed6cf26610a89a6c156afa32b89fe05ea212207fc9",
-        "size_bytes": 13
-      },
-      "family": "pb_gemver_i32",
       "id": "rv64gc:pb_gemver_i32:medium",
-      "input": {
-        "path": "datasets/pb_gemver_i32/medium.in",
-        "sha256": "a4382472317d594b9c043cecc16476a8e3fdca921c4fa1cb6a9d15224519ea3e",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemver_i32.sy",
-        "sha256": "f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-        "size_bytes": 1592
+        "path": "programs/pb_gemver_i32.sy"
       },
-      "source_group": "sg-f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemver_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemver_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gemver_i32/large.out",
-        "sha256": "c236ad4d7cdda7e6d388cfbc5a70e24e6047e8561f9bad78156c6d6793b30d08",
-        "size_bytes": 14
-      },
-      "family": "pb_gemver_i32",
       "id": "rv64gc:pb_gemver_i32:large",
-      "input": {
-        "path": "datasets/pb_gemver_i32/large.in",
-        "sha256": "f03baa92b9859f789b3daabb2bcb2f69366f2fecd3cf67b0c65292fceeb21446",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gemver_i32.sy",
-        "sha256": "f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-        "size_bytes": 1592
+        "path": "programs/pb_gemver_i32.sy"
       },
-      "source_group": "sg-f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gemver_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gemver_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gesummv_i32/correctness.out",
-        "sha256": "2acbe0a397f3cf5f47817ee2c7f798ef40269337c3c2058248a959b0a5cf8b99",
-        "size_bytes": 13
-      },
-      "family": "pb_gesummv_i32",
       "id": "rv64gc:pb_gesummv_i32:correctness",
-      "input": {
-        "path": "datasets/pb_gesummv_i32/correctness.in",
-        "sha256": "7bd111e7ad9e0fc545b3f2655e89676def452821728cca352fe61a304b17ee2e",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gesummv_i32.sy",
-        "sha256": "bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-        "size_bytes": 1331
+        "path": "programs/pb_gesummv_i32.sy"
       },
-      "source_group": "sg-bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gesummv_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gesummv_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gesummv_i32/small.out",
-        "sha256": "f05727907ee8a3b4d432639df2341b42f115b146fabc490444c959920a55753a",
-        "size_bytes": 12
-      },
-      "family": "pb_gesummv_i32",
       "id": "rv64gc:pb_gesummv_i32:small",
-      "input": {
-        "path": "datasets/pb_gesummv_i32/small.in",
-        "sha256": "392f3f40b5b5228ab95ccceb880914c3e6328fdf5a090d542e7cd77e90618c9f",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gesummv_i32.sy",
-        "sha256": "bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-        "size_bytes": 1331
+        "path": "programs/pb_gesummv_i32.sy"
       },
-      "source_group": "sg-bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gesummv_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gesummv_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gesummv_i32/medium.out",
-        "sha256": "836f3003123fa116616ef08ae1749790b99e2db1c8e22d020bbf3d125c0fefa0",
-        "size_bytes": 12
-      },
-      "family": "pb_gesummv_i32",
       "id": "rv64gc:pb_gesummv_i32:medium",
-      "input": {
-        "path": "datasets/pb_gesummv_i32/medium.in",
-        "sha256": "2ce43f900300fe2e8edce9506fbb02f08c9b779795afa1e810fc2eb184207d33",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gesummv_i32.sy",
-        "sha256": "bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-        "size_bytes": 1331
+        "path": "programs/pb_gesummv_i32.sy"
       },
-      "source_group": "sg-bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gesummv_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gesummv_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_gesummv_i32/large.out",
-        "sha256": "3e614b0b4cb4ec6c0ce297ad34f4627a18d7458ef743628b9828f6502cd57608",
-        "size_bytes": 13
-      },
-      "family": "pb_gesummv_i32",
       "id": "rv64gc:pb_gesummv_i32:large",
-      "input": {
-        "path": "datasets/pb_gesummv_i32/large.in",
-        "sha256": "a713ca599889325dc1b14effc010fef39e3ddfd5f42fefabb19cf079d53c89f6",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_gesummv_i32.sy",
-        "sha256": "bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-        "size_bytes": 1331
+        "path": "programs/pb_gesummv_i32.sy"
       },
-      "source_group": "sg-bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_gesummv_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_gesummv_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_mvt_i32/correctness.out",
-        "sha256": "043cc174bde0dc607760c43abde46f237beed1f3a76cd5f18ea976547761e1e9",
-        "size_bytes": 12
-      },
-      "family": "pb_mvt_i32",
       "id": "rv64gc:pb_mvt_i32:correctness",
-      "input": {
-        "path": "datasets/pb_mvt_i32/correctness.in",
-        "sha256": "9dab05345309381ca7bb1eecaaf57299ab0f657d53484d18147c29b8d461f443",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_mvt_i32.sy",
-        "sha256": "d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-        "size_bytes": 1329
+        "path": "programs/pb_mvt_i32.sy"
       },
-      "source_group": "sg-d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_mvt_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_mvt_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_mvt_i32/small.out",
-        "sha256": "b7a7d5d51677f51eeefa077977e31d940cd0f107847b5e0a1b3deea6ecb6e48f",
-        "size_bytes": 13
-      },
-      "family": "pb_mvt_i32",
       "id": "rv64gc:pb_mvt_i32:small",
-      "input": {
-        "path": "datasets/pb_mvt_i32/small.in",
-        "sha256": "7b41140d73ef62d612a09acea63c0e1522fa6be538d36e268b862f412424b9b6",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_mvt_i32.sy",
-        "sha256": "d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-        "size_bytes": 1329
+        "path": "programs/pb_mvt_i32.sy"
       },
-      "source_group": "sg-d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_mvt_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_mvt_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_mvt_i32/medium.out",
-        "sha256": "b3f7c00d3b753b9f391b8f6f3def8bf035ead1e35b9f14faef54e8af677e1dba",
-        "size_bytes": 13
-      },
-      "family": "pb_mvt_i32",
       "id": "rv64gc:pb_mvt_i32:medium",
-      "input": {
-        "path": "datasets/pb_mvt_i32/medium.in",
-        "sha256": "ebb454179ad7643922a593fea994e5e78bd48914098a121b38c3c00f713a4aa4",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_mvt_i32.sy",
-        "sha256": "d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-        "size_bytes": 1329
+        "path": "programs/pb_mvt_i32.sy"
       },
-      "source_group": "sg-d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_mvt_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_mvt_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_mvt_i32/large.out",
-        "sha256": "e533c4786e9b5fef9e4ac315340bc2d2cf0929b24db84e740df82aec971bf0c1",
-        "size_bytes": 14
-      },
-      "family": "pb_mvt_i32",
       "id": "rv64gc:pb_mvt_i32:large",
-      "input": {
-        "path": "datasets/pb_mvt_i32/large.in",
-        "sha256": "50f9a0b4fbfa21d325a9f91abb53fb56f987762877ec5b32a40f1091d206bc7d",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_mvt_i32.sy",
-        "sha256": "d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-        "size_bytes": 1329
+        "path": "programs/pb_mvt_i32.sy"
       },
-      "source_group": "sg-d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_mvt_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_mvt_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_dynprog_i32/correctness.out",
-        "sha256": "0f186064379776195f50ae1006293b2e70ff2bb1fa666d54e35872fb97780deb",
-        "size_bytes": 12
-      },
-      "family": "pb_dynprog_i32",
       "id": "rv64gc:pb_dynprog_i32:correctness",
-      "input": {
-        "path": "datasets/pb_dynprog_i32/correctness.in",
-        "sha256": "461da1c7f84e6dd1008e09ffa24a677ed81448be0f84c7e9cc983adefc902a6a",
-        "size_bytes": 7
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_dynprog_i32.sy",
-        "sha256": "2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-        "size_bytes": 1132
+        "path": "programs/pb_dynprog_i32.sy"
       },
-      "source_group": "sg-2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_dynprog_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_dynprog_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_dynprog_i32/small.out",
-        "sha256": "051e46f3940d24af2fc378721c479b9fefb75cb9ba2567f0c2eeb0ebd9373851",
-        "size_bytes": 12
-      },
-      "family": "pb_dynprog_i32",
       "id": "rv64gc:pb_dynprog_i32:small",
-      "input": {
-        "path": "datasets/pb_dynprog_i32/small.in",
-        "sha256": "9060b6f2c02fa62beea77620dbebc4d67c448316f2a9befb02be740b20855ce5",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_dynprog_i32.sy",
-        "sha256": "2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-        "size_bytes": 1132
+        "path": "programs/pb_dynprog_i32.sy"
       },
-      "source_group": "sg-2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_dynprog_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_dynprog_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_dynprog_i32/medium.out",
-        "sha256": "acbcaf5b2e7c8b92e768dcc369dfe171aa56a0d3d5cfc2c01d6d548940d5fc25",
-        "size_bytes": 13
-      },
-      "family": "pb_dynprog_i32",
       "id": "rv64gc:pb_dynprog_i32:medium",
-      "input": {
-        "path": "datasets/pb_dynprog_i32/medium.in",
-        "sha256": "4a25699ea68471882bf024b69da081f4e470e21cee88127495bae14be5032f60",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_dynprog_i32.sy",
-        "sha256": "2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-        "size_bytes": 1132
+        "path": "programs/pb_dynprog_i32.sy"
       },
-      "source_group": "sg-2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_dynprog_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_dynprog_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_dynprog_i32/large.out",
-        "sha256": "98c5f014df662ae8b60300bf5acc3371775be218f169073f890538965d33c4c1",
-        "size_bytes": 13
-      },
-      "family": "pb_dynprog_i32",
       "id": "rv64gc:pb_dynprog_i32:large",
-      "input": {
-        "path": "datasets/pb_dynprog_i32/large.in",
-        "sha256": "b4bfc5ad9b5c368a22daecedebe4584bb0d732952f124ba4e4eac716433115da",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_dynprog_i32.sy",
-        "sha256": "2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-        "size_bytes": 1132
+        "path": "programs/pb_dynprog_i32.sy"
       },
-      "source_group": "sg-2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_dynprog_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_dynprog_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_durbin_f32/correctness.out",
-        "sha256": "f034ada9aec39aac4d6e562757104c0ec7bb722e921a28a167f7273e8afee0e3",
-        "size_bytes": 12
-      },
-      "family": "pb_durbin_f32",
       "id": "rv64gc:pb_durbin_f32:correctness",
-      "input": {
-        "path": "datasets/pb_durbin_f32/correctness.in",
-        "sha256": "9af3555909be415114df09e70395741f9f76130acc6184767df2bf4c4e03cbf3",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_durbin_f32.sy",
-        "sha256": "1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-        "size_bytes": 1106
+        "path": "programs/pb_durbin_f32.sy"
       },
-      "source_group": "sg-1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_durbin_f32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_durbin_f32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_durbin_f32/small.out",
-        "sha256": "d2d1ae5c000637593bd99d3010a4e6fa43fd0c6766bca8ea3c9fe9b178ea346f",
-        "size_bytes": 13
-      },
-      "family": "pb_durbin_f32",
       "id": "rv64gc:pb_durbin_f32:small",
-      "input": {
-        "path": "datasets/pb_durbin_f32/small.in",
-        "sha256": "5a07c9b75edee03159b6c2bff125ae6ac4575b88bb102796d9ccb1af1b017fd7",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_durbin_f32.sy",
-        "sha256": "1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-        "size_bytes": 1106
+        "path": "programs/pb_durbin_f32.sy"
       },
-      "source_group": "sg-1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_durbin_f32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_durbin_f32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_durbin_f32/medium.out",
-        "sha256": "2c6936b95885dc93ad80d0ee6987ae2e39d4554d3a766c17fda073f4fad80080",
-        "size_bytes": 12
-      },
-      "family": "pb_durbin_f32",
       "id": "rv64gc:pb_durbin_f32:medium",
-      "input": {
-        "path": "datasets/pb_durbin_f32/medium.in",
-        "sha256": "5800bb69dcb3fcf820e5f3716e216c7f99d572dc9368775be29ace4b21c306d2",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_durbin_f32.sy",
-        "sha256": "1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-        "size_bytes": 1106
+        "path": "programs/pb_durbin_f32.sy"
       },
-      "source_group": "sg-1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_durbin_f32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_durbin_f32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_durbin_f32/large.out",
-        "sha256": "5d4e8d87c7adab6c30ca3b3bd6ab83294636c81f920c69437adf05d41ab3a83b",
-        "size_bytes": 12
-      },
-      "family": "pb_durbin_f32",
       "id": "rv64gc:pb_durbin_f32:large",
-      "input": {
-        "path": "datasets/pb_durbin_f32/large.in",
-        "sha256": "b1568606b5e9203c680274e462b1c2703bcde491aefef8220d2329479525510a",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_durbin_f32.sy",
-        "sha256": "1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-        "size_bytes": 1106
+        "path": "programs/pb_durbin_f32.sy"
       },
-      "source_group": "sg-1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_durbin_f32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_durbin_f32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi1d_i32/correctness.out",
-        "sha256": "9da8471d34c56fb62c1935ac26a23fbffe87e627352cdd3b12e165a876894c27",
-        "size_bytes": 14
-      },
-      "family": "pb_jacobi1d_i32",
       "id": "rv64gc:pb_jacobi1d_i32:correctness",
-      "input": {
-        "path": "datasets/pb_jacobi1d_i32/correctness.in",
-        "sha256": "0ed65b12b48ba21553aa1845b33c794c0f0fea48489f491bf2ee5bef8dd2e259",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi1d_i32.sy",
-        "sha256": "d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-        "size_bytes": 1010
+        "path": "programs/pb_jacobi1d_i32.sy"
       },
-      "source_group": "sg-d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi1d_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi1d_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi1d_i32/small.out",
-        "sha256": "609e00d266627e6ae74083e55258c436ee196acb1450c968a0ad59393746a998",
-        "size_bytes": 13
-      },
-      "family": "pb_jacobi1d_i32",
       "id": "rv64gc:pb_jacobi1d_i32:small",
-      "input": {
-        "path": "datasets/pb_jacobi1d_i32/small.in",
-        "sha256": "94ea3f3ba857459255d8136226a483e7f889740ed500608a99eecfd5a1b82b9d",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi1d_i32.sy",
-        "sha256": "d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-        "size_bytes": 1010
+        "path": "programs/pb_jacobi1d_i32.sy"
       },
-      "source_group": "sg-d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi1d_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi1d_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi1d_i32/medium.out",
-        "sha256": "ba8639ef1727827490f4b99bd607ff9840f32c126426065ab4f6027c80ed569b",
-        "size_bytes": 14
-      },
-      "family": "pb_jacobi1d_i32",
       "id": "rv64gc:pb_jacobi1d_i32:medium",
-      "input": {
-        "path": "datasets/pb_jacobi1d_i32/medium.in",
-        "sha256": "52972dc8078bab09d09d0c2f92a13519eba819dccdb47bec649a516ae6764dbe",
-        "size_bytes": 6
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi1d_i32.sy",
-        "sha256": "d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-        "size_bytes": 1010
+        "path": "programs/pb_jacobi1d_i32.sy"
       },
-      "source_group": "sg-d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi1d_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi1d_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi1d_i32/large.out",
-        "sha256": "106355c116534a98e6423e02ca139803b445a071ab69b74d0b561ccf03e04d1c",
-        "size_bytes": 14
-      },
-      "family": "pb_jacobi1d_i32",
       "id": "rv64gc:pb_jacobi1d_i32:large",
-      "input": {
-        "path": "datasets/pb_jacobi1d_i32/large.in",
-        "sha256": "d300c69426fad535abc8937f95214088402753a202bbee792e82fd4b4dbe06f8",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi1d_i32.sy",
-        "sha256": "d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-        "size_bytes": 1010
+        "path": "programs/pb_jacobi1d_i32.sy"
       },
-      "source_group": "sg-d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi1d_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi1d_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi2d_i32/correctness.out",
-        "sha256": "7c8cf8f1865383aed883f66f95de3a5dcf83561c92a6160aefbae5b14858dc56",
-        "size_bytes": 13
-      },
-      "family": "pb_jacobi2d_i32",
       "id": "rv64gc:pb_jacobi2d_i32:correctness",
-      "input": {
-        "path": "datasets/pb_jacobi2d_i32/correctness.in",
-        "sha256": "aed28c1adf3ab149e027e8e5bd7037f2914a96b29b754f87352d681036d98d6e",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi2d_i32.sy",
-        "sha256": "a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-        "size_bytes": 1374
+        "path": "programs/pb_jacobi2d_i32.sy"
       },
-      "source_group": "sg-a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi2d_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi2d_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi2d_i32/small.out",
-        "sha256": "1681157ca6ad77d92848ae31ff3e6741e2562b6bdf2629fcb9491ac82b69b052",
-        "size_bytes": 13
-      },
-      "family": "pb_jacobi2d_i32",
       "id": "rv64gc:pb_jacobi2d_i32:small",
-      "input": {
-        "path": "datasets/pb_jacobi2d_i32/small.in",
-        "sha256": "d639f8000b3b9d40428e1ad4498ffb958d8a86f52f83b2ee5b438dd5aa19c3ad",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi2d_i32.sy",
-        "sha256": "a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-        "size_bytes": 1374
+        "path": "programs/pb_jacobi2d_i32.sy"
       },
-      "source_group": "sg-a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi2d_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi2d_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi2d_i32/medium.out",
-        "sha256": "bb0b9e970168c9df19c018fa52700cd9d25eabf4961d3af4490a0044f7e03f40",
-        "size_bytes": 13
-      },
-      "family": "pb_jacobi2d_i32",
       "id": "rv64gc:pb_jacobi2d_i32:medium",
-      "input": {
-        "path": "datasets/pb_jacobi2d_i32/medium.in",
-        "sha256": "0c541d053ce93c99a0b0d69a0f1ff65b3105fa83c99491a7827a67a0c86057e3",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi2d_i32.sy",
-        "sha256": "a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-        "size_bytes": 1374
+        "path": "programs/pb_jacobi2d_i32.sy"
       },
-      "source_group": "sg-a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi2d_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi2d_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_jacobi2d_i32/large.out",
-        "sha256": "0cb012e2c0d6b5c0947317ed13e33c775aa740d7f6bdef5ab7031c921c1d5914",
-        "size_bytes": 13
-      },
-      "family": "pb_jacobi2d_i32",
       "id": "rv64gc:pb_jacobi2d_i32:large",
-      "input": {
-        "path": "datasets/pb_jacobi2d_i32/large.in",
-        "sha256": "8dc4a7d95f1dd7dc575885fe7e80b9477252f18aaed285e9fa30ce9d9f8a3cf1",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_jacobi2d_i32.sy",
-        "sha256": "a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-        "size_bytes": 1374
+        "path": "programs/pb_jacobi2d_i32.sy"
       },
-      "source_group": "sg-a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_jacobi2d_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_jacobi2d_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_seidel2d_i32/correctness.out",
-        "sha256": "e9a9c0be995c1767f4a8c39f79f71378cf247ef12a7a1fceaaf3bd6a49e9ecbe",
-        "size_bytes": 12
-      },
-      "family": "pb_seidel2d_i32",
       "id": "rv64gc:pb_seidel2d_i32:correctness",
-      "input": {
-        "path": "datasets/pb_seidel2d_i32/correctness.in",
-        "sha256": "651dd5029371ec5d8a85f0b0b4286e7b7d86593d8e1142f82cbbeea0c1755325",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_seidel2d_i32.sy",
-        "sha256": "f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-        "size_bytes": 1311
+        "path": "programs/pb_seidel2d_i32.sy"
       },
-      "source_group": "sg-f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_seidel2d_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_seidel2d_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_seidel2d_i32/small.out",
-        "sha256": "67d0fe1d67d0716adfa0371d71861c1f988715888cb154149d4f03868690c150",
-        "size_bytes": 13
-      },
-      "family": "pb_seidel2d_i32",
       "id": "rv64gc:pb_seidel2d_i32:small",
-      "input": {
-        "path": "datasets/pb_seidel2d_i32/small.in",
-        "sha256": "4110e92970c6a296e6a084dae6f90f5c1264c74a3b5c2653f41e5e33ddf56271",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_seidel2d_i32.sy",
-        "sha256": "f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-        "size_bytes": 1311
+        "path": "programs/pb_seidel2d_i32.sy"
       },
-      "source_group": "sg-f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_seidel2d_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_seidel2d_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_seidel2d_i32/medium.out",
-        "sha256": "8c8c5b484d3b76315d788397dfc119c3274d6d574d656cc31ab45f4853a7d9c9",
-        "size_bytes": 14
-      },
-      "family": "pb_seidel2d_i32",
       "id": "rv64gc:pb_seidel2d_i32:medium",
-      "input": {
-        "path": "datasets/pb_seidel2d_i32/medium.in",
-        "sha256": "9310e463666d30eb5a226f8677113dfd390363673fcb1407dd8e816342fcd36d",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_seidel2d_i32.sy",
-        "sha256": "f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-        "size_bytes": 1311
+        "path": "programs/pb_seidel2d_i32.sy"
       },
-      "source_group": "sg-f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_seidel2d_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_seidel2d_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_seidel2d_i32/large.out",
-        "sha256": "26b676e3ecc9e899c4b376c60e29b083db6b9ef01878c40dd978b3f58207fb63",
-        "size_bytes": 12
-      },
-      "family": "pb_seidel2d_i32",
       "id": "rv64gc:pb_seidel2d_i32:large",
-      "input": {
-        "path": "datasets/pb_seidel2d_i32/large.in",
-        "sha256": "b5b25e11c81d169a6162fc9b84ca13e5a3a6c999accc40fc455ec12df6966b0e",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_seidel2d_i32.sy",
-        "sha256": "f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-        "size_bytes": 1311
+        "path": "programs/pb_seidel2d_i32.sy"
       },
-      "source_group": "sg-f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_seidel2d_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_seidel2d_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_fdtd2d_i32/correctness.out",
-        "sha256": "11b3beb18e2125f57a9d61321450811e57de3258681e82b2b70ac68dade529fd",
-        "size_bytes": 14
-      },
-      "family": "pb_fdtd2d_i32",
       "id": "rv64gc:pb_fdtd2d_i32:correctness",
-      "input": {
-        "path": "datasets/pb_fdtd2d_i32/correctness.in",
-        "sha256": "26e2b5052017e6655f0407de5fd014e2fb947e46d39159fb4fcf0c5430aab5a3",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_fdtd2d_i32.sy",
-        "sha256": "4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-        "size_bytes": 1780
+        "path": "programs/pb_fdtd2d_i32.sy"
       },
-      "source_group": "sg-4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-      "tags": [
-        "dataset-role:correctness",
-        "group:polybench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_fdtd2d_i32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_fdtd2d_i32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_fdtd2d_i32/small.out",
-        "sha256": "40a01c25822abf43e829f741b58d51d6593d6506e1fd7aadf846d425fb044194",
-        "size_bytes": 12
-      },
-      "family": "pb_fdtd2d_i32",
       "id": "rv64gc:pb_fdtd2d_i32:small",
-      "input": {
-        "path": "datasets/pb_fdtd2d_i32/small.in",
-        "sha256": "80b7e9960b1daa74023f543dcdb5d6ff9e7f061a84c303f3cdf05c26dd2d3ac4",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_fdtd2d_i32.sy",
-        "sha256": "4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-        "size_bytes": 1780
+        "path": "programs/pb_fdtd2d_i32.sy"
       },
-      "source_group": "sg-4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_fdtd2d_i32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_fdtd2d_i32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_fdtd2d_i32/medium.out",
-        "sha256": "ea0e6492919b1e6ac1ab5bf276e1723ed084d43da222090b17c05195e3e7dfbe",
-        "size_bytes": 14
-      },
-      "family": "pb_fdtd2d_i32",
       "id": "rv64gc:pb_fdtd2d_i32:medium",
-      "input": {
-        "path": "datasets/pb_fdtd2d_i32/medium.in",
-        "sha256": "5de413af0b6f48a510ab54d8c1aabc1a2943e9cf6391491f84330f97704e727c",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_fdtd2d_i32.sy",
-        "sha256": "4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-        "size_bytes": 1780
+        "path": "programs/pb_fdtd2d_i32.sy"
       },
-      "source_group": "sg-4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_fdtd2d_i32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_fdtd2d_i32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/pb_fdtd2d_i32/large.out",
-        "sha256": "28e798feed83274ed47e0f2d2356a4539afdb45725c73e3bd9cd989be0b2ffe9",
-        "size_bytes": 13
-      },
-      "family": "pb_fdtd2d_i32",
       "id": "rv64gc:pb_fdtd2d_i32:large",
-      "input": {
-        "path": "datasets/pb_fdtd2d_i32/large.in",
-        "sha256": "49ab3c87844f5f93a7b23c68cda9b329a26b593367793960e1e6807635e08d22",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/pb_fdtd2d_i32.sy",
-        "sha256": "4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-        "size_bytes": 1780
+        "path": "programs/pb_fdtd2d_i32.sy"
       },
-      "source_group": "sg-4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-      "tags": [
-        "dataset-role:performance",
-        "group:polybench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/pb_fdtd2d_i32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/pb_fdtd2d_i32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_aha_mont64/correctness.out",
-        "sha256": "3f02342bcdc403471c47e77067b435f4248392cc45f83127d0a7903176a58f9f",
-        "size_bytes": 13
-      },
-      "family": "eb_aha_mont64",
       "id": "rv64gc:eb_aha_mont64:correctness",
-      "input": {
-        "path": "datasets/eb_aha_mont64/correctness.in",
-        "sha256": "f8b3ee2b651ae8daca36fed14bac4a99f2d53a3c4f545c9c845e24f041d9023c",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_aha_mont64.sy",
-        "sha256": "e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-        "size_bytes": 1467
+        "path": "programs/eb_aha_mont64.sy"
       },
-      "source_group": "sg-e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_aha_mont64/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_aha_mont64/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_aha_mont64/small.out",
-        "sha256": "060493b81d1a9b5709279cc5b672c2d5d42cbfe5d225b0950bef21be19105849",
-        "size_bytes": 13
-      },
-      "family": "eb_aha_mont64",
       "id": "rv64gc:eb_aha_mont64:small",
-      "input": {
-        "path": "datasets/eb_aha_mont64/small.in",
-        "sha256": "89d44e2a6426bcda1424602d8a595599a805274e6b0d1f399f424f0a0de2ba3d",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_aha_mont64.sy",
-        "sha256": "e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-        "size_bytes": 1467
+        "path": "programs/eb_aha_mont64.sy"
       },
-      "source_group": "sg-e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_aha_mont64/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_aha_mont64/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_aha_mont64/medium.out",
-        "sha256": "5f1865b993e3493eb6f9880f0e42974102b151b3a243861cf6cc50298659e01e",
-        "size_bytes": 14
-      },
-      "family": "eb_aha_mont64",
       "id": "rv64gc:eb_aha_mont64:medium",
-      "input": {
-        "path": "datasets/eb_aha_mont64/medium.in",
-        "sha256": "5beb49fc96d3682c83bf93d729671cc635c1ae6bbc44797e6ff189ea11795c0c",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_aha_mont64.sy",
-        "sha256": "e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-        "size_bytes": 1467
+        "path": "programs/eb_aha_mont64.sy"
       },
-      "source_group": "sg-e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_aha_mont64/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_aha_mont64/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_aha_mont64/large.out",
-        "sha256": "2576fdb217d5a8caab3ff1546d1948e835ba701cda405c7ffd1a1f30ce744205",
-        "size_bytes": 13
-      },
-      "family": "eb_aha_mont64",
       "id": "rv64gc:eb_aha_mont64:large",
-      "input": {
-        "path": "datasets/eb_aha_mont64/large.in",
-        "sha256": "f16704b98fc9cafb80384fb81f77193e867e12d1b3b5c3f92fe6f8381fc67792",
-        "size_bytes": 13
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_aha_mont64.sy",
-        "sha256": "e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-        "size_bytes": 1467
+        "path": "programs/eb_aha_mont64.sy"
       },
-      "source_group": "sg-e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_aha_mont64/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_aha_mont64/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_crc32/correctness.out",
-        "sha256": "ee299e440916fc9f147471a9fc8cfa2f62c19cbcaeccb112e691aa97e12a086e",
-        "size_bytes": 13
-      },
-      "family": "eb_crc32",
       "id": "rv64gc:eb_crc32:correctness",
-      "input": {
-        "path": "datasets/eb_crc32/correctness.in",
-        "sha256": "bbc825c6d60e4e454799fd0a5b86a9a1dcf6c77c47e884e28cd71ac14d7c87c5",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_crc32.sy",
-        "sha256": "79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-        "size_bytes": 1328
+        "path": "programs/eb_crc32.sy"
       },
-      "source_group": "sg-79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_crc32/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_crc32/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_crc32/small.out",
-        "sha256": "0cb0385ac84ed06f2f5f5b824a947dc54853bccfac4b64e98830bb480e89247b",
-        "size_bytes": 13
-      },
-      "family": "eb_crc32",
       "id": "rv64gc:eb_crc32:small",
-      "input": {
-        "path": "datasets/eb_crc32/small.in",
-        "sha256": "d0ab749c0c22a85d474514761bf52353981a17f26153d55ce750efd54ddeea3b",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_crc32.sy",
-        "sha256": "79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-        "size_bytes": 1328
+        "path": "programs/eb_crc32.sy"
       },
-      "source_group": "sg-79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_crc32/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_crc32/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_crc32/medium.out",
-        "sha256": "07e0f63cc45e73cd149eab147c547bfa785f1708efe3eab02f4d0d7889ea5218",
-        "size_bytes": 13
-      },
-      "family": "eb_crc32",
       "id": "rv64gc:eb_crc32:medium",
-      "input": {
-        "path": "datasets/eb_crc32/medium.in",
-        "sha256": "8d2669f37753f7ca52dd20b8d46754d3ca9a40a7f0f159c4ae6747828e46a0bb",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_crc32.sy",
-        "sha256": "79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-        "size_bytes": 1328
+        "path": "programs/eb_crc32.sy"
       },
-      "source_group": "sg-79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_crc32/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_crc32/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_crc32/large.out",
-        "sha256": "c1ca28ddf68c8f55b43fdda84757d6b196adae9daef407aba9909c7a5b9c1dd0",
-        "size_bytes": 13
-      },
-      "family": "eb_crc32",
       "id": "rv64gc:eb_crc32:large",
-      "input": {
-        "path": "datasets/eb_crc32/large.in",
-        "sha256": "01963491b42adcbb1e9f7f2da2c9b92a98a4ead3de93ab37af32d174bf6a09a8",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_crc32.sy",
-        "sha256": "79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-        "size_bytes": 1328
+        "path": "programs/eb_crc32.sy"
       },
-      "source_group": "sg-79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_crc32/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_crc32/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_huffbench/correctness.out",
-        "sha256": "88818a00767bf29fea38fe07414ebec2a044a81b5c014e7686d12255088b16cb",
-        "size_bytes": 10
-      },
-      "family": "eb_huffbench",
       "id": "rv64gc:eb_huffbench:correctness",
-      "input": {
-        "path": "datasets/eb_huffbench/correctness.in",
-        "sha256": "263b7d4eb594621e57988a089a0f6f9f050c2c03d1cc1ef67f42f14281648bcf",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_huffbench.sy",
-        "sha256": "85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-        "size_bytes": 1485
+        "path": "programs/eb_huffbench.sy"
       },
-      "source_group": "sg-85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_huffbench/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_huffbench/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_huffbench/small.out",
-        "sha256": "274cbb5e2bd062921cea775e116f42056f8e548c24d430d3922f7ed0b7891d0a",
-        "size_bytes": 11
-      },
-      "family": "eb_huffbench",
       "id": "rv64gc:eb_huffbench:small",
-      "input": {
-        "path": "datasets/eb_huffbench/small.in",
-        "sha256": "f424ff1f205a721e705e0ad42069cae2c0b452596eb71de1fda9449021ab6252",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_huffbench.sy",
-        "sha256": "85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-        "size_bytes": 1485
+        "path": "programs/eb_huffbench.sy"
       },
-      "source_group": "sg-85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_huffbench/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_huffbench/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_huffbench/medium.out",
-        "sha256": "ce3e080d9136e6efad9af960a025e95608c79c5e2d44934eebbad7bc88b908b5",
-        "size_bytes": 13
-      },
-      "family": "eb_huffbench",
       "id": "rv64gc:eb_huffbench:medium",
-      "input": {
-        "path": "datasets/eb_huffbench/medium.in",
-        "sha256": "d18e1200f1cad341f368ee8ef74485774cac450ef78839426690b4500bfc4c24",
-        "size_bytes": 11
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_huffbench.sy",
-        "sha256": "85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-        "size_bytes": 1485
+        "path": "programs/eb_huffbench.sy"
       },
-      "source_group": "sg-85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_huffbench/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_huffbench/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_huffbench/large.out",
-        "sha256": "85f2fedaa897df999eeef94a4c45deb9ff9ed2ea6f2a6f385704590676605ee9",
-        "size_bytes": 11
-      },
-      "family": "eb_huffbench",
       "id": "rv64gc:eb_huffbench:large",
-      "input": {
-        "path": "datasets/eb_huffbench/large.in",
-        "sha256": "6a32e1d8d6788e6b8ee02cc7c4cf61c1172e55c2f3a1668bf1b57c8b491b0fd6",
-        "size_bytes": 12
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_huffbench.sy",
-        "sha256": "85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-        "size_bytes": 1485
+        "path": "programs/eb_huffbench.sy"
       },
-      "source_group": "sg-85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_huffbench/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_huffbench/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_matmult_int/correctness.out",
-        "sha256": "a9797f19bb6b8e4d8f9394999f5be9684b981505a2072c7dbd7beac415e6c672",
-        "size_bytes": 14
-      },
-      "family": "eb_matmult_int",
       "id": "rv64gc:eb_matmult_int:correctness",
-      "input": {
-        "path": "datasets/eb_matmult_int/correctness.in",
-        "sha256": "c27cf946d5d1286c989ac7b55f5d61c57a0c8144946756bcd1a4e43c2a3ac039",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_matmult_int.sy",
-        "sha256": "272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-        "size_bytes": 1013
+        "path": "programs/eb_matmult_int.sy"
       },
-      "source_group": "sg-272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_matmult_int/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_matmult_int/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_matmult_int/small.out",
-        "sha256": "f2cd3552dc5ba0fa090c72b86505185ae642ac1630174cc0f9f0d4e8ef65286f",
-        "size_bytes": 14
-      },
-      "family": "eb_matmult_int",
       "id": "rv64gc:eb_matmult_int:small",
-      "input": {
-        "path": "datasets/eb_matmult_int/small.in",
-        "sha256": "d7b272b1bffa776f534532c23e3d24ff7b36fcb012717612e9d66d92bfce7859",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_matmult_int.sy",
-        "sha256": "272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-        "size_bytes": 1013
+        "path": "programs/eb_matmult_int.sy"
       },
-      "source_group": "sg-272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_matmult_int/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_matmult_int/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_matmult_int/medium.out",
-        "sha256": "c5b63158a9b96151db58abdbe9ffcc36ee188a1d08176ef1a488002d4ac863d8",
-        "size_bytes": 13
-      },
-      "family": "eb_matmult_int",
       "id": "rv64gc:eb_matmult_int:medium",
-      "input": {
-        "path": "datasets/eb_matmult_int/medium.in",
-        "sha256": "13ba17e8ef1cdc97f2d779dbf300ee76b7160f6dc83608a734730e0acdbce099",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_matmult_int.sy",
-        "sha256": "272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-        "size_bytes": 1013
+        "path": "programs/eb_matmult_int.sy"
       },
-      "source_group": "sg-272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_matmult_int/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_matmult_int/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_matmult_int/large.out",
-        "sha256": "6f0f3aa1b48f544071ef72195ce8cbb009c4805d8f6ce8c47f19cfbe31970332",
-        "size_bytes": 12
-      },
-      "family": "eb_matmult_int",
       "id": "rv64gc:eb_matmult_int:large",
-      "input": {
-        "path": "datasets/eb_matmult_int/large.in",
-        "sha256": "b1655fc1fb720a7dca9d2123a463c5f7d778f58a7ef96bbdd0c6656753702b9f",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_matmult_int.sy",
-        "sha256": "272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-        "size_bytes": 1013
+        "path": "programs/eb_matmult_int.sy"
       },
-      "source_group": "sg-272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_matmult_int/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_matmult_int/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_aes/correctness.out",
-        "sha256": "e66ccf37bb88df7c4ba9fd29df0d911bacd7bbd2704ab93de539936697538a3d",
-        "size_bytes": 14
-      },
-      "family": "eb_nettle_aes",
       "id": "rv64gc:eb_nettle_aes:correctness",
-      "input": {
-        "path": "datasets/eb_nettle_aes/correctness.in",
-        "sha256": "1d5ac5407b5525818d2b4fe5309321b44579473ed407055a5433515a2c1d04ee",
-        "size_bytes": 7
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_aes.sy",
-        "sha256": "77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-        "size_bytes": 2943
+        "path": "programs/eb_nettle_aes.sy"
       },
-      "source_group": "sg-77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_aes/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_aes/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_aes/small.out",
-        "sha256": "406042342febc11d5fd9cf97b34f1ce175a037b1d4e8e05a1403b9bd39162b52",
-        "size_bytes": 14
-      },
-      "family": "eb_nettle_aes",
       "id": "rv64gc:eb_nettle_aes:small",
-      "input": {
-        "path": "datasets/eb_nettle_aes/small.in",
-        "sha256": "02658e63e4b2c3d5276003211f2071bc580844e4f788bceb2c563d9c57685b6b",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_aes.sy",
-        "sha256": "77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-        "size_bytes": 2943
+        "path": "programs/eb_nettle_aes.sy"
       },
-      "source_group": "sg-77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_aes/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_aes/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_aes/medium.out",
-        "sha256": "ab433920faf4769f394623230f408b5f88963b97e3267c285f3402abe0e111ac",
-        "size_bytes": 13
-      },
-      "family": "eb_nettle_aes",
       "id": "rv64gc:eb_nettle_aes:medium",
-      "input": {
-        "path": "datasets/eb_nettle_aes/medium.in",
-        "sha256": "428defece80f1fc97b6b507d10c3f73f06cd28443985ce836476ddc2708b01ba",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_aes.sy",
-        "sha256": "77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-        "size_bytes": 2943
+        "path": "programs/eb_nettle_aes.sy"
       },
-      "source_group": "sg-77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_aes/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_aes/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_aes/large.out",
-        "sha256": "fae21191b7d0428cb2053dbc57661970662244f1e020c4fdfec0e70cd3e4a2f1",
-        "size_bytes": 12
-      },
-      "family": "eb_nettle_aes",
       "id": "rv64gc:eb_nettle_aes:large",
-      "input": {
-        "path": "datasets/eb_nettle_aes/large.in",
-        "sha256": "cc99d9f9a8be9daa173b7cd4b3f3f885a13d837081fdffbf4f6c39325f182f91",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_aes.sy",
-        "sha256": "77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-        "size_bytes": 2943
+        "path": "programs/eb_nettle_aes.sy"
       },
-      "source_group": "sg-77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_aes/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_aes/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_sha256/correctness.out",
-        "sha256": "937cb52cd52e8efd9b731e5fac0dd779e2ea9ae18e9660a8a945ca321a253a34",
-        "size_bytes": 12
-      },
-      "family": "eb_nettle_sha256",
       "id": "rv64gc:eb_nettle_sha256:correctness",
-      "input": {
-        "path": "datasets/eb_nettle_sha256/correctness.in",
-        "sha256": "adaebe60ca5ebe7044455d448b0e15b0922c7880f24f97d60e63bb1c6eee9c6c",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_sha256.sy",
-        "sha256": "6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-        "size_bytes": 2715
+        "path": "programs/eb_nettle_sha256.sy"
       },
-      "source_group": "sg-6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_sha256/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_sha256/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_sha256/small.out",
-        "sha256": "91f6c771ae8bd52030905dcf86a2604b2ac31e2b62e7175acf9ecc5ef4f832f5",
-        "size_bytes": 13
-      },
-      "family": "eb_nettle_sha256",
       "id": "rv64gc:eb_nettle_sha256:small",
-      "input": {
-        "path": "datasets/eb_nettle_sha256/small.in",
-        "sha256": "e5611a6fc8b979acfd0d8001c5317ac4e28097a64b9e8c579d80cd498f835e46",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_sha256.sy",
-        "sha256": "6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-        "size_bytes": 2715
+        "path": "programs/eb_nettle_sha256.sy"
       },
-      "source_group": "sg-6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_sha256/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_sha256/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_sha256/medium.out",
-        "sha256": "f9bf48c774f4a2bae141e76f3625417c683b001fdc03ee7f397476254cb9fe15",
-        "size_bytes": 13
-      },
-      "family": "eb_nettle_sha256",
       "id": "rv64gc:eb_nettle_sha256:medium",
-      "input": {
-        "path": "datasets/eb_nettle_sha256/medium.in",
-        "sha256": "cd50b28bdcff0b0b6debf1ed48384847ad3501ef5cf299900410e3e19c751617",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_sha256.sy",
-        "sha256": "6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-        "size_bytes": 2715
+        "path": "programs/eb_nettle_sha256.sy"
       },
-      "source_group": "sg-6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_sha256/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_sha256/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_nettle_sha256/large.out",
-        "sha256": "d93a796a26fe782007bfc54bdaaeec249846a6b7f0a14344408ca7ed2e20f193",
-        "size_bytes": 12
-      },
-      "family": "eb_nettle_sha256",
       "id": "rv64gc:eb_nettle_sha256:large",
-      "input": {
-        "path": "datasets/eb_nettle_sha256/large.in",
-        "sha256": "f9fc43231984e99e34129cbc12a36d5e75e31a4bdd46087a9770fa4c6b987044",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_nettle_sha256.sy",
-        "sha256": "6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-        "size_bytes": 2715
+        "path": "programs/eb_nettle_sha256.sy"
       },
-      "source_group": "sg-6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_nettle_sha256/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_nettle_sha256/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_statemate/correctness.out",
-        "sha256": "65fff499b50f3799d67b7b0152aaa79d259497ac1eeb91bb989d59356e04fed2",
-        "size_bytes": 13
-      },
-      "family": "eb_statemate",
       "id": "rv64gc:eb_statemate:correctness",
-      "input": {
-        "path": "datasets/eb_statemate/correctness.in",
-        "sha256": "43985d28d2806fbdf4a756deafe7a45456f10a2ece1555cb48293c6afd72305e",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_statemate.sy",
-        "sha256": "2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-        "size_bytes": 1094
+        "path": "programs/eb_statemate.sy"
       },
-      "source_group": "sg-2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_statemate/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_statemate/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_statemate/small.out",
-        "sha256": "9120b90a1d5670cc5b1f55590b85d76668b42151e47ffe7ddbf5e23081df59ac",
-        "size_bytes": 12
-      },
-      "family": "eb_statemate",
       "id": "rv64gc:eb_statemate:small",
-      "input": {
-        "path": "datasets/eb_statemate/small.in",
-        "sha256": "f62dcbd6f3779eb655a17594599d3e655a9e818505a2d350d5f4ac7ec3b317f9",
-        "size_bytes": 11
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_statemate.sy",
-        "sha256": "2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-        "size_bytes": 1094
+        "path": "programs/eb_statemate.sy"
       },
-      "source_group": "sg-2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_statemate/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_statemate/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_statemate/medium.out",
-        "sha256": "2dffb5b5c5763372f222a2b426529b080ab8606f0a403361956eec0690e5832a",
-        "size_bytes": 13
-      },
-      "family": "eb_statemate",
       "id": "rv64gc:eb_statemate:medium",
-      "input": {
-        "path": "datasets/eb_statemate/medium.in",
-        "sha256": "5640ab1a3b3cb250efbe20acac99a8aec26a312f6e3251e548870918e6c41fd1",
-        "size_bytes": 13
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_statemate.sy",
-        "sha256": "2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-        "size_bytes": 1094
+        "path": "programs/eb_statemate.sy"
       },
-      "source_group": "sg-2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_statemate/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_statemate/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_statemate/large.out",
-        "sha256": "b24b599e1d056572853d842deffaa6e6b98d3a85d0f4c780fd1d6f0d2bdf882f",
-        "size_bytes": 13
-      },
-      "family": "eb_statemate",
       "id": "rv64gc:eb_statemate:large",
-      "input": {
-        "path": "datasets/eb_statemate/large.in",
-        "sha256": "d30882d6befd5f0d5c266e9fc4668694bc65937b099c9a769fb26a7e9f1c2fca",
-        "size_bytes": 12
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_statemate.sy",
-        "sha256": "2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-        "size_bytes": 1094
+        "path": "programs/eb_statemate.sy"
       },
-      "source_group": "sg-2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_statemate/large.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_statemate/large.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_wikisort/correctness.out",
-        "sha256": "a25e6224470035df56d0db646fe752c05a124f2bbf7f6d3b010aa756f471bf5b",
-        "size_bytes": 14
-      },
-      "family": "eb_wikisort",
       "id": "rv64gc:eb_wikisort:correctness",
-      "input": {
-        "path": "datasets/eb_wikisort/correctness.in",
-        "sha256": "07fc4606963380b243952fd02dad920758a280366e47d2d0d6dd3e13efd2a8cf",
-        "size_bytes": 8
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_wikisort.sy",
-        "sha256": "105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-        "size_bytes": 1359
+        "path": "programs/eb_wikisort.sy"
       },
-      "source_group": "sg-105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-      "tags": [
-        "dataset-role:correctness",
-        "group:embench-style",
-        "tier:correctness"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_wikisort/correctness.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_wikisort/correctness.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_wikisort/small.out",
-        "sha256": "bad8734cb9bfe173d20ff7aec02e34b811d3f1bce619a82d60283d14c9620391",
-        "size_bytes": 12
-      },
-      "family": "eb_wikisort",
       "id": "rv64gc:eb_wikisort:small",
-      "input": {
-        "path": "datasets/eb_wikisort/small.in",
-        "sha256": "717085d5de91e4d62007aedab92f8d9a1dcbbe39c18beb4569aa04dc1905230e",
-        "size_bytes": 9
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_wikisort.sy",
-        "sha256": "105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-        "size_bytes": 1359
+        "path": "programs/eb_wikisort.sy"
       },
-      "source_group": "sg-105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:small"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_wikisort/small.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_wikisort/small.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_wikisort/medium.out",
-        "sha256": "5f1a1d18f814b05cb0f51c1866932768bee7b55c0b908bfe1f4bd9d8a456d6da",
-        "size_bytes": 14
-      },
-      "family": "eb_wikisort",
       "id": "rv64gc:eb_wikisort:medium",
-      "input": {
-        "path": "datasets/eb_wikisort/medium.in",
-        "sha256": "61994092e42d62b686d5e1f410258c818b04de72d8c7012bda2e7494b70ecd87",
-        "size_bytes": 10
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_wikisort.sy",
-        "sha256": "105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-        "size_bytes": 1359
+        "path": "programs/eb_wikisort.sy"
       },
-      "source_group": "sg-105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:medium"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
+      "input": {
+        "path": "datasets/eb_wikisort/medium.in"
+      },
+      "expected_output": {
+        "path": "datasets/eb_wikisort/medium.out"
+      }
     },
     {
-      "expected_output": {
-        "path": "datasets/eb_wikisort/large.out",
-        "sha256": "bbdf6584419203c5bae9b4f3e415de89e6b45f4608b1b4c4adda900064cc4cc6",
-        "size_bytes": 14
-      },
-      "family": "eb_wikisort",
       "id": "rv64gc:eb_wikisort:large",
-      "input": {
-        "path": "datasets/eb_wikisort/large.in",
-        "sha256": "2781d37fdf7a2c3b54dc90f2bb9258759e9b08f16376684cf8fbb8a0ee238f48",
-        "size_bytes": 11
-      },
-      "provenance": {
-        "data_role": "B6",
-        "derived_from": null,
-        "license": {
-          "spdx_expression": "MIT"
-        },
-        "origin": {
-          "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-          "source_id": "accela-cleanroom-corpus:v1"
-        },
-        "validity": {
-          "reason": "verified",
-          "status": "included"
-        }
-      },
       "source": {
-        "path": "programs/eb_wikisort.sy",
-        "sha256": "105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-        "size_bytes": 1359
+        "path": "programs/eb_wikisort.sy"
       },
-      "source_group": "sg-105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-      "tags": [
-        "dataset-role:performance",
-        "group:embench-style",
-        "tier:large"
-      ],
-      "target": "rv64gc",
-      "weight": 1.0
-    }
-  ],
-  "data_quality": {
-    "duplicate_file_groups": [],
-    "duplicate_group_count": 0,
-    "family_groups": [
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_aha_mont64",
-        "target": "rv64gc"
+      "input": {
+        "path": "datasets/eb_wikisort/large.in"
       },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_crc32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_huffbench",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_matmult_int",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_nettle_aes",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_nettle_sha256",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_statemate",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "eb_wikisort",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_2mm_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_3mm_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_atax_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_bicg_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_durbin_f32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_dynprog_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_fdtd2d_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_gemm_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_gemver_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_gesummv_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_jacobi1d_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_jacobi2d_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_mvt_i32",
-        "target": "rv64gc"
-      },
-      {
-        "case_count": 4,
-        "distinct_source_groups": 1,
-        "family": "pb_seidel2d_i32",
-        "target": "rv64gc"
+      "expected_output": {
+        "path": "datasets/eb_wikisort/large.out"
       }
-    ],
-    "orphan_count": 0,
-    "orphan_sidecars": [],
-    "source_group_count": 22,
-    "source_groups": [
-      {
-        "case_count": 4,
-        "families": [
-          "eb_wikisort"
-        ],
-        "members": [
-          "rv64gc:eb_wikisort:correctness",
-          "rv64gc:eb_wikisort:large",
-          "rv64gc:eb_wikisort:medium",
-          "rv64gc:eb_wikisort:small"
-        ],
-        "source_group": "sg-105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16",
-        "source_sha256": "105822ac9b3e470b25977fe8bc14493b722ac271e3888eae873f1d7a0469cf16"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_durbin_f32"
-        ],
-        "members": [
-          "rv64gc:pb_durbin_f32:correctness",
-          "rv64gc:pb_durbin_f32:large",
-          "rv64gc:pb_durbin_f32:medium",
-          "rv64gc:pb_durbin_f32:small"
-        ],
-        "source_group": "sg-1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480",
-        "source_sha256": "1d74641f5233b6a15e9065492c977f750abdb6f2e7d9d587a16e420dbd733480"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_matmult_int"
-        ],
-        "members": [
-          "rv64gc:eb_matmult_int:correctness",
-          "rv64gc:eb_matmult_int:large",
-          "rv64gc:eb_matmult_int:medium",
-          "rv64gc:eb_matmult_int:small"
-        ],
-        "source_group": "sg-272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e",
-        "source_sha256": "272cfe108365b6395d665effc9c1fb5aa5809b7c33c687972c1bbf1833b0069e"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_statemate"
-        ],
-        "members": [
-          "rv64gc:eb_statemate:correctness",
-          "rv64gc:eb_statemate:large",
-          "rv64gc:eb_statemate:medium",
-          "rv64gc:eb_statemate:small"
-        ],
-        "source_group": "sg-2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6",
-        "source_sha256": "2ee8916c077e8731c12036ce38a73d756aa4138eb786b58adb11b3ae11b6f2b6"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_dynprog_i32"
-        ],
-        "members": [
-          "rv64gc:pb_dynprog_i32:correctness",
-          "rv64gc:pb_dynprog_i32:large",
-          "rv64gc:pb_dynprog_i32:medium",
-          "rv64gc:pb_dynprog_i32:small"
-        ],
-        "source_group": "sg-2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84",
-        "source_sha256": "2f3d1fef1b06346b7ac154a5817991e91779bd3467a0edb1afeef3ceb342fb84"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_2mm_i32"
-        ],
-        "members": [
-          "rv64gc:pb_2mm_i32:correctness",
-          "rv64gc:pb_2mm_i32:large",
-          "rv64gc:pb_2mm_i32:medium",
-          "rv64gc:pb_2mm_i32:small"
-        ],
-        "source_group": "sg-4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3",
-        "source_sha256": "4a04a89d4b5392697a1e6b7b069340c9f8e8ee329abf20a1be315c64e35e81a3"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_fdtd2d_i32"
-        ],
-        "members": [
-          "rv64gc:pb_fdtd2d_i32:correctness",
-          "rv64gc:pb_fdtd2d_i32:large",
-          "rv64gc:pb_fdtd2d_i32:medium",
-          "rv64gc:pb_fdtd2d_i32:small"
-        ],
-        "source_group": "sg-4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e",
-        "source_sha256": "4bdf450f60b43aa98a514de53136a7f2e149df2d64f5111100053e8c0384fe9e"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_gemm_i32"
-        ],
-        "members": [
-          "rv64gc:pb_gemm_i32:correctness",
-          "rv64gc:pb_gemm_i32:large",
-          "rv64gc:pb_gemm_i32:medium",
-          "rv64gc:pb_gemm_i32:small"
-        ],
-        "source_group": "sg-6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f",
-        "source_sha256": "6484426703d4f2f5a9ef94109609bf39f82ac14386d48b72a895e9ed594e6b7f"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_nettle_sha256"
-        ],
-        "members": [
-          "rv64gc:eb_nettle_sha256:correctness",
-          "rv64gc:eb_nettle_sha256:large",
-          "rv64gc:eb_nettle_sha256:medium",
-          "rv64gc:eb_nettle_sha256:small"
-        ],
-        "source_group": "sg-6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628",
-        "source_sha256": "6f28abcf406dfb093da0a7f81086b1ad0b10cd2951f7736d6398ca72a160e628"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_nettle_aes"
-        ],
-        "members": [
-          "rv64gc:eb_nettle_aes:correctness",
-          "rv64gc:eb_nettle_aes:large",
-          "rv64gc:eb_nettle_aes:medium",
-          "rv64gc:eb_nettle_aes:small"
-        ],
-        "source_group": "sg-77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351",
-        "source_sha256": "77089abaa28b1fdaf7650f27adec2966d955c9230a882002f3263f384076e351"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_crc32"
-        ],
-        "members": [
-          "rv64gc:eb_crc32:correctness",
-          "rv64gc:eb_crc32:large",
-          "rv64gc:eb_crc32:medium",
-          "rv64gc:eb_crc32:small"
-        ],
-        "source_group": "sg-79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71",
-        "source_sha256": "79123981430ee4af12c24e94027290cfbbb1a79540e723faeb80e9baee19cc71"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_huffbench"
-        ],
-        "members": [
-          "rv64gc:eb_huffbench:correctness",
-          "rv64gc:eb_huffbench:large",
-          "rv64gc:eb_huffbench:medium",
-          "rv64gc:eb_huffbench:small"
-        ],
-        "source_group": "sg-85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad",
-        "source_sha256": "85271b9bd83dcda341c8e20974bbe9277343dc20cc62e3e946ba286b7a5926ad"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_bicg_i32"
-        ],
-        "members": [
-          "rv64gc:pb_bicg_i32:correctness",
-          "rv64gc:pb_bicg_i32:large",
-          "rv64gc:pb_bicg_i32:medium",
-          "rv64gc:pb_bicg_i32:small"
-        ],
-        "source_group": "sg-a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0",
-        "source_sha256": "a5eb74982b52748ce4bbdae02751cea7616caf2328aeb7791eda5ba3505032d0"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_jacobi2d_i32"
-        ],
-        "members": [
-          "rv64gc:pb_jacobi2d_i32:correctness",
-          "rv64gc:pb_jacobi2d_i32:large",
-          "rv64gc:pb_jacobi2d_i32:medium",
-          "rv64gc:pb_jacobi2d_i32:small"
-        ],
-        "source_group": "sg-a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e",
-        "source_sha256": "a995ada591bc727c435d8e5c91cf38b34a24c52b9e8205197a345acf5617d09e"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_gesummv_i32"
-        ],
-        "members": [
-          "rv64gc:pb_gesummv_i32:correctness",
-          "rv64gc:pb_gesummv_i32:large",
-          "rv64gc:pb_gesummv_i32:medium",
-          "rv64gc:pb_gesummv_i32:small"
-        ],
-        "source_group": "sg-bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c",
-        "source_sha256": "bfdfb6de4d88e7dc17a49ec70144a93386f077827f0ae97d81778c9c42548e6c"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_3mm_i32"
-        ],
-        "members": [
-          "rv64gc:pb_3mm_i32:correctness",
-          "rv64gc:pb_3mm_i32:large",
-          "rv64gc:pb_3mm_i32:medium",
-          "rv64gc:pb_3mm_i32:small"
-        ],
-        "source_group": "sg-c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577",
-        "source_sha256": "c84d16130f88f83be215bbfd11b9cf22f7c050fe6943e6f1fb1a2a3db2aac577"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_mvt_i32"
-        ],
-        "members": [
-          "rv64gc:pb_mvt_i32:correctness",
-          "rv64gc:pb_mvt_i32:large",
-          "rv64gc:pb_mvt_i32:medium",
-          "rv64gc:pb_mvt_i32:small"
-        ],
-        "source_group": "sg-d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1",
-        "source_sha256": "d12e07aa447f8a7736675808bacbd25a0b7ac18f67a9644fb5255f0211eecef1"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_jacobi1d_i32"
-        ],
-        "members": [
-          "rv64gc:pb_jacobi1d_i32:correctness",
-          "rv64gc:pb_jacobi1d_i32:large",
-          "rv64gc:pb_jacobi1d_i32:medium",
-          "rv64gc:pb_jacobi1d_i32:small"
-        ],
-        "source_group": "sg-d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd",
-        "source_sha256": "d29c0d318cba7ec53a35267522e39cb68139a2a3cdc6cb5dfe986a35cec355cd"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "eb_aha_mont64"
-        ],
-        "members": [
-          "rv64gc:eb_aha_mont64:correctness",
-          "rv64gc:eb_aha_mont64:large",
-          "rv64gc:eb_aha_mont64:medium",
-          "rv64gc:eb_aha_mont64:small"
-        ],
-        "source_group": "sg-e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed",
-        "source_sha256": "e01d48899a34a7829079cc5454fd320b57bdcb800b578dcd592a654444f64eed"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_atax_i32"
-        ],
-        "members": [
-          "rv64gc:pb_atax_i32:correctness",
-          "rv64gc:pb_atax_i32:large",
-          "rv64gc:pb_atax_i32:medium",
-          "rv64gc:pb_atax_i32:small"
-        ],
-        "source_group": "sg-ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b",
-        "source_sha256": "ef3003e39c1e86add0ac2990acbf180db3cdc909ed05b5479a2579fa84cd4d0b"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_seidel2d_i32"
-        ],
-        "members": [
-          "rv64gc:pb_seidel2d_i32:correctness",
-          "rv64gc:pb_seidel2d_i32:large",
-          "rv64gc:pb_seidel2d_i32:medium",
-          "rv64gc:pb_seidel2d_i32:small"
-        ],
-        "source_group": "sg-f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6",
-        "source_sha256": "f0133859aed02b19af75a4891fc3ecf2c4f163152ac0505e66eab35d53d7a9d6"
-      },
-      {
-        "case_count": 4,
-        "families": [
-          "pb_gemver_i32"
-        ],
-        "members": [
-          "rv64gc:pb_gemver_i32:correctness",
-          "rv64gc:pb_gemver_i32:large",
-          "rv64gc:pb_gemver_i32:medium",
-          "rv64gc:pb_gemver_i32:small"
-        ],
-        "source_group": "sg-f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7",
-        "source_sha256": "f842a1166f83ad19ceee573f4f55ff352ccb6ce4b2092438d28fbf09a7e6d4e7"
-      }
-    ]
-  },
-  "provenance": {
-    "data_role": "B6",
-    "derived_from": null,
-    "license": {
-      "spdx_expression": "MIT"
-    },
-    "origin": {
-      "snapshot_sha256": "87af447f7bcffa509eb8e2d382210f00cc107b2a1f9835b2c719a9b8ecd63ae9",
-      "source_id": "accela-cleanroom-corpus:v1"
-    },
-    "validity": {
-      "reason": "verified",
-      "status": "included"
     }
-  },
-  "schema_version": "benchmark-manifest.v1",
-  "suite_id": "cleanroom-mature-benchmarks-v1"
+  ]
 }

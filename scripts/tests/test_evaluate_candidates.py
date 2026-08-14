@@ -1,0 +1,28 @@
+import importlib.util
+import sys
+import unittest
+from pathlib import Path
+
+
+SCRIPT = Path(__file__).parents[1] / "evaluate_candidates.py"
+SPEC = importlib.util.spec_from_file_location("evaluate_candidates", SCRIPT)
+assert SPEC and SPEC.loader
+MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
+SPEC.loader.exec_module(MODULE)
+
+
+class EvaluateCandidatesTest(unittest.TestCase):
+    def test_metric_and_geometric_mean(self) -> None:
+        self.assertEqual(MODULE.INSTRUCTION_RE.search("instructions=42 loads=1").group(1), "42")
+        self.assertAlmostEqual(MODULE._geometric_mean([2.0, 8.0]), 4.0)
+        with self.assertRaises(RuntimeError):
+            MODULE._geometric_mean([1.0, 0.0])
+
+    def test_defaults_use_six_by_four(self) -> None:
+        args = MODULE._parser().parse_args([])
+        self.assertEqual((args.max_runs, args.jobs), (6, 4))
+
+
+if __name__ == "__main__":
+    unittest.main()
