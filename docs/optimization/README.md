@@ -38,7 +38,7 @@ docker compose build
 MAX_RUNS=6 JOBS=4 docker compose up --abort-on-container-exit
 ```
 
-Progress bars are printed for every active profile. Results remain on the host in `results/`.
+One global progress bar covers all single and B3 pair cases. Results remain on the host in `results/`.
 Package them and copy the archive back:
 
 ```sh

@@ -13,8 +13,10 @@ import subprocess
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
+from multiprocessing import Manager
 from pathlib import Path
+from queue import Empty
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +43,25 @@ class RunSpec:
     jobs: int
     compile_timeout: int
     run_timeout: int
+
+
+@dataclass
+class GlobalProgress:
+    total: int
+    done: int = 0
+    last_percent: int = -1
+
+    def advance(self, count: int = 1) -> None:
+        self.done = min(self.total, self.done + count)
+        percent = self.done * 100 // self.total
+        if percent == self.last_percent:
+            return
+        self.last_percent = percent
+        width = 32
+        filled = width * self.done // self.total
+        line = f"[{'#' * filled}{'-' * (width - filled)}] {self.done}/{self.total} ({percent}%)"
+        interactive = sys.stdout.isatty()
+        print(line, end="\r" if interactive and self.done < self.total else "\n", flush=True)
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -159,20 +180,19 @@ def _case_result(
     return record
 
 
-def _run_profile(spec: RunSpec) -> dict[str, object]:
+def _run_profile(spec: RunSpec, progress_queue: object) -> dict[str, object]:
     root = ROOT
     summary_path = Path(spec.output_root) / spec.stage / _slug(spec.profile_id) / "summary.json"
     if summary_path.is_file():
         previous = json.loads(summary_path.read_text(encoding="utf-8"))
         if previous.get("status") == "passed":
+            progress_queue.put(len(previous["cases"]))
             return previous
     manifest = json.loads(Path(spec.manifest_path).read_text(encoding="utf-8"))
     cases = manifest.get("cases")
     if not isinstance(cases, list) or not cases:
         raise RuntimeError(f"manifest contains no cases: {spec.manifest_path}")
     results: list[dict[str, object]] = []
-    total = len(cases)
-    step = max(1, math.ceil(total / 20))
     with ThreadPoolExecutor(max_workers=spec.jobs) as executor:
         futures = {
             executor.submit(_case_result, root, spec, case, index): str(case["id"])
@@ -181,15 +201,7 @@ def _run_profile(spec: RunSpec) -> dict[str, object]:
         try:
             for future in as_completed(futures):
                 results.append(future.result())
-                done = len(results)
-                if done == 1 or done == total or done % step == 0:
-                    width = 24
-                    filled = width * done // total
-                    bar = "#" * filled + "-" * (width - filled)
-                    print(
-                        f"[{bar}] {done:>3}/{total:<3} {spec.stage}/{spec.profile_id}",
-                        flush=True,
-                    )
+                progress_queue.put(1)
         except Exception:
             for future in futures:
                 future.cancel()
@@ -205,21 +217,42 @@ def _run_profile(spec: RunSpec) -> dict[str, object]:
     return summary
 
 
-def _execute(specs: list[RunSpec], max_runs: int) -> list[dict[str, object]]:
+def _execute(
+    specs: list[RunSpec],
+    max_runs: int,
+    progress_queue: object,
+    progress: GlobalProgress,
+) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     with ProcessPoolExecutor(max_workers=max_runs) as executor:
-        futures = {executor.submit(_run_profile, spec): spec for spec in specs}
+        futures = {executor.submit(_run_profile, spec, progress_queue): spec for spec in specs}
+        pending = set(futures)
         try:
-            for future in as_completed(futures):
-                spec = futures[future]
-                result = future.result()
-                print(f"completed {spec.stage}/{spec.profile_id}", flush=True)
-                results.append(result)
+            while pending:
+                try:
+                    progress.advance(progress_queue.get(timeout=0.2))
+                except Empty:
+                    pass
+                completed = {future for future in pending if future.done()}
+                for future in completed:
+                    results.append(future.result())
+                pending -= completed
+            while True:
+                progress.advance(progress_queue.get_nowait())
+        except Empty:
+            pass
         except Exception:
             for future in futures:
                 future.cancel()
             raise
     return results
+
+
+def _case_count(specs: list[RunSpec]) -> int:
+    return sum(
+        len(json.loads(Path(spec.manifest_path).read_text(encoding="utf-8"))["cases"])
+        for spec in specs
+    )
 
 
 def _geometric_mean(values: list[float]) -> float:
@@ -394,32 +427,42 @@ def main(argv: list[str] | None = None) -> int:
         args.run_timeout,
     )
     print(f"running {len(specs)} profiles with max_runs={args.max_runs}, jobs={args.jobs}", flush=True)
-    _execute(specs, args.max_runs)
-    if not args.no_diagnostics and "B3" in args.stages:
-        ranked = sorted(
-            candidates,
-            key=lambda candidate: (
-                -_geometric_mean(
-                    _speedups(
-                        _load_summary(output_root, "B3", "baseline"),
-                        _load_summary(output_root, "B3", candidate),
-                    )
+    diagnostics = not args.no_diagnostics and "B3" in args.stages
+    b3_cases = len(
+        json.loads((DATA / "manifests" / STAGES["B3"][0]).read_text(encoding="utf-8"))["cases"]
+    )
+    total = _case_count(specs) + (3 * b3_cases if diagnostics else 0)
+    with Manager() as manager:
+        progress_queue = manager.Queue()
+        progress = GlobalProgress(total)
+        _execute(specs, args.max_runs, progress_queue, progress)
+        if diagnostics:
+            ranked = sorted(
+                candidates,
+                key=lambda candidate: (
+                    -_geometric_mean(
+                        _speedups(
+                            _load_summary(output_root, "B3", "baseline"),
+                            _load_summary(output_root, "B3", candidate),
+                        )
+                    ),
+                    candidate,
                 ),
-                candidate,
-            ),
-        )
-        pair_profiles = _pair_profiles(ranked[:3], output_root)
-        _execute(
-            _specs(
-                ["B3"],
-                pair_profiles,
-                output_root,
-                args.jobs,
-                args.compile_timeout,
-                args.run_timeout,
-            ),
-            args.max_runs,
-        )
+            )
+            pair_profiles = _pair_profiles(ranked[:3], output_root)
+            _execute(
+                _specs(
+                    ["B3"],
+                    pair_profiles,
+                    output_root,
+                    args.jobs,
+                    args.compile_timeout,
+                    args.run_timeout,
+                ),
+                args.max_runs,
+                progress_queue,
+                progress,
+            )
     result = _report(output_root, args.stages, list(candidates))
     print(f"winner={result['ranking'][0]['candidate_id']}", flush=True)
     return 0

@@ -1,6 +1,8 @@
 .git
 .gradle
-.tmp/simple-evaluation
+.tmp/*
+!.tmp/official/
+!.tmp/official/**
 build
 results
 *.tar.zst

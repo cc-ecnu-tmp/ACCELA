@@ -1,6 +1,8 @@
 import importlib.util
+import io
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -22,6 +24,14 @@ class EvaluateCandidatesTest(unittest.TestCase):
     def test_defaults_use_six_by_four(self) -> None:
         args = MODULE._parser().parse_args([])
         self.assertEqual((args.max_runs, args.jobs), (6, 4))
+
+    def test_global_progress_reaches_total(self) -> None:
+        progress = MODULE.GlobalProgress(10)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            progress.advance(4)
+            progress.advance(6)
+        self.assertIn("10/10 (100%)", output.getvalue())
 
 
 if __name__ == "__main__":
