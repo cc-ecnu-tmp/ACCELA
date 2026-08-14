@@ -18,8 +18,10 @@ python3 scripts/evaluate_candidates.py --max-runs 6 --jobs 4
 The evaluator builds the compiler and QEMU plugins, runs up to six profiles concurrently and
 four cases per profile, resumes already-passed cases, then writes `summary.json` and `REPORT.md`
 under `.tmp/simple-evaluation`. B3 also evaluates the three pair profiles formed from its Top 3
-single candidates. Use `--no-diagnostics` to skip those pairs and `--skip-build` only when the
-current checkout has already been built.
+single candidates. A complete B2–B6 run then performs the greedy combination pass and a distinct
+final verification profile. Failed cases remain in the report and make that profile unrankable;
+they are never silently skipped. Use `--no-diagnostics` to skip the B3 pairs and
+`--skip-build` only when the current checkout has already been built.
 
 Required tools are JDK 21, Python 3.11+, `riscv64-elf-gcc`, `riscv64-elf-readelf`,
 `qemu-system-riscv64` with plugin headers, GLib 2, `pkg-config`, and a C compiler.

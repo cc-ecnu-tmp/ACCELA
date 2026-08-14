@@ -49,6 +49,40 @@ class EvaluateCandidatesTest(unittest.TestCase):
             }.isdisjoint(case_ids)
         )
 
+    def test_candidate_compositions_use_registry_order(self) -> None:
+        self.assertEqual(
+            MODULE._canonical_candidates(
+                [
+                    "candidate.nested-address-recurrence",
+                    "candidate.array-object-promotion",
+                    "candidate.sysy-region-memory-forwarding",
+                ]
+            ),
+            [
+                "candidate.sysy-region-memory-forwarding",
+                "candidate.array-object-promotion",
+                "candidate.nested-address-recurrence",
+            ],
+        )
+
+    def test_failed_profile_is_not_rankable_and_gates_are_explicit(self) -> None:
+        failed = {"status": "failed", "cases": [{"status": "failed", "case_id": "x"}]}
+        self.assertFalse(MODULE._summary_rankable(failed))
+        metrics = {
+            "rankable": True,
+            "failure_reasons": [],
+            "stage_geometric_means": {"B3": 1.0, "B4": 1.0, "B5": 1.0, "B6": 1.0},
+            "combined_geometric_mean": 1.0,
+        }
+        reasons = MODULE._gate_reasons(
+            metrics,
+            ["B3", "B4", "B5", "B6"],
+            current={"combined_geometric_mean": 0.99},
+            require_full=True,
+        )
+        self.assertIn("B3-GM<=1.0", reasons)
+        self.assertIn("combined-B3-B6-GM<=1.0", reasons)
+
 
 if __name__ == "__main__":
     unittest.main()
