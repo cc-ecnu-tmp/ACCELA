@@ -34,6 +34,18 @@ public class Function extends Value {
     return arguments.size();
   }
 
+  /** Rebuilds the formal parameter list and returns the newly numbered arguments. */
+  public List<Argument> replaceArguments(List<Type> types, List<String> names) {
+    if (types.size() != names.size()) {
+      throw new IllegalArgumentException("argument type/name count mismatch");
+    }
+    arguments.clear();
+    for (int index = 0; index < types.size(); index++) {
+      addArgument(types.get(index), names.get(index));
+    }
+    return getArguments();
+  }
+
   public BasicBlock addBlock(String label) {
     BasicBlock bb = new BasicBlock(label);
     bb.setParent(this);
