@@ -1,6 +1,7 @@
 package accela.pass;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.BasicBlock;
@@ -14,6 +15,26 @@ import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import org.junit.jupiter.api.Test;
 
 final class SimplifyCFGBooleanPhiTest {
+  @Test
+  void foldsSinglePredecessorVectorPhis() {
+    Function function = new Function("vector_phi", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createBr(merge);
+    IRBuilder builder = new IRBuilder(merge);
+    Type int4 = Type.vector(Type.INT, 4);
+    Constant zero = Constant.zero(int4);
+    Instruction phi = builder.createPhi(int4);
+    phi.addOperand(zero);
+    phi.addOperand(entry);
+    Instruction extract = builder.createExtractElement(phi, Constant.intConst(0));
+    builder.createRet(extract);
+
+    assertTrue(SimplifyCFG.runOnFunction(function));
+    assertSame(zero, extract.getOperand(0));
+    assertEquals(0, count(function, Instruction.Opcode.PHI));
+  }
+
   @Test
   void foldsBooleanPhiToCondition() {
     Function function = booleanDiamond(1, 0);
