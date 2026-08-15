@@ -70,7 +70,11 @@ final class RankedRecurrenceTabulationTest {
     IRBuilder builder = new IRBuilder(entry);
     builder.createCondBr(
         builder.createICmp("sle", rank, Constant.intConst(1)), base, recur);
-    new IRBuilder(base).createRet(rank);
+    IRBuilder baseBuilder = new IRBuilder(base);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value rankVector = baseBuilder.createSplat(int4, rank);
+    baseBuilder.createRet(
+        baseBuilder.createExtractElement(rankVector, Constant.intConst(0)));
     builder.setInsertPoint(recur);
     Value previous = builder.createSub(rank, Constant.intConst(1));
     Value earlier = builder.createSub(rank, Constant.intConst(2));

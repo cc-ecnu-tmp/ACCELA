@@ -48,7 +48,8 @@ public final class RankedRecurrenceAnalysis {
   private static boolean isDenseSafe(
       Instruction instruction, Function function, List<Instruction> calls) {
     return switch (instruction.getOpcode()) {
-      case ADD, SUB, MUL, ICMP, BR, CONDBR, ZEXT, SEXT, XOR, AND, PHI -> true;
+      case ADD, SUB, MUL, ICMP, BR, CONDBR, ZEXT, SEXT, XOR, AND, PHI,
+          BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR, SELECT -> true;
       case RET -> instruction.getNumOperands() == 1;
       case LOAD -> true;
       case GEP -> instruction.getUses().stream()
