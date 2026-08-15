@@ -34,6 +34,50 @@ final class ReductionPushdownTest {
   }
 
   @Test
+  void pushesAnInvariantVectorFactorPastAnAdditiveReduction() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_reduce", Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value factor = function.addArgument(int4, "factor");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder hb = new IRBuilder(header);
+    Instruction induction = hb.createPhi(Type.INT);
+    Instruction reduction = hb.createPhi(int4);
+    hb.createCondBr(hb.createICmp("slt", induction, bound), body, exit);
+
+    IRBuilder bb = new IRBuilder(body);
+    Instruction variant = bb.createSplat(int4, induction);
+    Instruction product = bb.createMul(factor, variant);
+    Instruction update = bb.createAdd(reduction, product);
+    Instruction next = bb.createAdd(induction, Constant.intConst(1));
+    bb.createBr(header);
+    induction.addOperand(Constant.intConst(0));
+    induction.addOperand(entry);
+    induction.addOperand(next);
+    induction.addOperand(body);
+    reduction.addOperand(Constant.zero(int4));
+    reduction.addOperand(entry);
+    reduction.addOperand(update);
+    reduction.addOperand(body);
+    Instruction lane = new IRBuilder(exit).createExtractElement(reduction, Constant.intConst(0));
+    new IRBuilder(exit).createRet(lane);
+
+    assertTrue(ReductionPushdown.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    Instruction scaled = (Instruction) lane.getOperand(0);
+    assertEquals(Instruction.Opcode.MUL, scaled.getOpcode());
+    assertSame(reduction, scaled.getOperand(0));
+    assertSame(factor, scaled.getOperand(1));
+    assertSame(variant, update.getOperand(1));
+    assertTrue(product.getParent() == null);
+  }
+
+  @Test
   void rejectsAProductWithoutExactlyOneInvariantFactor() {
     Fixture fixture = fixture(false, true);
 

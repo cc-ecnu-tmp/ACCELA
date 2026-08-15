@@ -159,7 +159,10 @@ public final class ReductionPushdown {
     }
 
     private static boolean isZero(Value value) {
-      return value instanceof Constant.Int integer && integer.value == 0;
+      if (value instanceof Constant.Zero) return true;
+      if (value instanceof Constant.Int integer) return integer.value == 0;
+      return value instanceof Constant.Vector vector
+          && vector.elements.stream().allMatch(Candidate::isZero);
     }
 
     private static boolean hasUsesOtherThan(Value value, Instruction user) {
