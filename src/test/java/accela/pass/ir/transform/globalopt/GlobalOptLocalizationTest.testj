@@ -20,6 +20,36 @@ import org.junit.jupiter.api.Test;
 
 final class GlobalOptLocalizationTest {
   @Test
+  void promotesMainLocalVectorGlobals() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    GlobalVariable vector =
+        new GlobalVariable("vector", int4, Constant.zero(int4), false);
+    module.addGlobal(vector);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction load = builder.createLoad(int4, vector);
+    Instruction updated =
+        builder.createInsertElement(load, Constant.intConst(7), Constant.intConst(2));
+    builder.createStore(updated, vector);
+    builder.createRet(builder.createExtractElement(updated, Constant.intConst(2)));
+
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    new GlobalOpt.Pass().run(module, new ModuleAnalysisManager(), fam);
+    IRVerifier.verifyModule(module);
+
+    assertFalse(vector.hasUses());
+    assertTrue(load.getParent() == null);
+    assertTrue(main.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .noneMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA
+            || instruction.getOpcode() == Instruction.Opcode.LOAD
+            || instruction.getOpcode() == Instruction.Opcode.STORE));
+  }
+
+  @Test
   void promotesOnlyMainLocalScalarGlobals() {
     Module module = new Module();
     GlobalVariable local =
