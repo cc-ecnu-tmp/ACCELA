@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import struct
 import subprocess
@@ -40,11 +41,12 @@ def build(config, root: Path):
         "TARGETLAB_BUILD_DIR": str(root / config["build_dir"]),
         "TARGETLAB_CLOCK_HZ": str(config["clock_hz"]),
         "TARGETLAB_MINIMUM_CYCLES": str(config["minimum_cycles"]),
+        "TARGETLAB_MEASUREMENT_MODE": config["measurement_mode"],
     })
     if backend == "baremetal":
         environment["TARGETLAB_STARTUP"] = config["startup"]
         environment["TARGETLAB_LINKER"] = config["linker"]
-    run_checked(["make", "-f", "tools/targetlab/target/Makefile", "all"], cwd=root,
+    run_checked(["make", "-f", "tools/targetlab/target/Makefile", "clean", "all"], cwd=root,
         env=environment, timeout=config["timeout_seconds"])
     _verify_elf(config, root)
 
@@ -80,32 +82,36 @@ def run_baremetal(config, root: Path, output: Path):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="targetlab-") as temporary:
         temporary_path = Path(temporary)
-        mailbox = output.with_suffix(output.suffix + ".mailbox.bin").resolve()
+        mailbox = temporary_path / "mailbox.bin"
+        preserved_mailbox = output.with_suffix(output.suffix + ".mailbox.bin").resolve()
         script = temporary_path / "collect.gdb"
-        script.write_text("\n".join((
-            f"target extended-remote {config['gdb_remote']}",
-            "monitor reset halt",
-            f"file {_gdb_path(executable)}",
-            "load",
-            "break targetlab_done",
-            "continue",
+        server_config = config["debug_server"]
+        commands = [f"file {_gdb_path(executable)}",
+            f"target extended-remote {config['gdb_remote']}"]
+        if server_config["kind"] == "openocd":
+            commands.extend(("monitor reset halt", "load"))
+        commands.extend(("break targetlab_done", "continue",
             f"dump binary memory {_gdb_path(mailbox)} &targetlab_mailbox (&targetlab_mailbox + 1)",
-            "quit",
-            "",
-        )), encoding="utf-8")
+            "quit", ""))
+        script.write_text("\n".join(commands), encoding="utf-8")
         server = None
         log_stream = None
         try:
-            if config["openocd_mode"] == "managed":
-                log_path = output.with_suffix(output.suffix + ".openocd.log")
+            if server_config["mode"] == "managed":
+                log_path = output.with_suffix(output.suffix + f".{server_config['kind']}.log")
                 log_stream = log_path.open("wb")
-                server = subprocess.Popen([config["openocd"], "-f", config["openocd_config"]],
+                server = subprocess.Popen(_debug_server_command(server_config, executable,
+                    config["gdb_remote"]),
                     cwd=root, stdout=log_stream, stderr=subprocess.STDOUT)
                 _wait_for_gdb_server(config["gdb_remote"], server,
                     min(30, config["timeout_seconds"]))
-            run_checked([config["gdb"], "-batch", "-x", str(script)], cwd=root,
-                timeout=config["timeout_seconds"])
-            decode_mailbox(mailbox, output)
+            try:
+                run_checked([config["gdb"], "-batch", "-x", str(script)], cwd=root,
+                    timeout=config["timeout_seconds"])
+            finally:
+                if mailbox.exists():
+                    shutil.copyfile(mailbox, preserved_mailbox)
+            decode_mailbox(preserved_mailbox, output)
         finally:
             if server is not None:
                 server.terminate()
@@ -119,63 +125,104 @@ def run_baremetal(config, root: Path, output: Path):
 
 
 def _gdb_path(path: Path):
-    return '"' + path.as_posix().replace('"', '\\"') + '"'
+    rendered = path.as_posix()
+    if any(character in rendered for character in "\r\n\0"):
+        raise RuntimeError("GDB path contains a forbidden control character")
+    return rendered.replace("\\", "\\\\").replace(" ", "\\ ").replace("\t", "\\\t")
+
+
+def _debug_server_command(server, executable, remote):
+    if server["kind"] == "openocd":
+        return [server["executable"], "-f", server["config"]]
+    host, port = _split_remote(remote)
+    return [server["executable"], "-machine", server["machine"], "-m", server["memory"],
+        "-bios", "none", "-kernel", str(executable), "-S", "-gdb", f"tcp:{host}:{port}",
+        "-icount", "shift=0,align=off,sleep=off",
+        "-display", "none", "-monitor", "none", "-serial", "none"]
 
 
 def _wait_for_gdb_server(remote, process, timeout):
-    if ":" not in remote:
+    host, port = _split_remote(remote)
+    connect_host = "localhost" if host in {"", "0.0.0.0", "::"} else host
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"debug server exited before GDB became ready ({process.returncode})")
+        try:
+            with socket.create_connection((connect_host, port), timeout=0.5):
+                return
+        except OSError:
+            time.sleep(0.1)
+    raise RuntimeError(f"debug server GDB endpoint did not become ready within {timeout} seconds")
+
+
+def _split_remote(remote):
+    if not isinstance(remote, str) or ":" not in remote:
         raise RuntimeError("gdb_remote must use HOST:PORT")
     host, port_text = remote.rsplit(":", 1)
-    host = host or "localhost"
     try:
         port = int(port_text)
     except ValueError as exception:
         raise RuntimeError("gdb_remote port is invalid") from exception
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise RuntimeError(f"OpenOCD exited before GDB became ready ({process.returncode})")
-        try:
-            with socket.create_connection((host, port), timeout=0.5):
-                return
-        except OSError:
-            time.sleep(0.1)
-    raise RuntimeError(f"OpenOCD GDB server did not become ready within {timeout} seconds")
+    if not 1 <= port <= 65535:
+        raise RuntimeError("gdb_remote port is out of range")
+    return host or "localhost", port
 
 
 def decode_mailbox(mailbox: Path, output: Path):
     data = mailbox.read_bytes()
-    if len(data) < 40:
+    if len(data) < 96:
         raise RuntimeError("TargetLab mailbox is truncated")
-    magic, version, status, total_length, count, flags, reserved = struct.unpack_from("<QIIQQII", data)
+    (magic, version, status, total_length, count, flags, reserved, clock_hz,
+        minimum_cycles, warmup_count, configured_samples, measurement_mode, reserved2, failure_sample,
+        failure_baseline, failure_measured) = struct.unpack_from("<QIIQQIIQQIIIIQQQ", data)
     if magic != MAILBOX_MAGIC or version != MAILBOX_VERSION:
         raise RuntimeError("TargetLab mailbox has an unsupported identity")
     if status != 1:
-        raise RuntimeError(f"TargetLab target reported status {status}")
-    if reserved != 0 or total_length != 40 + count * 168 or total_length > len(data):
+        raise RuntimeError(f"TargetLab target reported status {status} after {count} metrics; "
+            f"sample={failure_sample} baseline={failure_baseline} measured={failure_measured}")
+    if reserved != 0 or reserved2 != 0 or total_length != 96 + count * 344 or total_length > len(data):
         raise RuntimeError("TargetLab mailbox length or reserved fields are invalid")
     if flags & ~3:
         raise RuntimeError("TargetLab mailbox contains unknown counter capability flags")
     if not flags & 1:
         raise RuntimeError("TargetLab bare-metal run did not prove rdcycle availability")
-    offset = 40
+    if clock_hz <= 0 or minimum_cycles <= 0 or warmup_count != 2 or configured_samples != 9:
+        raise RuntimeError("TargetLab mailbox measurement configuration is invalid")
+    if failure_sample != (1 << 64) - 1 or failure_baseline != 0 or failure_measured != 0:
+        raise RuntimeError("successful TargetLab mailbox retains failure diagnostics")
+    if measurement_mode not in {0, 1}:
+        raise RuntimeError("TargetLab mailbox measurement mode is invalid")
+    offset = 96
     timer = "rdcycle" if flags & 1 else "unavailable"
     lines = [json.dumps({"kind": "environment", "backend": "baremetal",
-        "rdcycle": bool(flags & 1), "rdinstret": bool(flags & 2), "timer": timer},
+        "rdcycle": bool(flags & 1), "rdinstret": bool(flags & 2), "timer": timer,
+        "clock_hz": clock_hz, "minimum_cycles": minimum_cycles,
+        "warmup_count": warmup_count, "sample_count": configured_samples,
+        "measurement_mode": "qemu_proxy" if measurement_mode == 1 else "hardware"},
         separators=(",", ":"))]
     for _ in range(count):
-        if offset + 168 > len(data):
+        if offset + 344 > len(data):
             raise RuntimeError("TargetLab mailbox entry is truncated")
-        name, category, source, sample_count = struct.unpack_from("<48s16s24sQ", data, offset)
-        offset += 96
+        name, category, source, sample_count, iterations, normalization = struct.unpack_from(
+            "<48s32s24sQQQ", data, offset)
+        offset += 128
         if sample_count != 9:
             raise RuntimeError("TargetLab mailbox sample count must be exactly 9")
-        values = list(struct.unpack_from(f"<{sample_count}Q", data, offset))
-        offset += 72
+        if iterations <= 0 or normalization <= 0:
+            raise RuntimeError("TargetLab mailbox iteration metadata is invalid")
+        baseline_values = list(struct.unpack_from("<9Q", data, offset))
+        measured_values = list(struct.unpack_from("<9Q", data, offset + 72))
+        values = list(struct.unpack_from("<9Q", data, offset + 144))
+        offset += 216
         lines.append(json.dumps({"kind": "sample",
             "metric": _mailbox_text(name, "metric"),
             "category": _mailbox_text(category, "category"),
             "source": _mailbox_text(source, "source"),
+            "iterations": iterations,
+            "normalization": normalization,
+            "baseline_values": baseline_values,
+            "measured_values": measured_values,
             "values": values,
         }, separators=(",", ":")))
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")

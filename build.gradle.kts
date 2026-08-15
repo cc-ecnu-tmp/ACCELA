@@ -28,7 +28,7 @@ tasks.test {
 
 val targetProfilePython = providers.gradleProperty("targetProfilePython").orElse("python")
 val targetProfileSource = providers.gradleProperty("targetProfile")
-    .orElse("config/target/boomv3-development.json")
+    .orElse("config/target/qemu-rv64gc-development.json")
 val generatedTargetProfile = "src/main/java/accela/cost/GeneratedTargetProfile.java"
 
 val verifyTargetProfile by tasks.registering(Exec::class) {

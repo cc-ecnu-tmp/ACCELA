@@ -6,6 +6,7 @@ import statistics
 from pathlib import Path
 
 from .schema import INSTRUCTION_CLASSES, ValidationError, validate_profile
+from .target.generate_asm import CORE_UNROLL
 
 
 def load_json(path: Path):
@@ -56,35 +57,55 @@ def measurement(values, source, clock_hz):
 def profile_from_raw(template, raw):
     profile = copy.deepcopy(template)
     validate_profile(profile)
-    if raw.get("schema_version") != 1 or set(raw) != {"schema_version", "environment", "samples"}:
+    if isinstance(raw.get("schema_version"), bool) or raw.get("schema_version") != 1 \
+            or set(raw) != {"schema_version", "environment", "samples"}:
         raise ValidationError("raw archive must contain schema_version=1, environment, and samples only")
     environment = raw["environment"]
-    if not isinstance(environment, dict) or set(environment) != {"backend", "rdcycle", "rdinstret", "timer"}:
+    if not isinstance(environment, dict) or set(environment) != {"backend", "rdcycle", "rdinstret", "timer",
+            "clock_hz", "minimum_cycles", "warmup_count", "sample_count", "measurement_mode"}:
         raise ValidationError("raw environment is invalid")
-    if environment["backend"] not in {"linux", "baremetal"}:
+    if not isinstance(environment["backend"], str) or environment["backend"] not in {"linux", "baremetal"}:
         raise ValidationError("raw environment backend is invalid")
     if not isinstance(environment["rdcycle"], bool) or not isinstance(environment["rdinstret"], bool):
         raise ValidationError("raw counter availability must be boolean")
-    if environment["timer"] not in {"rdcycle", "clock_gettime"}:
+    if not isinstance(environment["timer"], str) or environment["timer"] not in {"rdcycle", "clock_gettime"}:
         raise ValidationError("raw timer is invalid")
+    if environment["clock_hz"] != profile["target"]["clock_hz"]:
+        raise ValidationError("raw clock_hz conflicts with target profile")
+    if not isinstance(environment["minimum_cycles"], int) or environment["minimum_cycles"] < 1_000_000:
+        raise ValidationError("raw minimum_cycles must be at least 1000000")
+    if environment["warmup_count"] != 2 or environment["sample_count"] != 9:
+        raise ValidationError("raw archive must use 2 warmups and 9 formal samples")
+    if environment["measurement_mode"] not in {"hardware", "qemu_proxy"}:
+        raise ValidationError("raw measurement_mode is invalid")
     profile["measurement_environment"] = copy.deepcopy(environment)
     expected = _expected_metrics(profile)
+    if not isinstance(raw["samples"], list):
+        raise ValidationError("raw samples must be an array")
     seen = set()
     for index, sample in enumerate(raw["samples"]):
-        if set(sample) != {"metric", "category", "source", "values"}:
+        if not isinstance(sample, dict):
+            raise ValidationError(f"samples[{index}] must be an object")
+        if set(sample) != {"metric", "category", "source", "iterations", "normalization",
+                "baseline_values", "measured_values", "values"}:
             raise ValidationError(f"samples[{index}] has invalid keys")
         metric = sample["metric"]
+        if not isinstance(metric, str) or not metric:
+            raise ValidationError(f"samples[{index}].metric must be non-empty text")
         if metric in seen:
             raise ValidationError(f"duplicate raw metric {metric}")
         seen.add(metric)
         if metric not in expected:
             raise ValidationError(f"unsupported raw metric {metric}")
+        if sample["category"] != _category_for_metric(metric):
+            raise ValidationError(f"raw metric {metric} has an invalid category")
         if len(sample["values"]) != 9:
             raise ValidationError(f"raw metric {metric} must contain exactly 9 samples")
         expected_source = "rdcycle_x1000" if environment["timer"] == "rdcycle" \
             else "clock_gettime_ns_x1000"
         if sample["source"] != expected_source:
             raise ValidationError(f"raw metric {metric} source conflicts with measured environment")
+        _validate_raw_evidence(metric, sample)
         path = metric.split(".")
         if path[0] not in {"operations", "pairing", "branch", "spills", "diagnostics"}:
             raise ValidationError(f"unsupported raw metric {metric}")
@@ -104,6 +125,8 @@ def profile_from_raw(template, raw):
     if missing:
         raise ValidationError(f"raw archive misses {len(missing)} required metrics; first: {sorted(missing)[0]}")
     profile["profile"]["calibrated"] = True
+    profile["profile"]["evidence_level"] = (
+        "qemu_proxy" if environment["measurement_mode"] == "qemu_proxy" else "target_hardware")
     return validate_profile(profile)
 
 
@@ -123,6 +146,49 @@ def _expected_metrics(profile):
     return result
 
 
+def _normalization_for_metric(metric):
+    if metric.startswith("operations."):
+        return CORE_UNROLL * 2 if metric.endswith(".throughput") else CORE_UNROLL
+    if metric.startswith(("pairing.", "branch.", "spills.")):
+        return CORE_UNROLL
+    return 1
+
+
+def _category_for_metric(metric):
+    if metric.startswith("operations."):
+        return "arithmetic"
+    if metric.startswith("pairing."):
+        return "pairing"
+    if metric.startswith("branch."):
+        return "branch"
+    if metric.startswith("spills."):
+        return "spill"
+    if metric in {"diagnostics.load_use", "diagnostics.pointer_chase"}:
+        return "memory"
+    return metric.split(".")[1]
+
+
+def _validate_raw_evidence(metric, sample):
+    if isinstance(sample["iterations"], bool) or not isinstance(sample["iterations"], int) \
+            or sample["iterations"] <= 0:
+        raise ValidationError(f"raw metric {metric} iterations must be positive")
+    expected_normalization = _normalization_for_metric(metric)
+    if sample["normalization"] != expected_normalization:
+        raise ValidationError(f"raw metric {metric} normalization must be {expected_normalization}")
+    for key in ("baseline_values", "measured_values", "values"):
+        values = sample[key]
+        if not isinstance(values, list) or len(values) != 9 or any(
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values):
+            raise ValidationError(f"raw metric {metric} {key} must contain 9 positive integers")
+    denominator = sample["iterations"] * sample["normalization"]
+    for index, (baseline, measured, normalized) in enumerate(zip(
+            sample["baseline_values"], sample["measured_values"], sample["values"])):
+        if measured <= baseline:
+            raise ValidationError(f"raw metric {metric} sample {index} is not above baseline")
+        if (measured - baseline) * 1000 // denominator != normalized:
+            raise ValidationError(f"raw metric {metric} sample {index} normalization is inconsistent")
+
+
 def generate_java(profile) -> str:
     validate_profile(profile)
     identity, target, scheduler = profile["profile"], profile["target"], profile["scheduler"]
@@ -136,7 +202,7 @@ def generate_java(profile) -> str:
         "    TargetProfile.Builder builder = TargetProfile.builder()",
         f"        .identity({_java_string(identity['id'])}, {_java_string(target['isa'])}, {_java_string(target['abi'])}, {_java_string(target['code_model'])})",
         f"        .core({int(target['clock_hz'])}L, {target['fetch_width']}, {target['issue_width']}, {target['retire_width']})",
-        f"        .capabilities({str(identity['calibrated']).lower()}, {str(profile['simd']['enabled']).lower()})",
+        f"        .capabilities({str(identity['calibrated']).lower()}, TargetProfile.EvidenceLevel.{identity['evidence_level'].upper()}, {str(profile['simd']['enabled']).lower()})",
         "        .scheduler(new SchedulerPolicy(" + ", ".join((str(scheduler["beam_width"]),
             str(scheduler["max_function_expansions"]), str(scheduler["max_module_expansions"]),
             _double(scheduler["uncertainty_weight"]), str(scheduler["enabled"]).lower())) + "));" ]

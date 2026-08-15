@@ -7,145 +7,145 @@ public final class GeneratedTargetProfile {
   public static TargetProfile get() { return INSTANCE; }
   private static TargetProfile create() {
     TargetProfile.Builder builder = TargetProfile.builder()
-        .identity("boomv3-development-uncalibrated", "rv64gc", "lp64d", "medany")
+        .identity("qemu-rv64gc-baremetal-proxy-v1", "rv64gc", "lp64d", "medany")
         .core(50000000L, 2, 2, 2)
-        .capabilities(false, false)
+        .capabilities(true, TargetProfile.EvidenceLevel.QEMU_PROXY, false)
         .scheduler(new SchedulerPolicy(8, 1024, 4096, 1.0, true));
     builder.operation(InstructionClass.INTEGER_ALU, new TargetProfile.OperationCost(
-        new Measurement(1.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "integer_alu"));
     builder.operation(InstructionClass.INTEGER_MUL, new TargetProfile.OperationCost(
-        new Measurement(3.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "integer_mul"));
     builder.operation(InstructionClass.INTEGER_DIV, new TargetProfile.OperationCost(
-        new Measurement(12.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "integer_div"));
     builder.operation(InstructionClass.FLOAT_ALU, new TargetProfile.OperationCost(
-        new Measurement(3.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "float_alu"));
     builder.operation(InstructionClass.FLOAT_MUL, new TargetProfile.OperationCost(
-        new Measurement(4.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "float_mul"));
     builder.operation(InstructionClass.FLOAT_DIV, new TargetProfile.OperationCost(
-        new Measurement(12.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "float_div"));
     builder.operation(InstructionClass.LOAD, new TargetProfile.OperationCost(
-        new Measurement(4.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "load"));
     builder.operation(InstructionClass.STORE, new TargetProfile.OperationCost(
-        new Measurement(1.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "store"));
     builder.operation(InstructionClass.BRANCH, new TargetProfile.OperationCost(
-        new Measurement(1.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "branch"));
     builder.operation(InstructionClass.CALL_RETURN, new TargetProfile.OperationCost(
-        new Measurement(3.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(2.0, 0.0, 9, "rdcycle"),
+        new Measurement(2.0, 0.0, 9, "rdcycle"),
         1.0, 4, "call_return"));
     builder.operation(InstructionClass.ADDRESS, new TargetProfile.OperationCost(
-        new Measurement(1.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "address"));
     builder.operation(InstructionClass.MOVE, new TargetProfile.OperationCost(
-        new Measurement(1.0, 0.0, 1, "declared-development"),
-        new Measurement(1.0, 0.0, 1, "declared-development"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
         1.0, 4, "move"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.INTEGER_ALU, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.INTEGER_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.INTEGER_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.FLOAT_ALU, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.FLOAT_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.FLOAT_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.INTEGER_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.INTEGER_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.FLOAT_ALU, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.FLOAT_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.FLOAT_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.INTEGER_DIV, new Measurement(2.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.FLOAT_ALU, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.FLOAT_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.FLOAT_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.FLOAT_ALU, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.FLOAT_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.FLOAT_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.FLOAT_MUL, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.FLOAT_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.FLOAT_DIV, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.LOAD, InstructionClass.LOAD, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.LOAD, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.LOAD, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.LOAD, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.LOAD, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.LOAD, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.STORE, InstructionClass.STORE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.STORE, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.STORE, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.STORE, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.STORE, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.BRANCH, InstructionClass.BRANCH, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.BRANCH, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.BRANCH, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.BRANCH, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.CALL_RETURN, InstructionClass.CALL_RETURN, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.CALL_RETURN, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.CALL_RETURN, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.ADDRESS, InstructionClass.ADDRESS, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.ADDRESS, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.pair(InstructionClass.MOVE, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
-    builder.branch(new Measurement(1.0, 0.0, 1, "declared-development"), new Measurement(8.0, 0.0, 1, "declared-development"));
-    builder.spills(new Measurement(5.0, 0.0, 1, "declared-development"), new Measurement(2.0, 0.0, 1, "declared-development"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.INTEGER_ALU, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.INTEGER_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.INTEGER_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.FLOAT_ALU, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.FLOAT_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.FLOAT_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_ALU, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.INTEGER_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.INTEGER_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.FLOAT_ALU, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.FLOAT_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.FLOAT_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_MUL, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.INTEGER_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.FLOAT_ALU, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.FLOAT_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.FLOAT_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.INTEGER_DIV, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.FLOAT_ALU, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.FLOAT_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.FLOAT_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_ALU, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.FLOAT_MUL, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.FLOAT_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_MUL, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.FLOAT_DIV, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.FLOAT_DIV, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.LOAD, InstructionClass.LOAD, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.LOAD, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.LOAD, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.LOAD, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.LOAD, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.LOAD, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.STORE, InstructionClass.STORE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.STORE, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.STORE, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.STORE, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.STORE, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.BRANCH, InstructionClass.BRANCH, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.BRANCH, InstructionClass.CALL_RETURN, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.BRANCH, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.BRANCH, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.CALL_RETURN, InstructionClass.CALL_RETURN, new Measurement(4.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.CALL_RETURN, InstructionClass.ADDRESS, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.CALL_RETURN, InstructionClass.MOVE, new Measurement(3.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.ADDRESS, InstructionClass.ADDRESS, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.ADDRESS, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.pair(InstructionClass.MOVE, InstructionClass.MOVE, new Measurement(2.0, 0.0, 9, "rdcycle"));
+    builder.branch(new Measurement(1.0, 0.0, 9, "rdcycle"), new Measurement(1.007, 0.0, 9, "rdcycle"));
+    builder.spills(new Measurement(1.0, 0.0, 9, "rdcycle"), new Measurement(1.0, 0.0, 9, "rdcycle"));
     builder.diagnostics(new TargetProfile.DiagnosticCosts(
-        new Measurement(5.0, 0.0, 1, "declared-development"),
-        new Measurement(8.0, 0.0, 1, "declared-development"),
-        new java.util.TreeMap<>(java.util.Map.of(4096, new Measurement(5.0, 0.0, 1, "declared-development"), 32768, new Measurement(5.0, 0.0, 1, "declared-development"), 262144, new Measurement(8.0, 0.0, 1, "declared-development"))),
-        new java.util.TreeMap<>(java.util.Map.of(8, new Measurement(5.0, 0.0, 1, "declared-development"), 64, new Measurement(5.0, 0.0, 1, "declared-development"), 512, new Measurement(8.0, 0.0, 1, "declared-development"))),
-        new java.util.TreeMap<>(java.util.Map.of(64, new Measurement(8.0, 0.0, 1, "declared-development"), 256, new Measurement(32.0, 0.0, 1, "declared-development"), 1024, new Measurement(128.0, 0.0, 1, "declared-development"))),
-        new java.util.TreeMap<>(java.util.Map.of(8, new Measurement(1.0, 0.0, 1, "declared-development"), 16, new Measurement(1.0, 0.0, 1, "declared-development"), 24, new Measurement(17.0, 0.0, 1, "declared-development"), 32, new Measurement(33.0, 0.0, 1, "declared-development")))));
+        new Measurement(2.0, 0.0, 9, "rdcycle"),
+        new Measurement(1.0, 0.0, 9, "rdcycle"),
+        new java.util.TreeMap<>(java.util.Map.of(4096, new Measurement(4.0, 0.0, 9, "rdcycle"), 32768, new Measurement(4.0, 0.0, 9, "rdcycle"), 262144, new Measurement(4.0, 0.0, 9, "rdcycle"))),
+        new java.util.TreeMap<>(java.util.Map.of(8, new Measurement(4.0, 0.0, 9, "rdcycle"), 64, new Measurement(4.0, 0.0, 9, "rdcycle"), 512, new Measurement(4.0, 0.0, 9, "rdcycle"))),
+        new java.util.TreeMap<>(java.util.Map.of(64, new Measurement(11.0, 0.0, 9, "rdcycle"), 256, new Measurement(59.0, 0.0, 9, "rdcycle"), 1024, new Measurement(251.0, 0.0, 9, "rdcycle"))),
+        new java.util.TreeMap<>(java.util.Map.of(8, new Measurement(8.0, 0.0, 9, "rdcycle"), 16, new Measurement(16.0, 0.0, 9, "rdcycle"), 24, new Measurement(24.001, 0.0, 9, "rdcycle"), 32, new Measurement(48.002, 0.0, 9, "rdcycle")))));
     return builder.build();
   }
 }

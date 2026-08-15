@@ -1,6 +1,7 @@
 package accela.cost;
 
 import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineVerifier;
 import accela.backend.regalloc.AllocationEstimate;
 import accela.backend.regalloc.RegisterAllocator;
 import accela.backend.target.RISCVTarget;
@@ -31,32 +32,42 @@ public final class MachineCandidateScheduler {
 
   public boolean apply(
       String candidateId,
-      String legalityObligation,
+      LegalityResult legality,
       MachineFunction function,
       Predicate<MachineFunction> transform) {
+    Objects.requireNonNull(legality, "legality");
     if (expansions >= profile.scheduler().maxFunctionExpansions()) {
-      trace.accept(new DecisionTraceSink.Decision(profile.id(), candidateId, "machine-function",
-          function.getName(), "rejected", "budget_exhausted", Map.of(), null, null, null,
+      trace.accept(new DecisionTraceSink.Decision(profile.id(), profile.evidenceLevel().name().toLowerCase(),
+          candidateId, "machine-function", function.getName(), "rejected", "budget_exhausted",
+          "not_evaluated", legality.obligation(), Map.of(), null, null, null,
           expansions, profile.scheduler().maxFunctionExpansions()));
       return false;
     }
-    if (legalityObligation == null || legalityObligation.isBlank()) {
-      throw new IllegalArgumentException("candidate requires a legality obligation");
+    if (!legality.mayApply()) {
+      trace.accept(new DecisionTraceSink.Decision(profile.id(), profile.evidenceLevel().name().toLowerCase(),
+          candidateId, "machine-function", function.getName(), "rejected", legality.detail(),
+          legality.status().name().toLowerCase(), legality.obligation(), Map.of(), null, null, null,
+          expansions, profile.scheduler().maxFunctionExpansions()));
+      return false;
     }
     expansions++;
+    MachineVerifier.verify(function);
     MachineFunction candidate = function.deepCopy();
     boolean changed = transform.test(candidate);
     if (!changed) {
-      trace.accept(new DecisionTraceSink.Decision(profile.id(), candidateId, "machine-function",
-          function.getName(), "rejected", "no_change", Map.of(), null, null, null,
+      trace.accept(new DecisionTraceSink.Decision(profile.id(), profile.evidenceLevel().name().toLowerCase(),
+          candidateId, "machine-function", function.getName(), "rejected", "no_change",
+          "not_applicable", legality.obligation(), Map.of(), null, null, null,
           expansions, profile.scheduler().maxFunctionExpansions()));
       return false;
     }
+    MachineVerifier.verify(candidate);
     if (!profile.calibrated() || !profile.scheduler().enabled()) {
       function.replaceWith(candidate);
-      trace.accept(new DecisionTraceSink.Decision(profile.id(), candidateId, "machine-function",
-          function.getName(), "applied", "uncalibrated_profile_preserves_production_pipeline",
-          Map.of("legality_obligation", legalityObligation), null, null, null,
+      trace.accept(new DecisionTraceSink.Decision(profile.id(), profile.evidenceLevel().name().toLowerCase(),
+          candidateId, "machine-function", function.getName(), "applied",
+          "uncalibrated_profile_preserves_production_pipeline", "proved", legality.obligation(),
+          Map.of(), null, null, null,
           expansions, profile.scheduler().maxFunctionExpansions()));
       return true;
     }
@@ -66,10 +77,11 @@ public final class MachineCandidateScheduler {
     boolean profitable = transformed.robustScore(profile.scheduler())
         < baseline.robustScore(profile.scheduler());
     if (profitable) function.replaceWith(candidate);
-    trace.accept(new DecisionTraceSink.Decision(profile.id(), candidateId, "machine-function",
+    trace.accept(new DecisionTraceSink.Decision(profile.id(), profile.evidenceLevel().name().toLowerCase(),
+        candidateId, "machine-function",
         function.getName(), profitable ? "applied" : "rejected",
         profitable ? "robust_cost_improved" : "robust_cost_not_improved",
-        Map.of("legality_obligation", legalityObligation), baseline, transformed, allocation,
+        "proved", legality.obligation(), Map.of(), baseline, transformed, allocation,
         expansions, profile.scheduler().maxFunctionExpansions()));
     return profitable;
   }

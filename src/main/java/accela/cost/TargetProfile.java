@@ -10,6 +10,8 @@ import java.util.TreeMap;
 public final class TargetProfile {
   public static final int SCHEMA_VERSION = 1;
 
+  public enum EvidenceLevel { DECLARED, QEMU_PROXY, TARGET_HARDWARE }
+
   public record OperationCost(
       Measurement latency,
       Measurement reciprocalThroughput,
@@ -65,6 +67,7 @@ public final class TargetProfile {
   private final int issueWidth;
   private final int retireWidth;
   private final boolean calibrated;
+  private final EvidenceLevel evidenceLevel;
   private final boolean simdEnabled;
   private final SchedulerPolicy scheduler;
   private final Map<InstructionClass, OperationCost> operations;
@@ -86,6 +89,10 @@ public final class TargetProfile {
     issueWidth = requireWidth(builder.issueWidth, "issueWidth");
     retireWidth = requireWidth(builder.retireWidth, "retireWidth");
     calibrated = builder.calibrated;
+    evidenceLevel = Objects.requireNonNull(builder.evidenceLevel, "evidenceLevel");
+    if (calibrated == (evidenceLevel == EvidenceLevel.DECLARED)) {
+      throw new IllegalArgumentException("calibrated and evidenceLevel are inconsistent");
+    }
     simdEnabled = builder.simdEnabled;
     scheduler = Objects.requireNonNull(builder.scheduler, "scheduler");
     EnumMap<InstructionClass, OperationCost> copiedOps = new EnumMap<>(InstructionClass.class);
@@ -131,6 +138,7 @@ public final class TargetProfile {
   public int issueWidth() { return issueWidth; }
   public int retireWidth() { return retireWidth; }
   public boolean calibrated() { return calibrated; }
+  public EvidenceLevel evidenceLevel() { return evidenceLevel; }
   public boolean simdEnabled() { return simdEnabled; }
   public SchedulerPolicy scheduler() { return scheduler; }
   public OperationCost operation(InstructionClass instructionClass) { return operations.get(instructionClass); }
@@ -163,6 +171,7 @@ public final class TargetProfile {
     private int issueWidth;
     private int retireWidth;
     private boolean calibrated;
+    private EvidenceLevel evidenceLevel;
     private boolean simdEnabled;
     private SchedulerPolicy scheduler;
     private final EnumMap<InstructionClass, OperationCost> operations = new EnumMap<>(InstructionClass.class);
@@ -180,8 +189,9 @@ public final class TargetProfile {
       this.clockHz = clockHz; this.fetchWidth = fetchWidth; this.issueWidth = issueWidth;
       this.retireWidth = retireWidth; return this;
     }
-    public Builder capabilities(boolean calibrated, boolean simdEnabled) {
-      this.calibrated = calibrated; this.simdEnabled = simdEnabled; return this;
+    public Builder capabilities(boolean calibrated, EvidenceLevel evidenceLevel, boolean simdEnabled) {
+      this.calibrated = calibrated; this.evidenceLevel = evidenceLevel;
+      this.simdEnabled = simdEnabled; return this;
     }
     public Builder scheduler(SchedulerPolicy scheduler) { this.scheduler = scheduler; return this; }
     public Builder operation(InstructionClass instructionClass, OperationCost cost) {

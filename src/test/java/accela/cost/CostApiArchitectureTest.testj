@@ -22,7 +22,8 @@ final class CostApiArchitectureTest {
   void schedulingContractsCannotAcquireTestIdentityInputs() {
     for (Class<?> contract : List.of(CostEstimate.class, OptimizationCandidate.class,
         CandidateProvider.class, LegalityResult.class, SchedulerPolicy.class,
-        AllocationEstimate.class, TargetProfile.class)) {
+        AllocationEstimate.class, TargetProfile.class, IRCandidateScheduler.class,
+        MachineCandidateScheduler.class, MachineCostModel.class)) {
       for (Field field : contract.getDeclaredFields()) reject(contract, field.getName());
       for (Method method : contract.getDeclaredMethods()) reject(contract, method.getName());
       for (RecordComponent component : contract.getRecordComponents() == null
@@ -35,11 +36,24 @@ final class CostApiArchitectureTest {
   @Test
   void decisionTraceIsStructuredVersionedJson() {
     DecisionTraceSink.Decision decision = new DecisionTraceSink.Decision(
-        "profile", "candidate", "mir-function", "function", "rejected", "unknown legality",
-        Map.of("factor", "2"), null, null, null, 1, 1024);
+        "profile", "qemu_proxy", "candidate", "mir-function", "function", "rejected",
+        "unknown legality", "unknown", "candidate.valid-shape", Map.of("factor", "2"),
+        null, null, null, 1, 1024);
     Object parsed = StrictJson.parse(StrictJson.stringify(decision.toJson()));
     assertTrue(parsed instanceof Map<?, ?>);
     assertTrue(((Map<?, ?>) parsed).containsKey("schema_version"));
+  }
+
+  @Test
+  void decisionTraceAllocationFieldsHaveStableOrder() {
+    DecisionTraceSink.Decision decision = new DecisionTraceSink.Decision(
+        "profile", "qemu_proxy", "candidate", "mir-function", "function", "considered",
+        "proved_and_costed", "proved", "candidate.valid-shape", Map.of(), null, null,
+        new AllocationEstimate(1, 2.0, 3, 4, 5, 6), 1, 8);
+    String json = StrictJson.stringify(decision.toJson());
+    assertTrue(json.contains("\"allocation\":{\"predicted_spills\":1,\"spill_weight\":2.0,"
+        + "\"max_integer_live\":3,\"max_float_live\":4,\"callee_save_cost\":5,"
+        + "\"coalescing_loss\":6}"));
   }
 
   private static void reject(Class<?> contract, String name) {

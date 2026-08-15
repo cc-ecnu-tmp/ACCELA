@@ -1,10 +1,13 @@
 # TargetProfile boomv3-development-uncalibrated
 
 - Calibrated: `false`
+- Evidence level: `declared`
 - Target: `rv64gc` / `lp64d` / `medany`
 - Core: 50000000 Hz, issue width 2
 - Measurement backend: `unmeasured`
 - Timer: `unmeasured`; rdcycle=`unmeasured`; rdinstret=`unmeasured`
+- Sampling: 2 warmups, 9 samples, minimum 1000000 cycles
+- Measurement mode: `declared`
 - SIMD enabled: `false`
 
 ## Operation measurements

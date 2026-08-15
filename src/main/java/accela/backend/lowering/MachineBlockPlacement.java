@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import accela.cost.HotnessModel;
 
 /**
  * Forms simple CFG traces so likely successors are emitted as fallthrough blocks.
@@ -30,7 +31,7 @@ public final class MachineBlockPlacement {
 
       // Follow the first unplaced CFG successor to extend the current trace. When it ends,
       // begin another trace at the earliest block in the original order.
-      current = firstUnplaced(successors(current), placed);
+      current = firstUnplaced(HotnessModel.DEFAULT.orderUnknownSuccessors(successors(current)), placed);
       if (current == null) current = firstUnplaced(original, placed);
     }
     if (order.equals(original)) return false;

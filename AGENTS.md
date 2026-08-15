@@ -9,7 +9,7 @@
 ## Cost scheduling
 
 - TargetProfile, TargetLab, compiler cost classes, and DecisionTrace share stable instruction-class names.
-- Only a profile explicitly marked `calibrated: true` may change profitability decisions. The checked-in development profile preserves the existing production pipeline.
+- Only a profile explicitly marked `calibrated: true` may change profitability decisions. `evidence_level` distinguishes declared, QEMU-proxy, and target-hardware data; QEMU data never inherits hardware evidence.
 - Candidate matchers do not receive filenames, paths, source bytes, case identifiers, expected outputs, hashes, or test fingerprints.
 - Legality is fail-closed: only `PROVED` candidates may transform code; `REJECTED` and `UNKNOWN` remain unchanged and observable.
 - Candidate evaluation is transactional. Internal errors and verifier failures abort compilation; they never select a fallback candidate silently.
@@ -19,6 +19,7 @@
 
 - BOOM hardware measurements are the only evidence that can close the LLVM performance gate.
 - QEMU, static cost estimates, host smoke tests, and Oracle programs are diagnostic evidence, not BOOM or release evidence.
+- The embedded development profile is measured with deterministic bare-metal QEMU proxy kernels. It exercises the calibrated scheduler but is not BOOM calibration or release evidence.
 - R1 release requires correctness, paired GM lower confidence bound at least 1.00 versus ACCELA FULL, and no case below 0.90.
 - R2 release additionally requires paired GM lower confidence bound greater than 1.00 versus the organizer LLVM baseline.
 - Experimental transformations are measured as `FULL` versus `FULL + candidate`; `without.*` is diagnostic only.

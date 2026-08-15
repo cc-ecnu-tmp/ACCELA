@@ -70,7 +70,9 @@ public final class MachineCostModel {
     double branch = branches * profile.predictableBranch().median();
     AllocationEstimate allocation = allocator.estimate(function, target);
     double spill = allocation.spillWeight()
-        * (profile.spillLoad().median() + profile.spillStore().median());
+        * (profile.spillLoad().median() + profile.spillStore().median())
+        + allocation.calleeSaveCost()
+            * (profile.spillLoad().median() + profile.spillStore().median());
     double codeSize = codeBytes / (profile.fetchWidth() * 16.0);
     double bottleneck = Math.max(Math.max(criticalPath, frontend), Math.max(resourceCycles, memory));
     double cycles = bottleneck + branch + spill + codeSize;

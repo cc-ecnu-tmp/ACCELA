@@ -42,6 +42,13 @@ import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
  * Builds the project's default pass pipelines.
  */
 public final class PassBuilder {
+  private final boolean costSchedulerOwnsR1Passes;
+
+  public PassBuilder() { this(false); }
+
+  public PassBuilder(boolean costSchedulerOwnsR1Passes) {
+    this.costSchedulerOwnsR1Passes = costSchedulerOwnsR1Passes;
+  }
   private static boolean isSimplifyCfgEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_SIMPLIFYCFG");
     return disable == null
@@ -257,7 +264,7 @@ public final class PassBuilder {
     if (isLoopRotateEnabled()) {
       postIpsccpFpm.addPass(new LoopRotate.Pass());
     }
-    if (isLicmEnabled()) {
+    if (isLicmEnabled() && !costSchedulerOwnsR1Passes) {
       postIpsccpFpm.addPass(new LICM.Pass());
       if (isEarlyCseEnabled()) {
         postIpsccpFpm.addPass(new EarlyCSE.Pass());
@@ -266,7 +273,7 @@ public final class PassBuilder {
     if (isLoopUnrollAndJamEnabled()) {
       postIpsccpFpm.addPass(new LoopUnrollAndJam.Pass());
     }
-    if (isLoopUnrollEnabled()) {
+    if (isLoopUnrollEnabled() && !costSchedulerOwnsR1Passes) {
       postIpsccpFpm.addPass(new LoopUnroll.Pass());
       postIpsccpFpm.addPass(new LoopUnroll.Pass());
     }
@@ -285,11 +292,13 @@ public final class PassBuilder {
           postIpsccpFpm.addPass(new IndVarSimplify.LFTRPass());
         }
       }
-      if (isLicmEnabled()) {
+      if (isLicmEnabled() && !costSchedulerOwnsR1Passes) {
         postIpsccpFpm.addPass(new LICM.Pass());
       }
     }
-    postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    if (!costSchedulerOwnsR1Passes) {
+      postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    }
     if (isLoopStrengthReduceEnabled() && enableAdce) {
       postIpsccpFpm.addPass(new ADCE.Pass());
     }
@@ -317,7 +326,7 @@ public final class PassBuilder {
       mpm.addPass(new RankedRecurrenceTabulation.Pass());
     }
     mpm.addPass(new ModuleToFunctionPassAdaptor(preInlineFpm));
-    if (isInlinerEnabled()) {
+    if (isInlinerEnabled() && !costSchedulerOwnsR1Passes) {
       mpm.addPass(new Inliner.Pass());
       mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
       mpm.addPass(new IPSCCP.Pass());

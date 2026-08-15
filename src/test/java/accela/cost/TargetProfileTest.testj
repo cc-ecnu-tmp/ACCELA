@@ -3,6 +3,7 @@ package accela.cost;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,8 @@ final class TargetProfileTest {
     assertEquals("lp64d", profile.abi());
     assertEquals("medany", profile.codeModel());
     assertEquals(2, profile.issueWidth());
-    assertFalse(profile.calibrated());
+    assertTrue(profile.calibrated());
+    assertEquals(TargetProfile.EvidenceLevel.QEMU_PROXY, profile.evidenceLevel());
     assertFalse(profile.simdEnabled());
     assertEquals(8, profile.scheduler().beamWidth());
     assertEquals(4, profile.diagnostics().registerPressure().size());
@@ -26,7 +28,7 @@ final class TargetProfileTest {
     assertThrows(IllegalArgumentException.class, () -> TargetProfile.builder()
         .identity("bad", "rv64gc", "lp64d", "medany")
         .core(50_000_000L, 2, 2, 2)
-        .capabilities(true, false)
+        .capabilities(true, TargetProfile.EvidenceLevel.TARGET_HARDWARE, false)
         .scheduler(new SchedulerPolicy(8, 1024, 4096, 1.0, true))
         .build());
   }

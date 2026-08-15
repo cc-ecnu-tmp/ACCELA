@@ -17,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.Path;
 import accela.cost.DecisionTraceSink;
+import accela.cost.GeneratedTargetProfile;
+import accela.cost.IRCandidateScheduler;
 
 public class Compiler {
   public static void main(String[] args) throws Exception {
@@ -28,7 +30,7 @@ public class Compiler {
               ? DecisionTraceSink.noop()
               : DecisionTraceSink.jsonl(Path.of(compileArgument.costTracePath()));
           PrintStream stream = new PrintStream(compileArgument.outputFilePath())) {
-        String assembly = new BackendCompiler(trace).compileToAssembly(buildOptimizedIR(unit));
+        String assembly = new BackendCompiler(trace).compileToAssembly(buildOptimizedIR(unit, trace));
         stream.print(assembly);
       }
     } else {
@@ -50,18 +52,18 @@ public class Compiler {
     return unit;
   }
 
-  private static accela.ir.Module buildOptimizedIR(Node unit) {
+  private static accela.ir.Module buildOptimizedIR(Node unit, DecisionTraceSink trace) {
     accela.ir.Module module = new AST2IR().convert(unit);
     IRVerifier.verifyModule(module);
 
-    PassBuilder passBuilder = new PassBuilder();
+    PassBuilder passBuilder = new PassBuilder(true);
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
     PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(false);
     ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline(instrumentation);
     irPipeline.run(module, mam, fam);
     IRVerifier.verifyModule(module);
-    return module;
+    return new IRCandidateScheduler(GeneratedTargetProfile.get(), trace).schedule(module);
   }
 
   static CompileArgument parseArguments(String[] args) {

@@ -9,7 +9,8 @@ import tempfile
 from pathlib import Path
 
 from .config import validate_config
-from .profilec import _expected_metrics, canonical_json, embed, load_json, parse_json, profile_from_raw
+from .profilec import (_category_for_metric, _expected_metrics, _normalization_for_metric, canonical_json, embed,
+    load_json, parse_json, profile_from_raw)
 from .runner import build, run_baremetal, run_linux
 from .schema import ValidationError, validate_profile
 
@@ -27,12 +28,16 @@ def main(argv=None):
     configure.add_argument("--clock-hz", type=int, required=True)
     configure.add_argument("--minimum-cycles", type=int, default=1_000_000)
     configure.add_argument("--timeout-seconds", type=int, default=3600)
+    configure.add_argument("--measurement-mode", choices=("hardware", "qemu_proxy"), default="hardware")
     configure.add_argument("--execute", default="")
     configure.add_argument("--gdb", default="")
     configure.add_argument("--gdb-remote", default="localhost:3333")
-    configure.add_argument("--openocd", default="openocd")
+    configure.add_argument("--debug-server-kind", choices=("openocd", "qemu"), default="openocd")
+    configure.add_argument("--debug-server-mode", choices=("managed", "external"), default="managed")
+    configure.add_argument("--debug-server-executable", default="")
     configure.add_argument("--openocd-config", default="")
-    configure.add_argument("--openocd-mode", choices=("managed", "external"), default="managed")
+    configure.add_argument("--qemu-machine", default="virt")
+    configure.add_argument("--qemu-memory", default="512M")
     configure.add_argument("--startup", default="")
     configure.add_argument("--linker", default="")
     for name in ("build", "run"):
@@ -48,6 +53,7 @@ def main(argv=None):
     profile.add_argument("raw", type=Path)
     profile.add_argument("template", type=Path)
     profile.add_argument("output", type=Path)
+    profile.add_argument("--profile-id")
     validate = subparsers.add_parser("validate")
     validate.add_argument("profile", type=Path)
     embed_parser = subparsers.add_parser("embed")
@@ -81,6 +87,10 @@ def main(argv=None):
         _collect(args.input, args.output)
     elif args.command == "profile":
         result = profile_from_raw(load_json(args.template), load_json(args.raw))
+        if args.profile_id is not None:
+            if not args.profile_id.strip():
+                raise ValidationError("--profile-id must be non-empty")
+            result["profile"]["id"] = args.profile_id
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(canonical_json(result), encoding="utf-8", newline="\n")
     elif args.command == "validate":
@@ -101,18 +111,27 @@ def main(argv=None):
 def _configure(args):
     if args.backend == "linux" and not args.execute:
         raise ValidationError("Linux backend requires --execute")
-    if args.backend == "baremetal" and (not args.gdb or not args.startup or not args.linker
-            or not args.openocd_config):
-        raise ValidationError("baremetal backend requires GDB, OpenOCD config, startup, and linker")
+    if args.backend == "baremetal" and (not args.gdb or not args.startup or not args.linker):
+        raise ValidationError("baremetal backend requires GDB, startup, and linker")
+    if args.backend == "baremetal" and args.debug_server_kind == "openocd" and not args.openocd_config:
+        raise ValidationError("OpenOCD backend requires --openocd-config")
     document = {"backend": args.backend, "cc": args.cc, "objcopy": args.objcopy, "nm": args.nm,
         "build_dir": args.build_dir, "clock_hz": args.clock_hz,
-        "minimum_cycles": args.minimum_cycles, "timeout_seconds": args.timeout_seconds}
+        "minimum_cycles": args.minimum_cycles, "timeout_seconds": args.timeout_seconds,
+        "measurement_mode": args.measurement_mode}
     if args.backend == "linux":
         document["execute"] = args.execute
     else:
+        executable = args.debug_server_executable or (
+            "openocd" if args.debug_server_kind == "openocd" else "qemu-system-riscv64")
+        debug_server = {"kind": args.debug_server_kind, "mode": args.debug_server_mode,
+            "executable": executable}
+        if args.debug_server_kind == "openocd":
+            debug_server["config"] = args.openocd_config
+        else:
+            debug_server.update({"machine": args.qemu_machine, "memory": args.qemu_memory})
         document.update({"gdb": args.gdb, "gdb_remote": args.gdb_remote,
-            "startup": args.startup, "linker": args.linker, "openocd": args.openocd,
-            "openocd_config": args.openocd_config, "openocd_mode": args.openocd_mode})
+            "startup": args.startup, "linker": args.linker, "debug_server": debug_server})
     validate_config(document)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(canonical_json(document), encoding="utf-8", newline="\n")
@@ -126,13 +145,17 @@ def _collect(source, output):
             continue
         item = parse_json(line, f"target JSON line {line_number}")
         if item.get("kind") == "environment":
-            if environment is not None or set(item) != {"kind", "backend", "rdcycle", "rdinstret", "timer"}:
+            if environment is not None or set(item) != {"kind", "backend", "rdcycle", "rdinstret", "timer",
+                    "clock_hz", "minimum_cycles", "warmup_count", "sample_count", "measurement_mode"}:
                 raise ValidationError(f"target JSON environment at line {line_number} is invalid or duplicated")
-            environment = {key: item[key] for key in ("backend", "rdcycle", "rdinstret", "timer")}
+            environment = {key: item[key] for key in ("backend", "rdcycle", "rdinstret", "timer",
+                "clock_hz", "minimum_cycles", "warmup_count", "sample_count", "measurement_mode")}
         elif item.get("kind") == "sample":
-            if set(item) != {"kind", "metric", "category", "source", "values"}:
+            if set(item) != {"kind", "metric", "category", "source", "iterations", "normalization",
+                    "baseline_values", "measured_values", "values"}:
                 raise ValidationError(f"target JSON sample at line {line_number} has invalid keys")
-            samples.append({key: item[key] for key in ("metric", "category", "source", "values")})
+            samples.append({key: item[key] for key in ("metric", "category", "source", "iterations",
+                "normalization", "baseline_values", "measured_values", "values")})
         else:
             raise ValidationError(f"target JSON line {line_number} has unknown kind")
     if environment is None:
@@ -147,10 +170,13 @@ def _report(profile, output):
     environment = profile["measurement_environment"]
     lines = [f"# TargetProfile {profile['profile']['id']}", "",
         f"- Calibrated: `{str(profile['profile']['calibrated']).lower()}`",
+        f"- Evidence level: `{profile['profile']['evidence_level']}`",
         f"- Target: `{profile['target']['isa']}` / `{profile['target']['abi']}` / `{profile['target']['code_model']}`",
         f"- Core: {profile['target']['clock_hz']} Hz, issue width {profile['target']['issue_width']}",
         f"- Measurement backend: `{environment['backend']}`",
         f"- Timer: `{environment['timer']}`; rdcycle=`{_capability(environment['rdcycle'])}`; rdinstret=`{_capability(environment['rdinstret'])}`",
+        f"- Sampling: {environment['warmup_count']} warmups, {environment['sample_count']} samples, minimum {environment['minimum_cycles']} cycles",
+        f"- Measurement mode: `{environment['measurement_mode']}`",
         f"- SIMD enabled: `{str(profile['simd']['enabled']).lower()}`", "", "## Operation measurements", "",
         "| Class | Latency | MAD | Throughput | MAD |", "|---|---:|---:|---:|---:|"]
     for name, operation in profile["operations"].items():
@@ -176,11 +202,16 @@ def _capability(value):
 def _doctor(config, root):
     required = ["make", config["cc"], config["objcopy"], config["nm"]]
     if config["backend"] == "baremetal":
-        required.extend((config["gdb"], config["openocd"]))
-        for name in ("startup", "linker", "openocd_config"):
+        server = config["debug_server"]
+        required.extend((config["gdb"], server["executable"]))
+        for name in ("startup", "linker"):
             path = (root / config[name]).resolve()
             if not path.is_file():
                 raise ValidationError(f"configured {name} file does not exist: {config[name]}")
+        if server["kind"] == "openocd":
+            path = (root / server["config"]).resolve()
+            if not path.is_file():
+                raise ValidationError(f"configured OpenOCD file does not exist: {server['config']}")
     else:
         execute = shlex.split(config["execute"])
         if not execute:
@@ -211,9 +242,14 @@ def _selftest(template_path):
         generated = root / "GeneratedTargetProfile.java"
         report = root / "report.md"
         records = [{"kind": "environment", "backend": "linux", "rdcycle": True,
-            "rdinstret": True, "timer": "rdcycle"}]
-        records.extend({"kind": "sample", "metric": metric, "category": "selftest",
-            "source": "rdcycle_x1000", "values": [1000] * 9}
+            "rdinstret": True, "timer": "rdcycle", "clock_hz": template["target"]["clock_hz"],
+            "minimum_cycles": 1_000_000, "warmup_count": 2, "sample_count": 9,
+            "measurement_mode": "hardware"}]
+        records.extend({"kind": "sample", "metric": metric, "category": _category_for_metric(metric),
+            "source": "rdcycle_x1000", "iterations": 1000,
+            "normalization": _normalization_for_metric(metric), "baseline_values": [1000] * 9,
+            "measured_values": [1000 + 1000 * _normalization_for_metric(metric)] * 9,
+            "values": [1000] * 9}
             for metric in sorted(_expected_metrics(template)))
         raw_jsonl.write_text("".join(json.dumps(record, separators=(",", ":")) + "\n"
             for record in records), encoding="utf-8", newline="\n")

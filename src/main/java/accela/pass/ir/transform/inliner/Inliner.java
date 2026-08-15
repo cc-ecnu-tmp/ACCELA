@@ -13,6 +13,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import accela.cost.HotnessModel;
 
 /**
  * Inlines profitable direct calls using a bounded, bottom-up cost model.
@@ -24,8 +25,6 @@ import java.util.Set;
 public final class Inliner {
   private static final int MAX_ROUNDS = 4;
   private static final int MAX_INLINE_SITES = 128;
-  private static final int MAX_SINGLE_USE_COST = 240;
-  private static final int MAX_REPEATED_COST = 80;
   private static final int MAX_CALLER_INSTRUCTIONS = 2000;
 
   private Inliner() {}
@@ -74,8 +73,8 @@ public final class Inliner {
     }
 
     int cost = instructionCount(callee);
-    int threshold =
-        callCounts.getOrDefault(callee, 0) == 1 ? MAX_SINGLE_USE_COST : MAX_REPEATED_COST;
+    int threshold = HotnessModel.DEFAULT.inlineInstructionBudget(
+        callCounts.getOrDefault(callee, 0));
     return cost <= threshold
         && instructionCount(caller) + cost <= MAX_CALLER_INSTRUCTIONS
         && hasValidReturns(callee);

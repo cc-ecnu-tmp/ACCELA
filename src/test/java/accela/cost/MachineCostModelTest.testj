@@ -1,6 +1,8 @@
 package accela.cost;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.ImmOperand;
@@ -33,7 +35,7 @@ final class MachineCostModelTest {
   }
 
   @Test
-  void machineCopyIsTransactionalAndDefaultProfilePreservesPipeline() {
+  void machineCopyIsTransactionalAndCalibratedProfileSelectsValidCandidate() {
     MachineFunction function = simpleFunction();
     MachineFunction copy = function.deepCopy();
     copy.getEntryBlock().getInstructions().removeFirst();
@@ -43,13 +45,39 @@ final class MachineCostModelTest {
     AtomicInteger applied = new AtomicInteger();
     MachineCandidateScheduler scheduler = new MachineCandidateScheduler(GeneratedTargetProfile.get(),
         new IteratedRegisterAllocator(), new RISCVTarget(), DecisionTraceSink.noop());
-    assertTrue(scheduler.apply("test.candidate", "test.candidate.safe", function, candidate -> {
-      candidate.getEntryBlock().getInstructions().removeFirst();
+    assertTrue(scheduler.apply("test.candidate", new LegalityResult(LegalityResult.Status.PROVED,
+        "test.candidate.safe", "test proof"), function, candidate -> {
+      VirtualRegister constant = candidate.getEntryBlock().getInstructions().getFirst().getDest();
+      candidate.getEntryBlock().getInstructions().getLast().setOperand(0, new VRegOperand(constant));
+      candidate.getEntryBlock().getInstructions().remove(1);
       applied.incrementAndGet();
       return true;
     }));
     assertEquals(1, applied.get());
     assertEquals(2, function.getEntryBlock().getInstructions().size());
+  }
+
+  @Test
+  void unknownLegalityAndTransformExceptionsNeverMutateBaseline() {
+    MachineFunction function = simpleFunction();
+    MachineCandidateScheduler scheduler = new MachineCandidateScheduler(GeneratedTargetProfile.get(),
+        new IteratedRegisterAllocator(), new RISCVTarget(), DecisionTraceSink.noop());
+    AtomicInteger called = new AtomicInteger();
+    assertFalse(scheduler.apply("test.unknown", new LegalityResult(LegalityResult.Status.UNKNOWN,
+        "test.unknown.proof", "insufficient dominance evidence"), function, candidate -> {
+          called.incrementAndGet();
+          return true;
+        }));
+    assertEquals(0, called.get());
+    assertEquals(3, function.getEntryBlock().getInstructions().size());
+
+    assertThrows(IllegalStateException.class, () -> scheduler.apply("test.exception",
+        new LegalityResult(LegalityResult.Status.PROVED, "test.exception.proof", "proved"),
+        function, candidate -> {
+          candidate.getEntryBlock().getInstructions().removeFirst();
+          throw new IllegalStateException("transform failed");
+        }));
+    assertEquals(3, function.getEntryBlock().getInstructions().size());
   }
 
   private static MachineFunction simpleFunction() {

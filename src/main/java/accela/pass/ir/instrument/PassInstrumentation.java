@@ -84,7 +84,12 @@ public final class PassInstrumentation {
 
   public void afterFunctionPass(Object pass, Function function, PreservedAnalyses preservedAnalyses) {
     if (!enabled) return;
-    IRVerifier.verifyFunction(function);
+    try {
+      IRVerifier.verifyFunction(function);
+    } catch (RuntimeException exception) {
+      throw new IllegalStateException("IR verifier failed after " + passName(pass)
+          + " on function @" + function.getName(), exception);
+    }
     finish(pass, "function", "@" + function.getName(), IRMetrics.capture(function), preservedAnalyses);
   }
 
@@ -97,7 +102,12 @@ public final class PassInstrumentation {
   public void afterModulePass(
       Object pass, accela.ir.Module module, PreservedAnalyses preservedAnalyses) {
     if (!enabled) return;
-    IRVerifier.verifyModule(module);
+    try {
+      IRVerifier.verifyModule(module);
+    } catch (RuntimeException exception) {
+      throw new IllegalStateException("IR verifier failed after " + passName(pass)
+          + " on module", exception);
+    }
     finish(pass, "module", "<module>", IRMetrics.capture(module), preservedAnalyses);
   }
 

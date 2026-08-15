@@ -1,0 +1,1266 @@
+{
+  "branch": {
+    "predictable": {
+      "mad": 0.0,
+      "median": 1.0,
+      "sample_count": 9,
+      "source": "rdcycle"
+    },
+    "unpredictable": {
+      "mad": 0.0,
+      "median": 1.007,
+      "sample_count": 9,
+      "source": "rdcycle"
+    }
+  },
+  "diagnostics": {
+    "frontend": {
+      "1024": {
+        "mad": 0.0,
+        "median": 251.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "256": {
+        "mad": 0.0,
+        "median": 59.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "64": {
+        "mad": 0.0,
+        "median": 11.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "load_use": {
+      "mad": 0.0,
+      "median": 2.0,
+      "sample_count": 9,
+      "source": "rdcycle"
+    },
+    "pointer_chase": {
+      "mad": 0.0,
+      "median": 1.0,
+      "sample_count": 9,
+      "source": "rdcycle"
+    },
+    "register_pressure": {
+      "16": {
+        "mad": 0.0,
+        "median": 16.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "24": {
+        "mad": 0.0,
+        "median": 24.001,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "32": {
+        "mad": 0.0,
+        "median": 48.002,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "8": {
+        "mad": 0.0,
+        "median": 8.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "stride": {
+      "512": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "64": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "8": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "working_set": {
+      "262144": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "32768": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "4096": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    }
+  },
+  "measurement_environment": {
+    "backend": "baremetal",
+    "clock_hz": 50000000,
+    "measurement_mode": "qemu_proxy",
+    "minimum_cycles": 1000000,
+    "rdcycle": true,
+    "rdinstret": true,
+    "sample_count": 9,
+    "timer": "rdcycle",
+    "warmup_count": 2
+  },
+  "operations": {
+    "address": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "address",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "branch": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "branch",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "call_return": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "call_return",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "float_alu": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "float_alu",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "float_div": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "float_div",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "float_mul": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "float_mul",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "integer_alu": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "integer_alu",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "integer_div": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "integer_div",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "integer_mul": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "integer_mul",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "load": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "load",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "move": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "move",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "store": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "resource": "store",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 1.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    }
+  },
+  "pairing": {
+    "address": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "branch": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "call_return": {
+      "address": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 4.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "float_alu": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "float_div": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "float_mul": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "integer_alu": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "integer_div": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "integer_mul": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "load": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "move": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    },
+    "store": {
+      "address": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 3.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_div": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 2.0,
+        "sample_count": 9,
+        "source": "rdcycle"
+      }
+    }
+  },
+  "profile": {
+    "calibrated": true,
+    "evidence_level": "qemu_proxy",
+    "id": "qemu-rv64gc-baremetal-proxy-v1"
+  },
+  "scheduler": {
+    "beam_width": 8,
+    "enabled": true,
+    "max_function_expansions": 1024,
+    "max_module_expansions": 4096,
+    "uncertainty_weight": 1
+  },
+  "schema_version": 1,
+  "simd": {
+    "abi": null,
+    "benchmark_classes": [],
+    "enabled": false,
+    "isa_extension": null,
+    "register_classes": []
+  },
+  "spills": {
+    "load": {
+      "mad": 0.0,
+      "median": 1.0,
+      "sample_count": 9,
+      "source": "rdcycle"
+    },
+    "store": {
+      "mad": 0.0,
+      "median": 1.0,
+      "sample_count": 9,
+      "source": "rdcycle"
+    }
+  },
+  "target": {
+    "abi": "lp64d",
+    "clock_hz": 50000000,
+    "code_model": "medany",
+    "fetch_width": 2,
+    "isa": "rv64gc",
+    "issue_width": 2,
+    "retire_width": 2
+  }
+}

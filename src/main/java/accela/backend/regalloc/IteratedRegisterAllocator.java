@@ -116,6 +116,7 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
         spillWeight,
         maxIntegerLive,
         maxFloatLive,
+        (int) state.color.values().stream().filter(registers::isCalleeSaved).distinct().count(),
         state.constrainedMoves.size() + state.frozenMoves.size());
   }
 

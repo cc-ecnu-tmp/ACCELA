@@ -41,7 +41,8 @@ def _measurement(table, name, max_relative_mad, minimum_samples=1):
     mad = table["mad"]
     if isinstance(mad, bool) or not isinstance(mad, (int, float)) or not math.isfinite(mad) or mad < 0:
         raise ValidationError(f"{name}.mad must be finite and non-negative")
-    if not isinstance(table["sample_count"], int) or table["sample_count"] < minimum_samples:
+    if isinstance(table["sample_count"], bool) or not isinstance(table["sample_count"], int) \
+            or table["sample_count"] < minimum_samples:
         raise ValidationError(f"{name}.sample_count must be at least {minimum_samples}")
     if not isinstance(table["source"], str) or not table["source"].strip():
         raise ValidationError(f"{name}.source must be non-empty")
@@ -55,15 +56,19 @@ def validate_profile(profile):
     profile = _table(profile, "profile")
     _keys(profile, ("schema_version", "profile", "target", "measurement_environment",
         "scheduler", "operations", "pairing", "branch", "spills", "diagnostics", "simd"), "profile")
-    if profile["schema_version"] != 1:
+    if isinstance(profile["schema_version"], bool) or profile["schema_version"] != 1:
         raise ValidationError("unsupported schema_version")
 
     identity = _table(profile["profile"], "profile.profile")
-    _keys(identity, ("id", "calibrated"), "profile.profile")
+    _keys(identity, ("id", "calibrated", "evidence_level"), "profile.profile")
     if not isinstance(identity["id"], str) or not identity["id"].strip():
         raise ValidationError("profile.profile.id must be non-empty")
     if not isinstance(identity["calibrated"], bool):
         raise ValidationError("profile.profile.calibrated must be boolean")
+    if identity["evidence_level"] not in {"declared", "qemu_proxy", "target_hardware"}:
+        raise ValidationError("profile.profile.evidence_level is invalid")
+    if identity["calibrated"] != (identity["evidence_level"] != "declared"):
+        raise ValidationError("calibrated and evidence_level are inconsistent")
     minimum_samples = 9 if identity["calibrated"] else 1
 
     target = _table(profile["target"], "target")
@@ -71,38 +76,62 @@ def validate_profile(profile):
     for key in ("isa", "abi", "code_model"):
         if not isinstance(target[key], str) or not target[key].strip():
             raise ValidationError(f"target.{key} must be non-empty")
-    _positive(target["clock_hz"], "target.clock_hz")
+    if isinstance(target["clock_hz"], bool) or not isinstance(target["clock_hz"], int) \
+            or target["clock_hz"] <= 0:
+        raise ValidationError("target.clock_hz must be a positive integer")
     for key in ("fetch_width", "issue_width", "retire_width"):
-        if not isinstance(target[key], int) or not 1 <= target[key] <= 16:
+        if isinstance(target[key], bool) or not isinstance(target[key], int) or not 1 <= target[key] <= 16:
             raise ValidationError(f"target.{key} must be an integer in 1..16")
 
     environment = _table(profile["measurement_environment"], "measurement_environment")
-    _keys(environment, ("backend", "rdcycle", "rdinstret", "timer"), "measurement_environment")
-    if environment["backend"] not in {"unmeasured", "linux", "baremetal"}:
+    _keys(environment, ("backend", "rdcycle", "rdinstret", "timer", "clock_hz",
+        "minimum_cycles", "warmup_count", "sample_count", "measurement_mode"),
+        "measurement_environment")
+    if not isinstance(environment["backend"], str) \
+            or environment["backend"] not in {"unmeasured", "linux", "baremetal"}:
         raise ValidationError("measurement_environment.backend is invalid")
-    if environment["timer"] not in {"unmeasured", "rdcycle", "clock_gettime"}:
+    if not isinstance(environment["timer"], str) \
+            or environment["timer"] not in {"unmeasured", "rdcycle", "clock_gettime"}:
         raise ValidationError("measurement_environment.timer is invalid")
     for key in ("rdcycle", "rdinstret"):
         if environment[key] is not None and not isinstance(environment[key], bool):
             raise ValidationError(f"measurement_environment.{key} must be boolean or null")
+    if environment["clock_hz"] != target["clock_hz"]:
+        raise ValidationError("measurement_environment.clock_hz must match target.clock_hz")
+    if not isinstance(environment["minimum_cycles"], int) or environment["minimum_cycles"] < 1_000_000:
+        raise ValidationError("measurement_environment.minimum_cycles must be at least 1000000")
+    if isinstance(environment["warmup_count"], bool) or isinstance(environment["sample_count"], bool) \
+            or environment["warmup_count"] != 2 or environment["sample_count"] != 9:
+        raise ValidationError("measurement_environment requires 2 warmups and 9 samples")
+    if environment["measurement_mode"] not in {"declared", "hardware", "qemu_proxy"}:
+        raise ValidationError("measurement_environment.measurement_mode is invalid")
     if identity["calibrated"]:
         if environment["backend"] == "unmeasured" or environment["timer"] == "unmeasured":
             raise ValidationError("calibrated profiles require a measured environment")
         if environment["timer"] == "rdcycle" and environment["rdcycle"] is not True:
             raise ValidationError("rdcycle timer requires measured rdcycle availability")
+        if environment["measurement_mode"] == "declared":
+            raise ValidationError("calibrated profiles require hardware or qemu_proxy measurements")
 
     scheduler = _table(profile["scheduler"], "scheduler")
     _keys(scheduler, ("enabled", "beam_width", "max_function_expansions", "max_module_expansions", "uncertainty_weight"), "scheduler")
     if not isinstance(scheduler["enabled"], bool):
         raise ValidationError("scheduler.enabled must be boolean")
     beam = scheduler["beam_width"]
-    if not isinstance(beam, int) or not 1 <= beam <= 64:
+    if isinstance(beam, bool) or not isinstance(beam, int) or not 1 <= beam <= 64:
         raise ValidationError("scheduler.beam_width must be an integer in 1..64")
-    if not isinstance(scheduler["max_function_expansions"], int) or scheduler["max_function_expansions"] < beam:
+    if isinstance(scheduler["max_function_expansions"], bool) \
+            or not isinstance(scheduler["max_function_expansions"], int) \
+            or scheduler["max_function_expansions"] < beam:
         raise ValidationError("scheduler.max_function_expansions must be at least beam_width")
-    if not isinstance(scheduler["max_module_expansions"], int) or scheduler["max_module_expansions"] < scheduler["max_function_expansions"]:
+    if isinstance(scheduler["max_module_expansions"], bool) \
+            or not isinstance(scheduler["max_module_expansions"], int) \
+            or scheduler["max_module_expansions"] < scheduler["max_function_expansions"]:
         raise ValidationError("scheduler.max_module_expansions must be at least the function budget")
-    if scheduler["uncertainty_weight"] < 0:
+    if isinstance(scheduler["uncertainty_weight"], bool) \
+            or not isinstance(scheduler["uncertainty_weight"], (int, float)) \
+            or not math.isfinite(scheduler["uncertainty_weight"]) \
+            or scheduler["uncertainty_weight"] < 0:
         raise ValidationError("scheduler.uncertainty_weight must be non-negative")
 
     operations = _table(profile["operations"], "operations")
@@ -113,7 +142,8 @@ def validate_profile(profile):
         _measurement(operation["latency"], f"operations.{name}.latency", 0.01, minimum_samples)
         _measurement(operation["throughput"], f"operations.{name}.throughput", 0.01, minimum_samples)
         _positive(operation["resource_occupancy"], f"operations.{name}.resource_occupancy")
-        if not isinstance(operation["code_bytes"], int) or operation["code_bytes"] < 1:
+        if isinstance(operation["code_bytes"], bool) or not isinstance(operation["code_bytes"], int) \
+                or operation["code_bytes"] < 1:
             raise ValidationError(f"operations.{name}.code_bytes must be positive")
         if not isinstance(operation["resource"], str) or not operation["resource"].strip():
             raise ValidationError(f"operations.{name}.resource must be non-empty")
@@ -150,10 +180,30 @@ def validate_profile(profile):
         for key in keys:
             _measurement(table[key], f"diagnostics.{group}.{key}", 0.05, minimum_samples)
     simd = _table(profile["simd"], "simd")
-    _keys(simd, ("enabled",), "simd")
+    _keys(simd, ("enabled", "isa_extension", "abi", "register_classes", "benchmark_classes"),
+        "simd")
     if not isinstance(simd["enabled"], bool):
         raise ValidationError("simd.enabled must be boolean")
+    for key in ("register_classes", "benchmark_classes"):
+        if not isinstance(simd[key], list) or any(
+                not isinstance(item, str) or not item.strip() for item in simd[key]):
+            raise ValidationError(f"simd.{key} must be an array of non-empty strings")
+        if len(simd[key]) != len(set(simd[key])):
+            raise ValidationError(f"simd.{key} contains duplicates")
+    if simd["enabled"]:
+        for key in ("isa_extension", "abi"):
+            if not isinstance(simd[key], str) or not simd[key].strip():
+                raise ValidationError(f"enabled SIMD requires simd.{key}")
+        if not simd["register_classes"] or not simd["benchmark_classes"]:
+            raise ValidationError("enabled SIMD requires register and benchmark classes")
+    elif simd["isa_extension"] is not None or simd["abi"] is not None \
+            or simd["register_classes"] or simd["benchmark_classes"]:
+        raise ValidationError("disabled SIMD must not declare fictional ABI or benchmark data")
     if identity["calibrated"]:
+        expected_evidence = "qemu_proxy" if environment["measurement_mode"] == "qemu_proxy" \
+            else "target_hardware"
+        if identity["evidence_level"] != expected_evidence:
+            raise ValidationError("profile evidence_level conflicts with measurement mode")
         expected_source = environment["timer"]
         for name, measurement in _measurement_nodes(profile):
             if measurement["source"] != expected_source:

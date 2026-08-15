@@ -21,16 +21,26 @@
 #define MAX_BENCHMARKS 256
 
 typedef uint64_t (*kernel_fn)(uint64_t, uint64_t *);
-struct targetlab_descriptor { const char *metric; const char *category; kernel_fn kernel; kernel_fn baseline; };
+struct targetlab_descriptor {
+  const char *metric;
+  const char *category;
+  kernel_fn kernel;
+  kernel_fn baseline;
+  uint64_t normalization;
+};
 extern const struct targetlab_descriptor targetlab_descriptors[];
 extern const size_t targetlab_descriptor_count;
 extern uint64_t targetlab_empty(uint64_t, uint64_t *);
 
 struct mailbox_entry {
   char metric[48];
-  char category[16];
+  char category[32];
   char source[24];
   uint64_t sample_count;
+  uint64_t iterations;
+  uint64_t normalization;
+  uint64_t baseline_values[SAMPLES];
+  uint64_t measured_values[SAMPLES];
   uint64_t values[SAMPLES];
 } __attribute__((packed));
 
@@ -42,6 +52,15 @@ struct mailbox {
   uint64_t count;
   uint32_t counter_flags;
   uint32_t reserved;
+  uint64_t clock_hz;
+  uint64_t minimum_cycles;
+  uint32_t warmup_count;
+  uint32_t sample_count;
+  uint32_t measurement_mode;
+  uint32_t reserved2;
+  uint64_t failure_sample;
+  uint64_t failure_baseline;
+  uint64_t failure_measured;
   struct mailbox_entry entries[MAX_BENCHMARKS];
 } __attribute__((packed));
 
@@ -150,30 +169,79 @@ static uint64_t choose_iterations(kernel_fn kernel) {
   return 0;
 }
 
+static int measurement_failure(const struct targetlab_descriptor *descriptor, uint64_t sample,
+                               uint64_t baseline, uint64_t measured, const char *reason) {
+  targetlab_mailbox.failure_sample = sample;
+  targetlab_mailbox.failure_baseline = baseline;
+  targetlab_mailbox.failure_measured = measured;
+#ifndef TARGETLAB_BAREMETAL
+  fprintf(stderr, "TargetLab metric %s failed at sample %llu: %s "
+      "(baseline=%llu measured=%llu)\n", descriptor->metric,
+      (unsigned long long)sample, reason, (unsigned long long)baseline,
+      (unsigned long long)measured);
+#else
+  (void)descriptor;
+  (void)reason;
+#endif
+  return 0;
+}
+
 static int measure(const struct targetlab_descriptor *descriptor) {
   uint64_t iterations = choose_iterations(descriptor->kernel);
-  if (iterations == 0 || targetlab_mailbox.count >= MAX_BENCHMARKS) return 0;
-  for (int warmup = 0; warmup < WARMUPS; warmup++) (void)elapsed(descriptor->kernel, iterations);
+  if (iterations == 0 || targetlab_mailbox.count >= MAX_BENCHMARKS) {
+    return measurement_failure(descriptor, UINT64_MAX, 0, 0, "iteration scaling failed");
+  }
+  for (int warmup = 0; warmup < WARMUPS; warmup++) {
+    (void)elapsed(descriptor->baseline, iterations);
+    (void)elapsed(descriptor->kernel, iterations);
+  }
   volatile struct mailbox_entry *entry = &targetlab_mailbox.entries[targetlab_mailbox.count];
   copy_text(entry->metric, sizeof(entry->metric), descriptor->metric);
   copy_text(entry->category, sizeof(entry->category), descriptor->category);
   copy_text(entry->source, sizeof(entry->source), timer_source());
   entry->sample_count = SAMPLES;
+  entry->iterations = iterations;
+  entry->normalization = descriptor->normalization;
+  if (descriptor->normalization == 0 || iterations > UINT64_MAX / descriptor->normalization) {
+    return measurement_failure(descriptor, UINT64_MAX, 0, 0, "normalization overflow");
+  }
+  uint64_t denominator = iterations * descriptor->normalization;
   for (int sample = 0; sample < SAMPLES; sample++) {
     uint64_t baseline = elapsed(descriptor->baseline, iterations);
     uint64_t measured = elapsed(descriptor->kernel, iterations);
-    if (baseline == 0 || measured <= baseline) return 0;
-    entry->values[sample] = (measured - baseline) * 1000ULL / iterations;
+    if (baseline == 0 || measured <= baseline) {
+      return measurement_failure(descriptor, (uint64_t)sample, baseline, measured,
+          "baseline subtraction is non-positive");
+    }
+    if (measured - baseline > UINT64_MAX / 1000ULL) {
+      return measurement_failure(descriptor, (uint64_t)sample, baseline, measured,
+          "normalization overflow");
+    }
+    entry->baseline_values[sample] = baseline;
+    entry->measured_values[sample] = measured;
+    entry->values[sample] = (measured - baseline) * 1000ULL / denominator;
   }
   targetlab_mailbox.count++;
 #ifndef TARGETLAB_BAREMETAL
-  printf("{\"kind\":\"sample\",\"metric\":\"%s\",\"category\":\"%s\",\"source\":\"%s\",\"values\":[",
-      descriptor->metric, descriptor->category, timer_source());
+  printf("{\"kind\":\"sample\",\"metric\":\"%s\",\"category\":\"%s\",\"source\":\"%s\",\"iterations\":%llu,\"normalization\":%llu,\"baseline_values\":[",
+      descriptor->metric, descriptor->category, timer_source(),
+      (unsigned long long)iterations, (unsigned long long)descriptor->normalization);
+  for (int sample = 0; sample < SAMPLES; sample++) {
+    if (sample) putchar(',');
+    printf("%llu", (unsigned long long)entry->baseline_values[sample]);
+  }
+  printf("],\"measured_values\":[");
+  for (int sample = 0; sample < SAMPLES; sample++) {
+    if (sample) putchar(',');
+    printf("%llu", (unsigned long long)entry->measured_values[sample]);
+  }
+  printf("],\"values\":[");
   for (int sample = 0; sample < SAMPLES; sample++) {
     if (sample) putchar(',');
     printf("%llu", (unsigned long long)entry->values[sample]);
   }
   puts("]}");
+  fflush(stdout);
 #endif
   return 1;
 }
@@ -201,33 +269,56 @@ int main(void) {
   targetlab_mailbox.count = 0;
   targetlab_mailbox.counter_flags = (cycle_available ? 1U : 0U) | (instret_available ? 2U : 0U);
   targetlab_mailbox.reserved = 0;
-#ifndef TARGETLAB_BAREMETAL
-  printf("{\"kind\":\"environment\",\"backend\":\"linux\",\"rdcycle\":%s,\"rdinstret\":%s,\"timer\":\"%s\"}\n",
-      cycle_available ? "true" : "false", instret_available ? "true" : "false",
-      cycle_available ? "rdcycle" : "clock_gettime");
+  targetlab_mailbox.clock_hz = TARGETLAB_CLOCK_HZ;
+  targetlab_mailbox.minimum_cycles = TARGETLAB_MINIMUM_CYCLES;
+  targetlab_mailbox.warmup_count = WARMUPS;
+  targetlab_mailbox.sample_count = SAMPLES;
+#ifdef TARGETLAB_QEMU_PROXY
+  targetlab_mailbox.measurement_mode = 1;
+#else
+  targetlab_mailbox.measurement_mode = 0;
 #endif
-  for (size_t index = 0; index < 32768; index++) {
-    memory_words[index] = (uint64_t)(uintptr_t)&memory_words[(index + 1) % 32768];
-  }
+  targetlab_mailbox.reserved2 = 0;
+  targetlab_mailbox.failure_sample = UINT64_MAX;
+  targetlab_mailbox.failure_baseline = 0;
+  targetlab_mailbox.failure_measured = 0;
+#ifndef TARGETLAB_BAREMETAL
+  printf("{\"kind\":\"environment\",\"backend\":\"linux\",\"rdcycle\":%s,\"rdinstret\":%s,\"timer\":\"%s\",\"clock_hz\":%llu,\"minimum_cycles\":%llu,\"warmup_count\":%u,\"sample_count\":%u,\"measurement_mode\":\"%s\"}\n",
+      cycle_available ? "true" : "false", instret_available ? "true" : "false",
+      cycle_available ? "rdcycle" : "clock_gettime",
+      (unsigned long long)TARGETLAB_CLOCK_HZ, (unsigned long long)TARGETLAB_MINIMUM_CYCLES,
+      WARMUPS, SAMPLES,
+#ifdef TARGETLAB_QEMU_PROXY
+      "qemu_proxy"
+#else
+      "hardware"
+#endif
+      );
+  fflush(stdout);
+#endif
   if (targetlab_descriptor_count > MAX_BENCHMARKS) {
     targetlab_mailbox.status = 2;
-    targetlab_mailbox.total_length = sizeof(uint64_t) + 2 * sizeof(uint32_t)
-        + 2 * sizeof(uint64_t) + 2 * sizeof(uint32_t);
+    targetlab_mailbox.total_length = sizeof(struct mailbox) - MAX_BENCHMARKS * sizeof(struct mailbox_entry);
     targetlab_done();
     return 2;
   }
   for (size_t index = 0; index < targetlab_descriptor_count; index++) {
+    for (size_t memory_index = 0; memory_index < 32768; memory_index++) {
+      memory_words[memory_index] =
+          (uint64_t)(uintptr_t)&memory_words[(memory_index + 1) % 32768];
+    }
+#ifndef TARGETLAB_BAREMETAL
+    fprintf(stderr, "TargetLab measuring %s\n", targetlab_descriptors[index].metric);
+#endif
     if (!measure(&targetlab_descriptors[index])) {
       targetlab_mailbox.status = 3;
-      targetlab_mailbox.total_length = sizeof(uint64_t) + 2 * sizeof(uint32_t)
-          + 2 * sizeof(uint64_t) + 2 * sizeof(uint32_t)
+      targetlab_mailbox.total_length = sizeof(struct mailbox) - MAX_BENCHMARKS * sizeof(struct mailbox_entry)
           + targetlab_mailbox.count * sizeof(struct mailbox_entry);
       targetlab_done();
       return 3;
     }
   }
-  targetlab_mailbox.total_length = sizeof(uint64_t) + 2 * sizeof(uint32_t)
-      + 2 * sizeof(uint64_t) + 2 * sizeof(uint32_t)
+  targetlab_mailbox.total_length = sizeof(struct mailbox) - MAX_BENCHMARKS * sizeof(struct mailbox_entry)
       + targetlab_mailbox.count * sizeof(struct mailbox_entry);
   targetlab_mailbox.status = 1;
   targetlab_done();

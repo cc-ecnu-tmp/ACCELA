@@ -2,7 +2,8 @@
   "schema_version": 1,
   "profile": {
     "id": "boomv3-development-uncalibrated",
-    "calibrated": false
+    "calibrated": false,
+    "evidence_level": "declared"
   },
   "target": {
     "isa": "rv64gc",
@@ -17,7 +18,12 @@
     "backend": "unmeasured",
     "rdcycle": null,
     "rdinstret": null,
-    "timer": "unmeasured"
+    "timer": "unmeasured",
+    "clock_hz": 50000000,
+    "minimum_cycles": 1000000,
+    "warmup_count": 2,
+    "sample_count": 9,
+    "measurement_mode": "declared"
   },
   "scheduler": {
     "enabled": true,
@@ -1176,6 +1182,10 @@
     }
   },
   "simd": {
-    "enabled": false
+    "enabled": false,
+    "isa_extension": null,
+    "abi": null,
+    "register_classes": [],
+    "benchmark_classes": []
   }
 }

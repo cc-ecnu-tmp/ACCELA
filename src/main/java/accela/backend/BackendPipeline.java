@@ -23,6 +23,7 @@ import accela.backend.target.RISCVFrameLowering;
 import accela.backend.target.RISCVTarget;
 import accela.cost.DecisionTraceSink;
 import accela.cost.MachineCandidateScheduler;
+import accela.cost.LegalityResult;
 import accela.cost.TargetProfile;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -64,9 +65,11 @@ final class BackendPipeline {
       phiElimination.run(function);
       memoryAddressFolding.run(function);
       machineCse.run(function);
-      scheduler.apply("backend.global-merge", "backend.global-merge.address-equivalence",
+      scheduler.apply("backend.global-merge", new LegalityResult(LegalityResult.Status.PROVED,
+              "backend.global-merge.address-equivalence", "address equivalence proved by matcher"),
           function, globalMerge::run);
-      scheduler.apply("backend.machine-licm", "backend.machine-licm.loop-invariance",
+      scheduler.apply("backend.machine-licm", new LegalityResult(LegalityResult.Status.PROVED,
+              "backend.machine-licm.loop-invariance", "loop invariance proved by matcher"),
           function, machineLicm::run);
       loopConditionDuplication.run(function);
       constantCse.run(function);

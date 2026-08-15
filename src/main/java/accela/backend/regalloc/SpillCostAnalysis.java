@@ -17,10 +17,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import accela.cost.HotnessModel;
 
 final class SpillCostAnalysis {
-  private static final double LOOP_REFERENCE_MULTIPLIER = 10.0;
-
   private SpillCostAnalysis() {}
 
   static SpillCostModel analyze(MachineFunction function, InterferenceGraph graph) {
@@ -90,8 +89,7 @@ final class SpillCostAnalysis {
   }
 
   private static double loopReferenceWeight(int loopDepth) {
-    double weight = Math.pow(LOOP_REFERENCE_MULTIPLIER, loopDepth);
-    return Double.isFinite(weight) ? weight : Double.MAX_VALUE;
+    return HotnessModel.DEFAULT.loopReferenceWeight(loopDepth);
   }
 
   private static double saturatingAdd(double left, double right) {

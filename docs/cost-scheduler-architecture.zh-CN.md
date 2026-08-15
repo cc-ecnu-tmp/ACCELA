@@ -22,7 +22,7 @@ IR/MIR candidate -> legality -> isolated snapshot -> verifier/lowering
 - `SchedulerPolicy` 来自嵌入 Profile。默认 Beam 宽度 8，每函数 1024 次、每模块 4096 次展开。
 - `AllocationEstimate` 来自真实图着色流程：liveness、interference、simplify/coalesce、spill selection 和 coloring；在 spill rewrite 前停止。
 
-任何候选都在深拷贝上执行。变换异常、校验失败、非法配置属于编译错误，禁止静默退回旧启发式。预算耗尽不是错误：提交当前已验证最优状态，并在 trace 中记录 `budget_exhausted`。
+任何候选都在深拷贝上执行。IR 快照重建 module、global、declaration、function、argument、block、instruction、operand 和 direct-call 映射；MIR 快照重建虚拟寄存器、块、栈槽和操作数。R1 IR Beam 在 LICM、两次小常量循环展开、整数强度削弱和 Inlining 的合法位置上保留基线与变换分支，每次变换后执行局部 cleanup、IR verifier、IR→MIR、PHI 消除、MIR verifier、成本模拟和 DryRunRA。变换异常、校验失败、非法配置属于编译错误，禁止静默退回旧启发式。预算耗尽不是错误：提交当前已验证最优状态，并在 trace 中记录 `budget_exhausted`。
 
 ## MIR 周期模型
 
@@ -43,5 +43,4 @@ total = body + branch + spill + code_size_penalty
 
 `--cost-trace PATH` 是显式诊断入口，默认关闭。每行是一个独立 JSON 对象，包含 schema/profile、候选及参数、合法性义务、基线和候选成本分量、置信度、DryRunRA、剪枝原因、预算使用量和最终选择。赛事 stdout 与固定调用接口不变；trace 写入失败直接终止编译。
 
-开发 Profile 为未校准输入，只验证基础设施并保持现有 pass 行为。它不能作为 BOOM 性能证据。R2 的跨 pass 分层 Beam 只能从通过 R1 验收的提交建立，必需的 SSA、合法化、IR 到 MIR、PHI 消除、正式 RA 与汇编发射阶段不能被重排。
-
+默认开发 Profile 是通过完整质量门的 bare-metal QEMU 确定性代理测量，证据等级为 `qemu_proxy`。它会实际驱动 R1 Beam，用于验证调度闭环，但不能作为 BOOM 性能证据。未测量的 `boomv3-development.json` 只作为现场 Profile 结构模板。R2 的跨 pass 分层 Beam 只能从通过 R1 验收的提交建立，必需的 SSA、合法化、IR 到 MIR、PHI 消除、正式 RA 与汇编发射阶段不能被重排。
