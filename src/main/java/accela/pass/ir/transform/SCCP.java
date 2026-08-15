@@ -14,9 +14,11 @@ import accela.pass.ir.dataflow.ForwardDataflowSolver;
 import accela.pass.ir.dataflow.ForwardTransfer;
 import accela.pass.ir.dataflow.Lattice;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -37,26 +39,18 @@ public final class SCCP {
 
   static final class ConstVal {
     final ValKind kind;
-    final long intVal;
-    final float floatVal;
-    final Type type;
+    final Constant constant;
 
-    private ConstVal(ValKind kind, long intVal, float floatVal, Type type) {
+    private ConstVal(ValKind kind, Constant constant) {
       this.kind = kind;
-      this.intVal = intVal;
-      this.floatVal = floatVal;
-      this.type = type;
+      this.constant = constant;
     }
 
-    static final ConstVal BOT = new ConstVal(ValKind.BOT, 0, 0, null);
-    static final ConstVal TOP = new ConstVal(ValKind.TOP, 0, 0, null);
+    static final ConstVal BOT = new ConstVal(ValKind.BOT, null);
+    static final ConstVal TOP = new ConstVal(ValKind.TOP, null);
 
-    static ConstVal ofInt(long v, Type t) {
-      return new ConstVal(ValKind.CONST, v, 0, t);
-    }
-
-    static ConstVal ofFloat(float v) {
-      return new ConstVal(ValKind.CONST, 0, v, Type.FLOAT);
+    static ConstVal ofConstant(Constant constant) {
+      return new ConstVal(ValKind.CONST, constant);
     }
 
     boolean isConst() { return kind == ValKind.CONST; }
@@ -65,18 +59,14 @@ public final class SCCP {
       if (a.kind == ValKind.BOT) return b;
       if (b.kind == ValKind.BOT) return a;
       if (a.kind == ValKind.TOP || b.kind == ValKind.TOP) return TOP;
-      if (a.type == b.type && a.intVal == b.intVal
-          && Float.floatToRawIntBits(a.floatVal) == Float.floatToRawIntBits(b.floatVal)) {
-        return a;
-      }
+      if (sameConstant(a.constant, b.constant)) return a;
       return TOP;
     }
 
     boolean equals(ConstVal other) {
       if (kind != other.kind) return false;
       if (kind != ValKind.CONST) return true;
-      return type == other.type && intVal == other.intVal
-          && Float.floatToRawIntBits(floatVal) == Float.floatToRawIntBits(other.floatVal);
+      return sameConstant(constant, other.constant);
     }
   }
 
@@ -88,12 +78,7 @@ public final class SCCP {
     SCCPFact(IdentityHashMap<Value, ConstVal> map) { this.map = map; }
 
     ConstVal get(Value v) {
-      if (v instanceof Constant.Int ci) return ConstVal.ofInt(ci.value, v.getType());
-      if (v instanceof Constant.Float cf) return ConstVal.ofFloat(cf.value);
-      if (v instanceof Constant.Zero) {
-        if (v.getType().isFloat()) return ConstVal.ofFloat(0);
-        return ConstVal.ofInt(0, v.getType());
-      }
+      if (v instanceof Constant constant) return ConstVal.ofConstant(constant);
       return map.getOrDefault(v, ConstVal.BOT);
     }
 
@@ -175,12 +160,7 @@ public final class SCCP {
     }
 
     private ConstVal resolveValue(SCCPFact fact, Value v) {
-      if (v instanceof Constant.Int ci) return ConstVal.ofInt(ci.value, v.getType());
-      if (v instanceof Constant.Float cf) return ConstVal.ofFloat(cf.value);
-      if (v instanceof Constant.Zero) {
-        if (v.getType().isFloat()) return ConstVal.ofFloat(0);
-        return ConstVal.ofInt(0, v.getType());
-      }
+      if (v instanceof Constant constant) return ConstVal.ofConstant(constant);
       return fact.get(v);
     }
 
@@ -194,7 +174,11 @@ public final class SCCP {
 
         if (cond.kind == ValKind.BOT) return result;
         if (cond.isConst()) {
-          if (cond.intVal != 0) {
+          Long condition = integerValue(cond.constant);
+          if (condition == null) {
+            result.put(trueTarget, refineFact(in, term.getOperand(0), true));
+            result.put(falseTarget, refineFact(in, term.getOperand(0), false));
+          } else if (condition != 0) {
             result.put(trueTarget, refineFact(in, term.getOperand(0), true));
           } else {
             result.put(falseTarget, refineFact(in, term.getOperand(0), false));
@@ -225,8 +209,12 @@ public final class SCCP {
       Value rhs = icmp.getOperand(1);
 
       if (trueBranch) {
-        if (rhs instanceof Constant.Int ci) return in.with(lhs, ConstVal.ofInt(ci.value, lhs.getType()));
-        if (lhs instanceof Constant.Int ci) return in.with(rhs, ConstVal.ofInt(ci.value, rhs.getType()));
+        if (rhs instanceof Constant constant) {
+          return in.with(lhs, ConstVal.ofConstant(constant));
+        }
+        if (lhs instanceof Constant constant) {
+          return in.with(rhs, ConstVal.ofConstant(constant));
+        }
       }
       return in;
     }
@@ -236,34 +224,31 @@ public final class SCCP {
         case ADD: return evalIntBinop(inst, in, Long::sum);
         case SUB: return evalIntBinop(inst, in, (a, b) -> a - b);
         case MUL: return evalIntBinop(inst, in, (a, b) -> a * b);
+        case SMULH: return evalIntBinop(
+            inst, in, (a, b) -> ((long) (int) a * (long) (int) b) >> Integer.SIZE);
         case SDIV: return evalIntBinop(inst, in, (a, b) -> b == 0 ? null : a / b);
         case SREM: return evalIntBinop(inst, in, (a, b) -> b == 0 ? null : a % b);
         case SHL: return evalIntBinop(
-            inst, in, (a, b) -> b >= 0 && b < Integer.SIZE ? (long) ((int) a << b) : null);
+            inst, in, (a, b) -> shiftLeft(scalarElement(inst.getType()), a, b));
+        case ASHR: return evalIntBinop(
+            inst, in, (a, b) -> arithmeticShiftRight(scalarElement(inst.getType()), a, b));
         case AND: return evalIntBinop(inst, in, (a, b) -> a & b);
         case XOR: return evalIntBinop(inst, in, (a, b) -> a ^ b);
-        case FADD: case FSUB: case FMUL: case FDIV: case FNEG:
-          return ConstVal.TOP;
+        case FADD: return evalFloatBinop(inst, in, (a, b) -> a + b);
+        case FSUB: return evalFloatBinop(inst, in, (a, b) -> a - b);
+        case FMUL: return evalFloatBinop(inst, in, (a, b) -> a * b);
+        case FDIV: return evalFloatBinop(inst, in, (a, b) -> a / b);
+        case FNEG: return evalFNeg(inst, in);
         case ICMP: return evalICmp(inst, in);
-        case FCMP: return ConstVal.TOP;
-        case ZEXT: case SEXT: {
-          ConstVal op = in.get(inst.getOperand(0));
-          if (op.kind == ValKind.BOT) return ConstVal.BOT;
-          if (op.isConst()) return ConstVal.ofInt(op.intVal, inst.getType());
-          return ConstVal.TOP;
-        }
-        case SITOFP: {
-          ConstVal op = in.get(inst.getOperand(0));
-          if (op.kind == ValKind.BOT) return ConstVal.BOT;
-          if (op.isConst()) return ConstVal.ofFloat((float) op.intVal);
-          return ConstVal.TOP;
-        }
-        case FPTOSI: {
-          ConstVal op = in.get(inst.getOperand(0));
-          if (op.kind == ValKind.BOT) return ConstVal.BOT;
-          if (op.isConst()) return ConstVal.ofInt((long)(int) op.floatVal, inst.getType());
-          return ConstVal.TOP;
-        }
+        case FCMP: return evalFCmp(inst, in);
+        case ZEXT: case SEXT: case SITOFP: case FPTOSI:
+          return evalConversion(inst, in);
+        case BUILD_VECTOR: return evalBuildVector(inst, in);
+        case SPLAT: return evalSplat(inst, in);
+        case EXTRACT_ELEMENT: return evalExtractElement(inst, in);
+        case INSERT_ELEMENT: return evalInsertElement(inst, in);
+        case SHUFFLE_VECTOR: return evalShuffleVector(inst, in);
+        case SELECT: return evalSelect(inst, in);
         case CALL: return callResolver.resolve(inst, in);
         case LOAD: return ConstVal.TOP;
         case STORE: case ALLOCA: case GEP: case BR: case CONDBR: case RET:
@@ -281,9 +266,20 @@ public final class SCCP {
       ConstVal rhs = in.get(inst.getOperand(1));
       if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
       if (lhs.isConst() && rhs.isConst()) {
-        Long result = op.apply(lhs.intVal, rhs.intVal);
-        if (result == null) return ConstVal.TOP;
-        return ConstVal.ofInt(result, inst.getType());
+        List<Constant> left = constantElements(lhs.constant);
+        List<Constant> right = constantElements(rhs.constant);
+        if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
+        Type elementType = scalarElement(inst.getType());
+        List<Constant> result = new ArrayList<>();
+        for (int lane = 0; lane < left.size(); lane++) {
+          Long a = integerValue(left.get(lane));
+          Long b = integerValue(right.get(lane));
+          if (a == null || b == null) return ConstVal.TOP;
+          Long folded = op.apply(a, b);
+          if (folded == null) return ConstVal.TOP;
+          result.add(integerConstant(elementType, folded));
+        }
+        return ConstVal.ofConstant(packConstant(inst.getType(), result));
       }
       return ConstVal.TOP;
     }
@@ -293,19 +289,177 @@ public final class SCCP {
       ConstVal rhs = in.get(inst.getOperand(1));
       if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
       if (!lhs.isConst() || !rhs.isConst()) return ConstVal.TOP;
-      String pred = inst.getPredicate();
-      boolean result;
-      switch (pred) {
-        case "eq":  result = lhs.intVal == rhs.intVal; break;
-        case "ne":  result = lhs.intVal != rhs.intVal; break;
-        case "slt": result = lhs.intVal <  rhs.intVal; break;
-        case "sle": result = lhs.intVal <= rhs.intVal; break;
-        case "sgt": result = lhs.intVal >  rhs.intVal; break;
-        case "sge": result = lhs.intVal >= rhs.intVal; break;
-        default: return ConstVal.TOP;
+      List<Constant> left = constantElements(lhs.constant);
+      List<Constant> right = constantElements(rhs.constant);
+      if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
+      List<Constant> result = new ArrayList<>();
+      for (int lane = 0; lane < left.size(); lane++) {
+        Long a = integerValue(left.get(lane));
+        Long b = integerValue(right.get(lane));
+        if (a == null || b == null) return ConstVal.TOP;
+        Boolean folded = compareInteger(inst.getPredicate(), a, b);
+        if (folded == null) return ConstVal.TOP;
+        result.add(Constant.boolConst(folded));
       }
-      return ConstVal.ofInt(result ? 1 : 0, Type.I1);
+      return ConstVal.ofConstant(packConstant(inst.getType(), result));
     }
+
+    private ConstVal evalFloatBinop(Instruction inst, SCCPFact in, FloatBinOp op) {
+      ConstVal lhs = in.get(inst.getOperand(0));
+      ConstVal rhs = in.get(inst.getOperand(1));
+      if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!lhs.isConst() || !rhs.isConst()) return ConstVal.TOP;
+      List<Constant> left = constantElements(lhs.constant);
+      List<Constant> right = constantElements(rhs.constant);
+      if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
+      List<Constant> result = new ArrayList<>();
+      for (int lane = 0; lane < left.size(); lane++) {
+        Float a = floatingValue(left.get(lane));
+        Float b = floatingValue(right.get(lane));
+        if (a == null || b == null) return ConstVal.TOP;
+        result.add(Constant.floatConst(op.apply(a, b)));
+      }
+      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+    }
+
+    private ConstVal evalFNeg(Instruction inst, SCCPFact in) {
+      ConstVal operand = in.get(inst.getOperand(0));
+      if (operand.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!operand.isConst()) return ConstVal.TOP;
+      List<Constant> elements = constantElements(operand.constant);
+      if (elements == null) return ConstVal.TOP;
+      List<Constant> result = new ArrayList<>();
+      for (Constant element : elements) {
+        Float value = floatingValue(element);
+        if (value == null) return ConstVal.TOP;
+        result.add(Constant.floatConst(-value));
+      }
+      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+    }
+
+    private ConstVal evalFCmp(Instruction inst, SCCPFact in) {
+      ConstVal lhs = in.get(inst.getOperand(0));
+      ConstVal rhs = in.get(inst.getOperand(1));
+      if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!lhs.isConst() || !rhs.isConst()) return ConstVal.TOP;
+      List<Constant> left = constantElements(lhs.constant);
+      List<Constant> right = constantElements(rhs.constant);
+      if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
+      List<Constant> result = new ArrayList<>();
+      for (int lane = 0; lane < left.size(); lane++) {
+        Float a = floatingValue(left.get(lane));
+        Float b = floatingValue(right.get(lane));
+        if (a == null || b == null) return ConstVal.TOP;
+        Boolean folded = compareFloat(inst.getPredicate(), a, b);
+        if (folded == null) return ConstVal.TOP;
+        result.add(Constant.boolConst(folded));
+      }
+      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+    }
+
+    private ConstVal evalConversion(Instruction inst, SCCPFact in) {
+      ConstVal operand = in.get(inst.getOperand(0));
+      if (operand.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!operand.isConst()) return ConstVal.TOP;
+      List<Constant> elements = constantElements(operand.constant);
+      if (elements == null) return ConstVal.TOP;
+      Type sourceType = scalarElement(inst.getOperand(0).getType());
+      Type destinationType = scalarElement(inst.getType());
+      List<Constant> result = new ArrayList<>();
+      for (Constant element : elements) {
+        Constant converted = convertConstant(
+            inst.getOpcode(), element, sourceType, destinationType);
+        if (converted == null) return ConstVal.TOP;
+        result.add(converted);
+      }
+      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+    }
+
+    private ConstVal evalBuildVector(Instruction inst, SCCPFact in) {
+      List<Constant> elements = new ArrayList<>();
+      for (int operand = 0; operand < inst.getNumOperands(); operand++) {
+        ConstVal value = in.get(inst.getOperand(operand));
+        if (value.kind == ValKind.BOT) return ConstVal.BOT;
+        if (!value.isConst() || value.constant.getType().isVector()) return ConstVal.TOP;
+        elements.add(value.constant);
+      }
+      return ConstVal.ofConstant(Constant.vector(inst.getType(), elements));
+    }
+
+    private ConstVal evalSplat(Instruction inst, SCCPFact in) {
+      ConstVal value = in.get(inst.getOperand(0));
+      if (value.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!value.isConst() || value.constant.getType().isVector()) return ConstVal.TOP;
+      return ConstVal.ofConstant(Constant.vector(
+          inst.getType(), Collections.nCopies(inst.getType().getLaneCount(), value.constant)));
+    }
+
+    private ConstVal evalExtractElement(Instruction inst, SCCPFact in) {
+      ConstVal vector = in.get(inst.getOperand(0));
+      ConstVal index = in.get(inst.getOperand(1));
+      if (vector.kind == ValKind.BOT || index.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!vector.isConst() || !index.isConst()) return ConstVal.TOP;
+      List<Constant> elements = constantElements(vector.constant);
+      Long selected = integerValue(index.constant);
+      if (elements == null || selected == null || selected < 0 || selected >= elements.size()) {
+        return ConstVal.TOP;
+      }
+      return ConstVal.ofConstant(elements.get(selected.intValue()));
+    }
+
+    private ConstVal evalInsertElement(Instruction inst, SCCPFact in) {
+      ConstVal vector = in.get(inst.getOperand(0));
+      ConstVal element = in.get(inst.getOperand(1));
+      ConstVal index = in.get(inst.getOperand(2));
+      if (vector.kind == ValKind.BOT || element.kind == ValKind.BOT || index.kind == ValKind.BOT) {
+        return ConstVal.BOT;
+      }
+      if (!vector.isConst() || !element.isConst() || !index.isConst()) return ConstVal.TOP;
+      List<Constant> elements = constantElements(vector.constant);
+      Long selected = integerValue(index.constant);
+      if (elements == null || selected == null || selected < 0 || selected >= elements.size()) {
+        return ConstVal.TOP;
+      }
+      List<Constant> result = new ArrayList<>(elements);
+      result.set(selected.intValue(), element.constant);
+      return ConstVal.ofConstant(Constant.vector(inst.getType(), result));
+    }
+
+    private ConstVal evalShuffleVector(Instruction inst, SCCPFact in) {
+      ConstVal lhs = in.get(inst.getOperand(0));
+      ConstVal rhs = in.get(inst.getOperand(1));
+      if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!lhs.isConst() || !rhs.isConst()
+          || !(inst.getOperand(2) instanceof Constant.Vector mask)) return ConstVal.TOP;
+      List<Constant> left = constantElements(lhs.constant);
+      List<Constant> right = constantElements(rhs.constant);
+      if (left == null || right == null) return ConstVal.TOP;
+      List<Constant> choices = new ArrayList<>(left);
+      choices.addAll(right);
+      List<Constant> result = new ArrayList<>();
+      for (Constant maskElement : mask.elements) {
+        Long selected = integerValue(maskElement);
+        if (selected == null || selected < 0 || selected >= choices.size()) return ConstVal.TOP;
+        result.add(choices.get(selected.intValue()));
+      }
+      return ConstVal.ofConstant(Constant.vector(inst.getType(), result));
+    }
+
+    private ConstVal evalSelect(Instruction inst, SCCPFact in) {
+      ConstVal condition = in.get(inst.getOperand(0));
+      if (condition.kind == ValKind.BOT) return ConstVal.BOT;
+      if (condition.isConst()) {
+        Long value = integerValue(condition.constant);
+        return value == null ? ConstVal.TOP : in.get(inst.getOperand(value != 0 ? 1 : 2));
+      }
+      ConstVal ifTrue = in.get(inst.getOperand(1));
+      ConstVal ifFalse = in.get(inst.getOperand(2));
+      if (ifTrue.isConst() && ifFalse.isConst() && ifTrue.constant == ifFalse.constant) return ifTrue;
+      return ConstVal.TOP;
+    }
+
+    @FunctionalInterface
+    interface FloatBinOp { float apply(float a, float b); }
   }
 
   public static boolean runOnFunction(Function function) {
@@ -382,7 +536,9 @@ public final class SCCP {
           if (inst.getOpcode() == Opcode.CONDBR) {
             ConstVal cond = running.get(inst.getOperand(0));
             if (cond.isConst()) {
-              BasicBlock target = cond.intVal != 0
+              Long condition = integerValue(cond.constant);
+              if (condition == null) continue;
+              BasicBlock target = condition != 0
                   ? (BasicBlock) inst.getOperand(1)
                   : (BasicBlock) inst.getOperand(2);
               CFGUpdateUtils.rewriteCondBrToBr(bb, target);
@@ -416,9 +572,179 @@ public final class SCCP {
   }
 
   private static Value makeConstant(ConstVal cv) {
-    if (cv.type == Type.FLOAT) return Constant.floatConst(cv.floatVal);
-    if (cv.type == Type.I1) return Constant.boolConst(cv.intVal != 0);
-    if (cv.type == Type.I64) return Constant.int64Const(cv.intVal);
-    return Constant.intConst(cv.intVal);
+    if (!cv.isConst() || cv.constant == null) {
+      throw new IllegalArgumentException("lattice value is not a constant");
+    }
+    return cv.constant;
+  }
+
+  private static Constant packConstant(Type type, List<Constant> elements) {
+    if (type.isVector()) return Constant.vector(type, elements);
+    if (elements.size() != 1 || !elements.getFirst().getType().equals(type)) {
+      throw new IllegalArgumentException("constant result shape mismatch for " + type);
+    }
+    return elements.getFirst();
+  }
+
+  private static List<Constant> constantElements(Constant constant) {
+    Type type = constant.getType();
+    if (!type.isVector()) return List.of(constant);
+    if (constant instanceof Constant.Vector vector) return vector.elements;
+    if (constant instanceof Constant.Zero) {
+      return Collections.nCopies(type.getLaneCount(), scalarZero(type.getElementType()));
+    }
+    return null;
+  }
+
+  private static Type scalarElement(Type type) {
+    return type.isVector() ? type.getElementType() : type;
+  }
+
+  private static Constant integerConstant(Type type, long value) {
+    if (type == Type.I1) return Constant.boolConst(value != 0);
+    if (type == Type.I64) return Constant.int64Const(value);
+    if (type == Type.INT) return Constant.intConst((int) value);
+    throw new IllegalArgumentException("not an integer scalar type: " + type);
+  }
+
+  private static Constant scalarZero(Type type) {
+    if (type == Type.FLOAT) return Constant.floatConst(0.0f);
+    return integerConstant(type, 0);
+  }
+
+  private static Long integerValue(Constant constant) {
+    if (constant instanceof Constant.Int integer) {
+      if (constant.getType() == Type.I1) return integer.value == 0 ? 0L : 1L;
+      if (constant.getType() == Type.INT) return (long) (int) integer.value;
+      return integer.value;
+    }
+    if (constant instanceof Constant.Zero && constant.getType().isInteger()) return 0L;
+    return null;
+  }
+
+  private static Float floatingValue(Constant constant) {
+    if (constant instanceof Constant.Float floating) return floating.value;
+    if (constant instanceof Constant.Zero && constant.getType() == Type.FLOAT) return 0.0f;
+    return null;
+  }
+
+  private static Boolean compareInteger(String predicate, long lhs, long rhs) {
+    return switch (predicate) {
+      case "eq" -> lhs == rhs;
+      case "ne" -> lhs != rhs;
+      case "slt" -> lhs < rhs;
+      case "sle" -> lhs <= rhs;
+      case "sgt" -> lhs > rhs;
+      case "sge" -> lhs >= rhs;
+      default -> null;
+    };
+  }
+
+  private static Long shiftLeft(Type type, long value, long amount) {
+    int width = type == Type.I64 ? Long.SIZE : type == Type.INT ? Integer.SIZE : 1;
+    if (amount < 0 || amount >= width) return null;
+    return type == Type.I64 ? value << amount : (long) ((int) value << amount);
+  }
+
+  private static Long arithmeticShiftRight(Type type, long value, long amount) {
+    int width = type == Type.I64 ? Long.SIZE : type == Type.INT ? Integer.SIZE : 1;
+    if (amount < 0 || amount >= width) return null;
+    return type == Type.I64 ? value >> amount : (long) ((int) value >> amount);
+  }
+
+  private static Boolean compareFloat(String predicate, float lhs, float rhs) {
+    boolean unordered = Float.isNaN(lhs) || Float.isNaN(rhs);
+    return switch (predicate) {
+      case "oeq" -> !unordered && lhs == rhs;
+      case "one" -> !unordered && lhs != rhs;
+      case "olt" -> !unordered && lhs < rhs;
+      case "ole" -> !unordered && lhs <= rhs;
+      case "ogt" -> !unordered && lhs > rhs;
+      case "oge" -> !unordered && lhs >= rhs;
+      case "ueq" -> unordered || lhs == rhs;
+      case "une" -> unordered || lhs != rhs;
+      case "ult" -> unordered || lhs < rhs;
+      case "ule" -> unordered || lhs <= rhs;
+      case "ugt" -> unordered || lhs > rhs;
+      case "uge" -> unordered || lhs >= rhs;
+      default -> null;
+    };
+  }
+
+  private static Constant convertConstant(
+      Opcode opcode, Constant constant, Type source, Type destination) {
+    return switch (opcode) {
+      case ZEXT -> {
+        Long value = integerValue(constant);
+        if (value == null) yield null;
+        long extended = source == Type.INT && destination == Type.I64
+            ? Integer.toUnsignedLong((int) (long) value) : value;
+        yield integerConstant(destination, extended);
+      }
+      case SEXT -> {
+        Long value = integerValue(constant);
+        if (value == null) yield null;
+        long extended = source == Type.I1 ? (value == 0 ? 0 : -1)
+            : source == Type.INT && destination == Type.I64 ? (int) (long) value : value;
+        yield integerConstant(destination, extended);
+      }
+      case SITOFP -> {
+        Long value = integerValue(constant);
+        if (value != null && source == Type.I1 && value != 0) value = -1L;
+        yield value == null || destination != Type.FLOAT
+            ? null : Constant.floatConst((float) (long) value);
+      }
+      case FPTOSI -> {
+        Float value = floatingValue(constant);
+        if (value == null || !Float.isFinite(value)) yield null;
+        double widened = value;
+        if (destination == Type.I1 && (widened < -1.0 || widened >= 1.0)) yield null;
+        if (destination == Type.INT
+            && (widened < Integer.MIN_VALUE || widened >= 2147483648.0)) yield null;
+        if (destination == Type.I64
+            && (widened < Long.MIN_VALUE || widened >= 9223372036854775808.0)) yield null;
+        yield integerConstant(destination, destination == Type.INT ? (int) widened : (long) widened);
+      }
+      default -> null;
+    };
+  }
+
+  private static boolean sameConstant(Constant lhs, Constant rhs) {
+    if (!lhs.getType().equals(rhs.getType())) return false;
+    if (lhs == rhs) return true;
+    if (lhs instanceof Constant.Zero) return isZero(rhs);
+    if (rhs instanceof Constant.Zero) return isZero(lhs);
+    if (lhs instanceof Constant.Int left && rhs instanceof Constant.Int right) {
+      return integerValue(left).equals(integerValue(right));
+    }
+    if (lhs instanceof Constant.Float left && rhs instanceof Constant.Float right) {
+      return Float.floatToRawIntBits(left.value) == Float.floatToRawIntBits(right.value);
+    }
+    if (lhs instanceof Constant.Vector left && rhs instanceof Constant.Vector right) {
+      return sameElements(left.elements, right.elements);
+    }
+    if (lhs instanceof Constant.Array left && rhs instanceof Constant.Array right) {
+      return sameElements(left.elements, right.elements);
+    }
+    return false;
+  }
+
+  private static boolean sameElements(List<Constant> lhs, List<Constant> rhs) {
+    if (lhs.size() != rhs.size()) return false;
+    for (int index = 0; index < lhs.size(); index++) {
+      if (!sameConstant(lhs.get(index), rhs.get(index))) return false;
+    }
+    return true;
+  }
+
+  private static boolean isZero(Constant constant) {
+    if (constant instanceof Constant.Zero) return true;
+    if (constant instanceof Constant.Int integer) return integerValue(integer) == 0;
+    if (constant instanceof Constant.Float floating) {
+      return Float.floatToRawIntBits(floating.value) == 0;
+    }
+    if (constant instanceof Constant.Vector vector) return vector.elements.stream().allMatch(SCCP::isZero);
+    if (constant instanceof Constant.Array array) return array.elements.stream().allMatch(SCCP::isZero);
+    return false;
   }
 }

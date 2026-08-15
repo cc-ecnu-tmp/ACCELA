@@ -1,0 +1,163 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.PassBuilder;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.ModulePassManager;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class SCCPVectorTest {
+  @Test
+  void keepsZeroVectorsValidThroughTheDefaultPipeline() {
+    Module module = new Module();
+    Function function = new Function("main", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Value sum = builder.createAdd(Constant.zero(int4), Constant.zero(int4));
+    builder.createRet(builder.createExtractElement(sum, Constant.intConst(0)));
+
+    PassBuilder passBuilder = new PassBuilder();
+    ModulePassManager pipeline =
+        passBuilder.buildIRO0Pipeline(PassInstrumentation.enabled(false));
+    ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
+    FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
+    pipeline.run(module, mam, fam);
+
+    IRVerifier.verifyModule(module);
+    Constant.Int result = assertInstanceOf(
+        Constant.Int.class, function.getEntryBlock().getTerminator().getOperand(0));
+    assertEquals(0, result.value);
+  }
+
+  @Test
+  void foldsZeroVectorWithoutLosingItsShape() {
+    Module module = new Module();
+    Function function = new Function("vector_zero", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction sum = builder.createAdd(Constant.zero(int4), Constant.zero(int4));
+    Instruction extract = builder.createExtractElement(sum, Constant.intConst(2));
+    Instruction ret = builder.createRet(extract);
+
+    assertTrue(SCCP.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(0, result.value);
+    assertNull(sum.getParent());
+    assertNull(extract.getParent());
+  }
+
+  @Test
+  void joinsEquivalentVectorConstantsAtPhis() {
+    Module module = new Module();
+    Function function = new Function("vector_phi", Type.INT);
+    module.addFunction(function);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    new IRBuilder(left).createBr(merge);
+    new IRBuilder(right).createBr(merge);
+    Type int2 = Type.vector(Type.INT, 2);
+    IRBuilder builder = new IRBuilder(merge);
+    Instruction phi = builder.createPhi(int2);
+    phi.addOperand(Constant.zero(int2));
+    phi.addOperand(left);
+    phi.addOperand(Constant.vector(
+        int2, List.of(Constant.intConst(0), Constant.intConst(0))));
+    phi.addOperand(right);
+    Instruction ret = builder.createRet(
+        builder.createExtractElement(phi, Constant.intConst(1)));
+
+    assertTrue(SCCP.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(0, result.value);
+    assertNull(phi.getParent());
+  }
+
+  @Test
+  void foldsLaneWiseArithmeticComparisonAndStructuralOperations() {
+    Module module = new Module();
+    Function function = new Function("vector_integer_constants", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Value built = builder.createBuildVector(
+        int4,
+        Constant.intConst(1),
+        Constant.intConst(2),
+        Constant.intConst(3),
+        Constant.intConst(4));
+    Value inserted = builder.createInsertElement(built, Constant.intConst(9), Constant.intConst(1));
+    Value sum = builder.createAdd(inserted, builder.createSplat(int4, Constant.intConst(2)));
+    Value compared = builder.createICmp(
+        "sgt",
+        sum,
+        Constant.vector(int4, List.of(
+            Constant.intConst(2),
+            Constant.intConst(10),
+            Constant.intConst(4),
+            Constant.intConst(5))));
+    Value shuffled = builder.createShuffleVector(
+        compared,
+        Constant.zero(Type.vector(Type.I1, 4)),
+        Constant.vector(List.of(
+            Constant.intConst(0),
+            Constant.intConst(5),
+            Constant.intConst(2),
+            Constant.intConst(7))));
+    Value selected = builder.createExtractElement(shuffled, Constant.intConst(2));
+    Instruction ret = builder.createRet(builder.createZExt(selected, Type.INT));
+
+    assertTrue(SCCP.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(1, result.value);
+  }
+
+  @Test
+  void foldsFloatVectorsAndConversionsLaneWise() {
+    Module module = new Module();
+    Function function = new Function("vector_float_constants", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Type float2 = Type.vector(Type.FLOAT, 2);
+    Type int2 = Type.vector(Type.INT, 2);
+    Value sum = builder.createFAdd(
+        Constant.vector(float2, List.of(Constant.floatConst(1.5f), Constant.floatConst(-2.0f))),
+        Constant.vector(float2, List.of(Constant.floatConst(0.5f), Constant.floatConst(1.0f))));
+    Value converted = builder.createFPToSI(sum, int2);
+    Instruction ret = builder.createRet(
+        builder.createExtractElement(converted, Constant.intConst(1)));
+
+    assertTrue(SCCP.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(-1, result.value);
+  }
+}
