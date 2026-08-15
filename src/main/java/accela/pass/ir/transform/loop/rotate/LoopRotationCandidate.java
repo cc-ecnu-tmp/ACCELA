@@ -116,7 +116,8 @@ record LoopRotationCandidate(
   private static boolean isDuplicable(Instruction instruction) {
     return switch (instruction.getOpcode()) {
       case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, XOR,
-          FADD, FSUB, FMUL, FDIV, FNEG, ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, LOAD -> true;
+          FADD, FSUB, FMUL, FDIV, FNEG, ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, LOAD,
+          BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR, SELECT -> true;
       default -> false;
     };
   }

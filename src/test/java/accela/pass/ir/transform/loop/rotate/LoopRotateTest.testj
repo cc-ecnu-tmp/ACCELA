@@ -1,5 +1,6 @@
 package accela.pass.ir.transform.loop.rotate;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,6 +21,41 @@ import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
 final class LoopRotateTest {
+  @Test
+  void duplicatesVectorHeaderTestsIntoTheRotatedLatch() {
+    Module module = new Module();
+    Function function = new Function("vector_rotate", Type.INT);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction vector = headerBuilder.createSplat(int4, index);
+    Instruction lane = headerBuilder.createExtractElement(vector, Constant.intConst(0));
+    Instruction remainder = headerBuilder.createSRem(lane, Constant.intConst(4));
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("ne", remainder, Constant.intConst(3)), body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    new IRBuilder(exit).createRet(Constant.intConst(0));
+
+    assertTrue(LoopRotate.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(2, function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.SPLAT)
+        .count());
+  }
+
   @Test
   void formsAGuardedLoopAndEnablesPureCallLicm() {
     Module module = new Module();
