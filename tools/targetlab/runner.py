@@ -15,10 +15,11 @@ MAILBOX_MAGIC = 0x414343454C414D42
 MAILBOX_VERSION = 1
 
 
-def run_checked(command, *, cwd=None, env=None, stdout=None, timeout=None):
+def run_checked(command, *, cwd=None, env=None, stdout=None, timeout=None, capture_output=False):
     try:
-        completed = subprocess.run(command, cwd=cwd, env=env, stdout=stdout,
-            stderr=subprocess.PIPE, text=stdout is None, timeout=timeout)
+        completed = subprocess.run(command, cwd=cwd, env=env,
+            stdout=subprocess.PIPE if capture_output else stdout,
+            stderr=subprocess.PIPE, text=capture_output or stdout is None, timeout=timeout)
     except subprocess.TimeoutExpired as exception:
         raise RuntimeError(f"command timed out after {timeout} seconds: {shlex.join(command)}") from exception
     if completed.returncode != 0:
@@ -51,7 +52,7 @@ def build(config, root: Path):
 def _verify_elf(config, root):
     executable = root / config["build_dir"] / "targetlab.elf"
     completed = run_checked([config["nm"], "-S", str(executable)], cwd=root,
-        timeout=config["timeout_seconds"])
+        timeout=config["timeout_seconds"], capture_output=True)
     symbols = {}
     for line in completed.stdout.splitlines():
         match = re.search(r"\b([0-9a-fA-F]+)\s+[A-Za-z]\s+(\S+)$", line.strip())
