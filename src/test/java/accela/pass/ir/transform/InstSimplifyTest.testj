@@ -1,12 +1,15 @@
 package accela.pass.ir.transform;
 
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
+import accela.ir.Instruction;
 import accela.ir.Type;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class InstSimplifyTest {
@@ -21,5 +24,25 @@ final class InstSimplifyTest {
 
     assertTrue(InstSimplify.runOnFunction(function));
     assertSame(condition, returnInstruction.getOperand(0));
+  }
+
+  @Test
+  void eliminatesVectorZeroAndOneIdentities() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_identities", Type.INT);
+    var input = function.addArgument(int4, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction sum = builder.createAdd(input, Constant.zero(int4));
+    Instruction product = builder.createMul(sum, Constant.vector(
+        int4, List.of(
+            Constant.intConst(1), Constant.intConst(1),
+            Constant.intConst(1), Constant.intConst(1))));
+    Instruction extract = builder.createExtractElement(product, Constant.intConst(2));
+    builder.createRet(extract);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    assertSame(input, extract.getOperand(0));
+    assertNull(sum.getParent());
+    assertNull(product.getParent());
   }
 }

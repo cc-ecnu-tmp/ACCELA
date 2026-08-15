@@ -73,6 +73,7 @@ public final class InstSimplify {
   }
 
   private static Value tryConstantFold(Instruction inst) {
+    if (inst.getType().isVector()) return null;
     switch (inst.getOpcode()) {
       case ADD: case SUB: case MUL: case SDIV: case SREM: case SHL: case AND: case XOR: {
         if (!(inst.getOperand(0) instanceof Constant.Int a)) return null;
@@ -103,43 +104,48 @@ public final class InstSimplify {
   private static Value tryAlgebraicSimplify(Instruction inst) {
     switch (inst.getOpcode()) {
       case ADD: {
-        if (isIntZero(inst.getOperand(1))) return inst.getOperand(0);
-        if (isIntZero(inst.getOperand(0))) return inst.getOperand(1);
+        if (isZero(inst.getOperand(1))) return inst.getOperand(0);
+        if (isZero(inst.getOperand(0))) return inst.getOperand(1);
         return null;
       }
       case SUB: {
-        if (isIntZero(inst.getOperand(1))) return inst.getOperand(0);
-        if (inst.getOperand(0) == inst.getOperand(1)) return Constant.intConst(0);
+        if (isZero(inst.getOperand(1))) return inst.getOperand(0);
+        if (inst.getOperand(0) == inst.getOperand(1)) return zeroOf(inst.getType());
         return null;
       }
       case MUL: {
-        if (isIntOne(inst.getOperand(1))) return inst.getOperand(0);
-        if (isIntOne(inst.getOperand(0))) return inst.getOperand(1);
-        if (isIntZero(inst.getOperand(0)) || isIntZero(inst.getOperand(1)))
-          return Constant.intConst(0);
+        if (isOne(inst.getOperand(1))) return inst.getOperand(0);
+        if (isOne(inst.getOperand(0))) return inst.getOperand(1);
+        if (isZero(inst.getOperand(0)) || isZero(inst.getOperand(1)))
+          return zeroOf(inst.getType());
         return null;
       }
       case SDIV: {
-        if (isIntOne(inst.getOperand(1))) return inst.getOperand(0);
+        if (isOne(inst.getOperand(1))) return inst.getOperand(0);
         return null;
       }
-      case SHL: {
-        if (isIntZero(inst.getOperand(1))) return inst.getOperand(0);
-        if (isIntZero(inst.getOperand(0))) return Constant.intConst(0);
+      case SHL: case ASHR: {
+        if (isZero(inst.getOperand(1))) return inst.getOperand(0);
+        if (isZero(inst.getOperand(0))) return zeroOf(inst.getType());
         return null;
       }
       case AND: {
         if (inst.getOperand(0) == inst.getOperand(1)) return inst.getOperand(0);
-        if (isIntZero(inst.getOperand(0)) || isIntZero(inst.getOperand(1)))
-          return Constant.intConst(0);
+        if (isZero(inst.getOperand(0)) || isZero(inst.getOperand(1)))
+          return zeroOf(inst.getType());
         return null;
       }
       case XOR: {
-        if (inst.getOperand(0) == inst.getOperand(1)) return Constant.intConst(0);
+        if (inst.getOperand(0) == inst.getOperand(1)) return zeroOf(inst.getType());
         return null;
       }
       case ICMP:
         return simplifyBooleanCompare(inst);
+      case SELECT:
+        if (inst.getOperand(0) instanceof Constant.Int condition)
+          return inst.getOperand(condition.value != 0 ? 1 : 2);
+        if (inst.getOperand(1) == inst.getOperand(2)) return inst.getOperand(1);
+        return null;
       default: return null;
     }
   }
@@ -194,6 +200,23 @@ public final class InstSimplify {
 
   private static boolean isIntOne(Value v) {
     return v instanceof Constant.Int ci && ci.value == 1;
+  }
+
+  private static boolean isZero(Value value) {
+    if (value instanceof Constant.Zero) return true;
+    if (value instanceof Constant.Int integer) return integer.value == 0;
+    return value instanceof Constant.Vector vector
+        && vector.elements.stream().allMatch(InstSimplify::isZero);
+  }
+
+  private static boolean isOne(Value value) {
+    if (value instanceof Constant.Int integer) return integer.value == 1;
+    return value instanceof Constant.Vector vector
+        && vector.elements.stream().allMatch(InstSimplify::isOne);
+  }
+
+  private static Constant zeroOf(Type type) {
+    return type.isVector() ? Constant.zero(type) : Constant.intConst(0);
   }
 
   private static Long evalInt(Opcode op, long a, long b) {
