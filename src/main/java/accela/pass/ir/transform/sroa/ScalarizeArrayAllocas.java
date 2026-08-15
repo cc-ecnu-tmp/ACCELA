@@ -42,32 +42,32 @@ public final class ScalarizeArrayAllocas {
     if (plan == null) return false;
 
     BasicBlock entry = function.getEntryBlock();
-    Map<Integer, Instruction> scalarAllocas = new LinkedHashMap<>();
+    Map<Integer, Instruction> leafAllocas = new LinkedHashMap<>();
     IRBuilder entryBuilder = new IRBuilder();
     for (int leafIndex : plan.touchedLeaves) {
-      Instruction scalarAlloca = entryBuilder.createAllocaInEntry(plan.scalarType, entry);
+      Instruction leafAlloca = entryBuilder.createAllocaInEntry(plan.leafType, entry);
       String baseName = alloca.getName() != null ? alloca.getName() : "sroa";
-      scalarAlloca.setName(baseName + ".sroa." + leafIndex);
-      scalarAllocas.put(leafIndex, scalarAlloca);
+      leafAlloca.setName(baseName + ".sroa." + leafIndex);
+      leafAllocas.put(leafIndex, leafAlloca);
     }
 
     for (Instruction zeroStore : plan.zeroStores) {
       IRBuilder builder = new IRBuilder();
       builder.setInsertPointBefore(zeroStore);
-      Value zero = Constant.zero(plan.scalarType);
-      for (Instruction scalarAlloca : scalarAllocas.values()) {
-        builder.createStore(zero, scalarAlloca);
+      Value zero = Constant.zero(plan.leafType);
+      for (Instruction leafAlloca : leafAllocas.values()) {
+        builder.createStore(zero, leafAlloca);
       }
       zeroStore.eraseFromParent();
     }
 
     for (Map.Entry<Instruction, Integer> entryRewrite : plan.gepToLeafIndex.entrySet()) {
       Instruction gep = entryRewrite.getKey();
-      Instruction scalarAlloca = scalarAllocas.get(entryRewrite.getValue());
-      if (scalarAlloca == null) {
-        throw new IllegalStateException("SROA missing scalar slot for touched leaf");
+      Instruction leafAlloca = leafAllocas.get(entryRewrite.getValue());
+      if (leafAlloca == null) {
+        throw new IllegalStateException("SROA missing slot for touched leaf");
       }
-      gep.replaceAllUsesWith(scalarAlloca);
+      gep.replaceAllUsesWith(leafAlloca);
       gep.eraseFromParent();
     }
 
@@ -82,14 +82,15 @@ public final class ScalarizeArrayAllocas {
     Type allocType = alloca.getAllocatedType();
     if (allocType == null || !allocType.isArray()) return null;
 
-    SplitPlan plan = new SplitPlan(allocType.scalarType(), countLeafElements(allocType));
+    SplitPlan plan = new SplitPlan(arrayLeafType(allocType), countLeafElements(allocType));
     if (plan.leafCount <= 0) return null;
 
     for (Use use : new ArrayList<>(alloca.getUses())) {
       Instruction user = use.getUser();
       if (user.getOpcode() == Instruction.Opcode.STORE && user.getOperand(1) == alloca) {
         if (use.getOperandIndex() != 1) return null;
-        if (!(user.getOperand(0) instanceof Constant.Zero zero) || zero.getType() != allocType) {
+        if (!(user.getOperand(0) instanceof Constant.Zero zero)
+            || !zero.getType().equals(allocType)) {
           return null;
         }
         plan.zeroStores.add(user);
@@ -99,7 +100,7 @@ public final class ScalarizeArrayAllocas {
       if (user.getOpcode() == Instruction.Opcode.GEP && user.getOperand(0) == alloca) {
         if (use.getOperandIndex() != 0) return null;
         Integer leafIndex = resolveLeafIndex(user, allocType, plan.leafCount);
-        if (leafIndex == null || !hasOnlyDirectScalarMemoryUses(user)) return null;
+        if (leafIndex == null || !hasOnlyDirectMemoryUses(user, plan.leafType)) return null;
         plan.gepToLeafIndex.put(user, leafIndex);
         plan.touchedLeaves.add(leafIndex);
         continue;
@@ -114,28 +115,32 @@ public final class ScalarizeArrayAllocas {
     return plan;
   }
 
-  private static boolean hasOnlyDirectScalarMemoryUses(Instruction gep) {
+  private static boolean hasOnlyDirectMemoryUses(Instruction gep, Type leafType) {
     for (Use use : gep.getUses()) {
       Instruction user = use.getUser();
-      if (user.getOpcode() == Instruction.Opcode.LOAD && use.getOperandIndex() == 0) continue;
-      if (user.getOpcode() == Instruction.Opcode.STORE && use.getOperandIndex() == 1) continue;
+      if (user.getOpcode() == Instruction.Opcode.LOAD
+          && use.getOperandIndex() == 0
+          && user.getType().equals(leafType)) continue;
+      if (user.getOpcode() == Instruction.Opcode.STORE
+          && use.getOperandIndex() == 1
+          && user.getOperand(0).getType().equals(leafType)) continue;
       return false;
     }
     return true;
   }
 
   private static Integer resolveLeafIndex(Instruction gep, Type allocaType, int totalLeaves) {
-    Type scalarType = allocaType.scalarType();
+    Type leafType = arrayLeafType(allocaType);
     Type sourceType = gep.getGepSourceType();
     if (sourceType == null) return null;
 
-    if (sourceType == scalarType && gep.getNumOperands() == 2) {
+    if (sourceType.equals(leafType) && gep.getNumOperands() == 2) {
       Long flatIndex = constantIndex(gep.getOperand(1));
       if (flatIndex == null || flatIndex < 0 || flatIndex >= totalLeaves) return null;
       return flatIndex.intValue();
     }
 
-    if (sourceType != allocaType || gep.getNumOperands() < 3) return null;
+    if (!sourceType.equals(allocaType) || gep.getNumOperands() < 3) return null;
     Long leadingZero = constantIndex(gep.getOperand(1));
     if (leadingZero == null || leadingZero != 0) return null;
 
@@ -163,15 +168,20 @@ public final class ScalarizeArrayAllocas {
     return type.size * countLeafElements(type.innerType);
   }
 
+  private static Type arrayLeafType(Type type) {
+    while (type.isArray()) type = type.innerType;
+    return type;
+  }
+
   private static final class SplitPlan {
-    final Type scalarType;
+    final Type leafType;
     final int leafCount;
     final Set<Integer> touchedLeaves = new LinkedHashSet<>();
     final List<Instruction> zeroStores = new ArrayList<>();
     final Map<Instruction, Integer> gepToLeafIndex = new LinkedHashMap<>();
 
-    SplitPlan(Type scalarType, int leafCount) {
-      this.scalarType = scalarType;
+    SplitPlan(Type leafType, int leafCount) {
+      this.leafType = leafType;
       this.leafCount = leafCount;
     }
   }

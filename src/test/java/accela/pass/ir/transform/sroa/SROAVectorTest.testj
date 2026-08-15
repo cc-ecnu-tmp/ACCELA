@@ -1,0 +1,49 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.transform.sroa.ScalarizeArrayAllocas;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class SROAVectorTest {
+  @Test
+  void preservesVectorLeavesWhenSplittingArrayAllocas() {
+    Type int2 = Type.vector(Type.INT, 2);
+    Type array = Type.array(int2, 2);
+    Function function = new Function("local_vector_array", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value storage = builder.createAlloca(array);
+    builder.createStore(Constant.zero(array), storage);
+    Instruction address = builder.createGEP(
+        int2, storage, new Value[] {Constant.int64Const(1)}, true);
+    Constant.Vector value = Constant.vector(
+        int2, List.of(Constant.intConst(7), Constant.intConst(9)));
+    builder.createStore(value, address);
+    Instruction loaded = builder.createLoad(int2, address);
+    Instruction lane = builder.createExtractElement(loaded, Constant.intConst(1));
+    builder.createRet(lane);
+
+    assertTrue(ScalarizeArrayAllocas.runOnFunction(function));
+    IRVerifier.verifyFunction(function);
+
+    List<Instruction> allocas = entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA)
+        .toList();
+    assertEquals(1, allocas.size());
+    assertEquals(int2, allocas.getFirst().getAllocatedType());
+    assertSame(int2, loaded.getType());
+    assertTrue(address.getParent() == null);
+  }
+}

@@ -24,7 +24,7 @@ public final class ConstantFolding {
       }
       return current.isArray() ? null : leaf;
     }
-    if (gep.getGepSourceType() == arrayType.scalarType() && gep.getNumOperands() == 2) {
+    if (gep.getGepSourceType().equals(arrayLeafType(arrayType)) && gep.getNumOperands() == 2) {
       Long index = constantIndex(gep.getOperand(1));
       int leaves = leafCount(arrayType);
       return index != null && index >= 0 && index < leaves ? index.intValue() : null;
@@ -53,5 +53,10 @@ public final class ConstantFolding {
 
   private static int leafCount(Type type) {
     return type.isArray() ? type.size * leafCount(type.innerType) : 1;
+  }
+
+  private static Type arrayLeafType(Type type) {
+    while (type.isArray()) type = type.innerType;
+    return type;
   }
 }
