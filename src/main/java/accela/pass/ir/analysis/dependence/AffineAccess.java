@@ -4,6 +4,7 @@ import accela.ir.Constant;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
+import accela.pass.ir.analysis.MemoryLocation;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -58,6 +59,15 @@ final class AffineAccess {
     }
   }
 
+  /** Whether typed-index disjointness is sufficient for an access of this width. */
+  boolean supportsAccessSize(long byteSize) {
+    long minimumStride = Long.MAX_VALUE;
+    for (AffineIndex index : indices) {
+      minimumStride = Math.min(minimumStride, index.byteStride);
+    }
+    return minimumStride == Long.MAX_VALUE || byteSize <= minimumStride;
+  }
+
   Distance distanceTo(AffineAccess other) {
     if (indices.size() != other.indices.size()) {
       return new Distance(Relation.UNKNOWN, List.of());
@@ -91,20 +101,29 @@ final class AffineAccess {
       int independentLoop,
       int thisLane,
       int otherLane,
-      long step) {
+      long step,
+      long thisAccessSize,
+      long otherAccessSize) {
     if (indices.size() != other.indices.size()) return false;
-    for (int index = 0; index < indices.size(); index++) {
-      Long distance = indices.get(index).distanceAtLanes(
-          other.indices.get(index),
-          inductions,
-          variedLoop,
-          independentLoop,
-          thisLane,
-          otherLane,
-          step);
-      if (distance != null && distance != 0) return true;
+    try {
+      long byteDistance = 0;
+      for (int index = 0; index < indices.size(); index++) {
+        Long distance = indices.get(index).distanceAtLanes(
+            other.indices.get(index),
+            inductions,
+            variedLoop,
+            independentLoop,
+            thisLane,
+            otherLane,
+            step);
+        if (distance == null) return false;
+        byteDistance = Math.addExact(byteDistance, distance);
+      }
+      return MemoryLocation.areDisjointAtOffset(
+          byteDistance, thisAccessSize, otherAccessSize);
+    } catch (ArithmeticException overflow) {
+      return false;
     }
-    return false;
   }
 
   private boolean addPointer(Value pointer) {
@@ -262,8 +281,8 @@ final class AffineAccess {
       if (byteStride != other.byteStride
           || !analyzable
           || !other.analyzable
-          || coefficient(loops.get(independentLoop)) != 0
-          || other.coefficient(loops.get(independentLoop)) != 0
+          || coefficient(loops.get(independentLoop))
+              != other.coefficient(loops.get(independentLoop))
           || coefficient(loops.get(variedLoop))
               != other.coefficient(loops.get(variedLoop))
           || !sameTermsExcept(other, loops.get(variedLoop), loops.get(independentLoop))) {
@@ -310,12 +329,6 @@ final class AffineAccess {
     for (int index = 1; index < operandIndex; index++) {
       if (type.isArray()) type = type.innerType;
     }
-    return sizeOf(type);
-  }
-
-  private static long sizeOf(Type type) {
-    if (type.isArray()) return Math.multiplyExact(type.size, sizeOf(type.innerType));
-    if (type == Type.I64 || type.isPointer()) return 8;
-    return type == Type.I1 ? 1 : 4;
+    return MemoryLocation.byteSize(type);
   }
 }

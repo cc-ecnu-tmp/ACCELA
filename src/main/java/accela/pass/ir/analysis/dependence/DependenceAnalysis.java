@@ -3,6 +3,7 @@ package accela.pass.ir.analysis.dependence;
 import accela.ir.BasicBlock;
 import accela.ir.Instruction;
 import accela.ir.Value;
+import accela.pass.ir.analysis.MemoryLocation;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -102,7 +103,9 @@ public final class DependenceAnalysis {
                   independentLoop,
                   firstLane,
                   secondLane,
-                  step)) {
+                  step,
+                  first.location().byteSize(),
+                  second.location().byteSize())) {
                 return false;
               }
             }
@@ -150,13 +153,13 @@ public final class DependenceAnalysis {
     boolean unknownMemory = false;
     for (BasicBlock block : blocks) {
       for (Instruction instruction : block.getInstructions()) {
-        Value pointer = memoryPointer(instruction);
-        if (pointer != null) {
+        MemoryLocation location = MemoryLocation.fromInstruction(instruction);
+        if (location != null) {
           accesses.add(new MemoryAccess(
               instruction,
-              pointer,
+              location,
               instruction.getOpcode() == Instruction.Opcode.STORE,
-              AffineAccess.match(pointer, inductionValues)));
+              AffineAccess.match(location.pointer(), inductionValues)));
         } else if (instruction.getOpcode() == Instruction.Opcode.CALL) {
           unknownMemory = true;
         }
@@ -181,6 +184,10 @@ public final class DependenceAnalysis {
     if (source.formula() == null
         || sink.formula() == null
         || source.formula().root() != sink.formula().root()) {
+      return unknownDependence(source, sink, loopCount);
+    }
+    if (!source.formula().supportsAccessSize(source.location().byteSize())
+        || !sink.formula().supportsAccessSize(sink.location().byteSize())) {
       return unknownDependence(source, sink, loopCount);
     }
     AffineAccess.Distance distance = source.formula().distanceTo(sink.formula());
@@ -228,17 +235,13 @@ public final class DependenceAnalysis {
 
   private static boolean conflicts(MemoryAccess first, MemoryAccess second) {
     return (first.write() || second.write())
-        && PointerProvenance.mayAlias(first.pointer(), second.pointer());
-  }
-
-  private static Value memoryPointer(Instruction instruction) {
-    return switch (instruction.getOpcode()) {
-      case LOAD -> instruction.getOperand(0);
-      case STORE -> instruction.getOperand(1);
-      default -> null;
-    };
+        && PointerProvenance.mayAlias(
+            first.location().pointer(), second.location().pointer());
   }
 
   private record MemoryAccess(
-      Instruction instruction, Value pointer, boolean write, AffineAccess formula) {}
+      Instruction instruction,
+      MemoryLocation location,
+      boolean write,
+      AffineAccess formula) {}
 }

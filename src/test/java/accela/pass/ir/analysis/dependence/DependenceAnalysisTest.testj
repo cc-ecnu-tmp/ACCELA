@@ -63,6 +63,17 @@ final class DependenceAnalysisTest {
     assertFalse(fixture.analyze().isSafeToJam(0, 1, 1, 4));
   }
 
+  @Test
+  void rejectsJammingWhenWideAccessesOverlapAdjacentOuterLanes() {
+    Fixture fixture = new Fixture();
+    Type int4 = Type.vector(Type.INT, 4);
+    fixture.builder.createStore(
+        Constant.zero(int4),
+        fixture.address(Constant.intConst(0), fixture.outer));
+
+    assertFalse(fixture.analyze().isSafeToJam(0, 1, 1, 4));
+  }
+
   private static final class Fixture {
     final GlobalVariable matrix =
         new GlobalVariable("matrix", MATRIX, Constant.zero(MATRIX), false);
