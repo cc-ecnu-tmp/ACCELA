@@ -38,7 +38,9 @@ final class TailRecursionEliminationTest {
         builder.createICmp("eq", value, Constant.intConst(1)), left, right);
     builder = new IRBuilder(left);
     Value nextDepth = builder.createAdd(depth, Constant.intConst(1));
-    Value nextValue = builder.createSub(value, Constant.intConst(1));
+    Value vectorDepth = builder.createSplat(Type.vector(Type.INT, 4), nextDepth);
+    Value nextValue = builder.createSub(
+        value, builder.createExtractElement(vectorDepth, Constant.intConst(0)));
     builder.createRet(builder.createCall(function, Type.INT, nextValue, nextDepth));
     builder = new IRBuilder(right);
     Value alternateValue = builder.createSub(value, Constant.intConst(2));
