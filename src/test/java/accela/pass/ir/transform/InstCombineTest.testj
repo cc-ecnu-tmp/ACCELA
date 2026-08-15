@@ -88,6 +88,22 @@ final class InstCombineTest {
   }
 
   @Test
+  void forwardsConstantExtractThroughVectorConstruction() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_extract", Type.INT);
+    var lane = function.addArgument(Type.INT, "lane");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var vector = builder.createBuildVector(
+        int4, Constant.intConst(1), lane, Constant.intConst(3), Constant.intConst(4));
+    var extract = builder.createExtractElement(vector, Constant.intConst(1));
+    var result = builder.createRet(extract);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    assertSame(lane, result.getOperand(0));
+    assertFalse(extract.hasUses());
+  }
+
+  @Test
   void foldsPositivePowerOfTwoRemainderTests() {
     Function function = new Function("remainder", Type.I1);
     var dividend = function.addArgument(Type.INT, "dividend");

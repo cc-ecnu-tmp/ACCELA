@@ -47,9 +47,38 @@ public final class InstCombine {
     for (BasicBlock block : function.getBlocks()) {
       for (Instruction instruction : List.copyOf(block.getInstructions())) {
         changed |= foldExactPowerOfTwoDivision(instruction);
+        changed |= foldVectorLaneOperation(instruction);
       }
     }
     return changed;
+  }
+
+  /** Forwards constant-lane extracts through vector constructors and updates. */
+  private static boolean foldVectorLaneOperation(Instruction extract) {
+    if (extract.getOpcode() != Instruction.Opcode.EXTRACT_ELEMENT
+        || !(extract.getOperand(1) instanceof Constant.Int lane)
+        || !(extract.getOperand(0) instanceof Instruction vector)) return false;
+    int index = (int) lane.value;
+    Value replacement = null;
+    if (vector.getOpcode() == Instruction.Opcode.BUILD_VECTOR
+        && index >= 0 && index < vector.getNumOperands()) {
+      replacement = vector.getOperand(index);
+    } else if (vector.getOpcode() == Instruction.Opcode.SPLAT) {
+      replacement = vector.getOperand(0);
+    } else if (vector.getOpcode() == Instruction.Opcode.INSERT_ELEMENT
+        && vector.getOperand(2) instanceof Constant.Int insertedLane) {
+      if (insertedLane.value == lane.value) {
+        replacement = vector.getOperand(1);
+      } else {
+        IRBuilder builder = new IRBuilder();
+        builder.setInsertPointBefore(extract);
+        replacement = builder.createExtractElement(vector.getOperand(0), lane);
+      }
+    }
+    if (replacement == null) return false;
+    extract.replaceAllUsesWith(replacement);
+    extract.eraseFromParent();
+    return true;
   }
 
   /** Cancels repeated terms in a bounded i32 add/sub tree when that reduces instruction count. */
