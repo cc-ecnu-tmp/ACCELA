@@ -105,6 +105,33 @@ final class LICMTest {
   }
 
   @Test
+  void promotesLoopLocalVectorLoadsAndStores() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    GlobalVariable state =
+        new GlobalVariable("vector_state", int4, Constant.zero(int4), false);
+    module.addGlobal(state);
+    Function function = loopFunction(module, "mutate_vector");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction load = headerBuilder.createLoad(Type.vector(Type.INT, 4), state);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    bodyBuilder.createStore(
+        bodyBuilder.createAdd(load, Constant.zero(Type.vector(Type.INT, 4))), state);
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertTrue(hasAccess(entry, state, Instruction.Opcode.LOAD));
+    assertTrue(hasPromotionWriteback(function, state));
+    assertFalse(hasAccess(header, state, Instruction.Opcode.LOAD));
+    assertFalse(hasAccess(body, state, Instruction.Opcode.STORE));
+  }
+
+  @Test
   void promotesOuterIndexedElementAcrossInnerReductionLoop() {
     NestedPromotionFixture fixture = new NestedPromotionFixture(false);
 

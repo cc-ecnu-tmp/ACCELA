@@ -60,7 +60,8 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
         if (instruction.getOpcode() != Instruction.Opcode.STORE
             || instruction.getOperand(1) != pointer) continue;
         Type stored = instruction.getOperand(0).getType();
-        if (stored.isArray() || stored.isPointer() || type != null && type != stored) return null;
+        if (stored.isArray() || stored.isPointer()
+            || type != null && !type.equals(stored)) return null;
         type = stored;
       }
     }
@@ -120,7 +121,7 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
         Value accessed = instruction.getOperand(pointerIndex);
         if (accessed == pointer) {
           if (instruction.getOpcode() == Instruction.Opcode.LOAD) {
-            if (instruction.getType() != valueType) return false;
+            if (!instruction.getType().equals(valueType)) return false;
             loads++;
           }
           else stores++;
