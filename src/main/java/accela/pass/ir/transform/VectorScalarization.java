@@ -34,8 +34,9 @@ public final class VectorScalarization {
 
     IRVerifier.verifyModule(module);
     rejectUnspecifiedFunctionABI(module);
+    boolean changed = scalarizeVectorArguments(module);
     Map<Value, List<Value>> storageLanes = scalarizeVectorGlobals(module);
-    boolean changed = !storageLanes.isEmpty();
+    changed |= !storageLanes.isEmpty();
     for (Function function : module.getFunctions()) {
       changed |= scalarizeFunction(function, storageLanes);
     }
@@ -47,6 +48,93 @@ public final class VectorScalarization {
     }
     IRVerifier.verifyModule(module);
     return changed;
+  }
+
+  /** Expands each defined vector parameter into ordinary scalar ABI parameters. */
+  private static boolean scalarizeVectorArguments(accela.ir.Module module) {
+    Map<Function, List<Type>> originalSignatures = new IdentityHashMap<>();
+    for (Function function : module.getFunctions()) {
+      List<Function.Argument> original = List.copyOf(function.getArguments());
+      if (original.stream().noneMatch(argument -> argument.getType().isVector())) continue;
+      BasicBlock oldEntry = function.getEntryBlock();
+      if (oldEntry == null) throw unsupported("vector arguments on a declaration", function);
+
+      List<Type> types = new ArrayList<>();
+      List<String> names = new ArrayList<>();
+      for (Function.Argument argument : original) {
+        Type type = argument.getType();
+        int lanes = type.isVector() ? type.getLaneCount() : 1;
+        for (int lane = 0; lane < lanes; lane++) {
+          types.add(type.isVector() ? type.getElementType() : type);
+          names.add(argument.getName() + (type.isVector() ? ".lane." + lane : ""));
+        }
+      }
+      List<Function.Argument> replacements = function.replaceArguments(types, names);
+      BasicBlock prologue = function.prependBlock(uniqueVectorArgumentEntry(function));
+      IRBuilder builder = new IRBuilder(prologue);
+      int replacement = 0;
+      for (Function.Argument argument : original) {
+        Type type = argument.getType();
+        if (type.isVector()) {
+          Value[] lanes = new Value[type.getLaneCount()];
+          for (int lane = 0; lane < lanes.length; lane++) {
+            lanes[lane] = replacements.get(replacement++);
+          }
+          argument.replaceAllUsesWith(builder.createBuildVector(type, lanes));
+        } else {
+          argument.replaceAllUsesWith(replacements.get(replacement++));
+        }
+      }
+      builder.createBr(oldEntry);
+      originalSignatures.put(
+          function, original.stream().map(Function.Argument::getType).toList());
+    }
+
+    if (originalSignatures.isEmpty()) return false;
+    for (Function function : module.getFunctions()) {
+      for (BasicBlock block : function.getBlocks()) {
+        for (Instruction instruction : List.copyOf(block.getInstructions())) {
+          List<Type> parameters = instruction.getOpcode() == Opcode.CALL
+              ? originalSignatures.get(instruction.getCallee()) : null;
+          if (parameters != null) expandVectorCall(instruction, parameters, function);
+        }
+      }
+    }
+    return true;
+  }
+
+  private static void expandVectorCall(
+      Instruction call, List<Type> parameters, Function caller) {
+    if (call.getNumOperands() != parameters.size()) {
+      throw unsupported("vector call argument count mismatch", caller);
+    }
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(call);
+    List<Value> expanded = new ArrayList<>();
+    for (int index = 0; index < parameters.size(); index++) {
+      Type parameter = parameters.get(index);
+      Value argument = call.getOperand(index);
+      if (!argument.getType().equals(parameter)) {
+        throw unsupported("vector call argument type mismatch", caller);
+      }
+      if (!parameter.isVector()) {
+        expanded.add(argument);
+        continue;
+      }
+      for (int lane = 0; lane < parameter.getLaneCount(); lane++) {
+        expanded.add(builder.createExtractElement(argument, Constant.intConst(lane)));
+      }
+    }
+    call.clearAllOperands();
+    expanded.forEach(call::addOperand);
+  }
+
+  private static String uniqueVectorArgumentEntry(Function function) {
+    for (int suffix = 0; ; suffix++) {
+      String label = suffix == 0 ? "vector.args" : "vector.args." + suffix;
+      if (function.getBlocks().stream()
+          .noneMatch(block -> block.getLabel().equals(label))) return label;
+    }
   }
 
   private static boolean scalarizeFunction(
