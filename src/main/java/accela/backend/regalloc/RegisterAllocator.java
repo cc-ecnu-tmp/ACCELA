@@ -5,4 +5,7 @@ import accela.backend.target.RISCVTarget;
 
 public interface RegisterAllocator {
   AllocationResult allocate(MachineFunction function, RISCVTarget target);
+
+  /** Runs allocation analysis through color assignment without rewriting spills. */
+  AllocationEstimate estimate(MachineFunction function, RISCVTarget target);
 }

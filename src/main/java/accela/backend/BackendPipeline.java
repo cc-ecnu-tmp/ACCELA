@@ -21,6 +21,9 @@ import accela.backend.target.RISCVAsmEmitter;
 import accela.backend.target.RISCVAsmPrinter;
 import accela.backend.target.RISCVFrameLowering;
 import accela.backend.target.RISCVTarget;
+import accela.cost.DecisionTraceSink;
+import accela.cost.MachineCandidateScheduler;
+import accela.cost.TargetProfile;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -42,6 +45,13 @@ final class BackendPipeline {
   private final RISCVFrameLowering frameLowering = new RISCVFrameLowering(target);
   private final RISCVAsmEmitter asmEmitter = new RISCVAsmEmitter(target, frameLowering);
   private final RISCVAsmPrinter asmPrinter = new RISCVAsmPrinter(target, frameLowering, asmEmitter);
+  private final TargetProfile profile;
+  private final DecisionTraceSink trace;
+
+  BackendPipeline(TargetProfile profile, DecisionTraceSink trace) {
+    this.profile = profile;
+    this.trace = trace;
+  }
 
   String compileToAssembly(accela.ir.Module module) {
     MachineModule machineModule = lowering.lower(module);
@@ -49,12 +59,15 @@ final class BackendPipeline {
     Map<MachineFunction, AllocationResult> allocations = new LinkedHashMap<>();
 
     for (MachineFunction function : machineModule.getFunctions()) {
+      MachineCandidateScheduler scheduler = new MachineCandidateScheduler(profile, allocator, target, trace);
       copyPropagation.run(function);
       phiElimination.run(function);
       memoryAddressFolding.run(function);
       machineCse.run(function);
-      globalMerge.run(function);
-      machineLicm.run(function);
+      scheduler.apply("backend.global-merge", "backend.global-merge.address-equivalence",
+          function, globalMerge::run);
+      scheduler.apply("backend.machine-licm", "backend.machine-licm.loop-invariance",
+          function, machineLicm::run);
       loopConditionDuplication.run(function);
       constantCse.run(function);
       globalAddresses.run(function);

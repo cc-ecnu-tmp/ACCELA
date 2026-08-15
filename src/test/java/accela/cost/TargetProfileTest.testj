@@ -1,0 +1,38 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import org.junit.jupiter.api.Test;
+
+final class TargetProfileTest {
+  @Test
+  void generatedDevelopmentProfileHasFrozenTargetContract() {
+    TargetProfile profile = GeneratedTargetProfile.get();
+    assertEquals(TargetProfile.SCHEMA_VERSION, 1);
+    assertEquals("rv64gc", profile.isa());
+    assertEquals("lp64d", profile.abi());
+    assertEquals("medany", profile.codeModel());
+    assertEquals(2, profile.issueWidth());
+    assertFalse(profile.calibrated());
+    assertFalse(profile.simdEnabled());
+    assertEquals(8, profile.scheduler().beamWidth());
+  }
+
+  @Test
+  void missingMeasurementsFailClosed() {
+    assertThrows(IllegalArgumentException.class, () -> TargetProfile.builder()
+        .identity("bad", "rv64gc", "lp64d", "medany")
+        .core(50_000_000L, 2, 2, 2)
+        .capabilities(true, false)
+        .scheduler(new SchedulerPolicy(8, 1024, 4096, 1.0, true))
+        .build());
+  }
+
+  @Test
+  void measurementsRejectInvalidDispersion() {
+    assertThrows(IllegalArgumentException.class,
+        () -> new Measurement(1.0, -0.1, 9, "rdcycle"));
+  }
+}

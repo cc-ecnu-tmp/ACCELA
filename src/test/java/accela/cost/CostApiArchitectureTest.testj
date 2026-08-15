@@ -1,0 +1,52 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.regalloc.AllocationEstimate;
+import accela.util.StrictJson;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+final class CostApiArchitectureTest {
+  private static final List<String> FORBIDDEN = List.of(
+      "filename", "filepath", "sourcebytes", "caseid", "expectedoutput",
+      "filehash", "astfingerprint", "testconstant", "testcase");
+
+  @Test
+  void schedulingContractsCannotAcquireTestIdentityInputs() {
+    for (Class<?> contract : List.of(CostEstimate.class, OptimizationCandidate.class,
+        CandidateProvider.class, LegalityResult.class, SchedulerPolicy.class,
+        AllocationEstimate.class, TargetProfile.class)) {
+      for (Field field : contract.getDeclaredFields()) reject(contract, field.getName());
+      for (Method method : contract.getDeclaredMethods()) reject(contract, method.getName());
+      for (RecordComponent component : contract.getRecordComponents() == null
+          ? new RecordComponent[0] : contract.getRecordComponents()) {
+        reject(contract, component.getName());
+      }
+    }
+  }
+
+  @Test
+  void decisionTraceIsStructuredVersionedJson() {
+    DecisionTraceSink.Decision decision = new DecisionTraceSink.Decision(
+        "profile", "candidate", "mir-function", "function", "rejected", "unknown legality",
+        Map.of("factor", "2"), null, null, null, 1, 1024);
+    Object parsed = StrictJson.parse(StrictJson.stringify(decision.toJson()));
+    assertTrue(parsed instanceof Map<?, ?>);
+    assertTrue(((Map<?, ?>) parsed).containsKey("schema_version"));
+  }
+
+  private static void reject(Class<?> contract, String name) {
+    String normalized = name.replace("_", "").toLowerCase(Locale.ROOT);
+    for (String forbidden : FORBIDDEN) {
+      assertFalse(normalized.contains(forbidden),
+          () -> contract.getName() + " leaks forbidden scheduling input through " + name);
+    }
+  }
+}

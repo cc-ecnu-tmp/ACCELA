@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.IdentityHashMap;
 
 public final class MachineFrameInfo {
   private final List<StackSlot> slots = new ArrayList<>();
@@ -17,6 +18,31 @@ public final class MachineFrameInfo {
   private int saveRaOffset = -1;
   private final Map<String, CalleeSavedRegisterSave> calleeSavedRegisterSaves = new LinkedHashMap<>();
   private int frameSize = 0;
+
+  /** Deep-copies frame state and returns the source-to-copy slot map for operand cloning. */
+  public Map<StackSlot, StackSlot> copyFrom(MachineFrameInfo source) {
+    slots.clear();
+    calleeSavedRegisterSaves.clear();
+    Map<StackSlot, StackSlot> slotMap = new IdentityHashMap<>();
+    for (StackSlot sourceSlot : source.slots) {
+      StackSlot copy = new StackSlot(sourceSlot.getId(), sourceSlot.getKind(), sourceSlot.getType(),
+          sourceSlot.getSize(), sourceSlot.getAlign());
+      copy.setOffset(sourceSlot.getOffset());
+      slots.add(copy);
+      slotMap.put(sourceSlot, copy);
+    }
+    nextSlotId = source.nextSlotId;
+    outgoingArgBytes = source.outgoingArgBytes;
+    hasCalls = source.hasCalls;
+    saveRaOffset = source.saveRaOffset;
+    frameSize = source.frameSize;
+    for (CalleeSavedRegisterSave sourceSave : source.calleeSavedRegisterSaves.values()) {
+      CalleeSavedRegisterSave copy = new CalleeSavedRegisterSave(sourceSave.register);
+      copy.offset = sourceSave.offset;
+      calleeSavedRegisterSaves.put(sourceSave.register.getName(), copy);
+    }
+    return slotMap;
+  }
 
   public StackSlot createLocalSlot(MachineType type, int size, int align) {
     StackSlot slot = new StackSlot(nextSlotId++, StackSlotKind.LOCAL, type, size, align);
