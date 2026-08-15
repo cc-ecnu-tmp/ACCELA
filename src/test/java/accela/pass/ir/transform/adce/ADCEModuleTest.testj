@@ -9,12 +9,27 @@ import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.GlobalVariable;
 import accela.ir.IRBuilder;
+import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.ir.Type;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class ADCEModuleTest {
+  @Test
+  void removesDeadVectorComputations() {
+    Function function = new Function("vector_dead_code", Type.INT);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction splat = builder.createSplat(int4, Constant.intConst(3));
+    Instruction dead = builder.createAdd(splat, Constant.zero(int4));
+    builder.createRet(Constant.intConst(0));
+
+    assertTrue(ADCE.runOnFunction(function));
+    assertNull(splat.getParent());
+    assertNull(dead.getParent());
+  }
+
   @Test
   void removesFunctionsUnreachableFromMain() {
     Module module = new Module();
