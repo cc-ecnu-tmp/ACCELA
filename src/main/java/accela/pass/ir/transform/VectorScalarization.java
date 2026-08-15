@@ -373,8 +373,14 @@ public final class VectorScalarization {
       Type vectorType = global.getValueType();
       if (!vectorType.isVector()) {
         if (containsVector(vectorType)) {
-          throw new UnsupportedOperationException(
-              "nested vector global layout is not defined yet: @" + global.getName());
+          Type storageType = legalizedStorageType(vectorType);
+          Constant initializer = legalizedInitializer(
+              global.getInitializer(), vectorType, storageType);
+          GlobalVariable replacement = new GlobalVariable(
+              global.getName(), storageType, initializer, global.isConstant());
+          global.replaceAllUsesWith(replacement);
+          module.removeGlobal(global);
+          module.addGlobal(replacement);
         }
         continue;
       }
@@ -393,6 +399,24 @@ public final class VectorScalarization {
       result.put(global, List.copyOf(laneGlobals));
     }
     return result;
+  }
+
+  private static Constant legalizedInitializer(
+      Constant constant, Type sourceType, Type storageType) {
+    if (constant instanceof Constant.Zero) return Constant.zero(storageType);
+    if (sourceType.isVector() && constant instanceof Constant.Vector vector) {
+      return Constant.array(storageType, vector.elements);
+    }
+    if (sourceType.isArray() && constant instanceof Constant.Array array) {
+      List<Constant> elements = new ArrayList<>();
+      for (Constant element : array.elements) {
+        elements.add(legalizedInitializer(
+            element, sourceType.getElementType(), storageType.getElementType()));
+      }
+      return Constant.array(storageType, elements);
+    }
+    throw new UnsupportedOperationException(
+        "invalid nested vector global initializer for " + sourceType);
   }
 
   private static List<Constant> globalInitializerLanes(
