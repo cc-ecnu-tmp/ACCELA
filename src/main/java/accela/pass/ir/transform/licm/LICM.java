@@ -133,7 +133,8 @@ public final class LICM {
       DominatorTreeAnalysis.Result dominators) {
     return switch (instruction.getOpcode()) {
       case ADD, SUB, MUL, SMULH, SHL, ASHR, AND, FADD, FSUB, FMUL, FDIV, FNEG,
-          ICMP, FCMP, SITOFP, FPTOSI, XOR ->
+          ICMP, FCMP, SITOFP, FPTOSI, XOR, BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT,
+          INSERT_ELEMENT, SHUFFLE_VECTOR, SELECT ->
           executesOnEveryBackedge(instruction, loop, dominators);
       case GEP, ZEXT, SEXT -> true;
       case SDIV, SREM -> executesOnEveryBackedge(instruction, loop, dominators)

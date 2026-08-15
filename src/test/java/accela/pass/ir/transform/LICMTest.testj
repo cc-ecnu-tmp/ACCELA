@@ -262,6 +262,23 @@ final class LICMTest {
   }
 
   @Test
+  void hoistsInvariantVectorConstruction() {
+    Module module = new Module();
+    Function function = loopFunction(module, "vector_licm");
+    Value lane = function.addArgument(Type.INT, "lane");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(body.getTerminator());
+    Instruction vector = builder.createBuildVector(
+        Type.vector(Type.INT, 4), lane, Constant.intConst(2),
+        Constant.intConst(3), Constant.intConst(4));
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    assertSame(entry, vector.getParent());
+  }
+
+  @Test
   void speculatesSafeAddressesIntoParentLoop() {
     Module module = new Module();
     Function function = new Function("nested", Type.VOID);
