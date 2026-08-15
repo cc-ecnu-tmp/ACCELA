@@ -1,0 +1,47 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class VectorMem2RegTest {
+  @Test
+  void promotesVectorLoadsAndStoresAsOneSsaValue() {
+    Function function = new Function("vector_mem2reg", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Constant.Vector value = Constant.vector(
+        int4,
+        List.of(
+            Constant.intConst(1), Constant.intConst(2),
+            Constant.intConst(3), Constant.intConst(4)));
+    Value slot = builder.createAlloca(int4);
+    builder.createStore(value, slot);
+    Instruction loaded = builder.createLoad(int4, slot);
+    Instruction extracted = builder.createExtractElement(loaded, Constant.intConst(2));
+    builder.createRet(extracted);
+
+    assertTrue(PromoteMemoryToRegister.run(
+        function, new DominatorTreeAnalysis().run(function, null)));
+    IRVerifier.verifyFunction(function);
+    assertSame(value, extracted.getOperand(0));
+    assertEquals(0, entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA
+            || instruction.getOpcode() == Instruction.Opcode.LOAD
+            || instruction.getOpcode() == Instruction.Opcode.STORE)
+        .count());
+  }
+}
