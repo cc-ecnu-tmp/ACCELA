@@ -16,6 +16,7 @@ import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.AllocationEstimate;
 import accela.backend.regalloc.IteratedRegisterAllocator;
 import accela.backend.target.RISCVTarget;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -78,6 +79,19 @@ final class MachineCostModelTest {
           throw new IllegalStateException("transform failed");
         }));
     assertEquals(3, function.getEntryBlock().getInstructions().size());
+  }
+
+  @Test
+  void unknownLoopSlopeGuardIsRenameIndependentAndFailClosed() {
+    assertTrue(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
+        Map.of("main::old_header", 20.0, "main::other", 5.0),
+        Map.of("main::renamed_header", 19.0, "main::renamed_other", 5.0)));
+    assertFalse(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
+        Map.of("main::old_header", 20.0, "main::other", 5.0),
+        Map.of("main::renamed_header", 21.0, "main::renamed_other", 4.0)));
+    assertFalse(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
+        Map.of("main::old_header", 20.0),
+        Map.of("main::renamed_header", 20.0, "main::new_loop", 1.0)));
   }
 
   private static MachineFunction simpleFunction() {

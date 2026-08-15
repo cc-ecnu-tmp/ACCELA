@@ -8,8 +8,14 @@ import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.AllocationEstimate;
 import accela.backend.regalloc.RegisterAllocator;
 import accela.backend.target.RISCVTarget;
+import accela.ir.BasicBlock;
+import accela.ir.Function;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.ExactTripCount;
+import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -29,37 +35,37 @@ public final class MachineCostModel {
   }
 
   public CostEstimate estimate(MachineFunction function) {
-    int instructionCount = 0;
+    Map<MachineBasicBlock, Double> executionWeights = executionWeights(function);
+    double instructionCount = 0.0;
     int codeBytes = 0;
-    int branches = 0;
-    int loads = 0;
-    int stores = 0;
-    int loadUseEdges = 0;
+    double branches = 0;
+    double loads = 0;
+    double stores = 0;
+    double loadUseEdges = 0;
     double criticalPath = 0.0;
     double resourceCycles = 0.0;
     double variance = 0.0;
-    EnumMap<InstructionClass, Integer> counts = new EnumMap<>(InstructionClass.class);
 
     for (MachineBasicBlock block : function.getBlocks()) {
-      criticalPath += criticalPath(block);
-      resourceCycles += simulate(block);
-      loadUseEdges += loadUseEdges(block);
+      double weight = executionWeights.getOrDefault(block, 1.0);
+      criticalPath += criticalPath(block) * weight;
+      resourceCycles += simulate(block) * weight;
+      loadUseEdges += loadUseEdges(block) * weight;
       for (MachineInstr instruction : block.getInstructions()) {
         InstructionClass instructionClass = InstructionClass.of(instruction.getOpcode());
         TargetProfile.OperationCost operation = profile.operation(instructionClass);
-        counts.merge(instructionClass, 1, Integer::sum);
-        instructionCount++;
+        instructionCount += weight;
         codeBytes += operation.codeBytes();
         if (instructionClass == InstructionClass.BRANCH
-            || instructionClass == InstructionClass.CALL_RETURN) branches++;
-        if (instructionClass == InstructionClass.LOAD) loads++;
-        if (instructionClass == InstructionClass.STORE) stores++;
-        variance += square(operation.latency().mad());
-        variance += square(operation.reciprocalThroughput().mad());
+            || instructionClass == InstructionClass.CALL_RETURN) branches += weight;
+        if (instructionClass == InstructionClass.LOAD) loads += weight;
+        if (instructionClass == InstructionClass.STORE) stores += weight;
+        variance += weight * square(operation.latency().mad());
+        variance += weight * square(operation.reciprocalThroughput().mad());
       }
     }
 
-    double frontend = Math.max(Math.ceil((double) instructionCount / profile.fetchWidth()),
+    double frontend = Math.max(Math.ceil(instructionCount / profile.fetchWidth()),
         curveEstimate(profile.diagnostics().frontend(), codeBytes));
     double loadUseExtra = Math.max(0.0, profile.diagnostics().loadUse().median()
         - profile.operation(InstructionClass.LOAD).latency().median());
@@ -82,6 +88,100 @@ public final class MachineCostModel {
         * (square(profile.spillLoad().mad()) + square(profile.spillStore().mad()));
     return new CostEstimate(cycles, Math.sqrt(variance), criticalPath, frontend,
         resourceCycles, memory, branch, spill, codeSize);
+  }
+
+  Map<MachineBasicBlock, Double> executionWeights(MachineFunction machineFunction) {
+    return analyzeExecutionWeights(machineFunction).executionWeights();
+  }
+
+  Map<String, Double> unboundedLoopInstructionSlopes(MachineFunction machineFunction) {
+    ExecutionWeightAnalysis analysis = analyzeExecutionWeights(machineFunction);
+    Map<String, Double> result = new LinkedHashMap<>();
+    for (Map.Entry<String, Map<MachineBasicBlock, Double>> loop :
+        analysis.unboundedLoopWeights().entrySet()) {
+      double instructions = 0.0;
+      for (Map.Entry<MachineBasicBlock, Double> block : loop.getValue().entrySet()) {
+        instructions += block.getKey().getInstructions().size() * block.getValue();
+      }
+      result.put(loop.getKey(), instructions);
+    }
+    return Map.copyOf(result);
+  }
+
+  private ExecutionWeightAnalysis analyzeExecutionWeights(MachineFunction machineFunction) {
+    Function sourceFunction = machineFunction.getBlocks().stream()
+        .map(MachineBasicBlock::getSourceFunction)
+        .filter(java.util.Objects::nonNull)
+        .findFirst()
+        .orElse(null);
+    if (sourceFunction == null) return new ExecutionWeightAnalysis(Map.of(), Map.of());
+    FunctionAnalysisManager analyses = new FunctionAnalysisManager();
+    analyses.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    analyses.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    analyses.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    Map<LoopAnalysis.Loop, Integer> exactTrips = new IdentityHashMap<>();
+    for (InductionVariableAnalysis.Induction induction :
+        analyses.getResult(InductionVariableAnalysis.class, sourceFunction).allInductions()) {
+      ExactTripCount exact = ExactTripCount.find(induction);
+      if (exact != null && hasOnlyCanonicalExit(induction.loop(), exact.exit())) {
+        exactTrips.put(induction.loop(), exact.count());
+      }
+    }
+    List<LoopAnalysis.Loop> loops =
+        analyses.getResult(LoopAnalysis.class, sourceFunction).loops();
+    Map<BasicBlock, Double> sourceWeights = new IdentityHashMap<>();
+    for (BasicBlock block : sourceFunction.getBlocks()) {
+      double weight = 1.0;
+      for (LoopAnalysis.Loop loop : loops) {
+        if (loop.contains(block) && exactTrips.containsKey(loop)) {
+          weight = checkedMultiply(weight, exactTrips.get(loop));
+        }
+      }
+      sourceWeights.put(block, weight);
+    }
+    Map<MachineBasicBlock, Double> result = new IdentityHashMap<>();
+    for (MachineBasicBlock block : machineFunction.getBlocks()) {
+      result.put(block, sourceWeights.getOrDefault(block.getSourceBlock(), 1.0));
+    }
+    Map<String, Map<MachineBasicBlock, Double>> unbounded = new LinkedHashMap<>();
+    for (LoopAnalysis.Loop loop : loops) {
+      if (exactTrips.containsKey(loop)) continue;
+      String key = sourceFunction.getName() + "::" + loop.header().getName();
+      Map<MachineBasicBlock, Double> blocks = new IdentityHashMap<>();
+      for (MachineBasicBlock machineBlock : machineFunction.getBlocks()) {
+        BasicBlock sourceBlock = machineBlock.getSourceBlock();
+        if (sourceBlock == null || !loop.contains(sourceBlock)) continue;
+        double exactEnclosingWeight = 1.0;
+        for (LoopAnalysis.Loop enclosing : loops) {
+          if (enclosing.contains(sourceBlock) && exactTrips.containsKey(enclosing)) {
+            exactEnclosingWeight = checkedMultiply(
+                exactEnclosingWeight, exactTrips.get(enclosing));
+          }
+        }
+        blocks.put(machineBlock, exactEnclosingWeight);
+      }
+      unbounded.put(key, Map.copyOf(blocks));
+    }
+    return new ExecutionWeightAnalysis(Map.copyOf(result), Map.copyOf(unbounded));
+  }
+
+  private static boolean hasOnlyCanonicalExit(LoopAnalysis.Loop loop, BasicBlock exit) {
+    for (BasicBlock block : loop.blocks()) {
+      for (BasicBlock successor : block.getSuccessors()) {
+        if (!loop.contains(successor) && (block != loop.header() || successor != exit)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private static double checkedMultiply(double left, int right) {
+    double product = left * right;
+    if (!Double.isFinite(product)) {
+      throw new IllegalStateException("exact loop execution weight overflow");
+    }
+    return product;
   }
 
   private int loadUseEdges(MachineBasicBlock block) {
@@ -189,6 +289,10 @@ public final class MachineCostModel {
   }
 
   private static double square(double value) { return value * value; }
+
+  private record ExecutionWeightAnalysis(
+      Map<MachineBasicBlock, Double> executionWeights,
+      Map<String, Map<MachineBasicBlock, Double>> unboundedLoopWeights) {}
 
   private static final class Node {
     final int index;

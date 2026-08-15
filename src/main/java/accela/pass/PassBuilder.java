@@ -42,6 +42,27 @@ import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
  * Builds the project's default pass pipelines.
  */
 public final class PassBuilder {
+  private enum Mode { PRODUCTION_FULL, R1_CANDIDATE_STAGING }
+
+  private final boolean r1CandidateStaging;
+
+  public PassBuilder() {
+    r1CandidateStaging = false;
+  }
+
+  private PassBuilder(Mode mode) {
+    this.r1CandidateStaging = mode == Mode.R1_CANDIDATE_STAGING;
+  }
+
+  /**
+   * Builds the staging pipeline used to explore alternate R1 pass timing.
+   *
+   * <p>The resulting module is only a legal final state after IRCandidateScheduler has verified it
+   * and proved that it safely dominates an independently built production FULL.
+   */
+  public static PassBuilder forR1CandidateStaging() {
+    return new PassBuilder(Mode.R1_CANDIDATE_STAGING);
+  }
   private static boolean isSimplifyCfgEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_SIMPLIFYCFG");
     return disable == null
@@ -257,7 +278,7 @@ public final class PassBuilder {
     if (isLoopRotateEnabled()) {
       postIpsccpFpm.addPass(new LoopRotate.Pass());
     }
-    if (isLicmEnabled()) {
+    if (isLicmEnabled() && !r1CandidateStaging) {
       postIpsccpFpm.addPass(new LICM.Pass());
       if (isEarlyCseEnabled()) {
         postIpsccpFpm.addPass(new EarlyCSE.Pass());
@@ -266,7 +287,7 @@ public final class PassBuilder {
     if (isLoopUnrollAndJamEnabled()) {
       postIpsccpFpm.addPass(new LoopUnrollAndJam.Pass());
     }
-    if (isLoopUnrollEnabled()) {
+    if (isLoopUnrollEnabled() && !r1CandidateStaging) {
       postIpsccpFpm.addPass(new LoopUnroll.Pass());
       postIpsccpFpm.addPass(new LoopUnroll.Pass());
     }
@@ -285,11 +306,13 @@ public final class PassBuilder {
           postIpsccpFpm.addPass(new IndVarSimplify.LFTRPass());
         }
       }
-      if (isLicmEnabled()) {
+      if (isLicmEnabled() && !r1CandidateStaging) {
         postIpsccpFpm.addPass(new LICM.Pass());
       }
     }
-    postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    if (!r1CandidateStaging) {
+      postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    }
     if (isLoopStrengthReduceEnabled() && enableAdce) {
       postIpsccpFpm.addPass(new ADCE.Pass());
     }
@@ -317,7 +340,7 @@ public final class PassBuilder {
       mpm.addPass(new RankedRecurrenceTabulation.Pass());
     }
     mpm.addPass(new ModuleToFunctionPassAdaptor(preInlineFpm));
-    if (isInlinerEnabled()) {
+    if (isInlinerEnabled() && !r1CandidateStaging) {
       mpm.addPass(new Inliner.Pass());
       mpm.addPass(new ModuleToFunctionPassAdaptor(postInlineFpm));
       mpm.addPass(new IPSCCP.Pass());

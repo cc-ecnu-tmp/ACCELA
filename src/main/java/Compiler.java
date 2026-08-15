@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import accela.cost.DecisionTraceSink;
 import accela.cost.GeneratedTargetProfile;
 import accela.cost.IRCandidateScheduler;
+import accela.ir.IRSnapshot;
 
 public class Compiler {
   public static void main(String[] args) throws Exception {
@@ -53,20 +54,23 @@ public class Compiler {
   }
 
   private static accela.ir.Module buildOptimizedIR(Node unit, DecisionTraceSink trace) {
-    accela.ir.Module module = new AST2IR().convert(unit);
-    IRVerifier.verifyModule(module);
+    accela.ir.Module source = new AST2IR().convert(unit);
+    IRVerifier.verifyModule(source);
+    accela.ir.Module candidateStaging = IRSnapshot.deepCopy(source);
+    accela.ir.Module productionFull = source;
+    runPipeline(productionFull, new PassBuilder());
+    runPipeline(candidateStaging, PassBuilder.forR1CandidateStaging());
+    return new IRCandidateScheduler(GeneratedTargetProfile.get(), trace)
+        .schedule(productionFull, candidateStaging);
+  }
 
-    // R1 candidates are additive to the established production FULL pipeline.  Starting the
-    // search from a pipeline with profitable passes removed made the empty beam state a hidden
-    // ablation and allowed it to replace FULL on an inaccurate proxy model.
-    PassBuilder passBuilder = new PassBuilder();
+  private static void runPipeline(accela.ir.Module module, PassBuilder passBuilder) {
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
     PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(false);
     ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline(instrumentation);
     irPipeline.run(module, mam, fam);
     IRVerifier.verifyModule(module);
-    return new IRCandidateScheduler(GeneratedTargetProfile.get(), trace).schedule(module);
   }
 
   static CompileArgument parseArguments(String[] args) {

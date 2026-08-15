@@ -4,7 +4,10 @@ import accela.backend.lowering.IRToMachineLowering;
 import accela.backend.lowering.MachineCSE;
 import accela.backend.lowering.MemoryAddressFolding;
 import accela.backend.lowering.PhiElimination;
+import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
 import accela.backend.machine.MachineModule;
 import accela.backend.machine.MachineVerifier;
 import accela.backend.regalloc.AllocationEstimate;
@@ -27,15 +30,19 @@ import accela.pass.ir.transform.inliner.Inliner;
 import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.verify.IRVerifier;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Transactional, bounded R1 beam over the selected IR profitability passes. */
 public final class IRCandidateScheduler {
+  static final String DEFERRED_R1_SCHEDULE_ID = "ir.schedule.deferred-r1";
   private final TargetProfile profile;
   private final DecisionTraceSink trace;
   private final RISCVTarget target = new RISCVTarget();
@@ -50,9 +57,17 @@ public final class IRCandidateScheduler {
     costModel = new MachineCostModel(profile, allocator, target);
   }
 
-  public accela.ir.Module schedule(accela.ir.Module input) {
-    IRVerifier.verifyModule(input);
-    State initial = state(IRSnapshot.deepCopy(input), List.of());
+  public accela.ir.Module schedule(accela.ir.Module productionFull) {
+    return schedule(productionFull, productionFull);
+  }
+
+  public accela.ir.Module schedule(
+      accela.ir.Module productionFull, accela.ir.Module candidateStaging) {
+    IRVerifier.verifyModule(productionFull);
+    IRVerifier.verifyModule(candidateStaging);
+    State initial = state(IRSnapshot.deepCopy(productionFull), List.of());
+    State staging = state(IRSnapshot.deepCopy(candidateStaging),
+        List.of(DEFERRED_R1_SCHEDULE_ID));
     if (!profile.calibrated() || !profile.scheduler().enabled()) {
       trace.accept(new DecisionTraceSink.Decision(profile.id(),
           profile.evidenceLevel().name().toLowerCase(), "ir.beam.final", "module", "module",
@@ -69,8 +84,8 @@ public final class IRCandidateScheduler {
     PassDescriptor unroll2 = pipeline.require(PassRegistry.IR_UNROLL_2);
     PassDescriptor strength = pipeline.require(PassRegistry.IR_STRENGTH);
     PassDescriptor inliner = pipeline.require(PassRegistry.IR_INLINER);
-    for (int index = 0; index < input.getFunctions().size(); index++) {
-      String function = input.getFunctions().get(index).getName();
+    for (int index = 0; index < candidateStaging.getFunctions().size(); index++) {
+      String function = candidateStaging.getFunctions().get(index).getName();
       specs.add(functionSpec(licm.id(), licm.primaryObligation(), index, function,
           (candidate, functionIndex, fam) -> LICM.runOnFunction(
               candidate.getFunctions().get(functionIndex), fam)));
@@ -105,7 +120,7 @@ public final class IRCandidateScheduler {
           return changed;
         }));
 
-    List<State> beam = List.of(initial);
+    List<State> beam = List.of(staging);
     for (Spec spec : specs) {
       if (moduleExpansions >= profile.scheduler().maxModuleExpansions()) {
         emitBudget(spec, "module", moduleExpansions, profile.scheduler().maxModuleExpansions());
@@ -134,14 +149,59 @@ public final class IRCandidateScheduler {
       beam = List.copyOf(expanded.subList(0,
           Math.min(profile.scheduler().beamWidth(), expanded.size())));
     }
-    State selected = beam.getFirst();
+    int recursivePruned = 0;
+    int unknownLoopPruned = 0;
+    int costPruned = 0;
+    List<State> eligible = new ArrayList<>();
+    for (State state : beam) {
+      if (state.sequence().isEmpty()) continue;
+      if (state.recursiveCallGraph()) {
+        recursivePruned++;
+      } else if (!noWorseUnboundedLoopSlopes(
+          initial.unboundedLoopInstructionSlopes(), state.unboundedLoopInstructionSlopes())) {
+        unknownLoopPruned++;
+      } else if (!safelyDominates(initial.cost(), state.cost())) {
+        costPruned++;
+      } else {
+        eligible.add(state);
+      }
+    }
+    State selected = eligible.stream()
+        .min(Comparator.<State>comparingDouble(
+                state -> state.cost().robustScore(profile.scheduler()))
+            .thenComparing(state -> String.join("\u0000", state.sequence())))
+        .orElse(initial);
+    Map<String, String> finalParameters = new LinkedHashMap<>();
+    finalParameters.put("sequence", String.join(",", selected.sequence()));
+    finalParameters.put("recursive_call_graph_pruned", Integer.toString(recursivePruned));
+    finalParameters.put("unbounded_loop_slope_pruned", Integer.toString(unknownLoopPruned));
+    finalParameters.put("cost_vector_pruned", Integer.toString(costPruned));
     trace.accept(new DecisionTraceSink.Decision(profile.id(),
         profile.evidenceLevel().name().toLowerCase(), "ir.beam.final", "module", "module",
-        "applied", selected.sequence().isEmpty() ? "baseline_selected" : "best_validated_state",
-        "not_applicable", "ir.beam.validated-state", Map.of("sequence", String.join(",", selected.sequence())),
+        selected.sequence().isEmpty() ? "rejected" : "applied",
+        selected.sequence().isEmpty() ? "baseline_selected" : "best_validated_state",
+        selected.sequence().isEmpty() ? "not_applicable" : "proved",
+        "ir.beam.validated-state", finalParameters,
         initial.cost(), selected.cost(),
         selected.allocation(), moduleExpansions, profile.scheduler().maxModuleExpansions()));
     return selected.module();
+  }
+
+  private boolean safelyDominates(CostEstimate baseline, CostEstimate candidate) {
+    if (!(candidate.robustScore(profile.scheduler())
+        < baseline.robustScore(profile.scheduler()))) return false;
+    return noWorse(candidate.criticalPath(), baseline.criticalPath())
+        && noWorse(candidate.frontend(), baseline.frontend())
+        && noWorse(candidate.resources(), baseline.resources())
+        && noWorse(candidate.memory(), baseline.memory())
+        && noWorse(candidate.branch(), baseline.branch())
+        && noWorse(candidate.spill(), baseline.spill())
+        && noWorse(candidate.codeSize(), baseline.codeSize());
+  }
+
+  private static boolean noWorse(double candidate, double baseline) {
+    double tolerance = Math.ulp(Math.max(Math.abs(candidate), Math.abs(baseline))) * 4.0;
+    return candidate <= baseline + tolerance;
   }
 
   private boolean hasBudget(Spec spec) {
@@ -172,17 +232,133 @@ public final class IRCandidateScheduler {
 
   private State state(accela.ir.Module module, List<String> sequence) {
     MachineModule machine = new IRToMachineLowering(target).lower(module);
-    CostEstimate total = new CostEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0);
-    AllocationEstimate allocation = new AllocationEstimate(0, 0, 0, 0, 0, 0);
     for (MachineFunction function : machine.getFunctions()) {
       new PhiElimination().run(function);
       new MemoryAddressFolding().run(function);
       new MachineCSE().run(function);
       MachineVerifier.verify(function);
-      total = add(total, costModel.estimate(function));
+    }
+    InvocationWeights invocationWeights = invocationWeights(machine);
+    CostEstimate total = new CostEstimate(0, 0, 0, 0, 0, 0, 0, 0, 0);
+    AllocationEstimate allocation = new AllocationEstimate(0, 0, 0, 0, 0, 0);
+    Map<String, Double> unboundedLoopInstructionSlopes = new LinkedHashMap<>();
+    for (MachineFunction function : machine.getFunctions()) {
+      double weight = invocationWeights.weights().getOrDefault(function.getName(), 0.0);
+      if (weight == 0.0) continue;
+      total = add(total, scaleRuntimeCost(costModel.estimate(function), weight));
+      for (Map.Entry<String, Double> loop :
+          costModel.unboundedLoopInstructionSlopes(function).entrySet()) {
+        unboundedLoopInstructionSlopes.merge(
+            loop.getKey(), checkedProduct(weight, loop.getValue()), Double::sum);
+      }
       allocation = add(allocation, allocator.estimate(function, target));
     }
-    return new State(module, total, allocation, List.copyOf(sequence));
+    return new State(module, total, allocation, List.copyOf(sequence),
+        invocationWeights.recursive(), Map.copyOf(unboundedLoopInstructionSlopes));
+  }
+
+  static boolean noWorseUnboundedLoopSlopes(
+      Map<String, Double> baseline, Map<String, Double> candidate) {
+    List<Double> baselineSlopes = baseline.values().stream()
+        .sorted(Comparator.reverseOrder()).toList();
+    List<Double> candidateSlopes = candidate.values().stream()
+        .sorted(Comparator.reverseOrder()).toList();
+    int count = Math.max(baselineSlopes.size(), candidateSlopes.size());
+    for (int index = 0; index < count; index++) {
+      double baselineSlope = index < baselineSlopes.size() ? baselineSlopes.get(index) : 0.0;
+      double candidateSlope = index < candidateSlopes.size() ? candidateSlopes.get(index) : 0.0;
+      if (!noWorse(candidateSlope, baselineSlope)) return false;
+    }
+    return true;
+  }
+
+  private InvocationWeights invocationWeights(MachineModule module) {
+    Map<String, MachineFunction> functions = new LinkedHashMap<>();
+    for (MachineFunction function : module.getFunctions()) functions.put(function.getName(), function);
+    Map<String, Map<String, Double>> calls = new LinkedHashMap<>();
+    for (String name : functions.keySet()) {
+      calls.put(name, new LinkedHashMap<>());
+    }
+    for (MachineFunction function : functions.values()) {
+      Map<MachineBasicBlock, Double> blockWeights = costModel.executionWeights(function);
+      for (MachineBasicBlock block : function.getBlocks()) {
+        double blockWeight = blockWeights.getOrDefault(block, 1.0);
+        for (MachineInstr instruction : block.getInstructions()) {
+          if (instruction.getOpcode() != MachineOpcode.CALL
+              || !functions.containsKey(instruction.getCallee())) continue;
+          calls.get(function.getName()).merge(instruction.getCallee(), blockWeight, Double::sum);
+        }
+      }
+    }
+    Set<String> roots = functions.containsKey("main")
+        ? Set.of("main") : callGraphRoots(functions.keySet(), calls);
+    Set<String> reachable = new LinkedHashSet<>();
+    for (String root : roots) collectReachable(root, calls, reachable);
+    Map<String, Integer> indegree = new LinkedHashMap<>();
+    for (String function : reachable) indegree.put(function, 0);
+    for (String caller : reachable) {
+      for (String callee : calls.get(caller).keySet()) {
+        if (reachable.contains(callee)) indegree.merge(callee, 1, Integer::sum);
+      }
+    }
+    ArrayDeque<String> ready = new ArrayDeque<>();
+    for (Map.Entry<String, Integer> entry : indegree.entrySet()) {
+      if (entry.getValue() == 0) ready.addLast(entry.getKey());
+    }
+    Map<String, Double> weights = new LinkedHashMap<>();
+    for (String root : roots) weights.put(root, 1.0);
+    int visited = 0;
+    while (!ready.isEmpty()) {
+      String caller = ready.removeFirst();
+      visited++;
+      double callerWeight = weights.getOrDefault(caller, 0.0);
+      for (Map.Entry<String, Double> call : calls.get(caller).entrySet()) {
+        weights.merge(call.getKey(), checkedProduct(callerWeight, call.getValue()), Double::sum);
+        if (indegree.merge(call.getKey(), -1, Integer::sum) == 0) ready.addLast(call.getKey());
+      }
+    }
+    boolean recursive = visited != reachable.size();
+    if (recursive) {
+      // Cyclic call counts are unbounded without runtime depth evidence. Keep costs finite for
+      // diagnostics, but mark the state ineligible for alternate schedule selection.
+      for (String function : reachable) weights.putIfAbsent(function, 1.0);
+    }
+    return new InvocationWeights(Map.copyOf(weights), recursive);
+  }
+
+  private static Set<String> callGraphRoots(
+      Set<String> functions, Map<String, Map<String, Double>> calls) {
+    Set<String> roots = new LinkedHashSet<>(functions);
+    for (Map<String, Double> outgoing : calls.values()) roots.removeAll(outgoing.keySet());
+    // A module consisting only of mutually recursive functions has no structural root. Mark every
+    // function reachable so that the cycle is observed and the alternate schedule fails closed.
+    return roots.isEmpty() ? Set.copyOf(functions) : Set.copyOf(roots);
+  }
+
+  private static void collectReachable(
+      String function, Map<String, Map<String, Double>> calls, Set<String> reachable) {
+    ArrayDeque<String> pending = new ArrayDeque<>();
+    pending.addLast(function);
+    while (!pending.isEmpty()) {
+      String current = pending.removeLast();
+      if (!reachable.add(current)) continue;
+      for (String callee : calls.get(current).keySet()) pending.addLast(callee);
+    }
+  }
+
+  private static double checkedProduct(double left, double right) {
+    double product = left * right;
+    if (!Double.isFinite(product)) {
+      throw new IllegalStateException("module call-frequency weight overflow");
+    }
+    return product;
+  }
+
+  private static CostEstimate scaleRuntimeCost(CostEstimate cost, double weight) {
+    return new CostEstimate(cost.cycles() * weight, cost.uncertainty() * Math.sqrt(weight),
+        cost.criticalPath() * weight, cost.frontend() * weight, cost.resources() * weight,
+        cost.memory() * weight, cost.branch() * weight, cost.spill() * weight,
+        cost.codeSize());
   }
 
   private static CostEstimate add(CostEstimate left, CostEstimate right) {
@@ -230,6 +406,9 @@ public final class IRCandidateScheduler {
     String targetKind() { return functionIndex < 0 ? "module" : "ir-function"; }
   }
 
+  private record InvocationWeights(Map<String, Double> weights, boolean recursive) {}
+
   private record State(accela.ir.Module module, CostEstimate cost, AllocationEstimate allocation,
-      List<String> sequence) {}
+      List<String> sequence, boolean recursiveCallGraph,
+      Map<String, Double> unboundedLoopInstructionSlopes) {}
 }

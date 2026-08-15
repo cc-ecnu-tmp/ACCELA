@@ -13,6 +13,7 @@ final class PassRegistryTest {
   void productionPipelineCannotBeConstructedAsHiddenR1Ablation() {
     assertThrows(NoSuchMethodException.class,
         () -> PassBuilder.class.getDeclaredConstructor(boolean.class));
+    assertTrue(PassBuilder.forR1CandidateStaging() != null);
   }
 
   @Test
