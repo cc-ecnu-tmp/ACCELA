@@ -49,6 +49,16 @@ final class LoopInterchangeTest {
   }
 
   @Test
+  void interchangesLoopsContainingWholeVectorAccesses() {
+    Fixture fixture = new Fixture(AccessPattern.COLUMN_MAJOR, true);
+
+    assertTrue(LoopInterchange.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+    assertSame(fixture.outer, fixture.firstAddress.getOperand(2));
+    assertSame(fixture.inner, fixture.firstAddress.getOperand(3));
+  }
+
+  @Test
   void rejectsAPermutationThatMakesADependenceNegative() {
     Fixture fixture = new Fixture(AccessPattern.ILLEGAL_DEPENDENCE);
 
@@ -79,11 +89,10 @@ final class LoopInterchangeTest {
   }
 
   private static final class Fixture {
-    private static final Type MATRIX = Type.array(Type.array(Type.INT, 32), 32);
-
     final accela.ir.Module module = new accela.ir.Module();
-    final GlobalVariable matrix =
-        new GlobalVariable("matrix", MATRIX, Constant.zero(MATRIX), false);
+    final Type elementType;
+    final Type matrixType;
+    final GlobalVariable matrix;
     final Function function = new Function("kernel", Type.INT);
     final BasicBlock entry = function.addBlock("entry");
     final BasicBlock outerHeader = function.addBlock("outer.header");
@@ -104,6 +113,13 @@ final class LoopInterchangeTest {
     final Instruction outerNext;
 
     Fixture(AccessPattern pattern) {
+      this(pattern, false);
+    }
+
+    Fixture(AccessPattern pattern, boolean vectorElements) {
+      elementType = vectorElements ? Type.vector(Type.INT, 4) : Type.INT;
+      matrixType = Type.array(Type.array(elementType, 32), 32);
+      matrix = new GlobalVariable("matrix", matrixType, Constant.zero(matrixType), false);
       module.addGlobal(matrix);
       module.addFunction(function);
       new IRBuilder(entry).createBr(outerHeader);
@@ -133,9 +149,10 @@ final class LoopInterchangeTest {
         bodyBuilder.createStore(
             Constant.intConst(2), address(bodyBuilder, nextRow, previousColumn));
       } else {
-        Value loaded = bodyBuilder.createLoad(Type.INT, firstAddress);
+        Value loaded = bodyBuilder.createLoad(elementType, firstAddress);
         bodyBuilder.createStore(
-            bodyBuilder.createAdd(loaded, Constant.intConst(1)), firstAddress);
+            bodyBuilder.createAdd(loaded, vectorElements
+                ? Constant.zero(elementType) : Constant.intConst(1)), firstAddress);
       }
       innerNext = bodyBuilder.createAdd(inner, Constant.intConst(2));
       bodyBuilder.createBr(innerHeader);
@@ -152,7 +169,7 @@ final class LoopInterchangeTest {
 
     private Instruction address(IRBuilder builder, Value row, Value column) {
       return builder.createGEP(
-          MATRIX,
+          matrixType,
           matrix,
           new Value[] {Constant.int64Const(0), row, column},
           true);
