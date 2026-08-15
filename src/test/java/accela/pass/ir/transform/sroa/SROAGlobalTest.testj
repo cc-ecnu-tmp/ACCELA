@@ -1,6 +1,7 @@
 package accela.pass.ir.transform;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import accela.ir.Constant;
@@ -14,6 +15,7 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class SROAGlobalTest {
@@ -43,6 +45,39 @@ final class SROAGlobalTest {
     IRVerifier.verifyModule(module);
 
     assertSame(value, ret.getOperand(0));
+    assertFalse(array.hasUses());
+    assertFalse(main.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA));
+  }
+
+  @Test
+  void preservesVectorLeavesWhenSplittingGlobalArrays() {
+    Module module = new Module();
+    Type int2 = Type.vector(Type.INT, 2);
+    Type arrayType = Type.array(int2, 2);
+    Constant.Vector first = Constant.vector(
+        int2, List.of(Constant.intConst(1), Constant.intConst(2)));
+    Constant.Vector second = Constant.vector(
+        int2, List.of(Constant.intConst(3), Constant.intConst(4)));
+    GlobalVariable array = new GlobalVariable(
+        "vectors", arrayType, Constant.array(arrayType, List.of(first, second)), false);
+    module.addGlobal(array);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction address = builder.createGEP(
+        int2, array, new accela.ir.Value[] {Constant.int64Const(1)}, true);
+    Instruction loaded = builder.createLoad(int2, address);
+    Instruction lane = builder.createExtractElement(loaded, Constant.intConst(1));
+    builder.createRet(lane);
+
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    new SROA.GlobalPass().run(module, new ModuleAnalysisManager(), fam);
+    IRVerifier.verifyModule(module);
+
+    assertSame(second, assertInstanceOf(Constant.Vector.class, lane.getOperand(0)));
     assertFalse(array.hasUses());
     assertFalse(main.getBlocks().stream()
         .flatMap(block -> block.getInstructions().stream())
