@@ -82,12 +82,62 @@ public final class IRVerifier {
     }
 
     switch (inst.getOpcode()) {
-      case SMULH, SHL, ASHR:
-        if (inst.getType() != Type.INT
-            || inst.getNumOperands() != 2
-            || inst.getOperand(0).getType() != Type.INT
-            || inst.getOperand(1).getType() != Type.INT) {
-          fail(function, inst.getOpcode() + " requires i32 operands and result");
+      case ADD, SUB, MUL, SDIV, SREM, SHL, ASHR, AND, XOR:
+        verifyBinary(function, inst, true, false);
+        break;
+      case SMULH:
+        verifyBinary(function, inst, true, false);
+        if (scalarElement(inst.getType()) != Type.INT) {
+          fail(function, "SMULH requires i32 operands and result");
+        }
+        break;
+      case FADD, FSUB, FMUL, FDIV:
+        verifyBinary(function, inst, false, true);
+        break;
+      case FNEG:
+        if (inst.getNumOperands() != 1
+            || !inst.getType().equals(inst.getOperand(0).getType())
+            || !isFloatScalarOrVector(inst.getType())) {
+          fail(function, "FNEG requires equal float scalar/vector operand and result types");
+        }
+        break;
+      case ICMP:
+        verifyCompare(function, inst, true);
+        break;
+      case FCMP:
+        verifyCompare(function, inst, false);
+        break;
+      case ZEXT, SEXT:
+        verifyConversion(function, inst, true, true);
+        break;
+      case SITOFP:
+        verifyConversion(function, inst, true, false);
+        break;
+      case FPTOSI:
+        verifyConversion(function, inst, false, true);
+        break;
+      case BUILD_VECTOR:
+        verifyBuildVector(function, inst);
+        break;
+      case SPLAT:
+        verifySplat(function, inst);
+        break;
+      case EXTRACT_ELEMENT:
+        verifyExtractElement(function, inst);
+        break;
+      case INSERT_ELEMENT:
+        verifyInsertElement(function, inst);
+        break;
+      case SHUFFLE_VECTOR:
+        verifyShuffleVector(function, inst);
+        break;
+      case SELECT:
+        if (inst.getNumOperands() != 3
+            || inst.getOperand(0).getType() != Type.I1
+            || !inst.getType().equals(inst.getOperand(1).getType())
+            || !inst.getType().equals(inst.getOperand(2).getType())
+            || inst.getType().isVector()) {
+          fail(function, "SELECT requires i1 and two equal-typed scalar values");
         }
         break;
       case ALLOCA:
@@ -138,7 +188,8 @@ public final class IRVerifier {
         if (function.getReturnType() == Type.VOID) {
           if (inst.getNumOperands() != 0) fail(function, "void function must return void");
         } else {
-          if (inst.getNumOperands() != 1 || inst.getOperand(0).getType() != function.getReturnType()) {
+          if (inst.getNumOperands() != 1
+              || !inst.getOperand(0).getType().equals(function.getReturnType())) {
             fail(function, "return type mismatch");
           }
         }
@@ -158,6 +209,9 @@ public final class IRVerifier {
     List<BasicBlock> preds = collectPrintedPredecessors(function, block);
     Set<BasicBlock> incomingBlocks = new LinkedHashSet<>();
     for (int i = 0; i < inst.getNumOperands(); i += 2) {
+      if (!inst.getOperand(i).getType().equals(inst.getType())) {
+        fail(function, "phi incoming value type mismatch");
+      }
       Value incomingBlockValue = inst.getOperand(i + 1);
       if (!(incomingBlockValue instanceof BasicBlock)) {
         fail(function, "phi incoming block must belong to the same function");
@@ -176,6 +230,120 @@ public final class IRVerifier {
     if (incomingBlocks.size() != preds.size()) {
       fail(function, "phi must have exactly one incoming value for each predecessor of " + block.getLabel());
     }
+  }
+
+  private static void verifyBinary(
+      Function function, Instruction inst, boolean integer, boolean floating) {
+    if (inst.getNumOperands() != 2
+        || !inst.getOperand(0).getType().equals(inst.getType())
+        || !inst.getOperand(1).getType().equals(inst.getType())) {
+      fail(function, inst.getOpcode() + " requires equal operand and result types");
+    }
+    if (integer && !isIntegerScalarOrVector(inst.getType())) {
+      fail(function, inst.getOpcode() + " requires integer scalar/vector operands");
+    }
+    if (floating && !isFloatScalarOrVector(inst.getType())) {
+      fail(function, inst.getOpcode() + " requires float scalar/vector operands");
+    }
+  }
+
+  private static void verifyCompare(Function function, Instruction inst, boolean integer) {
+    if (inst.getNumOperands() != 2
+        || !inst.getOperand(0).getType().equals(inst.getOperand(1).getType())
+        || inst.getPredicate() == null) {
+      fail(function, inst.getOpcode() + " requires equal operands and a predicate");
+    }
+    Type operandType = inst.getOperand(0).getType();
+    if (integer
+        ? (!operandType.isPointer() && !isIntegerScalarOrVector(operandType))
+        : !isFloatScalarOrVector(operandType)) {
+      fail(function, inst.getOpcode() + " operand category mismatch");
+    }
+    Type expected = operandType.isVector()
+        ? Type.vector(Type.I1, operandType.getLaneCount()) : Type.I1;
+    if (!inst.getType().equals(expected)) {
+      fail(function, inst.getOpcode() + " result must be i1 or an equal-width i1 vector");
+    }
+  }
+
+  private static void verifyConversion(
+      Function function, Instruction inst, boolean sourceInteger, boolean destinationInteger) {
+    if (inst.getNumOperands() != 1) fail(function, "invalid " + inst.getOpcode());
+    Type source = inst.getOperand(0).getType();
+    Type destination = inst.getType();
+    if (!source.hasSameShape(destination)) {
+      fail(function, inst.getOpcode() + " must preserve scalar/vector shape and lane count");
+    }
+    if (sourceInteger ? !isIntegerScalarOrVector(source) : !isFloatScalarOrVector(source)) {
+      fail(function, inst.getOpcode() + " source type mismatch");
+    }
+    if (destinationInteger
+        ? !isIntegerScalarOrVector(destination) : !isFloatScalarOrVector(destination)) {
+      fail(function, inst.getOpcode() + " destination type mismatch");
+    }
+  }
+
+  private static void verifyBuildVector(Function function, Instruction inst) {
+    if (!inst.getType().isVector() || inst.getNumOperands() != inst.getType().getLaneCount()) {
+      fail(function, "BUILD_VECTOR requires exactly one operand per result lane");
+    }
+    for (int i = 0; i < inst.getNumOperands(); i++) {
+      if (!inst.getOperand(i).getType().equals(inst.getType().getElementType())) {
+        fail(function, "BUILD_VECTOR operand type must equal the vector element type");
+      }
+    }
+  }
+
+  private static void verifySplat(Function function, Instruction inst) {
+    if (!inst.getType().isVector()
+        || inst.getNumOperands() != 1
+        || !inst.getOperand(0).getType().equals(inst.getType().getElementType())) {
+      fail(function, "SPLAT requires one operand of the vector element type");
+    }
+  }
+
+  private static void verifyExtractElement(Function function, Instruction inst) {
+    if (inst.getNumOperands() != 2
+        || !inst.getOperand(0).getType().isVector()
+        || !isIntegerLike(inst.getOperand(1).getType())
+        || !inst.getType().equals(inst.getOperand(0).getType().getElementType())) {
+      fail(function, "invalid EXTRACT_ELEMENT");
+    }
+  }
+
+  private static void verifyInsertElement(Function function, Instruction inst) {
+    if (inst.getNumOperands() != 3
+        || !inst.getType().isVector()
+        || !inst.getOperand(0).getType().equals(inst.getType())
+        || !inst.getOperand(1).getType().equals(inst.getType().getElementType())
+        || !isIntegerLike(inst.getOperand(2).getType())) {
+      fail(function, "invalid INSERT_ELEMENT");
+    }
+  }
+
+  private static void verifyShuffleVector(Function function, Instruction inst) {
+    if (inst.getNumOperands() != 3
+        || !inst.getType().isVector()
+        || !inst.getOperand(0).getType().isVector()
+        || !inst.getOperand(0).getType().equals(inst.getOperand(1).getType())
+        || !inst.getType().getElementType().equals(inst.getOperand(0).getType().getElementType())
+        || !(inst.getOperand(2) instanceof accela.ir.Constant.Vector mask)
+        || mask.getType().getElementType() != Type.INT
+        || mask.getType().getLaneCount() != inst.getType().getLaneCount()) {
+      fail(function, "SHUFFLE_VECTOR requires equal input vectors and a matching i32 mask");
+    }
+  }
+
+  private static boolean isIntegerScalarOrVector(Type type) {
+    return scalarElement(type).isInteger();
+  }
+
+  private static boolean isFloatScalarOrVector(Type type) {
+    return scalarElement(type).isFloat();
+  }
+
+  private static Type scalarElement(Type type) {
+    return type.isVector() ? type.getElementType() : type;
   }
 
   private static boolean hasMatchingUse(Value value, Instruction user, int operandIndex) {
