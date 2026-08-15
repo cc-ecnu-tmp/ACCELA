@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import accela.backend.BackendCompiler;
 import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.GlobalVariable;
@@ -89,6 +91,49 @@ final class GlobalOptParameterPromotionTest {
     assertNull(load.getParent());
     assertEquals(1, reader.getNumArgs());
     assertSame(input, call.getOperand(0));
+  }
+
+  @Test
+  void threadsVectorGlobalsAsScalarLaneArguments() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    GlobalVariable vector = new GlobalVariable("vector", int4, Constant.zero(int4), false);
+    module.addGlobal(vector);
+
+    Function reader = new Function("reader", Type.INT);
+    module.addFunction(reader);
+    IRBuilder readerBuilder = new IRBuilder(reader.addBlock("entry"));
+    Instruction load = readerBuilder.createLoad(int4, vector);
+    readerBuilder.createRet(readerBuilder.createExtractElement(load, Constant.intConst(2)));
+
+    Function wrapper = new Function("wrapper", Type.INT);
+    module.addFunction(wrapper);
+    IRBuilder wrapperBuilder = new IRBuilder(wrapper.addBlock("entry"));
+    Instruction nestedCall = wrapperBuilder.createCall(reader, Type.INT);
+    wrapperBuilder.createRet(nestedCall);
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mainBuilder = new IRBuilder(main.addBlock("entry"));
+    Constant value = Constant.vector(int4, java.util.List.of(
+        Constant.intConst(1), Constant.intConst(2),
+        Constant.intConst(3), Constant.intConst(4)));
+    Instruction store = mainBuilder.createStore(value, vector);
+    Instruction call = mainBuilder.createCall(wrapper, Type.INT);
+    mainBuilder.createRet(call);
+
+    new GlobalOpt.Pass().run(
+        module, new ModuleAnalysisManager(), new FunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+
+    assertNull(load.getParent());
+    assertNull(store.getParent());
+    assertEquals(4, reader.getNumArgs());
+    assertEquals(4, wrapper.getNumArgs());
+    assertEquals(4, nestedCall.getNumOperands());
+    assertEquals(4, call.getNumOperands());
+    assertTrue(reader.getArguments().stream().noneMatch(arg -> arg.getType().isVector()));
+    assertTrue(new BackendCompiler().compileToAssembly(module).contains("reader:"));
   }
 
   @Test
