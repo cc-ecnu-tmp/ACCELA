@@ -2,6 +2,7 @@ package accela.pass.ir.transform;
 
 import accela.ir.Function;
 import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Use;
@@ -95,23 +96,51 @@ final class GlobalScalarParameterPromotion {
 
   private static void apply(Plan plan) {
     Value initialValue = plan.store.getOperand(0);
-    Map<Function, Value> parameters = new IdentityHashMap<>();
+    Type type = plan.global.getValueType();
+    Map<Function, List<Value>> parameters = new IdentityHashMap<>();
     for (Function function : plan.consumers) {
-      parameters.put(
-          function,
-          function.addArgument(
-              plan.global.getValueType(), "%" + plan.global.getName() + ".ssa"));
+      List<Value> values = new ArrayList<>();
+      int lanes = type.isVector() ? type.getLaneCount() : 1;
+      Type parameterType = type.isVector() ? type.getElementType() : type;
+      for (int lane = 0; lane < lanes; lane++) {
+        String suffix = type.isVector() ? ".lane." + lane : "";
+        values.add(function.addArgument(
+            parameterType, "%" + plan.global.getName() + ".ssa" + suffix));
+      }
+      parameters.put(function, List.copyOf(values));
     }
     for (Instruction load : plan.loads) {
       Function owner = load.getParent().getParent();
-      load.replaceAllUsesWith(
-          owner == plan.main ? initialValue : parameters.get(owner));
+      Value replacement = initialValue;
+      if (owner != plan.main) {
+        List<Value> values = parameters.get(owner);
+        if (type.isVector()) {
+          IRBuilder builder = new IRBuilder();
+          builder.setInsertPointBefore(load);
+          replacement = builder.createBuildVector(type, values.toArray(Value[]::new));
+        } else {
+          replacement = values.getFirst();
+        }
+      }
+      load.replaceAllUsesWith(replacement);
       load.eraseFromParent();
     }
     for (Instruction call : plan.calls) {
       if (!plan.consumers.contains(call.getCallee())) continue;
       Function caller = call.getParent().getParent();
-      call.addOperand(caller == plan.main ? initialValue : parameters.get(caller));
+      if (type.isVector()) {
+        if (caller == plan.main) {
+          IRBuilder builder = new IRBuilder();
+          builder.setInsertPointBefore(call);
+          for (int lane = 0; lane < type.getLaneCount(); lane++) {
+            call.addOperand(builder.createExtractElement(initialValue, accela.ir.Constant.intConst(lane)));
+          }
+        } else {
+          parameters.get(caller).forEach(call::addOperand);
+        }
+      } else {
+        call.addOperand(caller == plan.main ? initialValue : parameters.get(caller).getFirst());
+      }
     }
     plan.store.eraseFromParent();
   }
