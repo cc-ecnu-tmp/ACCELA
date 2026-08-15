@@ -16,6 +16,32 @@ import org.junit.jupiter.api.Test;
 
 final class InlinerTest {
   @Test
+  void inlinesCalleesContainingVectorOperations() {
+    Module module = new Module();
+    Function callee = new Function("vector_lane", Type.INT);
+    module.addFunction(callee);
+    Value value = callee.addArgument(Type.INT, "value");
+    IRBuilder calleeBuilder = new IRBuilder(callee.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Value vector = calleeBuilder.createSplat(int4, value);
+    calleeBuilder.createRet(
+        calleeBuilder.createExtractElement(vector, Constant.intConst(2)));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mainBuilder = new IRBuilder(main.addBlock("entry"));
+    Instruction call = mainBuilder.createCall(callee, Type.INT, Constant.intConst(7));
+    mainBuilder.createRet(call);
+
+    assertTrue(Inliner.runOnModule(module));
+    IRVerifier.verifyModule(module);
+    assertTrue(call.getParent() == null);
+    assertTrue(main.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.SPLAT));
+  }
+
+  @Test
   void clonesControlFlowAndRepairsSuccessorPhis() {
     Module module = new Module();
     Function choose = new Function("choose", Type.INT);
