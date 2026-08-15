@@ -16,6 +16,38 @@ import org.junit.jupiter.api.Test;
 
 final class TailMergeTest {
   @Test
+  void mergesEquivalentVectorTails() {
+    Function function = new Function("vector_select", Type.INT);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value value = function.addArgument(Type.INT, "value");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    Type int4 = Type.vector(Type.INT, 4);
+    IRBuilder leftBuilder = new IRBuilder(left);
+    Instruction leftValue = leftBuilder.createSplat(int4, value);
+    leftBuilder.createBr(merge);
+    IRBuilder rightBuilder = new IRBuilder(right);
+    Instruction rightValue = rightBuilder.createSplat(int4, value);
+    rightBuilder.createBr(merge);
+    IRBuilder mergeBuilder = new IRBuilder(merge);
+    Instruction phi = mergeBuilder.createPhi(int4);
+    phi.addOperand(leftValue);
+    phi.addOperand(left);
+    phi.addOperand(rightValue);
+    phi.addOperand(right);
+    mergeBuilder.createRet(
+        mergeBuilder.createExtractElement(phi, Constant.intConst(0)));
+
+    assertTrue(TailMerge.run(function));
+    IRVerifier.verifyFunction(function);
+    assertEquals(3, function.getBlocks().size());
+    assertSame(leftValue, phi.getOperand(0));
+  }
+
+  @Test
   void mergesEquivalentLoopLatchTails() {
     Function function = new Function("select", Type.INT);
     Value condition = function.addArgument(Type.I1, "condition");

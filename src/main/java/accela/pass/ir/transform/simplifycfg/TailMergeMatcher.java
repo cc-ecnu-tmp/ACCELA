@@ -26,7 +26,8 @@ final class TailMergeMatcher {
   static boolean isPure(Instruction instruction) {
     return switch (instruction.getOpcode()) {
       case ADD, SUB, MUL, SMULH, SHL, ASHR, AND, FADD, FSUB, FMUL, FDIV, FNEG,
-          ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, XOR -> true;
+          ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, XOR,
+          BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR, SELECT -> true;
       default -> false;
     };
   }
@@ -34,7 +35,7 @@ final class TailMergeMatcher {
   static boolean sameValue(Value left, Value right) {
     if (left == right) return true;
     return left instanceof Constant && right instanceof Constant
-        && left.getType() == right.getType()
+        && left.getType().equals(right.getType())
         && Objects.equals(left.getName(), right.getName());
   }
 }
