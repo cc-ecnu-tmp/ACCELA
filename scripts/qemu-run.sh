@@ -11,11 +11,18 @@ work_root="${QEMU_WORK_ROOT:-$root/build/qemu-run}"
 work="$work_root/$compiler/$name"
 mkdir -p "$work"
 
-java_home="${ACCELA_JAVA_HOME:-${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}}"
-java="$java_home/bin/java"
+if [[ -n "${ACCELA_JAVA:-}" ]]; then
+  java="$ACCELA_JAVA"
+elif [[ -n "${JAVA_HOME:-}" ]]; then
+  java="$JAVA_HOME/bin/java"
+else
+  java=java
+fi
 classes="${ACCELA_CLASSES:-$root/build/classes/java/main}"
+riscv_gcc="${RISCV_GCC:-riscv64-elf-gcc}"
+llvm_clang="${LLVM_CLANG:-clang}"
 if [[ "$compiler" == accela && ! -d "$classes" ]]; then
-  JAVA_HOME="$java_home" bash "$root/gradlew" -p "$root" classes --no-daemon
+  bash "$root/gradlew" -p "$root" classes --no-daemon
 fi
 
 assembly="$work/program.s"
@@ -24,16 +31,22 @@ elf="$work/program.elf"
 actual="$work/program.out"
 case "$compiler" in
   accela)
-    "$java" -cp "$classes" Compiler "$source_file" -o "$assembly"
-    program="$assembly"
+    if [[ -n "${QEMU_COMPILER_METADATA:-}" ]]; then
+      python3 "$root/tools/benchmark/run_measured.py" "$QEMU_COMPILER_METADATA" -- \
+        "$java" -cp "$classes" Compiler "$source_file" -o "$assembly"
+    else
+      "$java" -cp "$classes" Compiler "$source_file" -o "$assembly"
+    fi
+    "$riscv_gcc" -march=rv64gc -mabi=lp64d -c "$assembly" -o "$object"
+    program="$object"
     ;;
   llvm)
-    "${LLVM_CLANG:-/opt/homebrew/opt/llvm/bin/clang}" \
+    "$llvm_clang" \
       --target=riscv64-unknown-elf -march=rv64gc -mabi=lp64d -mcmodel=medany \
       -O3 -fwrapv -ffp-contract=off -ffreestanding -fno-builtin -x c \
       -include "$root/tools/qemu/sysy-builtins.h" \
       -S "$source_file" -o "$assembly"
-    "${LLVM_CLANG:-/opt/homebrew/opt/llvm/bin/clang}" \
+    "$llvm_clang" \
       --target=riscv64-unknown-elf -march=rv64gc -mabi=lp64d \
       -c "$assembly" -o "$object"
     program="$object"
@@ -43,7 +56,7 @@ case "$compiler" in
     exit 2
     ;;
 esac
-riscv64-elf-gcc \
+"$riscv_gcc" \
   -march=rv64gc -mabi=lp64d -mcmodel=medany -O2 \
   -ffreestanding -fno-builtin -nostdlib -nostartfiles \
   -Wl,-T,"$root/tools/qemu/linker.ld" \
@@ -54,6 +67,8 @@ input="${source_file%.sy}.in"
 expected="${source_file%.sy}.out"
 stdin="$work/program.in"
 if [[ -f "$input" ]]; then cp "$input" "$stdin"; else : > "$stdin"; fi
+# The bare-metal serial runtime has no EOF indication.  Supply one whitespace transport
+# terminator so token readers can finish when a corpus input does not end in whitespace.
 printf '\n' >> "$stdin"
 qemu=(qemu-system-riscv64 -machine virt -m 512M -bios none -kernel "$elf"
   -display none -monitor none -serial stdio)
@@ -68,12 +83,14 @@ if [[ "$profile_mode" != 0 ]]; then
     Darwin)
       profile="$work/profile.dylib"
       plugin_link=(-dynamiclib -undefined dynamic_lookup)
-      plugin_include="${QEMU_PLUGIN_INCLUDE:-/opt/homebrew/include}"
+      if [[ -z "${QEMU_PLUGIN_INCLUDE:-}" ]]; then
+        printf 'QEMU_PLUGIN_INCLUDE is required on Darwin\n' >&2
+        exit 2
+      fi
       ;;
     Linux)
       profile="$work/profile.so"
       plugin_link=(-shared -fPIC)
-      plugin_include="${QEMU_PLUGIN_INCLUDE:-/usr/include}"
       ;;
     *)
       printf 'unsupported QEMU plugin host: %s\n' "$(uname -s)" >&2
@@ -81,10 +98,14 @@ if [[ "$profile_mode" != 0 ]]; then
       ;;
   esac
   profile_log="$work/profile.log"
+  plugin_include_args=()
+  if [[ -n "${QEMU_PLUGIN_INCLUDE:-}" ]]; then
+    plugin_include_args=(-I"$QEMU_PLUGIN_INCLUDE")
+  fi
   # shellcheck disable=SC2046
   cc "${plugin_link[@]}" -fvisibility=hidden \
     $(pkg-config --cflags glib-2.0) \
-    -I"$plugin_include" \
+    "${plugin_include_args[@]}" \
     "$root/tools/qemu/$profile_source" -o "$profile"
   qemu+=(-plugin "$profile" -d plugin -D "$profile_log")
 fi

@@ -36,11 +36,11 @@ body = max(critical_path, frontend_bound, resource_bound, memory_bound)
 total = body + branch + spill + code_size_penalty
 ```
 
-依赖链决定 critical path；指令字节数与 fetch width 决定前端界；reciprocal throughput 和 resource occupancy 决定资源界；load/store 与 load-use 测量决定内存界。测量 MAD 传播到不确定性，稳健排序比较上界而非只比较中位数。
+依赖链决定 critical path；目标实际发射指令数、指令字节数与 fetch width 决定前端界；reciprocal throughput 和 resource occupancy 决定资源界；load/store 与 load-use 测量决定内存界。目标发射数包含汇编器隐式生成的立即数物化和非 fallthrough 跳转，不能把一条 MIR 伪指令固定按一条目标指令计费。frontend 工作集曲线在测量点之间线性插值，小于首点时按比例缩放，大于末点时外推；禁止用下一个桶的完整成本制造不连续跳变。测量 MAD 传播到不确定性，稳健排序比较上界而非只比较中位数。
 
 ## Hotness 与未知循环
 
-已知 trip count 使用精确值，并同时加权前端、依赖、资源、内存、分支及测量方差；存在非规范提前出口时不得伪装成精确循环。有限区间在端点和候选分段仿射成本交点比较。完全未知的 `N in [1,+infinity)` 只有在整个区间不劣且至少一个区间严格更优时选择，否则保留基线。实现为与块名无关的未知循环递归指令斜率向量比较：双方斜率降序匹配，候选每一项都不得更大，新增未知循环也会被拒绝。内部调用按可达调用 DAG 与调用所在块热度传播；可达递归使调用次数无界，因此替代时序 fail-closed，保留 `FULL`。这一规则由调度器、RA、Inlining 与 BlockPlacement 共享，禁止各自猜测不同热度。
+已知 trip count 使用精确值，并同时加权前端、依赖、资源、内存、分支及测量方差；存在非规范提前出口时不得伪装成精确循环。有限区间在端点和候选分段仿射成本交点比较。完全未知的 `N in [1,+infinity)` 只有在整个区间不劣且至少一个区间严格更优时选择，否则保留基线。实现首先比较与块名无关的未知循环递归指令斜率向量：双方斜率降序匹配，候选每一项都不得更大，新增未知循环也会被拒绝。R2 MIR 还从实际机器 CFG 的强连通分量构造循环包络；候选整个分量的发射指令上界必须不高于对应基线最短循环的下界，否则控制流路径收益无法证明并保留 `FULL`。该门刻意保守，防止用减少静态块数换取某条真实循环路径上的动态回退。内部调用按可达调用 DAG 与调用所在块热度传播；可达递归使调用次数无界，因此替代时序 fail-closed，保留 `FULL`。这一规则由调度器、RA、Inlining 与 BlockPlacement 共享，禁止各自猜测不同热度。
 
 ## DecisionTrace v1
 

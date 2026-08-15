@@ -23,7 +23,8 @@ final class CostApiArchitectureTest {
     for (Class<?> contract : List.of(CostEstimate.class, OptimizationCandidate.class,
         CandidateProvider.class, LegalityResult.class, SchedulerPolicy.class,
         AllocationEstimate.class, TargetProfile.class, IRCandidateScheduler.class,
-        MachineCandidateScheduler.class, MachineCostModel.class)) {
+        MachineCandidateScheduler.class, MachineCostModel.class, ModuleCostEvaluator.class,
+        R2IRBeamScheduler.class, R2MachineBeamScheduler.class)) {
       for (Field field : contract.getDeclaredFields()) reject(contract, field.getName());
       for (Method method : contract.getDeclaredMethods()) reject(contract, method.getName());
       for (RecordComponent component : contract.getRecordComponents() == null

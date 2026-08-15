@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.backend.machine.ImmOperand;
+import accela.backend.machine.BlockOperand;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
@@ -92,6 +93,76 @@ final class MachineCostModelTest {
     assertFalse(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
         Map.of("main::old_header", 20.0),
         Map.of("main::renamed_header", 20.0, "main::new_loop", 1.0)));
+  }
+
+  @Test
+  void countsImplicitBranchImmediateMaterializationAndNonFallthroughJump() {
+    MachineFunction function = new MachineFunction("branch_expansion", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock ifTrue = function.addBlock("true");
+    MachineBasicBlock ifFalse = function.addBlock("false");
+    VirtualRegister value = function.createVirtualRegister(MachineType.I32, "value");
+    MachineInstr branch = new MachineInstr(MachineOpcode.CONDBR, null);
+    branch.setPredicate("slt");
+    branch.addOperand(new VRegOperand(value));
+    branch.addOperand(new ImmOperand(100));
+    branch.addOperand(new BlockOperand(ifTrue));
+    branch.addOperand(new BlockOperand(ifFalse));
+    entry.addInstruction(branch);
+
+    assertEquals(2, MachineCostModel.emittedInstructionCount(branch, ifTrue));
+    assertEquals(3, MachineCostModel.emittedInstructionCount(branch, null));
+
+    MachineInstr fallthrough = new MachineInstr(MachineOpcode.BR, null);
+    fallthrough.addOperand(new BlockOperand(ifTrue));
+    assertEquals(0, MachineCostModel.emittedInstructionCount(fallthrough, ifTrue));
+    assertEquals(1, MachineCostModel.emittedInstructionCount(fallthrough, ifFalse));
+    assertEquals(0, MachineCostModel.emittedBranchCount(fallthrough, ifTrue));
+    assertEquals(1, MachineCostModel.emittedBranchCount(fallthrough, ifFalse));
+
+    MachineInstr branchOnZero = new MachineInstr(MachineOpcode.CONDBR, null);
+    branchOnZero.addOperand(new ImmOperand(0));
+    branchOnZero.addOperand(new BlockOperand(ifTrue));
+    branchOnZero.addOperand(new BlockOperand(ifFalse));
+    assertEquals(2, MachineCostModel.emittedInstructionCount(branchOnZero, ifTrue));
+    assertEquals(1, MachineCostModel.emittedBranchCount(branchOnZero, ifTrue));
+    assertEquals(2, MachineCostModel.emittedBranchCount(branchOnZero, null));
+  }
+
+  @Test
+  void frontendCurveInterpolatesInsteadOfChargingTheNextBucket() {
+    var curve = GeneratedTargetProfile.get().diagnostics().frontend();
+    assertEquals(5.5, MachineCostModel.curveEstimate(curve, 32), 0.000001);
+    assertEquals(11.0, MachineCostModel.curveEstimate(curve, 64), 0.000001);
+    assertEquals(35.0, MachineCostModel.curveEstimate(curve, 160), 0.000001);
+  }
+
+  @Test
+  void machineCycleEnvelopeUsesRealCfgCycles() {
+    MachineFunction function = new MachineFunction("cycle", MachineType.VOID);
+    MachineBasicBlock first = function.addBlock("first");
+    MachineBasicBlock second = function.addBlock("second");
+    MachineInstr toSecond = new MachineInstr(MachineOpcode.BR, null);
+    toSecond.addOperand(new BlockOperand(second));
+    first.addInstruction(toSecond);
+    MachineInstr toFirst = new MachineInstr(MachineOpcode.BR, null);
+    toFirst.addOperand(new BlockOperand(first));
+    second.addInstruction(toFirst);
+
+    MachineCostModel model = new MachineCostModel(GeneratedTargetProfile.get(),
+        new IteratedRegisterAllocator(), new RISCVTarget());
+    assertEquals(java.util.List.of(1.0), model.machineCycleUpperBounds(function));
+    assertEquals(java.util.List.of(1.0), model.machineCycleLowerBounds(function));
+  }
+
+  @Test
+  void unreachableFunctionStillContributesStaticCodeSize() {
+    CostEstimate function = new CostEstimate(10, 2, 3, 4, 5, 6, 7, 8, 64);
+    CostEstimate unreachable = ModuleCostEvaluator.scaleRuntimeCost(function, 0.0);
+    assertEquals(0.0, unreachable.cycles());
+    assertEquals(0.0, unreachable.uncertainty());
+    assertEquals(0.0, unreachable.spill());
+    assertEquals(64.0, unreachable.codeSize());
   }
 
   private static MachineFunction simpleFunction() {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import math
 import random
@@ -9,6 +10,83 @@ from pathlib import Path
 
 class BenchmarkError(ValueError):
     pass
+
+
+def import_qemu_tsv(path: Path, comparison: str, target: str, abi: str, runtime: str):
+    return _import_paired_tsv(path, comparison, target, abi, runtime,
+        evidence_level="qemu_proxy", runtime_metric="instructions", integer_runtime=True)
+
+
+def import_linux_tsv(path: Path, comparison: str, target: str, abi: str, runtime: str):
+    return _import_paired_tsv(path, comparison, target, abi, runtime,
+        evidence_level="target_hardware", runtime_metric="seconds", integer_runtime=False)
+
+
+def _import_paired_tsv(path: Path, comparison: str, target: str, abi: str, runtime: str,
+        *, evidence_level: str, runtime_metric: str, integer_runtime: bool):
+    if comparison not in {"r1_full", "r2_r1", "r2_llvm"}:
+        raise BenchmarkError("invalid paired comparison")
+    grouped = {}
+    try:
+        with path.open(encoding="utf-8", newline="") as stream:
+            for line_number, row in enumerate(csv.reader(stream, delimiter="\t"), 1):
+                if len(row) != 11:
+                    raise BenchmarkError(f"paired TSV line {line_number} must have 11 columns")
+                case_id = _text(row[0], f"paired TSV line {line_number} case")
+                try:
+                    run_index = int(row[1])
+                    baseline = int(row[2]) if integer_runtime else float(row[2])
+                    candidate = int(row[3]) if integer_runtime else float(row[3])
+                    ratio = float(row[4])
+                    baseline_compile = float(row[5])
+                    candidate_compile = float(row[6])
+                    baseline_peak = int(row[7])
+                    candidate_peak = int(row[8])
+                    baseline_code = int(row[9])
+                    candidate_code = int(row[10])
+                except ValueError as exception:
+                    raise BenchmarkError(
+                        f"paired TSV line {line_number} contains an invalid number") from exception
+                for value, name in ((run_index, "run"), (baseline_peak, "baseline peak"),
+                        (candidate_peak, "candidate peak"), (baseline_code, "baseline code"),
+                        (candidate_code, "candidate code")):
+                    _positive_int(value, f"paired TSV line {line_number} {name}")
+                _positive(baseline, f"paired TSV line {line_number} baseline runtime")
+                _positive(candidate, f"paired TSV line {line_number} candidate runtime")
+                _positive(baseline_compile, f"paired TSV line {line_number} baseline compile")
+                _positive(candidate_compile, f"paired TSV line {line_number} candidate compile")
+                if not math.isclose(ratio, baseline / candidate, rel_tol=1e-8):
+                    raise BenchmarkError(f"paired TSV line {line_number} ratio is inconsistent")
+                runs = grouped.setdefault(case_id, {})
+                if run_index in runs:
+                    raise BenchmarkError(f"duplicate paired run {case_id}/{run_index}")
+                runs[run_index] = {
+                    "baseline_runtime": baseline,
+                    "candidate_runtime": candidate,
+                    "baseline_compile_seconds": baseline_compile,
+                    "candidate_compile_seconds": candidate_compile,
+                    "baseline_peak_bytes": baseline_peak,
+                    "candidate_peak_bytes": candidate_peak,
+                    "baseline_code_bytes": baseline_code,
+                    "candidate_code_bytes": candidate_code,
+                    "cold_start": True,
+                    "cache_reused": False,
+                }
+    except csv.Error as exception:
+        raise BenchmarkError(f"invalid paired TSV: {exception}") from exception
+    if not grouped:
+        raise BenchmarkError("paired TSV is empty")
+    cases = []
+    for case_id in sorted(grouped):
+        runs = grouped[case_id]
+        if sorted(runs) != list(range(1, len(runs) + 1)):
+            raise BenchmarkError(f"paired runs are not contiguous for {case_id}")
+        cases.append({"id": case_id, "excluded_reason": None,
+            "runs": [runs[index] for index in sorted(runs)]})
+    return {"schema_version": 2, "comparison": comparison, "runtime_metric": runtime_metric,
+        "evidence_level": evidence_level, "target": _text(target, "target"),
+        "abi": _text(abi, "abi"), "runtime": _text(runtime, "runtime"),
+        "cases": cases}
 
 
 def load_json(path: Path):
@@ -72,14 +150,19 @@ def validate_manifest(path: Path):
 
 
 def analyze(document, bootstrap_samples=10_000):
-    _keys(document, {"schema_version", "comparison", "evidence_level", "target", "abi",
+    _keys(document, {"schema_version", "comparison", "runtime_metric", "evidence_level", "target", "abi",
         "runtime", "cases"}, "results")
-    if document["schema_version"] != 1:
-        raise BenchmarkError("results schema_version must be 1")
-    if document["comparison"] not in {"r1_full", "r2_llvm"}:
-        raise BenchmarkError("comparison must be r1_full or r2_llvm")
-    if document["evidence_level"] not in {"qemu_proxy", "boom_hardware"}:
-        raise BenchmarkError("evidence_level must be qemu_proxy or boom_hardware")
+    if document["schema_version"] != 2:
+        raise BenchmarkError("results schema_version must be 2")
+    if document["comparison"] not in {"r1_full", "r2_r1", "r2_llvm"}:
+        raise BenchmarkError("comparison must be r1_full, r2_r1 or r2_llvm")
+    if document["evidence_level"] not in {"qemu_proxy", "target_hardware", "boom_hardware"}:
+        raise BenchmarkError("evidence_level must be qemu_proxy, target_hardware or boom_hardware")
+    if document["runtime_metric"] not in {"seconds", "instructions"}:
+        raise BenchmarkError("runtime_metric must be seconds or instructions")
+    expected_metric = "instructions" if document["evidence_level"] == "qemu_proxy" else "seconds"
+    if document["runtime_metric"] != expected_metric:
+        raise BenchmarkError("runtime_metric conflicts with evidence_level")
     for key in ("target", "abi", "runtime"):
         _text(document[key], f"results.{key}")
     if not isinstance(document["cases"], list) or not document["cases"]:
@@ -108,13 +191,13 @@ def analyze(document, bootstrap_samples=10_000):
         run_ratios = []
         for run_index, run in enumerate(case["runs"]):
             run_name = f"{name}.runs[{run_index}]"
-            _keys(run, {"baseline_seconds", "candidate_seconds", "baseline_compile_seconds",
+            _keys(run, {"baseline_runtime", "candidate_runtime", "baseline_compile_seconds",
                 "candidate_compile_seconds", "baseline_peak_bytes", "candidate_peak_bytes",
                 "baseline_code_bytes", "candidate_code_bytes", "cold_start", "cache_reused"}, run_name)
             if run["cold_start"] is not True or run["cache_reused"] is not False:
                 raise BenchmarkError(f"{run_name} must be a cold start without cache reuse")
-            baseline = _positive(run["baseline_seconds"], f"{run_name}.baseline_seconds")
-            candidate = _positive(run["candidate_seconds"], f"{run_name}.candidate_seconds")
+            baseline = _positive(run["baseline_runtime"], f"{run_name}.baseline_runtime")
+            candidate = _positive(run["candidate_runtime"], f"{run_name}.candidate_runtime")
             run_ratios.append(baseline / candidate)
             compile_times.append((_positive(run["baseline_compile_seconds"],
                 f"{run_name}.baseline_compile_seconds"), _positive(run["candidate_compile_seconds"],
@@ -136,25 +219,48 @@ def analyze(document, bootstrap_samples=10_000):
     upper = _percentile(boot, 0.975)
     worst_id, worst = min(included, key=lambda item: item[1])
     formal = document["evidence_level"] == "boom_hardware"
-    threshold = lower >= 1.0 if document["comparison"] == "r1_full" else lower > 1.0
+    threshold = lower > 1.0 if document["comparison"] == "r2_llvm" else lower >= 1.0
     passed = formal and threshold and worst >= 0.90
     return {"gm": gm, "ci_lower": lower, "ci_upper": upper, "worst_case": worst_id,
         "worst_ratio": worst, "included": len(included), "total": len(document["cases"]),
-        "excluded": excluded, "formal_evidence": formal, "gate_passed": passed,
+        "case_ratios": tuple(included), "excluded": excluded,
+        "formal_evidence": formal, "gate_passed": passed,
         "compile_seconds_median": tuple(statistics.median(values) for values in zip(*compile_times)),
         "peak_bytes_max": tuple(max(values) for values in zip(*peaks)),
         "code_bytes_median": tuple(statistics.median(values) for values in zip(*code_sizes))}
 
 
 def render(document, analysis):
-    return "\n".join((f"# ACCELA {document['comparison']} paired report", "",
+    lines = [f"# ACCELA {document['comparison']} paired report", "",
         f"- Evidence: `{document['evidence_level']}`; formal=`{str(analysis['formal_evidence']).lower()}`",
+        f"- Runtime metric: `{document['runtime_metric']}`",
         f"- Coverage: {analysis['included']}/{analysis['total']}",
         f"- Paired GM: {analysis['gm']:.6f}",
         f"- 95% case-bootstrap CI: [{analysis['ci_lower']:.6f}, {analysis['ci_upper']:.6f}]",
         f"- Worst case: `{analysis['worst_case']}` = {analysis['worst_ratio']:.6f}",
+        f"- Compile seconds median (baseline/candidate): "
+        f"{analysis['compile_seconds_median'][0]:.6f}/{analysis['compile_seconds_median'][1]:.6f}",
+        f"- Peak RSS bytes max (baseline/candidate): "
+        f"{analysis['peak_bytes_max'][0]}/{analysis['peak_bytes_max'][1]}",
+        f"- Code `.text` bytes median (baseline/candidate): "
+        f"{analysis['code_bytes_median'][0]:.0f}/{analysis['code_bytes_median'][1]:.0f}",
         f"- Gate passed: `{str(analysis['gate_passed']).lower()}`", "",
-        "Compile time and memory are reported only; they are not release limits.", ""))
+        "Compile time and memory are reported only; they are not release limits.", "",
+        "## Per-case paired ratios", "", "| Case | Baseline/candidate |",
+        "|---|---:|"]
+    lines.extend(f"| {_markdown_cell(case_id)} | {ratio:.6f} |"
+        for case_id, ratio in analysis["case_ratios"])
+    if analysis["excluded"]:
+        lines.extend(("", "## Excluded cases", "", "| Case | Reason |", "|---|---|"))
+        lines.extend(f"| {_markdown_cell(case_id)} | {_markdown_cell(reason)} |"
+            for case_id, reason in analysis["excluded"])
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _markdown_cell(value):
+    return str(value).replace("\\", "\\\\").replace("|", "\\|") \
+        .replace("\r\n", "<br>").replace("\r", "<br>").replace("\n", "<br>")
 
 
 def _keys(value, expected, name):

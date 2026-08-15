@@ -19,7 +19,9 @@ import java.nio.file.Path;
 import accela.cost.DecisionTraceSink;
 import accela.cost.GeneratedTargetProfile;
 import accela.cost.IRCandidateScheduler;
+import accela.cost.R2IRBeamScheduler;
 import accela.ir.IRSnapshot;
+import accela.pass.R2PipelineProfile;
 
 public class Compiler {
   public static void main(String[] args) throws Exception {
@@ -31,7 +33,8 @@ public class Compiler {
               ? DecisionTraceSink.noop()
               : DecisionTraceSink.jsonl(Path.of(compileArgument.costTracePath()));
           PrintStream stream = new PrintStream(compileArgument.outputFilePath())) {
-        String assembly = new BackendCompiler(trace).compileToAssembly(buildOptimizedIR(unit, trace));
+        String assembly = new BackendCompiler(trace, R2PipelineProfile.full())
+            .compileToAssembly(buildOptimizedIR(unit, trace));
         stream.print(assembly);
       }
     } else {
@@ -56,12 +59,15 @@ public class Compiler {
   private static accela.ir.Module buildOptimizedIR(Node unit, DecisionTraceSink trace) {
     accela.ir.Module source = new AST2IR().convert(unit);
     IRVerifier.verifyModule(source);
+    accela.ir.Module r2Source = IRSnapshot.deepCopy(source);
     accela.ir.Module candidateStaging = IRSnapshot.deepCopy(source);
     accela.ir.Module productionFull = source;
     runPipeline(productionFull, new PassBuilder());
     runPipeline(candidateStaging, PassBuilder.forR1CandidateStaging());
-    return new IRCandidateScheduler(GeneratedTargetProfile.get(), trace)
+    accela.ir.Module r1Selected = new IRCandidateScheduler(GeneratedTargetProfile.get(), trace)
         .schedule(productionFull, candidateStaging);
+    return new R2IRBeamScheduler(GeneratedTargetProfile.get(), trace)
+        .schedule(r1Selected, r2Source);
   }
 
   private static void runPipeline(accela.ir.Module module, PassBuilder passBuilder) {

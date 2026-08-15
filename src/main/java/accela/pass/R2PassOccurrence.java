@@ -45,6 +45,8 @@ public record R2PassOccurrence(
     }
   }
 
+  public String legalityObligation() { return id + ".production-semantics"; }
+
   private static boolean isIrAnalysis(Analysis analysis) {
     return switch (analysis) {
       case DOMINATOR_TREE, POST_DOMINATOR_TREE, LOOP_INFO, INDUCTION_VARIABLES,

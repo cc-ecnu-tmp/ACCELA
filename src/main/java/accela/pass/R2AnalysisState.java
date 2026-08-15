@@ -15,6 +15,16 @@ public final class R2AnalysisState {
 
   public Set<R2PassOccurrence.Analysis> valid() { return valid; }
 
+  public R2AnalysisState recompute(Set<R2PassOccurrence.Analysis> recomputed) {
+    if (recomputed == null || recomputed.stream().anyMatch(java.util.Objects::isNull)) {
+      throw new IllegalArgumentException("R2 recomputed analysis set is invalid");
+    }
+    EnumSet<R2PassOccurrence.Analysis> next = valid.isEmpty()
+        ? EnumSet.noneOf(R2PassOccurrence.Analysis.class) : EnumSet.copyOf(valid);
+    next.addAll(recomputed);
+    return new R2AnalysisState(next);
+  }
+
   public R2AnalysisState apply(
       R2PassOccurrence occurrence, Set<R2PassOccurrence.Analysis> recomputed) {
     if (occurrence == null) throw new IllegalArgumentException("R2 occurrence is required");

@@ -3,6 +3,8 @@ package accela.cost;
 import accela.backend.machine.MachineBasicBlock;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.ImmOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.AllocationEstimate;
@@ -15,12 +17,16 @@ import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.ExactTripCount;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /** A deterministic two-wide, dependency- and resource-aware Machine IR cost model. */
 public final class MachineCostModel {
@@ -35,6 +41,14 @@ public final class MachineCostModel {
   }
 
   public CostEstimate estimate(MachineFunction function) {
+    return estimate(function, allocator.estimate(function, target));
+  }
+
+  /** Estimates an allocated or pre-RA function using the supplied DryRunRA result. */
+  public CostEstimate estimate(MachineFunction function, AllocationEstimate allocation) {
+    if (function == null || allocation == null) {
+      throw new IllegalArgumentException("machine function and allocation estimate are required");
+    }
     Map<MachineBasicBlock, Double> executionWeights = executionWeights(function);
     double instructionCount = 0.0;
     int codeBytes = 0;
@@ -46,7 +60,10 @@ public final class MachineCostModel {
     double resourceCycles = 0.0;
     double variance = 0.0;
 
-    for (MachineBasicBlock block : function.getBlocks()) {
+    for (int blockIndex = 0; blockIndex < function.getBlocks().size(); blockIndex++) {
+      MachineBasicBlock block = function.getBlocks().get(blockIndex);
+      MachineBasicBlock fallthrough = blockIndex + 1 < function.getBlocks().size()
+          ? function.getBlocks().get(blockIndex + 1) : null;
       double weight = executionWeights.getOrDefault(block, 1.0);
       criticalPath += criticalPath(block) * weight;
       resourceCycles += simulate(block) * weight;
@@ -54,10 +71,13 @@ public final class MachineCostModel {
       for (MachineInstr instruction : block.getInstructions()) {
         InstructionClass instructionClass = InstructionClass.of(instruction.getOpcode());
         TargetProfile.OperationCost operation = profile.operation(instructionClass);
-        instructionCount += weight;
-        codeBytes += operation.codeBytes();
+        int emitted = emittedInstructionCount(instruction, fallthrough);
+        instructionCount += emitted * weight;
+        codeBytes += operation.codeBytes() * emitted;
         if (instructionClass == InstructionClass.BRANCH
-            || instructionClass == InstructionClass.CALL_RETURN) branches += weight;
+            || instructionClass == InstructionClass.CALL_RETURN) {
+          branches += emittedBranchCount(instruction, fallthrough) * weight;
+        }
         if (instructionClass == InstructionClass.LOAD) loads += weight;
         if (instructionClass == InstructionClass.STORE) stores += weight;
         variance += weight * square(operation.latency().mad());
@@ -74,7 +94,6 @@ public final class MachineCostModel {
             + stores * profile.operation(InstructionClass.STORE).reciprocalThroughput().median()
             + loadUseEdges * loadUseExtra;
     double branch = branches * profile.predictableBranch().median();
-    AllocationEstimate allocation = allocator.estimate(function, target);
     double spill = allocation.spillWeight()
         * (profile.spillLoad().median() + profile.spillStore().median())
         + allocation.calleeSaveCost()
@@ -105,8 +124,178 @@ public final class MachineCostModel {
       }
       result.put(loop.getKey(), instructions);
     }
+    int component = 0;
+    for (double instructions : machineCycleUpperBounds(machineFunction)) {
+      result.put("machine-cfg::" + component++, instructions);
+    }
     return Map.copyOf(result);
   }
+
+  List<Double> machineCycleUpperBounds(MachineFunction function) {
+    return cyclicComponents(function).stream()
+        .map(component -> component.stream()
+            .mapToDouble(block -> emittedBlockInstructions(function, block)).sum())
+        .sorted(Comparator.reverseOrder()).toList();
+  }
+
+  List<Double> machineCycleLowerBounds(MachineFunction function) {
+    return cyclicComponents(function).stream()
+        .map(component -> shortestCycle(function, component))
+        .sorted(Comparator.reverseOrder()).toList();
+  }
+
+  private static double shortestCycle(
+      MachineFunction function, Set<MachineBasicBlock> component) {
+    double best = Double.POSITIVE_INFINITY;
+    for (MachineBasicBlock start : component) {
+      double startWeight = emittedBlockInstructions(function, start);
+      for (MachineBasicBlock successor : successors(start)) {
+        if (!component.contains(successor)) continue;
+        if (successor == start) {
+          best = Math.min(best, startWeight);
+          continue;
+        }
+        Map<MachineBasicBlock, Double> distances = new IdentityHashMap<>();
+        java.util.PriorityQueue<WeightedBlock> pending = new java.util.PriorityQueue<>(
+            Comparator.comparingDouble(WeightedBlock::cost));
+        distances.put(successor, startWeight);
+        pending.add(new WeightedBlock(successor, startWeight));
+        while (!pending.isEmpty()) {
+          WeightedBlock current = pending.remove();
+          if (current.cost() != distances.get(current.block())) continue;
+          double nextCost = current.cost()
+              + emittedBlockInstructions(function, current.block());
+          for (MachineBasicBlock next : successors(current.block())) {
+            if (!component.contains(next)) continue;
+            if (next == start) {
+              best = Math.min(best, nextCost);
+            } else if (nextCost < distances.getOrDefault(next, Double.POSITIVE_INFINITY)) {
+              distances.put(next, nextCost);
+              pending.add(new WeightedBlock(next, nextCost));
+            }
+          }
+        }
+      }
+    }
+    if (!Double.isFinite(best)) {
+      throw new IllegalStateException("cyclic Machine CFG has no cycle");
+    }
+    return best;
+  }
+
+  private static double emittedBlockInstructions(
+      MachineFunction function, MachineBasicBlock block) {
+    int index = function.getBlocks().indexOf(block);
+    if (index < 0) throw new IllegalStateException("foreign block in Machine CFG cycle");
+    MachineBasicBlock fallthrough = index + 1 < function.getBlocks().size()
+        ? function.getBlocks().get(index + 1) : null;
+    return block.getInstructions().stream()
+        .mapToInt(instruction -> emittedInstructionCount(instruction, fallthrough)).sum();
+  }
+
+  /** Counts target instructions emitted by one MIR instruction, including implicit materialization. */
+  static int emittedInstructionCount(MachineInstr instruction, MachineBasicBlock fallthrough) {
+    if (instruction.getOpcode() == accela.backend.machine.MachineOpcode.BR) {
+      if (instruction.getOperands().size() != 1
+          || !(instruction.getOperands().getFirst() instanceof BlockOperand target)) {
+        throw new IllegalStateException("malformed unconditional Machine IR branch");
+      }
+      return target.getBlock() == fallthrough ? 0 : 1;
+    }
+    int count = 1;
+    if (instruction.getOpcode() == accela.backend.machine.MachineOpcode.CONDBR) {
+      if (instruction.getPredicate() == null) {
+        if (!instruction.getOperands().isEmpty()
+            && instruction.getOperands().getFirst() instanceof ImmOperand) count++;
+      } else {
+        if (!instruction.getOperands().isEmpty()
+            && instruction.getOperands().getFirst() instanceof ImmOperand) count++;
+        if (instruction.getOperands().size() > 1
+            && instruction.getOperands().get(1) instanceof ImmOperand immediate
+            && immediate.getValue() != 0) count++;
+      }
+      int targetStart = instruction.getPredicate() == null ? 1 : 2;
+      if (instruction.getOperands().size() >= targetStart + 2
+          && instruction.getOperands().get(targetStart) instanceof BlockOperand ifTrue
+          && instruction.getOperands().get(targetStart + 1) instanceof BlockOperand ifFalse
+          && ifTrue.getBlock() != fallthrough && ifFalse.getBlock() != fallthrough) count++;
+    }
+    return count;
+  }
+
+  static int emittedBranchCount(MachineInstr instruction, MachineBasicBlock fallthrough) {
+    if (instruction.getOpcode() == accela.backend.machine.MachineOpcode.BR) {
+      return emittedInstructionCount(instruction, fallthrough);
+    }
+    if (instruction.getOpcode() != accela.backend.machine.MachineOpcode.CONDBR) return 1;
+    int targetStart = instruction.getPredicate() == null ? 1 : 2;
+    if (instruction.getOperands().size() < targetStart + 2
+        || !(instruction.getOperands().get(targetStart) instanceof BlockOperand ifTrue)
+        || !(instruction.getOperands().get(targetStart + 1) instanceof BlockOperand ifFalse)) {
+      throw new IllegalStateException("malformed conditional Machine IR branch");
+    }
+    return ifTrue.getBlock() != fallthrough && ifFalse.getBlock() != fallthrough ? 2 : 1;
+  }
+
+  private static List<Set<MachineBasicBlock>> cyclicComponents(MachineFunction function) {
+    Tarjan tarjan = new Tarjan(function);
+    return tarjan.run().stream().filter(component -> component.size() > 1
+        || successors(component.iterator().next()).contains(component.iterator().next())).toList();
+  }
+
+  private static List<MachineBasicBlock> successors(MachineBasicBlock block) {
+    if (block.getInstructions().isEmpty()) return List.of();
+    return block.getInstructions().getLast().getOperands().stream()
+        .filter(BlockOperand.class::isInstance).map(BlockOperand.class::cast)
+        .map(BlockOperand::getBlock).distinct().toList();
+  }
+
+  private static final class Tarjan {
+    private final MachineFunction function;
+    private final Map<MachineBasicBlock, Integer> indices = new IdentityHashMap<>();
+    private final Map<MachineBasicBlock, Integer> lowLinks = new IdentityHashMap<>();
+    private final ArrayDeque<MachineBasicBlock> stack = new ArrayDeque<>();
+    private final Set<MachineBasicBlock> onStack =
+        java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final List<Set<MachineBasicBlock>> components = new ArrayList<>();
+    private int nextIndex;
+
+    Tarjan(MachineFunction function) { this.function = function; }
+
+    List<Set<MachineBasicBlock>> run() {
+      for (MachineBasicBlock block : function.getBlocks()) {
+        if (!indices.containsKey(block)) visit(block);
+      }
+      return List.copyOf(components);
+    }
+
+    private void visit(MachineBasicBlock block) {
+      int index = nextIndex++;
+      indices.put(block, index);
+      lowLinks.put(block, index);
+      stack.push(block);
+      onStack.add(block);
+      for (MachineBasicBlock successor : successors(block)) {
+        if (!indices.containsKey(successor)) {
+          visit(successor);
+          lowLinks.put(block, Math.min(lowLinks.get(block), lowLinks.get(successor)));
+        } else if (onStack.contains(successor)) {
+          lowLinks.put(block, Math.min(lowLinks.get(block), indices.get(successor)));
+        }
+      }
+      if (!lowLinks.get(block).equals(indices.get(block))) return;
+      LinkedHashSet<MachineBasicBlock> component = new LinkedHashSet<>();
+      MachineBasicBlock member;
+      do {
+        member = stack.pop();
+        onStack.remove(member);
+        component.add(member);
+      } while (member != block);
+      components.add(Set.copyOf(component));
+    }
+  }
+
+  private record WeightedBlock(MachineBasicBlock block, double cost) {}
 
   private ExecutionWeightAnalysis analyzeExecutionWeights(MachineFunction machineFunction) {
     Function sourceFunction = machineFunction.getBlocks().stream()
@@ -199,11 +388,23 @@ public final class MachineCostModel {
     return edges;
   }
 
-  private static double curveEstimate(java.util.NavigableMap<Integer, Measurement> curve, int point) {
-    Map.Entry<Integer, Measurement> ceiling = curve.ceilingEntry(Math.max(1, point));
-    if (ceiling != null) return ceiling.getValue().median();
+  static double curveEstimate(java.util.NavigableMap<Integer, Measurement> curve, int point) {
+    int checkedPoint = Math.max(1, point);
+    Map.Entry<Integer, Measurement> floor = curve.floorEntry(checkedPoint);
+    Map.Entry<Integer, Measurement> ceiling = curve.ceilingEntry(checkedPoint);
+    if (floor == null) {
+      Map.Entry<Integer, Measurement> first = curve.firstEntry();
+      return first.getValue().median() * checkedPoint / first.getKey();
+    }
+    if (ceiling != null) {
+      if (floor.getKey().equals(ceiling.getKey())) return floor.getValue().median();
+      double position = (double) (checkedPoint - floor.getKey())
+          / (ceiling.getKey() - floor.getKey());
+      return floor.getValue().median()
+          + position * (ceiling.getValue().median() - floor.getValue().median());
+    }
     Map.Entry<Integer, Measurement> last = curve.lastEntry();
-    return last.getValue().median() * point / last.getKey();
+    return last.getValue().median() * checkedPoint / last.getKey();
   }
 
   private double criticalPath(MachineBasicBlock block) {

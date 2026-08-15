@@ -78,11 +78,31 @@ riscv64-elf-objdump -d build/qemu-run/NAME/program.elf
 | `QEMU_PROFILE`        | `0`                            | 可选 `0`、`1`、`hotblocks` 或 `cache` |
 | `QEMU_COMPILER`       | `accela`                       | 可选 `accela` 或 `llvm`               |
 | `QEMU_TIMEOUT`        | `120`                          | 单个测试点的超时秒数                  |
-| `LLVM_CLANG`          | Homebrew LLVM `clang`          | LLVM 对照编译器路径                    |
-| `ACCELA_JAVA_HOME`    | `JAVA_HOME`，macOS 后备为 Homebrew JDK 21 | runner 使用的 JDK          |
+| `LLVM_CLANG`          | `clang`                        | LLVM 对照编译器路径                    |
+| `ACCELA_JAVA`         | `JAVA_HOME/bin/java` 或 `java` | runner 使用的 Java 21 命令             |
 | `ACCELA_CLASSES`      | `build/classes/java/main`      | 显式选择待测 ACCELA class 目录         |
 | `QEMU_WORK_ROOT`      | `build/qemu-run`               | 隔离不同编译器/实验的运行产物          |
-| `QEMU_PLUGIN_INCLUDE` | Linux `/usr/include`；macOS `/opt/homebrew/include` | `qemu-plugin.h` 目录 |
+
+两个 ACCELA class 目录的冷启动配对比较使用：
+
+```sh
+ACCELA_JAVA=java \
+  scripts/qemu-compare-classes.sh BASELINE_CLASSES CANDIDATE_CLASSES \
+  testsuite/functional/NAME.sy
+```
+
+默认执行五组配对，每组都会重新启动两个 compiler、重新链接、校验输出并用 QEMU plugin 记录动态指令数。输出列依次为 case、run、baseline instructions、candidate instructions、`baseline/candidate`、双方 compiler 秒数、双方峰值字节数和双方编译器对象 `.text` 字节数。compiler 测量由独立 Python 进程使用 `wait4` 获取，不复用编译缓存。可分别用 `RISCV_GCC`、`RISCV_SIZE` 显式指定交叉工具。该结果属于 `qemu_proxy`，不能替代 BOOM 周期证据。
+
+批量比较时，`CASE_LIST` 每行写一个不带 `.sy` 的 case ID，并使用全新的输出目录：
+
+```sh
+QEMU_PAIRED_JOBS=4 \
+  scripts/qemu-compare-corpus.sh BASELINE_CLASSES CANDIDATE_CLASSES \
+  testsuite/functional CASE_LIST OUTPUT
+```
+
+`OUTPUT/results.tsv` 只会在全部 case 完成后生成；任一编译、链接、输出差分、QEMU 或计数解析失败都会让命令失败并保留各 case 的诊断边界。
+| `QEMU_PLUGIN_INCLUDE` | Linux 使用编译器默认搜索路径；Darwin 必填 | `qemu-plugin.h` 目录 |
 
 ## 测量边界与限制
 

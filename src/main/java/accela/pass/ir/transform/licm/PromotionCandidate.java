@@ -10,8 +10,6 @@ import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -42,8 +40,8 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
   }
 
   private static Set<Value> storedPointers(LoopAnalysis.Loop loop) {
-    Set<Value> pointers = Collections.newSetFromMap(new IdentityHashMap<>());
-    for (BasicBlock block : loop.blocks()) {
+    Set<Value> pointers = new LinkedHashSet<>();
+    for (BasicBlock block : orderedBlocks(loop)) {
       for (Instruction instruction : block.getInstructions()) {
         if (instruction.getOpcode() == Instruction.Opcode.STORE) {
           pointers.add(instruction.getOperand(1));
@@ -55,7 +53,7 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
 
   private static Type storedType(LoopAnalysis.Loop loop, Value pointer) {
     Type type = null;
-    for (BasicBlock block : loop.blocks()) {
+    for (BasicBlock block : orderedBlocks(loop)) {
       for (Instruction instruction : block.getInstructions()) {
         if (instruction.getOpcode() != Instruction.Opcode.STORE
             || instruction.getOperand(1) != pointer) continue;
@@ -92,7 +90,7 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
 
   private static List<ExitEdge> exitEdges(LoopAnalysis.Loop loop) {
     Set<ExitEdge> exits = new LinkedHashSet<>();
-    for (BasicBlock block : loop.blocks()) {
+    for (BasicBlock block : orderedBlocks(loop)) {
       for (BasicBlock successor : block.getSuccessors()) {
         if (!loop.contains(successor)) exits.add(new ExitEdge(block, successor));
       }
@@ -107,7 +105,7 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
       GlobalModRefAnalysis.Result modRef) {
     int loads = 0;
     int stores = 0;
-    for (BasicBlock block : loop.blocks()) {
+    for (BasicBlock block : orderedBlocks(loop)) {
       for (Instruction instruction : block.getInstructions()) {
         if (instruction.getOpcode() == Instruction.Opcode.CALL) {
           if (modRef == null
@@ -147,5 +145,9 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
       case STORE -> 1;
       default -> -1;
     };
+  }
+
+  static List<BasicBlock> orderedBlocks(LoopAnalysis.Loop loop) {
+    return loop.header().getParent().getBlocks().stream().filter(loop::contains).toList();
   }
 }

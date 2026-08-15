@@ -1,12 +1,14 @@
 # ACCELA
 
-ACCELA 是面向 RV64GC/LP64D 的 SysY 编译器。本分支加入目标校准成本调度器 R1 与离线 TargetLab 测量套件；编译器仍使用固定赛事接口：
+ACCELA 是面向 RV64GC/LP64D 的 SysY 编译器。本分支加入目标校准成本调度器 R1、分层 R2 Beam 与离线 TargetLab 测量套件；编译器仍使用固定赛事接口：
 
 ```sh
 ./compiler input.sy -S -o output.s -O1
 ```
 
 目标参数由经过严格校验的 `target-profile.v1` JSON 在构建时生成 Java 源码并嵌入最终编译器。赛事运行时不读取配置文件，不联网，也不接收测试用例标识。默认内置 Profile 来自 bare-metal QEMU 的确定性代理测量，标记为 `evidence_level: qemu_proxy`；它用于实际驱动和验证成本调度器，但不代表 BOOM v3 硬件校准，也不能作为超越 LLVM 的发布证据。
+
+仓库同时保存一份 [VisionFive 2 U74 Linux 实测归档](measurements/visionfive2-u74-linux-20260816/README.md)，用于演示无 Agent 现场校准、失败批次保留和 R1/R2 目标硬件诊断。它不是默认比赛 Profile，也不提升为 BOOM 证据。
 
 ## 开发验证
 

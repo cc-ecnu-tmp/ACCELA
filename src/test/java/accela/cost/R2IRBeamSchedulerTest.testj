@@ -1,0 +1,103 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ast.Node;
+import accela.backend.BackendCompiler;
+import accela.ir.AST2IR;
+import accela.ir.IRSnapshot;
+import accela.ir.Module;
+import accela.parse.Lexer;
+import accela.parse.Parser;
+import accela.parse.Sema;
+import accela.pass.PassBuilder;
+import accela.pass.PassDescriptor;
+import accela.pass.R2IRPassExecutor;
+import accela.pass.R2PassOccurrence;
+import accela.pass.R2PassRegistry;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+final class R2IRBeamSchedulerTest {
+  @Test
+  void fixedInputAndProfileProduceDeterministicStateAndTrace() {
+    Module source = parse("int twice(int x) { return x * 2; }"
+        + " int main() { int i = 0; int s = 0; while (i < 8) {"
+        + " s = s + twice(i); i = i + 1; } return s; }");
+    Module production = IRSnapshot.deepCopy(source);
+    runFull(production);
+
+    List<String> firstTrace = new ArrayList<>();
+    List<String> secondTrace = new ArrayList<>();
+    Module first = new R2IRBeamScheduler(GeneratedTargetProfile.get(),
+        decision -> firstTrace.add(StrictTrace.json(decision)))
+        .schedule(production, source);
+    Module second = new R2IRBeamScheduler(GeneratedTargetProfile.get(),
+        decision -> secondTrace.add(StrictTrace.json(decision)))
+        .schedule(production, source);
+
+    assertEquals(new BackendCompiler().compileToAssembly(first),
+        new BackendCompiler().compileToAssembly(second));
+    assertEquals(firstTrace, secondTrace);
+    assertTrue(firstTrace.stream().anyMatch(line ->
+        line.contains("\"candidate\":\"r2.ir.beam.final\"")));
+  }
+
+  @Test
+  void executorRejectsWrongStageAndUnknownFactory() {
+    Module module = parse("int main() { return 0; }");
+    R2IRPassExecutor executor = new R2IRPassExecutor();
+    assertThrows(IllegalArgumentException.class, () -> executor.apply(
+        R2PassRegistry.production().family(R2PassRegistry.COPY_PROPAGATION).getFirst(), module));
+    R2PassOccurrence unknown = new R2PassOccurrence("ir.unknown.1", "ir.unknown",
+        PassDescriptor.Stage.IR, R2PassOccurrence.Scope.FUNCTION, false, List.of(),
+        Set.of(), Set.of());
+    assertThrows(IllegalArgumentException.class, () -> executor.apply(unknown, module));
+  }
+
+  @Test
+  void moduleBudgetExhaustionCompletesRequiredDagAndKeepsValidatedResult() {
+    Module source = parse("int main() { int x = 1; return x; }");
+    Module production = IRSnapshot.deepCopy(source);
+    runFull(production);
+    List<String> trace = new ArrayList<>();
+    SchedulerPolicy oneExpansion = new SchedulerPolicy(1, 1, 1, 1.0, true);
+    Module result = new R2IRBeamScheduler(GeneratedTargetProfile.get(),
+        decision -> trace.add(StrictTrace.json(decision)), oneExpansion)
+        .schedule(production, source);
+    IRVerifier.verifyModule(result);
+    assertTrue(trace.stream().anyMatch(line -> line.contains("\"reason\":\"budget_exhausted\"")));
+    assertTrue(trace.stream().anyMatch(line ->
+        line.contains("\"reason\":\"budget_exhausted_full_retained\"")
+            || line.contains("\"reason\":\"budget_exhausted_best_validated\"")));
+  }
+
+  private static Module parse(String text) {
+    Node unit = new Parser(new Lexer(text, "r2-ir-beam.sy").tokenize()).parse();
+    new Sema().analyze(unit);
+    Module module = new AST2IR().convert(unit);
+    IRVerifier.verifyModule(module);
+    return module;
+  }
+
+  private static void runFull(Module module) {
+    PassBuilder builder = new PassBuilder();
+    builder.buildIRO0Pipeline(accela.pass.ir.instrument.PassInstrumentation.noop())
+        .run(module, builder.buildModuleAnalysisManager(),
+            builder.buildFunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+  }
+
+  private static final class StrictTrace {
+    private StrictTrace() {}
+
+    static String json(DecisionTraceSink.Decision decision) {
+      return accela.util.StrictJson.stringify(decision.toJson());
+    }
+  }
+}

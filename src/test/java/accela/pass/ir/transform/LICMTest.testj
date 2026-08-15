@@ -105,6 +105,28 @@ final class LICMTest {
   }
 
   @Test
+  void promotionAllocatesUniqueExitLabelsAcrossRepeatedOpportunities() {
+    Module module = new Module();
+    GlobalVariable state = scalar(module, "unique_exit_state");
+    Function function = loopFunction(module, "unique_exit");
+    BasicBlock header = function.getBlocks().get(1);
+    BasicBlock body = function.getBlocks().get(2);
+    BasicBlock existing = function.addBlock("header.promote.exit.0");
+    new IRBuilder(existing).createRetVoid();
+    IRBuilder headerBuilder = new IRBuilder();
+    headerBuilder.setInsertPointBefore(header.getTerminator());
+    Instruction loaded = headerBuilder.createLoad(Type.INT, state);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(body.getTerminator());
+    bodyBuilder.createStore(loaded, state);
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertTrue(function.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().equals("header.promote.exit.0.1")));
+  }
+
+  @Test
   void promotesOuterIndexedElementAcrossInnerReductionLoop() {
     NestedPromotionFixture fixture = new NestedPromotionFixture(false);
 
@@ -191,6 +213,10 @@ final class LICMTest {
         .allMatch(block -> hasAccess(block, state, Instruction.Opcode.STORE)));
     assertFalse(phiHasPredecessor(result, header));
     assertFalse(phiHasPredecessor(result, body));
+    assertTrue(header.getSuccessors().stream()
+        .anyMatch(block -> block.getLabel().equals("header.promote.exit.0")));
+    assertTrue(body.getSuccessors().stream()
+        .anyMatch(block -> block.getLabel().equals("header.promote.exit.1")));
   }
 
   @Test

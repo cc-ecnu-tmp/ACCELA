@@ -178,12 +178,10 @@ public final class R2PassRegistry {
     builder.irFunction(IR_MEM2REG, true);
     builder.irFunction(IR_EARLY_CSE, false);
     builder.irFunction(IR_SCCP, false);
-    builder.irFunction(IR_EARLY_CSE, false);
-    builder.irFunction(IR_INST_SIMPLIFY, false);
+    builder.irFunctionUnordered(IR_EARLY_CSE, IR_INST_SIMPLIFY);
     builder.irFunction(IR_SROA, false);
     builder.irFunction(IR_SCCP, false);
-    builder.irFunction(IR_EARLY_CSE, false);
-    builder.irFunction(IR_INST_SIMPLIFY, false);
+    builder.irFunctionUnordered(IR_EARLY_CSE, IR_INST_SIMPLIFY);
     builder.irFunction(IR_INST_COMBINE, false);
     builder.irFunction(IR_ADCE, false);
     builder.irFunction(IR_SIMPLIFY_CFG, false);
@@ -235,8 +233,7 @@ public final class R2PassRegistry {
     builder.add(LOWERING, PassDescriptor.Stage.LOWERING, MODULE, true, Set.of(), IR_ANALYSES);
     builder.machine(COPY_PROPAGATION, false);
     builder.machine(PHI_ELIMINATION, true);
-    builder.machine(ADDRESS_FOLDING, false);
-    builder.machine(MACHINE_CSE, false);
+    builder.machineUnordered(ADDRESS_FOLDING, MACHINE_CSE);
     builder.machine(GLOBAL_MERGE, false);
     builder.machine(MACHINE_LICM, false);
     builder.machine(LOOP_CONDITION_DUPLICATION, false);
@@ -256,9 +253,20 @@ public final class R2PassRegistry {
   private static final class Builder {
     private final List<R2PassOccurrence> occurrences = new ArrayList<>();
     private final Map<String, Integer> familyOccurrences = new LinkedHashMap<>();
+    private List<String> frontier = List.of();
 
     void irFunction(String family, boolean required) {
       add(family, PassDescriptor.Stage.IR, FUNCTION, required, Set.of(), IR_ANALYSES);
+    }
+
+    /** Adds a verified cleanup window whose members may execute in either order. */
+    void irFunctionUnordered(String first, String second) {
+      List<String> dependencies = frontier;
+      String firstId = addDependingOn(first, PassDescriptor.Stage.IR, FUNCTION, false,
+          Set.of(), IR_ANALYSES, dependencies);
+      String secondId = addDependingOn(second, PassDescriptor.Stage.IR, FUNCTION, false,
+          Set.of(), IR_ANALYSES, dependencies);
+      frontier = List.of(firstId, secondId);
     }
 
     void irModule(String family, boolean required) {
@@ -273,15 +281,31 @@ public final class R2PassRegistry {
       add(family, PassDescriptor.Stage.MIR, FUNCTION, required, Set.of(), MACHINE_ANALYSES);
     }
 
+    void machineUnordered(String first, String second) {
+      List<String> dependencies = frontier;
+      String firstId = addDependingOn(first, PassDescriptor.Stage.MIR, FUNCTION, false,
+          Set.of(), MACHINE_ANALYSES, dependencies);
+      String secondId = addDependingOn(second, PassDescriptor.Stage.MIR, FUNCTION, false,
+          Set.of(), MACHINE_ANALYSES, dependencies);
+      frontier = List.of(firstId, secondId);
+    }
+
     void add(String family, PassDescriptor.Stage stage, R2PassOccurrence.Scope scope,
         boolean required, Set<R2PassOccurrence.Analysis> analyses,
         Set<R2PassOccurrence.Analysis> invalidates) {
+      String id = addDependingOn(family, stage, scope, required, analyses, invalidates, frontier);
+      frontier = List.of(id);
+    }
+
+    String addDependingOn(String family, PassDescriptor.Stage stage,
+        R2PassOccurrence.Scope scope, boolean required,
+        Set<R2PassOccurrence.Analysis> analyses,
+        Set<R2PassOccurrence.Analysis> invalidates, List<String> dependencies) {
       int occurrence = familyOccurrences.merge(family, 1, Integer::sum);
       String id = family + "." + occurrence;
-      List<String> dependencies = occurrences.isEmpty()
-          ? List.of() : List.of(occurrences.getLast().id());
       occurrences.add(new R2PassOccurrence(id, family, stage, scope, required,
           dependencies, analyses, invalidates));
+      return id;
     }
   }
 }

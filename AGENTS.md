@@ -16,13 +16,14 @@
 - Search limits are deterministic expansion budgets. Budget exhaustion selects the best already-validated state and emits `budget_exhausted`.
 - `PassRegistry` and `PipelineProfile.r1()` are the single source for R1 pass identity, phase order, dependencies, required boundaries, and legality obligation IDs. The 12 unranked experimental transforms are absent.
 - R1 always builds complete production `FULL` as an immutable fallback. Alternate pass timing is an explicit `ir.schedule.deferred-r1` schedule candidate, never an empty or hidden ablation; it may commit only after verifier/lowering/DryRunRA and fail-closed dominance guards beat `FULL`. Recursive reachable call graphs, a worse unknown-loop recurring slope, any worse cost component, or a non-strict robust score retain `FULL`. MIR candidate rejection likewise retains production GlobalMerge and MachineLICM behavior.
-- R2 development starts from the accepted R1 implementation and remains a candidate until BOOM evidence closes its gates. `R2PassRegistry.production()` is the occurrence-level source of truth for the 71 current production IR/MIR/RA/emission steps. Its initial DAG deliberately preserves the production order; an edge may be relaxed only with an explicit analysis-validity and legality proof.
+- R2 runs after the accepted R1 immutable `FULL` fallback and remains a candidate until BOOM evidence closes its gates. `R2PassRegistry.production()` is the occurrence-level source of truth for the 71 current production IR/MIR/RA/emission steps. Most edges preserve production order; only verifier-covered cleanup windows may expose multiple topological orders, and an edge may be relaxed only with an explicit analysis-validity and legality proof.
 - Every R2 Beam node carries an immutable decision prefix and `R2AnalysisState`. Required SSA construction, IR-to-MIR lowering, PHI elimination, register allocation, and emission occurrences cannot be skipped. A pass with missing analysis prerequisites fails immediately; phase crossings and IR/MIR analysis-domain crossings are invalid configurations.
+- R2 never runs DryRunRA on MIR containing PHI. Pre-PHI nodes carry only transactional legality state; target cost and graph-coloring estimates begin after required PHI elimination. The selected pre-RA snapshot is installed before the one formal allocation, so allocation mappings always belong to the emitted function.
 - The 12 experimental transforms remain absent from the R2 production registry until each passes correctness, additive `FULL + candidate`, combination, long-tail, and BOOM evaluation.
 
 ## Evidence
 
-- BOOM hardware measurements are the only evidence that can close the LLVM performance gate.
+- Non-BOOM target hardware measurements are target-specific diagnostic evidence and may close only a matching-target no-regression risk. BOOM hardware measurements are the only evidence that can close the LLVM performance gate.
 - QEMU, static cost estimates, host smoke tests, and Oracle programs are diagnostic evidence, not BOOM or release evidence.
 - The embedded development profile is measured with deterministic bare-metal QEMU proxy kernels. It exercises the calibrated scheduler but is not BOOM calibration or release evidence.
 - R1 release requires correctness, paired GM lower confidence bound at least 1.00 versus ACCELA FULL, and no case below 0.90.
