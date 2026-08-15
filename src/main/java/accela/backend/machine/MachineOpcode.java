@@ -29,6 +29,7 @@ public enum MachineOpcode {
   FMUL,
   FDIV,
   FNEG,
+  SELECT,
   BR,
   CONDBR,
   CALL,

@@ -33,6 +33,7 @@ public final class RISCVAsmEmitter {
   private final RISCVFrameLowering frameLowering;
   private final RISCVStrengthReduction strengthReduction =
       new RISCVStrengthReduction(ADDRESS_SCRATCH);
+  private int selectLabelCounter;
 
   public RISCVAsmEmitter(RISCVTarget target, RISCVFrameLowering frameLowering) {
     this.target = target;
@@ -121,6 +122,9 @@ public final class RISCVAsmEmitter {
                     MachineType.F32,
                     allocation));
         return;
+      case SELECT:
+        emitSelect(function, instr, allocation, lines);
+        return;
       case LOAD:
         emitLoad(instr, allocation, lines);
         return;
@@ -174,6 +178,48 @@ public final class RISCVAsmEmitter {
       default:
         throw new UnsupportedOperationException("Unsupported machine opcode: " + instr.getOpcode());
     }
+  }
+
+  private void emitSelect(
+      MachineFunction function,
+      MachineInstr instruction,
+      AllocationResult allocation,
+      List<String> lines) {
+    int id = selectLabelCounter++;
+    String falseLabel = ".L_" + function.getName() + "_select_false_" + id;
+    String endLabel = ".L_" + function.getName() + "_select_end_" + id;
+    String destination = destReg(instruction, allocation);
+    String condition = operandRegisterOrScratch(
+        lines, instruction.getOperands().get(0), INT_SCRATCH_0, MachineType.I32, allocation);
+    MachineOperand ifTrue = instruction.getOperands().get(1);
+    MachineOperand ifFalse = instruction.getOperands().get(2);
+    if (isRegister(ifFalse) && sourceReg(ifFalse, allocation).equals(destination)) {
+      lines.add("  beqz " + condition + ", " + endLabel);
+      emitMoveToRegister(lines, ifTrue, destination, instruction.getType(), allocation);
+      lines.add(endLabel + ":");
+      return;
+    }
+    if (isRegister(ifTrue) && sourceReg(ifTrue, allocation).equals(destination)) {
+      lines.add("  bnez " + condition + ", " + endLabel);
+      emitMoveToRegister(lines, ifFalse, destination, instruction.getType(), allocation);
+      lines.add(endLabel + ":");
+      return;
+    }
+    lines.add("  beqz " + condition + ", " + falseLabel);
+    emitMoveToRegister(lines, ifTrue, destination, instruction.getType(), allocation);
+    lines.add("  j " + endLabel);
+    lines.add(falseLabel + ":");
+    emitMoveToRegister(
+        lines,
+        ifFalse,
+        destination,
+        instruction.getType(),
+        allocation);
+    lines.add(endLabel + ":");
+  }
+
+  private static boolean isRegister(MachineOperand operand) {
+    return operand instanceof VRegOperand || operand instanceof PhysicalRegOperand;
   }
 
   private void emitCompareBranch(

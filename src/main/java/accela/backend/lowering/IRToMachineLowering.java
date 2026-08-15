@@ -247,9 +247,25 @@ public final class IRToMachineLowering {
             MachineType.F32,
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
         return;
+      case SELECT:
+        lowerSelect(inst, block, valueToVReg, blocks);
+        return;
       default:
         throw new UnsupportedOperationException("Unsupported IR opcode: " + inst.getOpcode());
     }
+  }
+
+  private void lowerSelect(
+      Instruction instruction,
+      MachineBasicBlock block,
+      Map<Value, VirtualRegister> valueToVReg,
+      Map<BasicBlock, MachineBasicBlock> blocks) {
+    MachineInstr select = new MachineInstr(MachineOpcode.SELECT, valueToVReg.get(instruction));
+    select.setType(MachineType.fromIr(instruction.getType()));
+    for (int operand = 0; operand < instruction.getNumOperands(); operand++) {
+      select.addOperand(lowerValue(instruction.getOperand(operand), valueToVReg, blocks));
+    }
+    block.addInstruction(select);
   }
 
   private void lowerAlloca(
