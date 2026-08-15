@@ -227,6 +227,48 @@ final class VectorScalarizationTest {
   }
 
   @Test
+  void scalarizesVectorArgumentsAtDefinitionsAndCallSites() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    Type float2 = Type.vector(Type.FLOAT, 2);
+    Function callee = new Function("consume_vectors", Type.INT);
+    module.addFunction(callee);
+    Value prefix = callee.addArgument(Type.INT, "prefix");
+    Value integers = callee.addArgument(int4, "integers");
+    Value floats = callee.addArgument(float2, "floats");
+    Value suffix = callee.addArgument(Type.INT, "suffix");
+    IRBuilder cb = new IRBuilder(callee.addBlock("entry"));
+    Value sum = cb.createAdd(prefix, cb.createExtractElement(integers, Constant.intConst(3)));
+    sum = cb.createAdd(sum, cb.createFPToSI(
+        cb.createExtractElement(floats, Constant.intConst(1)), Type.INT));
+    cb.createRet(cb.createAdd(sum, suffix));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder mb = new IRBuilder(main.addBlock("entry"));
+    Value integerValue = mb.createBuildVector(
+        int4, Constant.intConst(1), Constant.intConst(2),
+        Constant.intConst(3), Constant.intConst(4));
+    Value floatValue = mb.createBuildVector(
+        float2, Constant.floatConst(1.5f), Constant.floatConst(2.5f));
+    Instruction call = mb.createCall(
+        callee, Type.INT, Constant.intConst(10), integerValue,
+        floatValue, Constant.intConst(20));
+    mb.createRet(call);
+
+    assertTrue(VectorScalarization.run(module));
+    IRVerifier.verifyModule(module);
+    assertEquals(8, callee.getNumArgs());
+    assertEquals(8, call.getNumOperands());
+    assertTrue(callee.getArguments().stream().noneMatch(arg -> arg.getType().isVector()));
+    assertEquals(Type.FLOAT, call.getOperand(5).getType());
+    assertEquals(Type.FLOAT, call.getOperand(6).getType());
+    assertFalse(hasVectorIR(callee));
+    assertFalse(hasVectorIR(main));
+    assertTrue(new BackendCompiler().compileToAssembly(module).contains("call consume_vectors"));
+  }
+
+  @Test
   void survivesTheDefaultOptimizationPipelineBeforeScalarization() {
     Module module = new Module();
     Function function = new Function("vector_optimized", Type.INT);
