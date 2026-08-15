@@ -40,10 +40,12 @@ public final class StrengthReduction {
   private static boolean rewrite(Instruction instruction) {
     Instruction.Opcode opcode = instruction.getOpcode();
     if (opcode != Instruction.Opcode.SDIV && opcode != Instruction.Opcode.SREM) return false;
-    if (!(instruction.getOperand(1) instanceof Constant.Int constant)) return false;
-    if (instruction.getType() != Type.INT || constant.getType() != Type.INT) return false;
+    Integer constant = uniformI32Constant(instruction.getOperand(1));
+    Type type = instruction.getType();
+    if (constant == null
+        || !(type == Type.INT || type.isVector() && type.getElementType() == Type.INT)) return false;
 
-    int divisor = (int) constant.value;
+    int divisor = constant;
     if (divisor == 0) return false;
     long magnitude = Math.abs((long) divisor);
 
@@ -52,7 +54,7 @@ public final class StrengthReduction {
     Value dividend = instruction.getOperand(0);
     Value replacement;
     if (opcode == Instruction.Opcode.SREM && magnitude == 1) {
-      replacement = Constant.intConst(0);
+      replacement = type.isVector() ? Constant.zero(type) : Constant.intConst(0);
     } else if (divisor == 1) {
       replacement = dividend;
     } else if (divisor == -1) {
@@ -69,6 +71,23 @@ public final class StrengthReduction {
     instruction.replaceAllUsesWith(replacement);
     instruction.eraseFromParent();
     return true;
+  }
+
+  /** Returns a uniform scalar/vector i32 constant, or {@code null}. */
+  private static Integer uniformI32Constant(Value value) {
+    if (value instanceof Constant.Int integer && integer.getType() == Type.INT)
+      return (int) integer.value;
+    if (value instanceof Constant.Zero zero
+        && zero.getType().isVector()
+        && zero.getType().getElementType() == Type.INT) return 0;
+    if (!(value instanceof Constant.Vector vector)
+        || vector.getType().getElementType() != Type.INT
+        || vector.elements.isEmpty()
+        || !(vector.elements.getFirst() instanceof Constant.Int first)) return null;
+    for (Constant element : vector.elements) {
+      if (!(element instanceof Constant.Int integer) || integer.value != first.value) return null;
+    }
+    return (int) first.value;
   }
 
   private static Value buildQuotient(IRBuilder builder, Value dividend, int divisor) {

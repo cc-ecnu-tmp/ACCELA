@@ -1,0 +1,38 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class StrengthReductionVectorTest {
+  @Test
+  void lowersUniformVectorDivisionByConstant() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_division", Type.INT);
+    var input = function.addArgument(int4, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var divisors = Constant.vector(int4, List.of(
+        Constant.intConst(7), Constant.intConst(7),
+        Constant.intConst(7), Constant.intConst(7)));
+    var quotient = builder.createSDiv(input, divisors);
+    builder.createRet(builder.createExtractElement(quotient, Constant.intConst(0)));
+
+    assertTrue(StrengthReduction.runOnFunction(function));
+    assertEquals(0, count(function, Instruction.Opcode.SDIV));
+    assertTrue(count(function, Instruction.Opcode.SMULH) > 0);
+  }
+
+  private static long count(Function function, Instruction.Opcode opcode) {
+    return function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == opcode)
+        .count();
+  }
+}
