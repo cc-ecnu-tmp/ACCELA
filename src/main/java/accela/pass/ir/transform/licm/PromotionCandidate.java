@@ -10,6 +10,8 @@ import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -40,7 +42,7 @@ record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdge
   }
 
   private static Set<Value> storedPointers(LoopAnalysis.Loop loop) {
-    Set<Value> pointers = new LinkedHashSet<>();
+    Set<Value> pointers = Collections.newSetFromMap(new IdentityHashMap<>());
     for (BasicBlock block : loop.blocks()) {
       for (Instruction instruction : block.getInstructions()) {
         if (instruction.getOpcode() == Instruction.Opcode.STORE) {

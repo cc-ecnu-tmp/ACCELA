@@ -31,43 +31,12 @@ public final class RISCVAsmEmitter {
 
   private final RISCVTarget target;
   private final RISCVFrameLowering frameLowering;
-  private final boolean strengthReductionEnabled;
-  private final boolean strengthReductionObservationEnabled;
   private final RISCVStrengthReduction strengthReduction =
       new RISCVStrengthReduction(ADDRESS_SCRATCH, INT_SCRATCH_1);
-  private long strengthReductionCandidates;
-  private long strengthReductionsApplied;
-  private long strengthReductionElapsedNanos;
 
   public RISCVAsmEmitter(RISCVTarget target, RISCVFrameLowering frameLowering) {
-    this(target, frameLowering, true, false);
-  }
-
-  public RISCVAsmEmitter(
-      RISCVTarget target,
-      RISCVFrameLowering frameLowering,
-      boolean strengthReductionEnabled) {
-    this(target, frameLowering, strengthReductionEnabled, false);
-  }
-
-  public RISCVAsmEmitter(
-      RISCVTarget target,
-      RISCVFrameLowering frameLowering,
-      boolean strengthReductionEnabled,
-      boolean strengthReductionObservationEnabled) {
     this.target = target;
     this.frameLowering = frameLowering;
-    this.strengthReductionEnabled = strengthReductionEnabled;
-    this.strengthReductionObservationEnabled = strengthReductionObservationEnabled;
-  }
-
-  /** Observation for the optional constant-arithmetic selector over one emitted module. */
-  public record StrengthReductionObservation(
-      long candidates, long applied, long elapsedNanos) {}
-
-  public StrengthReductionObservation strengthReductionObservation() {
-    return new StrengthReductionObservation(
-        strengthReductionCandidates, strengthReductionsApplied, strengthReductionElapsedNanos);
   }
 
   void emitInstruction(
@@ -332,21 +301,7 @@ public final class RISCVAsmEmitter {
     String dst = destReg(instr, allocation);
     if (rhs instanceof ImmOperand immediate) {
       long value = immediate.getValue();
-      if (strengthReductionEnabled
-          && (opcode == MachineOpcode.MUL
-              || opcode == MachineOpcode.DIV
-              || opcode == MachineOpcode.REM)) {
-        long startedNanos = strengthReductionObservationEnabled ? System.nanoTime() : 0;
-        boolean reduced = strengthReduction.emit(opcode, value, lhsReg, dst, wordResult, lines);
-        if (strengthReductionObservationEnabled) {
-          strengthReductionCandidates++;
-          strengthReductionElapsedNanos += Math.max(0L, System.nanoTime() - startedNanos);
-          if (reduced) strengthReductionsApplied++;
-        }
-        if (reduced) {
-          return;
-        }
-      }
+      if (strengthReduction.emit(opcode, value, lhsReg, dst, wordResult, lines)) return;
       String immediateOpcode = switch (opcode) {
         case ADD -> fitsSigned12(value) ? wordResult ? "addiw" : "addi" : null;
         case SUB -> value != Long.MIN_VALUE && fitsSigned12(-value)

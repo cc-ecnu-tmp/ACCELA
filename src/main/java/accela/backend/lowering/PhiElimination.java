@@ -17,15 +17,13 @@ import java.util.Map;
 public final class PhiElimination {
   private int edgeSplitCounter = 0;
 
-  public boolean run(MachineFunction function) {
-    boolean changed = false;
+  public void run(MachineFunction function) {
     for (MachineBasicBlock block : new ArrayList<>(function.getBlocks())) {
       List<MachineInstr> phis = new ArrayList<>();
       for (MachineInstr instr : block.getInstructions()) {
         if (instr.getOpcode() == MachineOpcode.PHI) phis.add(instr);
       }
       if (phis.isEmpty()) continue;
-      changed = true;
 
       Map<MachineBasicBlock, List<CopyOperation>> edgeCopies = new LinkedHashMap<>();
       for (MachineInstr phi : phis) {
@@ -44,7 +42,6 @@ public final class PhiElimination {
 
       block.getInstructions().removeIf(instr -> instr.getOpcode() == MachineOpcode.PHI);
     }
-    return changed;
   }
 
   private MachineBasicBlock ensureEdgeInsertionBlock(

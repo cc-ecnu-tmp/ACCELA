@@ -58,42 +58,34 @@ public final class MachineFrameInfo {
     return frameSize;
   }
 
-  public boolean addCalleeSavedRegister(PhysicalRegister register) {
-    if (calleeSavedRegisterSaves.containsKey(register.getName())) return false;
-    calleeSavedRegisterSaves.put(register.getName(), new CalleeSavedRegisterSave(register));
-    return true;
+  public void addCalleeSavedRegister(PhysicalRegister register) {
+    calleeSavedRegisterSaves.computeIfAbsent(
+        register.getName(), ignored -> new CalleeSavedRegisterSave(register));
   }
 
   public List<CalleeSavedRegisterSave> getCalleeSavedRegisterSaves() {
     return Collections.unmodifiableList(new ArrayList<>(calleeSavedRegisterSaves.values()));
   }
 
-  public boolean finalizeLayout(RISCVTarget target) {
-    boolean changed = false;
+  public void finalizeLayout(RISCVTarget target) {
     int offset = outgoingArgBytes;
     for (StackSlot slot : slots) {
       offset = target.alignTo(offset, slot.getAlign());
-      changed |= slot.getOffset() != offset;
       slot.setOffset(offset);
       offset += slot.getSize();
     }
     if (hasCalls) {
       offset = target.alignTo(offset, target.stackAlignOf(MachineType.PTR));
-      changed |= saveRaOffset != offset;
       saveRaOffset = offset;
       offset += target.stackSizeOf(MachineType.PTR);
     }
     for (CalleeSavedRegisterSave save : calleeSavedRegisterSaves.values()) {
       MachineType saveType = save.getRegister().getType().isFloat() ? MachineType.I64 : MachineType.PTR;
       offset = target.alignTo(offset, target.stackAlignOf(saveType));
-      changed |= save.getOffset() != offset;
       save.setOffset(offset);
       offset += target.stackSizeOf(saveType);
     }
-    int finalizedFrameSize = target.alignTo(offset, 16);
-    changed |= frameSize != finalizedFrameSize;
-    frameSize = finalizedFrameSize;
-    return changed;
+    frameSize = target.alignTo(offset, 16);
   }
 
   public static final class CalleeSavedRegisterSave {

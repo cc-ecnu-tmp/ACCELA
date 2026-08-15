@@ -16,7 +16,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -99,48 +98,6 @@ public final class ScalarEvolutionAnalysis
       return getMulExpr(getConstant(operand.getType(), NEGATIVE_ONE), operand);
     }
 
-    /**
-     * Returns the additive delta when {@code backedgeValue} is syntactically {@code phi + delta}.
-     *
-     * <p>This is the same scalar-evolution decomposition used to recognize ordinary affine
-     * add-recurrences. The returned delta is not required to be loop invariant, allowing clients
-     * to ask the shared SCEV implementation whether it is an iteration polynomial. Multiplicative
-     * or subtractive occurrences of {@code phi}, multiple occurrences, and cyclic expression
-     * graphs are rejected.
-     */
-    public Optional<SCEV> getAdditiveRecurrenceDelta(
-        Instruction phi, Value backedgeValue, LoopAnalysis.Loop loop) {
-      if (phi == null || backedgeValue == null || loop == null) {
-        throw new NullPointerException();
-      }
-      if (phi.getOpcode() != Instruction.Opcode.PHI
-          || phi.getParent() != loop.header()
-          || phi.getType() != backedgeValue.getType()) {
-        return Optional.empty();
-      }
-      return Optional.ofNullable(
-          extractAdditiveDelta(backedgeValue, phi, loop, new LinkedHashSet<>()));
-    }
-
-    /**
-     * Projects an i32 SCEV onto a degree-at-most-two polynomial in {@code loop}'s zero-based
-     * iteration number.
-     *
-     * <p>The operation is exact in the i32 residue ring: addition uses coefficient-wise addition
-     * and multiplication uses convolution. Expressions with a non-invariant coefficient, an
-     * unsupported operation, or a nonzero term above degree two are rejected rather than
-     * truncated.
-     */
-    public Optional<SCEV.IterationPolynomial> getIntegerIterationPolynomial(
-        SCEV expression, LoopAnalysis.Loop loop) {
-      Objects.requireNonNull(expression, "expression");
-      Objects.requireNonNull(loop, "loop");
-      if (expression.getType() != Type.INT) return Optional.empty();
-      List<SCEV> coefficients = projectIntegerPolynomial(expression, loop);
-      if (coefficients == null) return Optional.empty();
-      return Optional.of(intern(new SCEV.IterationPolynomial(Type.INT, coefficients, loop)));
-    }
-
     /** Whether the expression remains fixed during one execution of {@code loop}. */
     public boolean isLoopInvariant(SCEV expression, LoopAnalysis.Loop loop) {
       if (expression instanceof SCEV.Constant) return true;
@@ -166,10 +123,6 @@ public final class ScalarEvolutionAnalysis
       if (expression instanceof SCEV.PointerAdd pointerAdd) {
         return isLoopInvariant(pointerAdd.base(), loop)
             && isLoopInvariant(pointerAdd.byteOffset(), loop);
-      }
-      if (expression instanceof SCEV.IterationPolynomial polynomial) {
-        return polynomial.loop() != loop
-            && !loop.blocks().containsAll(polynomial.loop().blocks());
       }
       SCEV.AddRec recurrence = (SCEV.AddRec) expression;
       return recurrence.loop() != loop
@@ -290,7 +243,7 @@ public final class ScalarEvolutionAnalysis
 
       SCEV commonStep = null;
       for (Value backedgeValue : backedgeValues) {
-        SCEV step = getAdditiveRecurrenceDelta(phi, backedgeValue, loop).orElse(null);
+        SCEV step = extractAffineStep(backedgeValue, phi, loop, new LinkedHashSet<>());
         if (step == null || !isLoopInvariant(step, loop)) return getUnknown(phi);
         if (commonStep != null && !commonStep.equals(step)) return getUnknown(phi);
         commonStep = step;
@@ -300,7 +253,8 @@ public final class ScalarEvolutionAnalysis
       return getAddRec(phi.getType(), start, commonStep, loop);
     }
 
-    private SCEV extractAdditiveDelta(
+    /** Returns the invariant delta when value is syntactically phi + delta. */
+    private SCEV extractAffineStep(
         Value value,
         Instruction phi,
         LoopAnalysis.Loop loop,
@@ -308,113 +262,24 @@ public final class ScalarEvolutionAnalysis
       if (value == phi) return getConstant(phi.getType(), ZERO);
       if (!visited.add(value) || !(value instanceof Instruction instruction)) return null;
       if (instruction.getOpcode() == Instruction.Opcode.ADD) {
-        boolean leftDepends = dependsOnPhi(instruction.getOperand(0), phi, new LinkedHashSet<>());
-        boolean rightDepends = dependsOnPhi(instruction.getOperand(1), phi, new LinkedHashSet<>());
-        if (leftDepends == rightDepends) return null;
-        if (leftDepends) {
-          SCEV left = extractAdditiveDelta(
-              instruction.getOperand(0), phi, loop, new LinkedHashSet<>(visited));
-          if (left == null) return null;
+        SCEV left = extractAffineStep(instruction.getOperand(0), phi, loop, visited);
+        if (left != null) {
           SCEV other = getSCEV(instruction.getOperand(1));
-          return getAddExpr(left, other);
+          return isLoopInvariant(other, loop) ? getAddExpr(left, other) : null;
         }
-        SCEV right = extractAdditiveDelta(
-            instruction.getOperand(1), phi, loop, new LinkedHashSet<>(visited));
-        if (right == null) return null;
-        return getAddExpr(right, getSCEV(instruction.getOperand(0)));
+        SCEV right = extractAffineStep(instruction.getOperand(1), phi, loop, visited);
+        if (right != null) {
+          SCEV other = getSCEV(instruction.getOperand(0));
+          return isLoopInvariant(other, loop) ? getAddExpr(right, other) : null;
+        }
       } else if (instruction.getOpcode() == Instruction.Opcode.SUB) {
-        if (!dependsOnPhi(instruction.getOperand(0), phi, new LinkedHashSet<>())
-            || dependsOnPhi(instruction.getOperand(1), phi, new LinkedHashSet<>())) return null;
-        SCEV left = extractAdditiveDelta(
-            instruction.getOperand(0), phi, loop, new LinkedHashSet<>(visited));
-        if (left == null) return null;
-        return getAddExpr(left, getNegative(getSCEV(instruction.getOperand(1))));
+        SCEV left = extractAffineStep(instruction.getOperand(0), phi, loop, visited);
+        if (left != null) {
+          SCEV other = getSCEV(instruction.getOperand(1));
+          return isLoopInvariant(other, loop) ? getAddExpr(left, getNegative(other)) : null;
+        }
       }
       return null;
-    }
-
-    private static boolean dependsOnPhi(
-        Value value, Instruction phi, Set<Value> visited) {
-      if (value == phi) return true;
-      if (!(value instanceof Instruction instruction) || !visited.add(value)) return false;
-      if (instruction.getOpcode() == Instruction.Opcode.PHI) return false;
-      for (int index = 0; index < instruction.getNumOperands(); index++) {
-        if (dependsOnPhi(instruction.getOperand(index), phi, visited)) return true;
-      }
-      return false;
-    }
-
-    private List<SCEV> projectIntegerPolynomial(
-        SCEV expression, LoopAnalysis.Loop loop) {
-      if (expression.getType() != Type.INT) return null;
-      if (expression instanceof SCEV.AddRec recurrence && recurrence.loop() == loop) {
-        if (!isLoopInvariant(recurrence.start(), loop)
-            || !isLoopInvariant(recurrence.step(), loop)) return null;
-        return trimPolynomial(List.of(recurrence.start(), recurrence.step()));
-      }
-      if (expression instanceof SCEV.IterationPolynomial polynomial) {
-        if (polynomial.loop() != loop
-            || polynomial.coefficients().stream()
-                .anyMatch(coefficient -> !isLoopInvariant(coefficient, loop))) return null;
-        return polynomial.coefficients();
-      }
-      if (isLoopInvariant(expression, loop)) return List.of(expression);
-      if (expression instanceof SCEV.Add add) {
-        List<SCEV> result = List.of(getConstant(Type.INT, ZERO));
-        for (SCEV operand : add.operands()) {
-          List<SCEV> projected = projectIntegerPolynomial(operand, loop);
-          if (projected == null) return null;
-          result = addPolynomials(result, projected);
-        }
-        return trimPolynomial(result);
-      }
-      if (expression instanceof SCEV.Multiply multiply) {
-        List<SCEV> result = List.of(getConstant(Type.INT, ONE));
-        for (SCEV operand : multiply.operands()) {
-          List<SCEV> projected = projectIntegerPolynomial(operand, loop);
-          if (projected == null) return null;
-          result = multiplyPolynomials(result, projected);
-          if (result == null) return null;
-        }
-        return trimPolynomial(result);
-      }
-      return null;
-    }
-
-    private List<SCEV> addPolynomials(List<SCEV> left, List<SCEV> right) {
-      int size = Math.max(left.size(), right.size());
-      List<SCEV> result = new ArrayList<>(size);
-      for (int index = 0; index < size; index++) {
-        SCEV leftCoefficient = index < left.size()
-            ? left.get(index) : getConstant(Type.INT, ZERO);
-        SCEV rightCoefficient = index < right.size()
-            ? right.get(index) : getConstant(Type.INT, ZERO);
-        result.add(getAddExpr(leftCoefficient, rightCoefficient));
-      }
-      return result;
-    }
-
-    private List<SCEV> multiplyPolynomials(List<SCEV> left, List<SCEV> right) {
-      SCEV zero = getConstant(Type.INT, ZERO);
-      List<SCEV> result = new ArrayList<>(List.of(zero, zero, zero));
-      for (int leftIndex = 0; leftIndex < left.size(); leftIndex++) {
-        for (int rightIndex = 0; rightIndex < right.size(); rightIndex++) {
-          int degree = leftIndex + rightIndex;
-          SCEV product = getMulExpr(left.get(leftIndex), right.get(rightIndex));
-          if (degree > 2) {
-            if (!isZero(product)) return null;
-            continue;
-          }
-          result.set(degree, getAddExpr(result.get(degree), product));
-        }
-      }
-      return result;
-    }
-
-    private List<SCEV> trimPolynomial(List<SCEV> coefficients) {
-      int size = coefficients.size();
-      while (size > 1 && isZero(coefficients.get(size - 1))) size--;
-      return List.copyOf(coefficients.subList(0, size));
     }
 
     private SCEV getGEP(Instruction gep) {

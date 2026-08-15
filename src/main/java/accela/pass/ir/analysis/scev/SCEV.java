@@ -16,8 +16,7 @@ public sealed interface SCEV
         SCEV.ZeroExtend,
         SCEV.SignExtend,
         SCEV.PointerAdd,
-        SCEV.AddRec,
-        SCEV.IterationPolynomial {
+        SCEV.AddRec {
   Type getType();
 
   record Constant(Type type, BigInteger value) implements SCEV {
@@ -151,48 +150,6 @@ public sealed interface SCEV
     @Override
     public String toString() {
       return "{" + start + ",+," + step + "}<" + loop.header().getLabel() + ">";
-    }
-  }
-
-  /**
-   * An integer polynomial in one loop's zero-based iteration number.
-   *
-   * <p>Coefficients are stored in increasing-power order. This intentionally models only the
-   * degree-two domain needed by the shared scalar-evolution clients: constant, affine, and
-   * quadratic expressions. Every coefficient must be invariant in {@link #loop}; construction of
-   * the proof remains the responsibility of {@code ScalarEvolutionAnalysis}.
-   */
-  record IterationPolynomial(
-      Type type, List<SCEV> coefficients, LoopAnalysis.Loop loop) implements SCEV {
-    public IterationPolynomial {
-      if (type == null || coefficients == null || loop == null) {
-        throw new NullPointerException();
-      }
-      coefficients = List.copyOf(coefficients);
-      if (type != Type.INT) {
-        throw new IllegalArgumentException("iteration polynomial requires i32 type");
-      }
-      if (coefficients.isEmpty() || coefficients.size() > 3) {
-        throw new IllegalArgumentException(
-            "iteration polynomial requires one to three coefficients");
-      }
-      if (coefficients.stream().anyMatch(coefficient -> coefficient.getType() != type)) {
-        throw new IllegalArgumentException("iteration polynomial coefficient type mismatch");
-      }
-    }
-
-    @Override
-    public Type getType() {
-      return type;
-    }
-
-    public int degree() {
-      return coefficients.size() - 1;
-    }
-
-    @Override
-    public String toString() {
-      return "poly" + coefficients + "<" + loop.header().getLabel() + ">";
     }
   }
 

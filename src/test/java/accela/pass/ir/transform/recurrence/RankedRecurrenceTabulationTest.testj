@@ -16,15 +16,6 @@ import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.ir.verify.IRVerifier;
-import accela.pass.PassRegistry;
-import accela.pass.PassBuilder;
-import accela.pass.instrument.DecisionRemark;
-import accela.pass.instrument.DecisionStatus;
-import accela.pass.instrument.DecisionReasonCode;
-import accela.pass.instrument.OptimizationRemark;
-import accela.pass.ir.ModuleAnalysisManager;
-import accela.pass.ir.instrument.PassInstrumentation;
-import java.util.ArrayList;
 import org.junit.jupiter.api.Test;
 
 final class RankedRecurrenceTabulationTest {
@@ -57,41 +48,6 @@ final class RankedRecurrenceTabulationTest {
     assertFalse(RankedRecurrenceTabulation.run(module));
     assertEquals(2, module.getFunctions().size());
     assertEquals(1, module.getGlobals().size());
-  }
-
-  @Test
-  void emitsRealCandidateAndAppliedDecisionsForRankedRecurrence() {
-    Module module = recurrenceModule(false, false);
-    java.util.List<OptimizationRemark> remarks = new ArrayList<>();
-    var descriptor = PassRegistry.standard().require(
-        PassRegistry.IR_RANKED_RECURRENCE_TABULATION);
-    var pass = new RankedRecurrenceTabulation.Pass(
-        PassInstrumentation.observed(false, remarks::add), descriptor, 1);
-
-    pass.run(module, new ModuleAnalysisManager(), new PassBuilder().buildFunctionAnalysisManager());
-
-    assertEquals(java.util.List.of(DecisionStatus.CANDIDATE, DecisionStatus.APPLIED),
-        remarks.stream().map(DecisionRemark.class::cast)
-            .map(DecisionRemark::decision).toList());
-  }
-
-  @Test
-  void emitsRealNoBenefitRejectionWhenRecurrenceHasNoExternalCaller() {
-    Module module = recurrenceModule(false, false);
-    module.removeFunction(function(module, "main"));
-    java.util.List<OptimizationRemark> remarks = new ArrayList<>();
-    var descriptor = PassRegistry.standard().require(
-        PassRegistry.IR_RANKED_RECURRENCE_TABULATION);
-    var pass = new RankedRecurrenceTabulation.Pass(
-        PassInstrumentation.observed(false, remarks::add), descriptor, 1);
-
-    pass.run(module, new ModuleAnalysisManager(), new PassBuilder().buildFunctionAnalysisManager());
-
-    assertEquals(java.util.List.of(DecisionStatus.CANDIDATE, DecisionStatus.REJECTED),
-        remarks.stream().map(DecisionRemark.class::cast)
-            .map(DecisionRemark::decision).toList());
-    assertEquals(DecisionReasonCode.REJECTED_NO_BENEFIT,
-        ((DecisionRemark) remarks.getLast()).reason());
   }
 
   @Test

@@ -26,7 +26,6 @@ import accela.ir.Type;
 import accela.ir.Value;
 import java.util.IdentityHashMap;
 import java.util.Map;
-import java.util.Locale;
 
 public final class IRToMachineLowering {
   private final RISCVTarget target;
@@ -62,9 +61,7 @@ public final class IRToMachineLowering {
               inst,
               machineFunction.createVirtualRegister(
                   MachineType.fromIr(inst.getType()),
-                  inst.getName() != null
-                      ? inst.getName()
-                      : inst.getOpcode().name().toLowerCase(Locale.ROOT)));
+                  inst.getName() != null ? inst.getName() : inst.getOpcode().name().toLowerCase()));
         }
       }
     }

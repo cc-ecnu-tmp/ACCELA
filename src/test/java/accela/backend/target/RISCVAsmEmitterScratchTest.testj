@@ -130,54 +130,6 @@ final class RISCVAsmEmitterScratchTest {
             "  andi t1, t1, 1",
             "  subw t1, t1, a5"),
         emit(function, remainder, allocation));
-    assertEquals(
-        new RISCVAsmEmitter.StrengthReductionObservation(0, 0, 0),
-        emitter.strengthReductionObservation());
-  }
-
-  @Test
-  void benchmarkObservationCountsTheSameFullStrengthReduction() {
-    MachineFunction function = new MachineFunction("observed_remainder", MachineType.I32);
-    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
-    VirtualRegister destination = function.createVirtualRegister(MachineType.I32, "destination");
-    MachineInstr remainder = new MachineInstr(MachineOpcode.REM, destination);
-    remainder.addOperand(new VRegOperand(source));
-    remainder.addOperand(new ImmOperand(2));
-    remainder.setType(MachineType.I32);
-    AllocationResult allocation = allocation(source, "t0", MachineType.I32);
-    allocation.put(destination,
-        new RegisterLocation(new PhysicalRegister("t1", MachineType.I32)));
-    RISCVAsmEmitter observed =
-        new RISCVAsmEmitter(target, new RISCVFrameLowering(target), true, true);
-    List<String> lines = new ArrayList<>();
-
-    observed.emitInstruction(function, null, remainder, allocation, lines);
-
-    assertEquals(1, observed.strengthReductionObservation().candidates());
-    assertEquals(1, observed.strengthReductionObservation().applied());
-    assertTrue(observed.strengthReductionObservation().elapsedNanos() >= 0);
-  }
-
-  @Test
-  void emitsArchitecturalRemainderWhenStrengthReductionIsDisabled() {
-    MachineFunction function = new MachineFunction("remainder_disabled", MachineType.I32);
-    VirtualRegister source = function.createVirtualRegister(MachineType.I32, "source");
-    VirtualRegister destination = function.createVirtualRegister(MachineType.I32, "destination");
-    MachineInstr remainder = new MachineInstr(MachineOpcode.REM, destination);
-    remainder.addOperand(new VRegOperand(source));
-    remainder.addOperand(new ImmOperand(2));
-    remainder.setType(MachineType.I32);
-    AllocationResult allocation = allocation(source, "t0", MachineType.I32);
-    allocation.put(destination,
-        new RegisterLocation(new PhysicalRegister("t1", MachineType.I32)));
-    RISCVAsmEmitter disabled =
-        new RISCVAsmEmitter(target, new RISCVFrameLowering(target), false);
-    List<String> lines = new ArrayList<>();
-
-    disabled.emitInstruction(function, null, remainder, allocation, lines);
-
-    assertEquals(List.of("  li a7, 2", "  remw t1, t0, a7"), lines);
-    assertEquals(0, disabled.strengthReductionObservation().applied());
   }
 
   @Test
