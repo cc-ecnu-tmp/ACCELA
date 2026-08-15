@@ -15,6 +15,11 @@ import accela.pass.ir.verify.IRVerifier;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.Path;
+import accela.cost.DecisionTraceSink;
+import accela.cost.GeneratedTargetProfile;
+import accela.cost.IRCandidateScheduler;
+import accela.ir.IRSnapshot;
 
 public class Compiler {
   public static void main(String[] args) throws Exception {
@@ -22,8 +27,11 @@ public class Compiler {
     Node unit = parseSource(compileArgument.inputFilePath());
 
     if (compileArgument.outputFilePath() != null) {
-      String assembly = new BackendCompiler().compileToAssembly(buildOptimizedIR(unit));
-      try (PrintStream stream = new PrintStream(compileArgument.outputFilePath())) {
+      try (DecisionTraceSink trace = compileArgument.costTracePath() == null
+              ? DecisionTraceSink.noop()
+              : DecisionTraceSink.jsonl(Path.of(compileArgument.costTracePath()));
+          PrintStream stream = new PrintStream(compileArgument.outputFilePath())) {
+        String assembly = new BackendCompiler(trace).compileToAssembly(buildOptimizedIR(unit, trace));
         stream.print(assembly);
       }
     } else {
@@ -45,23 +53,30 @@ public class Compiler {
     return unit;
   }
 
-  private static accela.ir.Module buildOptimizedIR(Node unit) {
-    accela.ir.Module module = new AST2IR().convert(unit);
-    IRVerifier.verifyModule(module);
+  private static accela.ir.Module buildOptimizedIR(Node unit, DecisionTraceSink trace) {
+    accela.ir.Module source = new AST2IR().convert(unit);
+    IRVerifier.verifyModule(source);
+    accela.ir.Module candidateStaging = IRSnapshot.deepCopy(source);
+    accela.ir.Module productionFull = source;
+    runPipeline(productionFull, new PassBuilder());
+    runPipeline(candidateStaging, PassBuilder.forR1CandidateStaging());
+    return new IRCandidateScheduler(GeneratedTargetProfile.get(), trace)
+        .schedule(productionFull, candidateStaging);
+  }
 
-    PassBuilder passBuilder = new PassBuilder();
+  private static void runPipeline(accela.ir.Module module, PassBuilder passBuilder) {
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
     PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(false);
     ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline(instrumentation);
     irPipeline.run(module, mam, fam);
     IRVerifier.verifyModule(module);
-    return module;
   }
 
   static CompileArgument parseArguments(String[] args) {
     String inputFilePath = null;
     String outputFilePath = null;
+    String costTracePath = null;
 
     for (int i = 0; i < args.length; i++) {
       String arg = args[i];
@@ -74,6 +89,13 @@ public class Compiler {
             throw new IllegalArgumentException("`-o` requires an argument");
           }
           outputFilePath = args[++i];
+        } else if (arg.equals("--cost-trace")) {
+          if (i + 1 >= args.length) {
+            throw new IllegalArgumentException("`--cost-trace` requires an argument");
+          }
+          costTracePath = args[++i];
+        } else if (!arg.equals("-S") && !arg.equals("-O1")) {
+          throw new IllegalArgumentException("unknown option: " + arg);
         }
       } else {
         inputFilePath = arg;
@@ -83,8 +105,8 @@ public class Compiler {
     if (inputFilePath == null) {
       throw new IllegalArgumentException("no input file is provided");
     }
-    return new CompileArgument(inputFilePath, outputFilePath);
+    return new CompileArgument(inputFilePath, outputFilePath, costTracePath);
   }
 
-  record CompileArgument(String inputFilePath, String outputFilePath) {}
+  record CompileArgument(String inputFilePath, String outputFilePath, String costTracePath) {}
 }

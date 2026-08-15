@@ -1,0 +1,13 @@
+# LLVM 对标、统计与发布门禁
+
+正式比较必须在同一目标、ABI、运行时、输入和 BOOM 硬件上配对运行。赛事 LLVM 由组委会提供，是唯一正式 LLVM 基线。QEMU 指令数、静态模型和 Host smoke 只用于诊断。
+
+运行速度比定义为 `LLVM time / ACCELA time`；实验候选定义为 `FULL / (FULL + candidate)`。禁止用 `without.*` 或 Oracle-only 结果排名。每个正式配置至少五次冷 compiler 启动，禁用编译缓存复用。
+
+启动前检查 manifest、任务动态计数、输入消费、期望输出、静态数组/BSS 和预计超时。排除项必须记录原因。报告至少包含覆盖率、配对几何均值、按 case 配对 bootstrap 的 95% 置信区间、最差单例、代码尺寸、编译时间和峰值内存；编译时间与内存只报告，不设发布上限。
+
+R1 相对当前 ACCELA FULL 的 GM 95% 置信下界必须 `>= 1.00`，且任一正式样例 `>= 0.90`。R2 相对赛事 LLVM 的 GM 95% 置信下界必须 `> 1.00`，且任一正式样例 `>= 0.90`，才可宣称“超越 LLVM”。未通过时只能保留候选并报告真实差距。
+
+`python -m tools.benchmark validate-manifest MANIFEST.json` 严格检查 manifest 字段、相对路径 containment、输入/期望输出、静态存储声明、超时和排除原因。`python -m tools.benchmark report RESULTS.json REPORT.md` 要求每个纳入 case 至少五组冷启动、无缓存的配对运行，按 run 计算 `baseline/candidate`、按 case 取几何均值，再以固定随机种子进行 10,000 次 case-level bootstrap。结果同时报告覆盖率、最差单例、代码尺寸、编译时间和峰值内存。`qemu_proxy` 结果即使数值过门也会强制 `gate_passed:false`。
+
+12 个实验变换保持默认关闭。逐个完成合法性、`FULL + candidate`、组合及 BOOM 实测后，只有正确性全过、GM 正向且长尾满足门槛的候选才可注册进入 R2 Beam。基础设施完成、模型预测或局部样例收益都不是性能验收。

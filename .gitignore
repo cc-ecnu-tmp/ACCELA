@@ -44,3 +44,7 @@ bin/
 /.gradle-local
 /.claude
 /testsuite/perf
+__pycache__/
+*.py[cod]
+/build/targetlab/
+/targetlab-results/

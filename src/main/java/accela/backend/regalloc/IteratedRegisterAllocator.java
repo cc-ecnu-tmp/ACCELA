@@ -68,6 +68,58 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
     throw new IllegalStateException("register allocation did not converge after spill rewriting");
   }
 
+  @Override
+  public AllocationEstimate estimate(MachineFunction function, RISCVTarget target) {
+    LivenessAnalysis.Result liveness = LivenessAnalysis.analyze(function);
+    InterferenceGraphBuilder.Result built = InterferenceGraphBuilder.build(function, liveness);
+    FixedRegisterConstraints fixed = fixedRegisterConstraints(function, target);
+    SpillCostModel spillCosts = SpillCostAnalysis.analyze(function, built.graph());
+    AllocatorState state =
+        new AllocatorState(
+            built,
+            registers,
+            spillCosts,
+            liveAcrossCall(function, liveness, target),
+            fixed.hazards(),
+            fixed.affinities());
+    state.makeWorklist();
+    while (hasWork(state)) {
+      if (!state.simplifyWorklist.isEmpty()) state.simplify();
+      else if (!state.worklistMoves.isEmpty()) state.coalesce();
+      else if (!state.freezeWorklist.isEmpty()) state.freeze();
+      else state.selectSpill();
+    }
+    state.assignColors();
+
+    double spillWeight = 0.0;
+    for (VirtualRegister register : state.spilledNodes) {
+      spillWeight += spillCosts.cost(register, built.graph().degree(register));
+    }
+    int maxIntegerLive = 0;
+    int maxFloatLive = 0;
+    for (MachineBasicBlock block : function.getBlocks()) {
+      for (MachineInstr instruction : block.getInstructions()) {
+        int integers = 0;
+        int floats = 0;
+        Set<VirtualRegister> live = new HashSet<>(liveness.liveBefore(instruction));
+        live.addAll(liveness.liveAfter(instruction));
+        for (VirtualRegister register : live) {
+          if (register.getType().isFloat()) floats++;
+          else integers++;
+        }
+        maxIntegerLive = Math.max(maxIntegerLive, integers);
+        maxFloatLive = Math.max(maxFloatLive, floats);
+      }
+    }
+    return new AllocationEstimate(
+        state.spilledNodes.size(),
+        spillWeight,
+        maxIntegerLive,
+        maxFloatLive,
+        (int) state.color.values().stream().filter(registers::isCalleeSaved).distinct().count(),
+        state.constrainedMoves.size() + state.frozenMoves.size());
+  }
+
   private static boolean hasWork(AllocatorState state) {
     return !state.simplifyWorklist.isEmpty()
         || !state.worklistMoves.isEmpty()

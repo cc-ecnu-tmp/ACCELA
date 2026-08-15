@@ -7,12 +7,13 @@ source_file="${1:?usage: scripts/qemu-run.sh SOURCE.sy}"
 source_file="$(cd "$(dirname "$source_file")" && pwd)/$(basename "$source_file")"
 name="$(basename "$source_file" .sy)"
 compiler="${QEMU_COMPILER:-accela}"
-work="$root/build/qemu-run/$compiler/$name"
+work_root="${QEMU_WORK_ROOT:-$root/build/qemu-run}"
+work="$work_root/$compiler/$name"
 mkdir -p "$work"
 
-java_home="${ACCELA_JAVA_HOME:-/opt/homebrew/opt/openjdk@21}"
+java_home="${ACCELA_JAVA_HOME:-${JAVA_HOME:-/opt/homebrew/opt/openjdk@21}}"
 java="$java_home/bin/java"
-classes="$root/build/classes/java/main"
+classes="${ACCELA_CLASSES:-$root/build/classes/java/main}"
 if [[ "$compiler" == accela && ! -d "$classes" ]]; then
   JAVA_HOME="$java_home" bash "$root/gradlew" -p "$root" classes --no-daemon
 fi
@@ -63,12 +64,27 @@ if [[ "$profile_mode" != 0 ]]; then
   fi
   profile_source=profile.c
   if [[ "$profile_mode" != 1 ]]; then profile_source="$profile_mode.c"; fi
-  profile="$work/profile.dylib"
+  case "$(uname -s)" in
+    Darwin)
+      profile="$work/profile.dylib"
+      plugin_link=(-dynamiclib -undefined dynamic_lookup)
+      plugin_include="${QEMU_PLUGIN_INCLUDE:-/opt/homebrew/include}"
+      ;;
+    Linux)
+      profile="$work/profile.so"
+      plugin_link=(-shared -fPIC)
+      plugin_include="${QEMU_PLUGIN_INCLUDE:-/usr/include}"
+      ;;
+    *)
+      printf 'unsupported QEMU plugin host: %s\n' "$(uname -s)" >&2
+      exit 2
+      ;;
+  esac
   profile_log="$work/profile.log"
   # shellcheck disable=SC2046
-  cc -dynamiclib -undefined dynamic_lookup -fvisibility=hidden \
+  cc "${plugin_link[@]}" -fvisibility=hidden \
     $(pkg-config --cflags glib-2.0) \
-    -I"${QEMU_PLUGIN_INCLUDE:-/opt/homebrew/include}" \
+    -I"$plugin_include" \
     "$root/tools/qemu/$profile_source" -o "$profile"
   qemu+=(-plugin "$profile" -d plugin -D "$profile_log")
 fi

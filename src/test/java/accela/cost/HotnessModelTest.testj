@@ -1,0 +1,28 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+
+final class HotnessModelTest {
+  private final HotnessModel model = HotnessModel.DEFAULT;
+
+  @Test
+  void exactAndFiniteRangesCheckEveryExtremum() {
+    assertTrue(model.robustlyPrefer(HotnessModel.TripRange.exact(8),
+        new HotnessModel.AffineCost(0, 2), new HotnessModel.AffineCost(7, 1)));
+    assertFalse(model.robustlyPrefer(HotnessModel.TripRange.finite(1, 8),
+        new HotnessModel.AffineCost(0, 2), new HotnessModel.AffineCost(7, 1)));
+  }
+
+  @Test
+  void unboundedRangeRejectsEventualRegressionAndRequiresStrictBenefit() {
+    assertFalse(model.robustlyPrefer(HotnessModel.TripRange.unknown(),
+        new HotnessModel.AffineCost(1, 1), new HotnessModel.AffineCost(0, 2)));
+    assertTrue(model.robustlyPrefer(HotnessModel.TripRange.unknown(),
+        new HotnessModel.AffineCost(1, 2), new HotnessModel.AffineCost(1, 1)));
+    assertFalse(model.robustlyPrefer(HotnessModel.TripRange.unknown(),
+        new HotnessModel.AffineCost(1, 1), new HotnessModel.AffineCost(1, 1)));
+  }
+}
