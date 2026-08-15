@@ -424,7 +424,8 @@ public final class SimplifyCFG {
       return true;
     }
     if (first instanceof Constant && second instanceof Constant) {
-      return first.getType() == second.getType() && String.valueOf(first.getName()).equals(second.getName());
+      return first.getType().equals(second.getType())
+          && String.valueOf(first.getName()).equals(second.getName());
     }
     return false;
   }

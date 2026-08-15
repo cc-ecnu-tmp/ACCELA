@@ -12,9 +12,37 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class SimplifyCFGBooleanPhiTest {
+  @Test
+  void mergesStructurallyEqualVectorPhiInputs() {
+    Function function = new Function("vector_diamond", Type.INT);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    new IRBuilder(left).createBr(merge);
+    new IRBuilder(right).createBr(merge);
+    Type int2 = Type.vector(Type.INT, 2);
+    Instruction phi = new IRBuilder(merge).createPhi(int2);
+    phi.addOperand(Constant.vector(
+        int2, List.of(Constant.intConst(1), Constant.intConst(2))));
+    phi.addOperand(left);
+    phi.addOperand(Constant.vector(
+        Type.vector(Type.INT, 2), List.of(Constant.intConst(1), Constant.intConst(2))));
+    phi.addOperand(right);
+    IRBuilder mergeBuilder = new IRBuilder(merge);
+    mergeBuilder.createRet(
+        mergeBuilder.createExtractElement(phi, Constant.intConst(0)));
+
+    assertTrue(SimplifyCFG.runOnFunction(function));
+    assertEquals(0, count(function, Instruction.Opcode.PHI));
+  }
+
   @Test
   void foldsSinglePredecessorVectorPhis() {
     Function function = new Function("vector_phi", Type.INT);
