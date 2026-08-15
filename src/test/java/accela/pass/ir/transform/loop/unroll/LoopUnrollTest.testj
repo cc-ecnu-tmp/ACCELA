@@ -1,5 +1,7 @@
 package accela.pass.ir.transform.loop.unroll;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.BasicBlock;
@@ -17,6 +19,55 @@ import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
 final class LoopUnrollTest {
+  @Test
+  void clonesVectorOperationsIntoEveryUnrolledIteration() {
+    Function function = new Function("vector_unroll", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    Instruction index = Instruction.createPhi(Type.INT);
+    Instruction sum = Instruction.createPhi(Type.INT);
+    header.addInstructionToFront(index);
+    header.addInstructionToFront(sum);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    sum.addOperand(Constant.intConst(0));
+    sum.addOperand(entry);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", index, Constant.intConst(3)), body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction vector = bodyBuilder.createSplat(int4, index);
+    Instruction lane = bodyBuilder.createExtractElement(vector, Constant.intConst(0));
+    Instruction nextSum = bodyBuilder.createAdd(sum, lane);
+    Instruction nextIndex = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(nextIndex);
+    index.addOperand(body);
+    sum.addOperand(nextSum);
+    sum.addOperand(body);
+    new IRBuilder(exit).createRet(sum);
+
+    assertTrue(LoopUnroll.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(0, function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.SPLAT)
+        .count());
+    Instruction ret = function.getBlocks().stream()
+        .map(BasicBlock::getTerminator)
+        .filter(instruction -> instruction != null
+            && instruction.getOpcode() == Instruction.Opcode.RET)
+        .findFirst()
+        .orElseThrow();
+    assertEquals(3, assertInstanceOf(Constant.Int.class, ret.getOperand(0)).value);
+  }
+
   @Test
   void fullyUnrollsSmallReduction() {
     Function function = new Function("sum", Type.INT);
