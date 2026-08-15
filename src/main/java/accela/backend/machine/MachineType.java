@@ -45,8 +45,11 @@ public enum MachineType {
         return VOID;
       case ARRAY:
         return PTR;
+      case VECTOR:
+        throw new IllegalArgumentException(
+            "vector IR must be scalarized before machine type selection: " + type);
       default:
-        return I32;
+        throw new IllegalArgumentException("unsupported IR type: " + type);
     }
   }
 }

@@ -69,6 +69,7 @@ public final class RISCVTarget {
       case I64:
         return 8;
       case ARRAY:
+      case VECTOR:
         return type.size * sizeOfIrType(type.innerType);
       case VOID:
       default:
@@ -78,7 +79,7 @@ public final class RISCVTarget {
 
   public int alignOfIrType(Type type) {
     if (type == null) return 1;
-    if (type.dataType == Type.DataType.ARRAY) {
+    if (type.dataType == Type.DataType.ARRAY || type.dataType == Type.DataType.VECTOR) {
       return Math.max(stackAlignOf(MachineType.PTR), alignOfIrType(type.innerType));
     }
     return stackAlignOf(MachineType.fromIr(type));
