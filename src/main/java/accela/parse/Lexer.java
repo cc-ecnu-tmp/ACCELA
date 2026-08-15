@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Locale;
 
 /**
  * Hand-written lexer for the SysY-like frontend.
@@ -66,7 +65,7 @@ public class Lexer {
   static {
     for (int i = 0; i <= T.FLOAT.ordinal(); i++) {
       T t = T.values()[i];
-      KW.put(t.name().toLowerCase(Locale.ROOT), t);
+      KW.put(t.name().toLowerCase(), t);
     }
   }
 

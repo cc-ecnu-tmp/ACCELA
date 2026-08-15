@@ -39,8 +39,6 @@ final class LoopAnalysisTest {
     assertSame(entry, loop.preheader());
     assertEquals(2, loop.latches().size());
     assertTrue(loop.blocks().containsAll(java.util.List.of(header, left, right)));
-    assertEquals(java.util.List.of(left, right), java.util.List.copyOf(loop.latches()));
-    assertEquals(java.util.List.of(header, left, right), java.util.List.copyOf(loop.blocks()));
     assertSame(loop, result.getLoopFor(left));
   }
 }

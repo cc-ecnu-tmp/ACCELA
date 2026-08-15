@@ -1,7 +1,5 @@
 package accela.ast;
 
-import java.util.Locale;
-
 /**
  * Frontend type model used by the parser, semantic analysis, AST dumper, and interpreter.
  *
@@ -94,7 +92,7 @@ public final class Ty {
       for (int d : dims) sb.append('[').append(d).append(']');
       return sb.toString();
     }
-    return kind.name().toLowerCase(Locale.ROOT);
+    return kind.name().toLowerCase();
   }
 
   @Override

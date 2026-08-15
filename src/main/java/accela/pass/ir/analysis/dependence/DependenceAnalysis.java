@@ -16,12 +16,6 @@ import java.util.List;
  * and therefore cannot justify a loop transformation.
  */
 public final class DependenceAnalysis {
-  /** Exact outcome of the cross-loop memory proof required by sequential loop fusion. */
-  public enum FusionSafety {
-    SAFE,
-    UNKNOWN_ALIAS_OR_MODREF,
-    ORDER_VIOLATION
-  }
   public enum Direction {
     LESS,
     EQUAL,
@@ -182,86 +176,6 @@ public final class DependenceAnalysis {
     return new Result(inductionValues, accesses, dependences, unknownMemory);
   }
 
-  /**
-   * Proves that executing {@code first(i)} immediately before {@code second(i)} preserves the
-   * memory order of two formerly sequential, identical, positive unit-step loops.
-   *
-   * <p>Read/read pairs are irrelevant. Distinct proven objects are disjoint. Every other
-   * potentially conflicting pair must have analyzable affine addresses, and fusion is rejected if
-   * a later first-loop iteration can alias an earlier second-loop iteration.
-   */
-  public static FusionSafety classifySequentialFusion(
-      Value firstInduction,
-      List<BasicBlock> firstBlocks,
-      Value secondInduction,
-      List<BasicBlock> secondBlocks) {
-    List<Value> inductions = List.of(firstInduction, secondInduction);
-    AccessCollection first = collectAccesses(inductions, firstBlocks);
-    AccessCollection second = collectAccesses(inductions, secondBlocks);
-    if (first.unknownMemory() || second.unknownMemory()) {
-      return FusionSafety.UNKNOWN_ALIAS_OR_MODREF;
-    }
-    for (MemoryAccess left : first.accesses()) {
-      for (MemoryAccess right : second.accesses()) {
-        if (!conflicts(left, right)) continue;
-        if (left.formula() == null
-            || right.formula() == null
-            || left.formula().root() != right.formula().root()) {
-          return FusionSafety.UNKNOWN_ALIAS_OR_MODREF;
-        }
-        AffineAccess.FusionDistance distance = left.formula().fusionDistanceTo(
-            right.formula(), firstInduction, secondInduction);
-        if (distance.relation() == AffineAccess.Relation.DISJOINT) continue;
-        if (distance.relation() == AffineAccess.Relation.UNKNOWN) {
-          return FusionSafety.UNKNOWN_ALIAS_OR_MODREF;
-        }
-        if (distance.firstMinusSecond() == null || distance.firstMinusSecond() > 0) {
-          return FusionSafety.ORDER_VIOLATION;
-        }
-      }
-    }
-    return FusionSafety.SAFE;
-  }
-
-  /** Proves that two affine pointers name the same location at the same logical iteration. */
-  public static boolean isSameIterationAddress(
-      Value firstPointer,
-      Value firstInduction,
-      Value secondPointer,
-      Value secondInduction) {
-    if (!PointerProvenance.mayAlias(firstPointer, secondPointer)) return false;
-    List<Value> inductions = List.of(firstInduction, secondInduction);
-    AffineAccess first = AffineAccess.match(firstPointer, inductions);
-    AffineAccess second = AffineAccess.match(secondPointer, inductions);
-    if (first == null || second == null || first.root() != second.root()) return false;
-    AffineAccess.FusionDistance distance =
-        first.fusionDistanceTo(second, firstInduction, secondInduction);
-    return distance.relation() == AffineAccess.Relation.DEPENDENT
-        && distance.firstMinusSecond() != null
-        && distance.firstMinusSecond() == 0;
-  }
-
-  private static AccessCollection collectAccesses(
-      List<Value> inductionValues, List<BasicBlock> blocks) {
-    List<MemoryAccess> accesses = new ArrayList<>();
-    boolean unknownMemory = false;
-    for (BasicBlock block : blocks) {
-      for (Instruction instruction : block.getInstructions()) {
-        Value pointer = memoryPointer(instruction);
-        if (pointer != null) {
-          accesses.add(new MemoryAccess(
-              instruction,
-              pointer,
-              instruction.getOpcode() == Instruction.Opcode.STORE,
-              AffineAccess.match(pointer, inductionValues)));
-        } else if (instruction.getOpcode() == Instruction.Opcode.CALL) {
-          unknownMemory = true;
-        }
-      }
-    }
-    return new AccessCollection(accesses, unknownMemory);
-  }
-
   private static Dependence dependence(
       MemoryAccess source, MemoryAccess sink, int loopCount) {
     if (source.formula() == null
@@ -327,10 +241,4 @@ public final class DependenceAnalysis {
 
   private record MemoryAccess(
       Instruction instruction, Value pointer, boolean write, AffineAccess formula) {}
-
-  private record AccessCollection(List<MemoryAccess> accesses, boolean unknownMemory) {
-    AccessCollection {
-      accesses = List.copyOf(accesses);
-    }
-  }
 }

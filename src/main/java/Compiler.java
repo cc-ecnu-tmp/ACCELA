@@ -9,6 +9,7 @@ import accela.pass.PassBuilder;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
+import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.verify.IRVerifier;
 
 import java.io.PrintStream;
@@ -51,7 +52,8 @@ public class Compiler {
     PassBuilder passBuilder = new PassBuilder();
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
-    ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline();
+    PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(false);
+    ModulePassManager irPipeline = passBuilder.buildIRO0Pipeline(instrumentation);
     irPipeline.run(module, mam, fam);
     IRVerifier.verifyModule(module);
     return module;
@@ -60,58 +62,26 @@ public class Compiler {
   static CompileArgument parseArguments(String[] args) {
     String inputFilePath = null;
     String outputFilePath = null;
-    boolean assemblyRequested = false;
-    boolean optimizationRequested = false;
-    boolean outputSpecified = false;
 
     for (int i = 0; i < args.length; i++) {
       String arg = args[i];
       if (arg.isEmpty()) {
-        throw new IllegalArgumentException("arguments must not be empty");
+        continue;
       }
       if (arg.charAt(0) == '-') {
-        switch (arg) {
-          case "-S" -> {
-            if (assemblyRequested) {
-              throw new IllegalArgumentException("duplicate option '-S'");
-            }
-            assemblyRequested = true;
+        if (arg.equals("-o")) {
+          if (i + 1 >= args.length) {
+            throw new IllegalArgumentException("`-o` requires an argument");
           }
-          case "-O1" -> {
-            if (optimizationRequested) {
-              throw new IllegalArgumentException("duplicate option '-O1'");
-            }
-            optimizationRequested = true;
-          }
-          case "-o" -> {
-            if (outputSpecified) {
-              throw new IllegalArgumentException("duplicate option '-o'");
-            }
-            if (i + 1 >= args.length || args[i + 1].isEmpty()
-                || args[i + 1].charAt(0) == '-') {
-              throw new IllegalArgumentException("`-o` requires an argument");
-            }
-            outputSpecified = true;
-            outputFilePath = args[++i];
-          }
-          default -> throw new IllegalArgumentException("unknown option '" + arg + "'");
+          outputFilePath = args[++i];
         }
       } else {
-        if (inputFilePath != null) {
-          throw new IllegalArgumentException("multiple input files are not supported");
-        }
         inputFilePath = arg;
       }
     }
 
     if (inputFilePath == null) {
       throw new IllegalArgumentException("no input file is provided");
-    }
-    boolean anyAssemblyOption = assemblyRequested || optimizationRequested || outputSpecified;
-    boolean completeAssemblyMode = assemblyRequested && optimizationRequested && outputSpecified;
-    if (anyAssemblyOption && !completeAssemblyMode) {
-      throw new IllegalArgumentException(
-          "assembly mode requires exactly one each of '-S', '-o OUTPUT', and '-O1'");
     }
     return new CompileArgument(inputFilePath, outputFilePath);
   }

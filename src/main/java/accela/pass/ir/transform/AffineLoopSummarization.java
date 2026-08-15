@@ -8,14 +8,9 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
-import accela.pass.PassDescriptor;
-import accela.pass.PassRegistry;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import accela.pass.ir.analysis.LoopAnalysis;
-import accela.pass.ir.instrument.PassInstrumentation;
-import accela.pass.instrument.DecisionReasonCode;
-import accela.pass.instrument.PassDecisionEmitter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -26,26 +21,12 @@ public final class AffineLoopSummarization {
   private AffineLoopSummarization() {}
 
   public static boolean run(Function function, FunctionAnalysisManager fam) {
-    return run(function, fam, null, null, 0);
-  }
-
-  private static boolean run(
-      Function function,
-      FunctionAnalysisManager fam,
-      PassInstrumentation instrumentation,
-      PassDescriptor descriptor,
-      int occurrence) {
     boolean changed = false;
     for (LoopAnalysis.Loop loop :
         new ArrayList<>(fam.getResult(LoopAnalysis.class, function).loops())) {
       Candidate candidate = Candidate.match(loop);
       if (candidate == null) continue;
-      PassDecisionEmitter decisions = instrumentation == null ? null
-          : instrumentation.decisionEmitter(
-              descriptor, occurrence, "function", "@" + function.getName());
-      if (decisions != null) decisions.candidate(DecisionReasonCode.CANDIDATE_MATCHED);
       apply(function, candidate);
-      if (decisions != null) decisions.applied(DecisionReasonCode.APPLIED_CANONICALIZATION);
       changed = true;
     }
     return changed;
@@ -145,42 +126,9 @@ public final class AffineLoopSummarization {
   }
 
   public static final class Pass implements FunctionPass {
-    private final PassInstrumentation instrumentation;
-    private final PassDescriptor descriptor;
-    private final int occurrence;
-
-    /** Constructs the production pass without benchmark decision observation. */
-    public Pass() {
-      this.instrumentation = null;
-      this.descriptor = null;
-      this.occurrence = 0;
-    }
-
-    public Pass(
-        PassInstrumentation instrumentation, PassDescriptor descriptor, int occurrence) {
-      this.instrumentation = java.util.Objects.requireNonNull(instrumentation, "instrumentation");
-      if (!instrumentation.isEnabled()) {
-        throw new IllegalArgumentException(
-            "instrumented affine-loop-summarization pass requires enabled instrumentation");
-      }
-      this.descriptor = java.util.Objects.requireNonNull(descriptor, "descriptor");
-      if (!descriptor.id().equals(PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION)
-          || descriptor.stage() != PassDescriptor.Stage.IR_FUNCTION
-          || !descriptor.decisionObservable()) {
-        throw new IllegalArgumentException("invalid affine-loop-summarization descriptor");
-      }
-      if (occurrence < 1 || occurrence > descriptor.fullPipelineOccurrences()) {
-        throw new IllegalArgumentException("invalid pass occurrence " + occurrence);
-      }
-      this.occurrence = occurrence;
-    }
-
     @Override
     public PreservedAnalyses run(Function function, FunctionAnalysisManager fam) {
-      boolean changed = instrumentation == null
-          ? AffineLoopSummarization.run(function, fam)
-          : AffineLoopSummarization.run(function, fam, instrumentation, descriptor, occurrence);
-      return changed
+      return AffineLoopSummarization.run(function, fam)
           ? PreservedAnalyses.none()
           : PreservedAnalyses.all();
     }

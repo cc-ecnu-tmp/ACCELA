@@ -10,47 +10,29 @@ struct line {
 };
 static struct line cache[SETS][WAYS];
 static uint64_t clock_value;
-static uint64_t region_hits;
-static uint64_t region_misses;
-static uint64_t region_loads;
-static uint64_t region_stores;
-static uint64_t total_hits;
-static uint64_t total_misses;
-static uint64_t total_loads;
-static uint64_t total_stores;
-static struct accela_region_state region;
-static void reset_cache(void) {
-  for (int set = 0; set < SETS; set++) {
-    for (int way = 0; way < WAYS; way++) cache[set][way].valid = false;
-  }
-  clock_value = 0;
-  region_hits = region_misses = region_loads = region_stores = 0;
-}
-static void begin_main(unsigned int cpu, void *data) {
+static uint64_t hits;
+static uint64_t misses;
+static uint64_t loads;
+static uint64_t stores;
+static bool active;
+static bool saw_explicit_region;
+static void begin_region(unsigned int cpu, void *data) {
   (void) cpu;
   (void) data;
-  if (accela_region_begin_main(&region)) reset_cache();
+  hits = misses = loads = stores = 0;
+  active = true;
+}
+static void end_region(unsigned int cpu, void *data) {
+  (void) cpu;
+  (void) data;
+  active = false;
 }
 static void begin_explicit_region(unsigned int cpu, void *data) {
-  (void) cpu;
-  (void) data;
-  if (accela_region_begin_explicit(&region)) reset_cache();
-}
-static void accumulate(void) {
-  total_hits += region_hits;
-  total_misses += region_misses;
-  total_loads += region_loads;
-  total_stores += region_stores;
-}
-static void end_explicit_region(unsigned int cpu, void *data) {
-  (void) cpu;
-  (void) data;
-  if (accela_region_end_explicit(&region)) accumulate();
+  saw_explicit_region = true;
+  begin_region(cpu, data);
 }
 static void end_main(unsigned int cpu, void *data) {
-  (void) cpu;
-  (void) data;
-  if (accela_region_end_main(&region) == 1) accumulate();
+  if (!saw_explicit_region) end_region(cpu, data);
 }
 static void access_memory(unsigned int cpu, qemu_plugin_meminfo_t info,
                           uint64_t address, void *data) {
@@ -72,11 +54,11 @@ static void access_memory(unsigned int cpu, qemu_plugin_meminfo_t info,
   set[victim].valid = true;
   set[victim].tag = tag;
   set[victim].age = ++clock_value;
-  if (region.active == ACCELA_REGION_NONE) return;
-  if (qemu_plugin_mem_is_store(info)) region_stores++;
-  else region_loads++;
-  if (hit) region_hits++;
-  else region_misses++;
+  if (!active) return;
+  if (qemu_plugin_mem_is_store(info)) stores++;
+  else loads++;
+  if (hit) hits++;
+  else misses++;
 }
 
 static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
@@ -91,8 +73,8 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
         || encoding == 0x12500013 || encoding == 0x12600013) {
       qemu_plugin_vcpu_udata_cb_t callback =
           encoding == 0x12300013 ? begin_explicit_region
-          : encoding == 0x12400013 ? end_explicit_region
-          : encoding == 0x12500013 ? begin_main
+          : encoding == 0x12400013 ? end_region
+          : encoding == 0x12500013 ? begin_region
           : end_main;
       qemu_plugin_register_vcpu_insn_exec_cb(
           instruction, callback, QEMU_PLUGIN_CB_NO_REGS, NULL);
@@ -108,19 +90,13 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
 static void report(qemu_plugin_id_t id, void *data) {
   (void) id;
   (void) data;
-  if (!accela_region_complete(&region)) {
-    g_autofree char *error = g_strdup_printf(
-        "cache_error=%s\n", region.error == NULL ? "unknown" : region.error);
-    qemu_plugin_outs(error);
-    return;
-  }
-  uint64_t accesses = total_hits + total_misses;
+  uint64_t accesses = hits + misses;
   g_autofree char *output = g_strdup_printf(
       "l1d=32KiB/8-way/64B accesses=%" PRIu64 " loads=%" PRIu64
       " stores=%" PRIu64 " hits=%" PRIu64 " misses=%" PRIu64
       " miss_rate=%.4f\n",
-      accesses, total_loads, total_stores, total_hits, total_misses,
-      accesses == 0 ? 0.0 : (double) total_misses / accesses);
+      accesses, loads, stores, hits, misses,
+      accesses == 0 ? 0.0 : (double) misses / accesses);
   qemu_plugin_outs(output);
 }
 

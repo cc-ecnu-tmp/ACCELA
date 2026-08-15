@@ -1,1 +1,0 @@
-{"schema_version":1,"base":"FULL","disable":[{"pass":"ir.adce"},{"pass":"ir.dead-store-elimination"},{"pass":"ir.global-dce"}]}

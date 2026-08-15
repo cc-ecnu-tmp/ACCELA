@@ -15,13 +15,6 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.verify.IRVerifier;
-import accela.pass.PassRegistry;
-import accela.pass.instrument.DecisionRemark;
-import accela.pass.instrument.DecisionStatus;
-import accela.pass.instrument.OptimizationRemark;
-import accela.pass.ir.instrument.PassInstrumentation;
-import java.util.ArrayList;
-import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class AffineLoopSummarizationTest {
@@ -56,21 +49,6 @@ final class AffineLoopSummarizationTest {
 
     assertFalse(AffineLoopSummarization.run(fixture.function, analysisManager()));
     assertEquals(4, fixture.function.getBlocks().size());
-  }
-
-  @Test
-  void emitsRealCandidateAndAppliedDecisionsForMatchedLoops() {
-    Fixture fixture = fixture(false, false);
-    List<OptimizationRemark> remarks = new ArrayList<>();
-    var descriptor = PassRegistry.standard().require(
-        PassRegistry.IR_AFFINE_LOOP_SUMMARIZATION);
-    var pass = new AffineLoopSummarization.Pass(
-        PassInstrumentation.observed(false, remarks::add), descriptor, 1);
-
-    pass.run(fixture.function, analysisManager());
-
-    assertEquals(List.of(DecisionStatus.CANDIDATE, DecisionStatus.APPLIED), remarks.stream()
-        .map(DecisionRemark.class::cast).map(DecisionRemark::decision).toList());
   }
 
   @Test
