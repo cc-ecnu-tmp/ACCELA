@@ -21,6 +21,27 @@ import org.junit.jupiter.api.Test;
 
 final class LoopUnrollAndJamTest {
   @Test
+  void chargesEveryVectorLaneAgainstRegisterPressure() {
+    Fixture fixture = new Fixture(false);
+    Instruction outer = fixture.outerHeader.getInstructions().getFirst();
+    IRBuilder preheaderBuilder = new IRBuilder();
+    preheaderBuilder.setInsertPointBefore(fixture.innerPreheader.getTerminator());
+    Value outerFloat = preheaderBuilder.createSIToFP(outer, Type.FLOAT);
+    Type float4 = Type.vector(Type.FLOAT, 4);
+    Instruction vector = preheaderBuilder.createSplat(float4, outerFloat);
+    IRBuilder bodyBuilder = new IRBuilder();
+    bodyBuilder.setInsertPointBefore(fixture.innerBody.getTerminator());
+    bodyBuilder.createExtractElement(vector, Constant.intConst(0));
+
+    FunctionAnalysisManager fam = analysisManager();
+    LoopUnrollAndJamCandidate candidate =
+        LoopUnrollAndJamCandidate.findAll(fixture.function, fam).getFirst();
+    var dependences = UnrollAndJamCostModel.analyzeDependences(candidate);
+
+    assertEquals(4, UnrollAndJamCostModel.chooseFactor(candidate, dependences));
+  }
+
+  @Test
   void jamsIndependentReductionsAndKeepsScalarRemainder() {
     Fixture fixture = new Fixture(false);
 

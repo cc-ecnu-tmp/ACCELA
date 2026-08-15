@@ -60,8 +60,8 @@ final class UnrollAndJamCostModel {
     for (Instruction phi : candidate.innerBody().getInstructions()) {
       if (phi.getOpcode() != Instruction.Opcode.PHI) break;
       if (phi == candidate.innerInduction().phi()) continue;
-      if (phi.getType() == Type.FLOAT) floatPerLane++;
-      else integerPerLane++;
+      if (isFloatValue(phi.getType())) floatPerLane += registerUnits(phi.getType());
+      else integerPerLane += registerUnits(phi.getType());
     }
 
     for (Instruction instruction : candidate.innerPreheader().getInstructions()) {
@@ -70,18 +70,27 @@ final class UnrollAndJamCostModel {
               instruction, candidate.outerInduction().phi())
           || instruction.getUses().stream()
               .noneMatch(use -> use.getUser().getParent() == candidate.innerBody())) continue;
-      if (instruction.getType() == Type.FLOAT) floatPerLane++;
-      else if (instruction.hasResult()) integerPerLane++;
+      if (isFloatValue(instruction.getType()))
+        floatPerLane += registerUnits(instruction.getType());
+      else if (instruction.hasResult()) integerPerLane += registerUnits(instruction.getType());
     }
 
     for (Instruction instruction : candidate.innerBody().getInstructions()) {
       if (instruction.getOpcode() == Instruction.Opcode.PHI || instruction.isTerminator()) continue;
       if (LoopUnrollAndJamCandidate.dependsOn(
           instruction, candidate.outerInduction().phi())) continue;
-      if (instruction.getType() == Type.FLOAT) floatShared++;
-      else if (instruction.hasResult()) integerShared++;
+      if (isFloatValue(instruction.getType())) floatShared += registerUnits(instruction.getType());
+      else if (instruction.hasResult()) integerShared += registerUnits(instruction.getType());
     }
     return new Pressure(integerPerLane, floatPerLane, integerShared, floatShared);
+  }
+
+  private static boolean isFloatValue(Type type) {
+    return type == Type.FLOAT || type.isVector() && type.getElementType() == Type.FLOAT;
+  }
+
+  private static int registerUnits(Type type) {
+    return type.isVector() ? type.getLaneCount() : 1;
   }
 
   private record Pressure(
