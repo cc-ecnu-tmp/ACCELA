@@ -44,6 +44,46 @@ final class AffineLoopSummarizationTest {
   }
 
   @Test
+  void summarizesAnIntegerVectorRecurrenceLaneWise() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_affine", Type.INT);
+    Value start = function.addArgument(int4, "start");
+    Value step = function.addArgument(int4, "step");
+    Value bound = function.addArgument(Type.INT, "bound");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder hb = new IRBuilder(header);
+    Instruction induction = hb.createPhi(Type.INT);
+    Instruction state = hb.createPhi(int4);
+    hb.createCondBr(hb.createICmp("slt", induction, bound), body, exit);
+    IRBuilder bb = new IRBuilder(body);
+    Instruction nextState = bb.createAdd(state, step);
+    Instruction nextInduction = bb.createAdd(induction, Constant.intConst(1));
+    bb.createBr(header);
+    induction.addOperand(Constant.intConst(0));
+    induction.addOperand(entry);
+    induction.addOperand(nextInduction);
+    induction.addOperand(body);
+    state.addOperand(start);
+    state.addOperand(entry);
+    state.addOperand(nextState);
+    state.addOperand(body);
+    Value lane = new IRBuilder(exit).createExtractElement(state, Constant.intConst(2));
+    new IRBuilder(exit).createRet(lane);
+
+    assertTrue(AffineLoopSummarization.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(6, state.getNumOperands());
+    assertTrue(function.getBlocks().stream().flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.MUL
+            && instruction.getType().isVector()));
+  }
+
+  @Test
   void refusesLoopsWithMemorySideEffects() {
     Fixture fixture = fixture(true, true);
 

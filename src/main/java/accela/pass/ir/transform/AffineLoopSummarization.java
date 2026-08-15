@@ -235,7 +235,7 @@ public final class AffineLoopSummarization {
 
     private static Recurrence matchRecurrence(
         Instruction phi, LoopAnalysis.Loop loop, BasicBlock body) {
-      if (phi.getType() != Type.INT) return null;
+      if (!isIntegerState(phi.getType())) return null;
       Value start = incomingValue(phi, loop.preheader());
       Instruction update = incomingInstruction(phi, body);
       if (start == null || update == null || definedInside(start, loop)) return null;
@@ -243,6 +243,7 @@ public final class AffineLoopSummarization {
       Value modulus = null;
       Instruction addition = update;
       if (update.getOpcode() == Instruction.Opcode.SREM) {
+        if (phi.getType() != Type.INT) return null;
         if (!(update.getOperand(1) instanceof Constant.Int constant)
             || constant.value <= 0
             || constant.value > Integer.MAX_VALUE
@@ -251,12 +252,17 @@ public final class AffineLoopSummarization {
         addition = add;
       }
       Value step = invariantAddend(addition, phi, loop);
-      if (step == null || step.getType() != Type.INT) return null;
+      if (step == null || !step.getType().equals(phi.getType())) return null;
       if (modulus != null
           && (!(step instanceof Constant.Int constant)
               || constant.value <= 0
               || constant.value > Integer.MAX_VALUE)) return null;
       return new Recurrence(phi, step, update, addition, modulus);
+    }
+
+    private static boolean isIntegerState(Type type) {
+      return type == Type.INT
+          || type.isVector() && type.getElementType() == Type.INT;
     }
 
     private static Value invariantAddend(
