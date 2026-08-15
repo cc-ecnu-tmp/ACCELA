@@ -1,6 +1,7 @@
 package accela.pass.ir.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,6 +12,7 @@ import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.ir.Type;
+import accela.ir.Value;
 import org.junit.jupiter.api.Test;
 
 final class DeadStoreEliminationTest {
@@ -72,5 +74,61 @@ final class DeadStoreEliminationTest {
     assertTrue(DeadStoreElimination.runOnModule(module));
     assertNull(dead.getParent());
     assertTrue(live.getParent() != null);
+  }
+
+  @Test
+  void keepsAWideStoreWhenALaterNarrowStoreDoesNotFullyCoverIt() {
+    Module module = new Module();
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Value pointer = builder.createAlloca(int4);
+    Instruction wideStore = builder.createStore(Constant.zero(int4), pointer);
+    Instruction narrowStore = builder.createStore(Constant.intConst(1), pointer);
+    builder.createRet(Constant.intConst(0));
+
+    assertFalse(DeadStoreElimination.runOnModule(module));
+    assertTrue(wideStore.getParent() != null);
+    assertTrue(narrowStore.getParent() != null);
+  }
+
+  @Test
+  void removesANarrowStoreFullyCoveredByALaterWideStore() {
+    Module module = new Module();
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Type int4 = Type.vector(Type.INT, 4);
+    Value pointer = builder.createAlloca(int4);
+    Instruction narrowStore = builder.createStore(Constant.intConst(1), pointer);
+    Instruction wideStore = builder.createStore(Constant.zero(int4), pointer);
+    builder.createRet(Constant.intConst(0));
+
+    assertTrue(DeadStoreElimination.runOnModule(module));
+    assertNull(narrowStore.getParent());
+    assertTrue(wideStore.getParent() != null);
+  }
+
+  @Test
+  void treatsAWideGlobalStoreAsOverlappingAdjacentScalarElements() {
+    Module module = new Module();
+    Type arrayType = Type.array(Type.INT, 4);
+    GlobalVariable array =
+        new GlobalVariable("array", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(array);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Value wideAddress = builder.createGEP(
+        Type.INT, array, new Value[] {Constant.int64Const(0)}, true);
+    Value adjacentAddress = builder.createGEP(
+        Type.INT, array, new Value[] {Constant.int64Const(1)}, true);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction wideStore = builder.createStore(Constant.zero(int4), wideAddress);
+    builder.createRet(builder.createLoad(Type.INT, adjacentAddress));
+
+    assertFalse(DeadStoreElimination.runOnModule(module));
+    assertTrue(wideStore.getParent() != null);
   }
 }

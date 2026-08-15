@@ -5,11 +5,13 @@ import accela.ir.ConstantFolding;
 import accela.ir.Function;
 import accela.ir.GlobalVariable;
 import accela.ir.Instruction;
+import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePass;
+import accela.pass.ir.analysis.MemoryLocation;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
@@ -39,13 +41,14 @@ public final class DeadStoreElimination {
     boolean changed = false;
     for (Instruction instruction : instructions) {
       if (instruction.getOpcode() != Instruction.Opcode.STORE) continue;
-      Value pointer = instruction.getOperand(1);
-      if (!(PointerProvenance.root(pointer) instanceof GlobalVariable)) continue;
+      MemoryLocation location = MemoryLocation.fromInstruction(instruction);
+      if (!(PointerProvenance.root(location.pointer()) instanceof GlobalVariable)) continue;
       boolean read = instructions.stream().anyMatch(candidate ->
           (candidate.getOpcode() == Instruction.Opcode.LOAD
-                  && mayAliasLocation(pointer, candidate.getOperand(0)))
+                  && mayAliasLocation(
+                      location, MemoryLocation.fromInstruction(candidate)))
               || (candidate.getOpcode() == Instruction.Opcode.CALL
-                  && modRef.mayRead(candidate, pointer)));
+                  && modRef.mayRead(candidate, location.pointer())));
       if (read) continue;
       instruction.eraseFromParent();
       changed = true;
@@ -53,48 +56,81 @@ public final class DeadStoreElimination {
     return changed;
   }
 
-  private static boolean mayAliasLocation(Value left, Value right) {
-    if (!PointerProvenance.mayAlias(left, right)) return false;
-    Location leftLocation = constantLocation(left);
-    Location rightLocation = constantLocation(right);
-    return leftLocation == null
-        || rightLocation == null
-        || (leftLocation.global == rightLocation.global
-            && leftLocation.leaf == rightLocation.leaf);
+  private static boolean mayAliasLocation(MemoryLocation left, MemoryLocation right) {
+    if (!PointerProvenance.mayAlias(left.pointer(), right.pointer())) return false;
+    GlobalRange leftRange = constantGlobalRange(left);
+    GlobalRange rightRange = constantGlobalRange(right);
+    if (leftRange == null || rightRange == null) return true;
+    if (leftRange.global != rightRange.global) return false;
+    return !MemoryLocation.areDisjointAtOffset(
+        leftRange.byteOffset - rightRange.byteOffset,
+        left.byteSize(),
+        right.byteSize());
   }
 
-  private static Location constantLocation(Value pointer) {
+  private static GlobalRange constantGlobalRange(MemoryLocation location) {
+    Value pointer = location.pointer();
     if (!(pointer instanceof Instruction gep)
         || !(PointerProvenance.root(pointer) instanceof GlobalVariable global)) return null;
     Integer leaf = ConstantFolding.constantArrayIndex(global, gep);
-    return leaf == null ? null : new Location(global, leaf);
+    if (leaf == null) return null;
+    try {
+      return new GlobalRange(
+          global,
+          Math.multiplyExact(
+              (long) leaf, MemoryLocation.byteSize(arrayLeafType(global.getValueType()))));
+    } catch (ArithmeticException overflow) {
+      return null;
+    }
   }
 
-  private record Location(GlobalVariable global, int leaf) {}
+  private static Type arrayLeafType(Type type) {
+    while (type.isArray()) type = type.innerType;
+    return type;
+  }
+
+  private record GlobalRange(GlobalVariable global, long byteOffset) {}
 
   private static boolean runOnBlock(
       BasicBlock block, GlobalModRefAnalysis.Result modRef) {
-    List<Value> laterStores = new ArrayList<>();
+    List<MemoryLocation> laterStores = new ArrayList<>();
     boolean changed = false;
     List<Instruction> instructions = List.copyOf(block.getInstructions());
     for (int index = instructions.size() - 1; index >= 0; index--) {
       Instruction instruction = instructions.get(index);
       if (instruction.getOpcode() == Instruction.Opcode.LOAD) {
-        Value pointer = instruction.getOperand(0);
-        laterStores.removeIf(store -> PointerProvenance.mayAlias(store, pointer));
+        MemoryLocation load = MemoryLocation.fromInstruction(instruction);
+        laterStores.removeIf(store -> mayAliasLocation(store, load));
       } else if (instruction.getOpcode() == Instruction.Opcode.CALL) {
-        laterStores.removeIf(pointer -> modRef.mayRead(instruction, pointer));
+        laterStores.removeIf(
+            location -> modRef.mayRead(instruction, location.pointer()));
       } else if (instruction.getOpcode() == Instruction.Opcode.STORE) {
-        Value pointer = instruction.getOperand(1);
-        if (laterStores.contains(pointer)) {
+        MemoryLocation store = MemoryLocation.fromInstruction(instruction);
+        if (laterStores.stream().anyMatch(later -> fullyCovers(later, store))) {
           instruction.eraseFromParent();
           changed = true;
         } else {
-          laterStores.add(pointer);
+          laterStores.add(store);
         }
       }
     }
     return changed;
+  }
+
+  private static boolean fullyCovers(MemoryLocation later, MemoryLocation earlier) {
+    if (later.fullyCovers(earlier)) return true;
+    GlobalRange laterRange = constantGlobalRange(later);
+    GlobalRange earlierRange = constantGlobalRange(earlier);
+    if (laterRange == null
+        || earlierRange == null
+        || laterRange.global != earlierRange.global) return false;
+    try {
+      long laterEnd = Math.addExact(laterRange.byteOffset, later.byteSize());
+      long earlierEnd = Math.addExact(earlierRange.byteOffset, earlier.byteSize());
+      return laterRange.byteOffset <= earlierRange.byteOffset && laterEnd >= earlierEnd;
+    } catch (ArithmeticException overflow) {
+      return false;
+    }
   }
 
   public static final class Pass implements ModulePass {
