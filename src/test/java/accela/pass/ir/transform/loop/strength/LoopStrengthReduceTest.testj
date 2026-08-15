@@ -25,6 +25,7 @@ final class LoopStrengthReduceTest {
     Function function = new Function("walk", Type.VOID);
     Value condition = function.addArgument(Type.I1, "condition");
     Value base = function.addArgument(Type.PTR, "base");
+    Value vectorBase = function.addArgument(Type.PTR, "vectorBase");
     BasicBlock entry = function.addBlock("entry");
     BasicBlock header = function.addBlock("header");
     BasicBlock body = function.addBlock("body");
@@ -45,6 +46,13 @@ final class LoopStrengthReduceTest {
         new Value[] {Constant.int64Const(0), extended},
         true);
     Instruction load = bodyBuilder.createLoad(Type.INT, address);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction vectorAddress = bodyBuilder.createGEP(
+        Type.array(int4, 16),
+        vectorBase,
+        new Value[] {Constant.int64Const(0), extended},
+        true);
+    Instruction vectorLoad = bodyBuilder.createLoad(int4, vectorAddress);
     Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
     bodyBuilder.createBr(header);
     index.addOperand(next);
@@ -61,6 +69,10 @@ final class LoopStrengthReduceTest {
     assertSame(body, ((Instruction) pointer.getOperand(2)).getParent());
     assertEquals(1,
         ((Constant.Int) ((Instruction) pointer.getOperand(2)).getOperand(1)).value);
+    Instruction vectorPointer = (Instruction) vectorLoad.getOperand(0);
+    assertEquals(Instruction.Opcode.PHI, vectorPointer.getOpcode());
+    assertEquals(4,
+        ((Constant.Int) ((Instruction) vectorPointer.getOperand(2)).getOperand(1)).value);
   }
 
   @Test

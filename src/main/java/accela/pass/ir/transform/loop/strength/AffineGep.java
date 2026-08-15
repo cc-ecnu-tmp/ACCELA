@@ -110,7 +110,7 @@ final class AffineGep {
   }
 
   private static long sizeOf(Type type) {
-    if (type.isArray()) return type.size * sizeOf(type.innerType);
+    if (type.isArray() || type.isVector()) return type.size * sizeOf(type.innerType);
     if (type == Type.I64 || type.isPointer()) return 8;
     return type == Type.I1 ? 1 : 4;
   }
