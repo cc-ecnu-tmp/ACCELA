@@ -1,0 +1,269 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.BackendCompiler;
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.GlobalVariable;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.PassBuilder;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.ModulePassManager;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class VectorScalarizationTest {
+  @Test
+  void scalarizesLaneWiseArithmeticAndDynamicLaneOperations() {
+    Module module = new Module();
+    Function function = new Function("scalarize", Type.INT);
+    module.addFunction(function);
+    Value value = function.addArgument(Type.INT, "value");
+    Value index = function.addArgument(Type.INT, "index");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value built = builder.createBuildVector(
+        int4, value, Constant.intConst(2), Constant.intConst(3), Constant.intConst(4));
+    Value added = builder.createAdd(built, builder.createSplat(int4, Constant.intConst(10)));
+    Value inserted = builder.createInsertElement(added, Constant.intConst(99), index);
+    Value extracted = builder.createExtractElement(inserted, index);
+    builder.createRet(extracted);
+
+    assertTrue(VectorScalarization.run(module));
+    IRVerifier.verifyModule(module);
+    assertFalse(hasVectorIR(function));
+    assertTrue(count(function, Instruction.Opcode.ADD) >= 4);
+    assertTrue(count(function, Instruction.Opcode.SELECT) == 7);
+    assertTrue(count(function, Instruction.Opcode.ALLOCA) == 0);
+  }
+
+  @Test
+  void scalarizesVectorMemoryOperationsToContiguousScalarAccesses() {
+    Module module = new Module();
+    Function function = new Function("vector_memory", Type.INT);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value storage = builder.createAlloca(int4);
+    builder.createStore(
+        Constant.vector(List.of(
+            Constant.intConst(1), Constant.intConst(2),
+            Constant.intConst(3), Constant.intConst(4))),
+        storage);
+    Value loaded = builder.createLoad(int4, storage);
+    builder.createRet(builder.createExtractElement(loaded, Constant.intConst(2)));
+
+    assertTrue(VectorScalarization.run(module));
+    IRVerifier.verifyModule(module);
+    assertFalse(hasVectorIR(function));
+    assertTrue(count(function, Instruction.Opcode.STORE) == 4);
+    assertTrue(count(function, Instruction.Opcode.LOAD) == 4);
+  }
+
+  @Test
+  void splitsVectorGlobalsIntoIndependentScalarLanes() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    GlobalVariable global = new GlobalVariable(
+        "state",
+        int4,
+        Constant.vector(List.of(
+            Constant.intConst(1), Constant.intConst(2),
+            Constant.intConst(3), Constant.intConst(4))),
+        false);
+    module.addGlobal(global);
+    Function function = new Function("global_lanes", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Value loaded = builder.createLoad(int4, global);
+    Value updated = builder.createAdd(loaded, Constant.intConst(1));
+    builder.createStore(updated, global);
+    builder.createRet(builder.createExtractElement(updated, Constant.intConst(2)));
+
+    assertTrue(VectorScalarization.run(module));
+    IRVerifier.verifyModule(module);
+    assertEquals(4, module.getGlobals().size());
+    assertTrue(module.getGlobals().stream().allMatch(g -> g.getValueType() == Type.INT));
+    assertFalse(global.hasUses());
+    assertFalse(hasVectorIR(function));
+  }
+
+  @Test
+  void scalarizesVectorPhisLaneByLane() {
+    Module module = new Module();
+    Function function = new Function("vector_phi", Type.INT);
+    module.addFunction(function);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    new IRBuilder(left).createBr(merge);
+    new IRBuilder(right).createBr(merge);
+    IRBuilder mergeBuilder = new IRBuilder(merge);
+    Type int2 = Type.vector(Type.INT, 2);
+    Instruction phi = mergeBuilder.createPhi(int2);
+    phi.addOperand(Constant.vector(List.of(Constant.intConst(1), Constant.intConst(2))));
+    phi.addOperand(left);
+    phi.addOperand(Constant.vector(List.of(Constant.intConst(3), Constant.intConst(4))));
+    phi.addOperand(right);
+    mergeBuilder.createRet(mergeBuilder.createExtractElement(phi, Constant.intConst(0)));
+
+    assertTrue(VectorScalarization.run(module));
+    IRVerifier.verifyModule(module);
+    assertFalse(hasVectorIR(function));
+    assertTrue(count(function, Instruction.Opcode.PHI) == 2);
+  }
+
+  @Test
+  void backendPipelineScalarizesBeforeRiscvLowering() {
+    Module module = new Module();
+    Function function = new Function("vector_codegen", Type.INT);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Constant.Vector values = Constant.vector(List.of(
+        Constant.intConst(1), Constant.intConst(2), Constant.intConst(3), Constant.intConst(4)));
+    Value doubled = builder.createAdd(values, values);
+    builder.createRet(builder.createExtractElement(doubled, Constant.intConst(2)));
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertFalse(hasVectorIR(function));
+    assertTrue(assembly.contains("vector_codegen:"));
+    assertTrue(assembly.contains("  ret"));
+  }
+
+  @Test
+  void lowersRuntimeZeroPaddingIntroducedByBroadcastNormalization() {
+    Module module = new Module();
+    Function function = new Function("vector_padding", Type.INT);
+    module.addFunction(function);
+    Value first = function.addArgument(Type.INT, "first");
+    Value second = function.addArgument(Type.INT, "second");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value shortVector = builder.createBuildVector(Type.vector(Type.INT, 2), first, second);
+    Value longVector = Constant.vector(List.of(
+        Constant.intConst(10), Constant.intConst(20),
+        Constant.intConst(30), Constant.intConst(40)));
+    Value sum = builder.createAdd(shortVector, longVector);
+    builder.createRet(builder.createExtractElement(sum, Constant.intConst(3)));
+
+    assertTrue(count(function, Instruction.Opcode.SHUFFLE_VECTOR) == 1);
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertFalse(hasVectorIR(function));
+    assertTrue(assembly.contains("vector_padding:"));
+    assertTrue(assembly.contains("  ret"));
+  }
+
+  @Test
+  void dynamicLaneCodegenDoesNotMaterializeTemporaryArrays() {
+    Module module = new Module();
+    Function function = new Function("dynamic_lane", Type.INT);
+    module.addFunction(function);
+    Value index = function.addArgument(Type.INT, "index");
+    Value first = function.addArgument(Type.INT, "first");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value vector = builder.createBuildVector(
+        int4, first, Constant.intConst(2), Constant.intConst(3), Constant.intConst(4));
+    Value selected = builder.createExtractElement(vector, index);
+    Value updated = builder.createInsertElement(vector, selected, index);
+    builder.createRet(builder.createExtractElement(updated, Constant.intConst(0)));
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertFalse(assembly.contains("  sw "));
+    assertFalse(assembly.contains("  lw "));
+    assertTrue(assembly.contains("select_end"));
+  }
+
+  @Test
+  void survivesTheDefaultOptimizationPipelineBeforeScalarization() {
+    Module module = new Module();
+    Function function = new Function("vector_optimized", Type.INT);
+    module.addFunction(function);
+    Value argument = function.addArgument(Type.INT, "argument");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value built = builder.createBuildVector(
+        int4, argument, Constant.intConst(2), Constant.intConst(3), Constant.intConst(4));
+    Value splat = builder.createSplat(int4, Constant.intConst(1));
+    Value first = builder.createAdd(built, splat);
+    Value repeated = builder.createAdd(built, splat);
+    Value selected = builder.createShuffleVector(
+        first,
+        repeated,
+        Constant.vector(List.of(
+            Constant.intConst(0), Constant.intConst(5),
+            Constant.intConst(2), Constant.intConst(7))));
+    builder.createRet(builder.createExtractElement(selected, Constant.intConst(1)));
+
+    PassBuilder passBuilder = new PassBuilder();
+    ModulePassManager pipeline =
+        passBuilder.buildIRO0Pipeline(PassInstrumentation.enabled(false));
+    ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
+    FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
+    pipeline.run(module, mam, fam);
+
+    IRVerifier.verifyModule(module);
+    assertTrue(hasVectorIR(function));
+    assertTrue(new BackendCompiler().compileToAssembly(module).contains("vector_optimized:"));
+    assertFalse(hasVectorIR(function));
+  }
+
+  @Test
+  void refusesToGuessAnUnspecifiedVectorFunctionAbi() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_abi", int4);
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    new IRBuilder(entry).createRet(Constant.zero(int4));
+
+    UnsupportedOperationException error = assertThrows(
+        UnsupportedOperationException.class, () -> VectorScalarization.run(module));
+    assertTrue(error.getMessage().contains("vector return ABI"));
+  }
+
+  private static boolean hasVectorIR(Function function) {
+    for (BasicBlock block : function.getBlocks()) {
+      for (Instruction instruction : block.getInstructions()) {
+        if (instruction.getType().isVector()) return true;
+        if (instruction.getAllocatedType() != null && instruction.getAllocatedType().isVector()) {
+          return true;
+        }
+        for (int operand = 0; operand < instruction.getNumOperands(); operand++) {
+          if (instruction.getOperand(operand).getType().isVector()) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static long count(Function function, Instruction.Opcode opcode) {
+    return function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == opcode)
+        .count();
+  }
+}
