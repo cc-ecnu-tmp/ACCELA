@@ -193,6 +193,37 @@ public class IRBuilder {
     return insert(new Instruction(Opcode.FPTOSI, destType, val));
   }
 
+  /** Builds a vector from exactly one scalar operand per lane. */
+  public Instruction createBuildVector(Type vectorType, Value... elements) {
+    if (!vectorType.isVector()) throw new IllegalArgumentException("expected vector type");
+    return insert(new Instruction(Opcode.BUILD_VECTOR, vectorType, elements));
+  }
+
+  /** Broadcasts one scalar value to all lanes of {@code vectorType}. */
+  public Instruction createSplat(Type vectorType, Value scalar) {
+    if (!vectorType.isVector()) throw new IllegalArgumentException("expected vector type");
+    return insert(new Instruction(Opcode.SPLAT, vectorType, scalar));
+  }
+
+  /** Extracts one lane; the index is an integer scalar. */
+  public Instruction createExtractElement(Value vector, Value index) {
+    if (!vector.getType().isVector()) throw new IllegalArgumentException("expected vector value");
+    return insert(new Instruction(Opcode.EXTRACT_ELEMENT, vector.getType().getElementType(), vector, index));
+  }
+
+  /** Returns a vector with one lane replaced. */
+  public Instruction createInsertElement(Value vector, Value element, Value index) {
+    if (!vector.getType().isVector()) throw new IllegalArgumentException("expected vector value");
+    return insert(new Instruction(Opcode.INSERT_ELEMENT, vector.getType(), vector, element, index));
+  }
+
+  /** Selects lanes from two equal input vectors according to an i32 vector mask. */
+  public Instruction createShuffleVector(Value lhs, Value rhs, Constant.Vector mask) {
+    if (!lhs.getType().isVector()) throw new IllegalArgumentException("expected vector value");
+    Type resultType = Type.vector(lhs.getType().getElementType(), mask.getType().getLaneCount());
+    return insert(new Instruction(Opcode.SHUFFLE_VECTOR, resultType, lhs, rhs, mask));
+  }
+
   public Instruction createXor(Value lhs, Value rhs) {
     return insert(new Instruction(Opcode.XOR, lhs.getType(), lhs, rhs));
   }
