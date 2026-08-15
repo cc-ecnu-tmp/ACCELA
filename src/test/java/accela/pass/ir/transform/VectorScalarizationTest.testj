@@ -103,6 +103,36 @@ final class VectorScalarizationTest {
   }
 
   @Test
+  void legalizesArraysOfVectorsIntoScalarGlobalStorage() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    Type rows = Type.array(int4, 2);
+    Constant first = Constant.vector(int4, List.of(
+        Constant.intConst(1), Constant.intConst(2),
+        Constant.intConst(3), Constant.intConst(4)));
+    Constant second = Constant.vector(int4, List.of(
+        Constant.intConst(5), Constant.intConst(6),
+        Constant.intConst(7), Constant.intConst(8)));
+    GlobalVariable global = new GlobalVariable(
+        "rows", rows, Constant.array(rows, List.of(first, second)), false);
+    module.addGlobal(global);
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Value address = builder.createGEP(
+        rows, global, new Value[] {Constant.int64Const(0), Constant.int64Const(1)}, true);
+    Value row = builder.createLoad(int4, address);
+    builder.createRet(builder.createExtractElement(row, Constant.intConst(2)));
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.contains("rows:"));
+    assertFalse(hasVectorIR(main));
+    Type storage = module.getGlobals().getFirst().getValueType();
+    assertEquals(Type.array(Type.array(Type.INT, 4), 2), storage);
+  }
+
+  @Test
   void scalarizesVectorPhisLaneByLane() {
     Module module = new Module();
     Function function = new Function("vector_phi", Type.INT);
