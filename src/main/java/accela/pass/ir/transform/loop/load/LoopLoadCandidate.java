@@ -23,7 +23,7 @@ record LoopLoadCandidate(
 
     for (Instruction instruction : memoryBlock.getInstructions()) {
       if (instruction.getOpcode() != Instruction.Opcode.LOAD
-          || instruction.getType() != store.getOperand(0).getType()) continue;
+          || !instruction.getType().equals(store.getOperand(0).getType())) continue;
       LoopPointerAccess loaded = LoopPointerAccess.match(instruction.getOperand(0), loop);
       if (loaded != null
           && loaded.pointer() == stored.pointer()

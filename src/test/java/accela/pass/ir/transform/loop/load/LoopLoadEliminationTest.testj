@@ -19,6 +19,44 @@ import org.junit.jupiter.api.Test;
 
 final class LoopLoadEliminationTest {
   @Test
+  void forwardsStoredVectorValuesAroundARotatedLoop() {
+    Function function = new Function("forward_vector", Type.VOID);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value base = function.addArgument(Type.PTR, "base");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock loop = function.addBlock("loop");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(loop);
+
+    IRBuilder builder = new IRBuilder(loop);
+    Instruction pointer = builder.createPhi(Type.PTR);
+    pointer.addOperand(base);
+    pointer.addOperand(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction load = builder.createLoad(int4, pointer);
+    Instruction stored = builder.createAdd(
+        load, Constant.zero(Type.vector(Type.INT, 4)));
+    Instruction next = builder.createGEP(
+        Type.vector(Type.INT, 4), pointer, new Value[] {Constant.int64Const(1)}, false);
+    builder.createStore(stored, next);
+    pointer.addOperand(next);
+    pointer.addOperand(loop);
+    builder.createCondBr(condition, loop, exit);
+    new IRBuilder(exit).createRetVoid();
+
+    assertTrue(LoopLoadElimination.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertNull(load.getParent());
+    Instruction forwarded = loop.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.PHI)
+        .filter(instruction -> instruction.getType().equals(int4))
+        .findFirst()
+        .orElseThrow();
+    assertSame(stored, forwarded.getOperand(2));
+    assertSame(forwarded, stored.getOperand(0));
+  }
+
+  @Test
   void forwardsTheStoredValueAroundARotatedLoop() {
     Function function = new Function("forward", Type.VOID);
     Value condition = function.addArgument(Type.I1, "condition");
