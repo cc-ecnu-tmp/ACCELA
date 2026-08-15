@@ -1,0 +1,190 @@
+package accela.ir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.pass.ir.transform.EarlyCSE;
+import accela.pass.ir.verify.IRVerifier;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class VectorIRTest {
+  @Test
+  void promotesMixedNumericLanesToOneHomogeneousElementType() {
+    Constant.Vector vector = Constant.vector(List.of(
+        Constant.intConst(1),
+        Constant.floatConst(2.1f),
+        Constant.floatConst(3.0f),
+        Constant.intConst(4)));
+
+    assertEquals(Type.vector(Type.FLOAT, 4), vector.getType());
+    assertEquals(List.of(1.0f, 2.1f, 3.0f, 4.0f), vector.elements.stream()
+        .map(element -> assertInstanceOf(Constant.Float.class, element).value)
+        .toList());
+  }
+
+  @Test
+  void infersIntegralFloatLanesAsAnIntegerVector() {
+    Constant.Vector vector = Constant.vector(List.of(
+        Constant.floatConst(1.0f), Constant.floatConst(2.0f), Constant.intConst(3)));
+
+    assertEquals(Type.vector(Type.INT, 3), vector.getType());
+    assertEquals(List.of(1L, 2L, 3L), vector.elements.stream()
+        .map(element -> assertInstanceOf(Constant.Int.class, element).value)
+        .toList());
+  }
+
+  @Test
+  void broadcastsScalarAndAppliesValueAwareNumericPromotion() {
+    Function function = new Function("broadcast", Type.INT);
+    Value runtimeFloat = function.addArgument(Type.FLOAT, "runtimeFloat");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Constant.Vector integers = Constant.vector(List.of(
+        Constant.intConst(1), Constant.intConst(2),
+        Constant.intConst(3), Constant.intConst(4)));
+
+    Instruction integerAdd = builder.createAdd(Constant.intConst(1), integers);
+    assertEquals(Instruction.Opcode.ADD, integerAdd.getOpcode());
+    assertEquals(Type.vector(Type.INT, 4), integerAdd.getType());
+    assertEquals(
+        List.of(1L, 1L, 1L, 1L),
+        assertInstanceOf(Constant.Vector.class, integerAdd.getOperand(0)).elements.stream()
+            .map(element -> assertInstanceOf(Constant.Int.class, element).value)
+            .toList());
+
+    Instruction exactFloatAdd = builder.createFAdd(Constant.floatConst(2.0f), integers);
+    assertEquals(Instruction.Opcode.ADD, exactFloatAdd.getOpcode());
+    assertEquals(Type.vector(Type.INT, 4), exactFloatAdd.getType());
+
+    Instruction fractionalFloatAdd = builder.createFAdd(Constant.floatConst(2.5f), integers);
+    assertEquals(Instruction.Opcode.FADD, fractionalFloatAdd.getOpcode());
+    assertEquals(Type.vector(Type.FLOAT, 4), fractionalFloatAdd.getType());
+
+    Instruction runtimeFloatAdd = builder.createFAdd(runtimeFloat, integers);
+    assertEquals(Instruction.Opcode.FADD, runtimeFloatAdd.getOpcode());
+    assertEquals(Type.vector(Type.FLOAT, 4), runtimeFloatAdd.getType());
+    assertEquals(Instruction.Opcode.SPLAT,
+        assertInstanceOf(Instruction.class, runtimeFloatAdd.getOperand(0)).getOpcode());
+
+    Constant.Vector exactFloats = Constant.vector(
+        Type.vector(Type.FLOAT, 2),
+        List.of(Constant.floatConst(1.0f), Constant.floatConst(2.0f)));
+    Instruction exactVectorAdd = builder.createFAdd(
+        Constant.vector(List.of(Constant.intConst(10), Constant.intConst(20))), exactFloats);
+    assertEquals(Instruction.Opcode.ADD, exactVectorAdd.getOpcode());
+    assertEquals(Type.vector(Type.INT, 2), exactVectorAdd.getType());
+
+    Constant.Vector fractionalFloats = Constant.vector(
+        Type.vector(Type.FLOAT, 2),
+        List.of(Constant.floatConst(1.0f), Constant.floatConst(2.5f)));
+    Instruction mixedVectorAdd = builder.createAdd(integers, fractionalFloats);
+    assertEquals(Instruction.Opcode.FADD, mixedVectorAdd.getOpcode());
+    assertEquals(Type.vector(Type.FLOAT, 4), mixedVectorAdd.getType());
+
+    builder.createRet(builder.createExtractElement(integerAdd, Constant.intConst(0)));
+    IRVerifier.verifyFunction(function);
+  }
+
+  @Test
+  void padsTheShorterVectorWithZerosOnTheRight() {
+    Function function = new Function("zero_pad", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Constant.Vector shortVector = Constant.vector(
+        List.of(Constant.intConst(1), Constant.intConst(2)));
+    Constant.Vector longVector = Constant.vector(
+        List.of(
+            Constant.intConst(10), Constant.intConst(20),
+            Constant.intConst(30), Constant.intConst(40)));
+
+    Instruction sum = builder.createAdd(shortVector, longVector);
+    Constant.Vector padded = assertInstanceOf(Constant.Vector.class, sum.getOperand(0));
+
+    assertEquals(Type.vector(Type.INT, 4), sum.getType());
+    assertEquals(
+        List.of(1L, 2L, 0L, 0L),
+        padded.elements.stream()
+            .map(element -> assertInstanceOf(Constant.Int.class, element).value)
+            .toList());
+    builder.createRet(builder.createExtractElement(sum, Constant.intConst(3)));
+    IRVerifier.verifyFunction(function);
+  }
+
+  @Test
+  void rejectsHeterogeneousLanesAtTheTypeStrictFactoryBoundary() {
+    Type int4 = Type.vector(Type.INT, 4);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> Constant.vector(
+            int4,
+            List.of(
+                Constant.intConst(1),
+                Constant.intConst(2),
+                Constant.floatConst(3),
+                Constant.intConst(4))));
+  }
+
+  @Test
+  void verifiesAndPrintsVectorConstructionArithmeticMasksAndShuffle() {
+    Module module = new Module();
+    Function function = new Function("vector_ir", Type.INT);
+    module.addFunction(function);
+    Value argument = function.addArgument(Type.INT, "argument");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction built = builder.createBuildVector(
+        int4, argument, Constant.intConst(2), Constant.intConst(3), Constant.intConst(4));
+    Instruction splat = builder.createSplat(int4, Constant.intConst(10));
+    Instruction sum = builder.createAdd(built, splat);
+    builder.createICmp("sgt", sum, splat);
+    Constant.Vector mask = Constant.vector(
+        Type.vector(Type.INT, 4),
+        List.of(
+            Constant.intConst(0),
+            Constant.intConst(5),
+            Constant.intConst(2),
+            Constant.intConst(7)));
+    Instruction shuffled = builder.createShuffleVector(sum, splat, mask);
+    builder.createRet(builder.createExtractElement(shuffled, Constant.intConst(1)));
+
+    IRVerifier.verifyModule(module);
+
+    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+    new IRPrinter(new PrintStream(bytes, true, StandardCharsets.UTF_8)).print(module);
+    String ir = bytes.toString(StandardCharsets.UTF_8);
+    assertTrue(ir.contains("build_vector <4 x i32>"));
+    assertTrue(ir.contains("add <4 x i32>"));
+    assertTrue(ir.contains("icmp sgt <4 x i32>"));
+    assertTrue(ir.contains("shufflevector <4 x i32>"));
+    assertTrue(ir.contains("<i32 0, i32 5, i32 2, i32 7>"));
+  }
+
+  @Test
+  void commonSubexpressionEliminationUnderstandsStructuralVectorConstants() {
+    Function function = new Function("vector_cse", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Constant.Vector left = Constant.vector(
+        List.of(Constant.intConst(1), Constant.intConst(2)));
+    Constant.Vector right = Constant.vector(
+        List.of(Constant.intConst(1), Constant.intConst(2)));
+    Instruction first = builder.createAdd(left, left);
+    Instruction second = builder.createAdd(right, right);
+    Instruction extracted = builder.createExtractElement(second, Constant.intConst(0));
+    builder.createRet(extracted);
+
+    assertTrue(EarlyCSE.runOnFunction(function));
+    assertEquals(1, entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.ADD)
+        .count());
+    assertEquals(first, extracted.getOperand(0));
+  }
+}
