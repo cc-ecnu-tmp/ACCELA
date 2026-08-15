@@ -4,13 +4,15 @@
       "mad": 0.0,
       "median": 1.0,
       "sample_count": 9,
-      "source": "rdcycle"
+      "source": "rdcycle",
+      "validity": "accepted"
     },
     "unpredictable": {
       "mad": 0.0,
       "median": 1.007,
       "sample_count": 9,
-      "source": "rdcycle"
+      "source": "rdcycle",
+      "validity": "accepted"
     }
   },
   "diagnostics": {
@@ -19,57 +21,66 @@
         "mad": 0.0,
         "median": 251.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "256": {
         "mad": 0.0,
         "median": 59.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "64": {
         "mad": 0.0,
         "median": 11.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "load_use": {
       "mad": 0.0,
       "median": 2.0,
       "sample_count": 9,
-      "source": "rdcycle"
+      "source": "rdcycle",
+      "validity": "accepted"
     },
     "pointer_chase": {
       "mad": 0.0,
       "median": 1.0,
       "sample_count": 9,
-      "source": "rdcycle"
+      "source": "rdcycle",
+      "validity": "accepted"
     },
     "register_pressure": {
       "16": {
         "mad": 0.0,
         "median": 16.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "24": {
         "mad": 0.0,
         "median": 24.001,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "32": {
         "mad": 0.0,
         "median": 48.002,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "8": {
         "mad": 0.0,
         "median": 8.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "stride": {
@@ -77,19 +88,22 @@
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "64": {
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "8": {
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "working_set": {
@@ -97,19 +111,22 @@
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "32768": {
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "4096": {
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     }
   },
@@ -131,7 +148,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "address",
       "resource_occupancy": 1,
@@ -139,7 +157,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "branch": {
@@ -148,7 +167,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "branch",
       "resource_occupancy": 1,
@@ -156,7 +176,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "call_return": {
@@ -165,7 +186,8 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "call_return",
       "resource_occupancy": 1,
@@ -173,7 +195,8 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "float_alu": {
@@ -182,7 +205,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "float_alu",
       "resource_occupancy": 1,
@@ -190,7 +214,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "float_div": {
@@ -199,7 +224,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "float_div",
       "resource_occupancy": 1,
@@ -207,7 +233,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "float_mul": {
@@ -216,7 +243,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "float_mul",
       "resource_occupancy": 1,
@@ -224,7 +252,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "integer_alu": {
@@ -233,7 +262,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "integer_alu",
       "resource_occupancy": 1,
@@ -241,7 +271,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "integer_div": {
@@ -250,7 +281,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "integer_div",
       "resource_occupancy": 1,
@@ -258,7 +290,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "integer_mul": {
@@ -267,7 +300,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "integer_mul",
       "resource_occupancy": 1,
@@ -275,7 +309,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "load": {
@@ -284,7 +319,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "load",
       "resource_occupancy": 1,
@@ -292,7 +328,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "move": {
@@ -301,7 +338,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "move",
       "resource_occupancy": 1,
@@ -309,7 +347,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "store": {
@@ -318,7 +357,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "resource": "store",
       "resource_occupancy": 1,
@@ -326,7 +366,8 @@
         "mad": 0.0,
         "median": 1.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     }
   },
@@ -336,73 +377,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "branch": {
@@ -410,73 +463,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "call_return": {
@@ -484,73 +549,85 @@
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 4.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "float_alu": {
@@ -558,73 +635,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "float_div": {
@@ -632,73 +721,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "float_mul": {
@@ -706,73 +807,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "integer_alu": {
@@ -780,73 +893,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "integer_div": {
@@ -854,73 +979,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "integer_mul": {
@@ -928,73 +1065,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "load": {
@@ -1002,73 +1151,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "move": {
@@ -1076,73 +1237,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     },
     "store": {
@@ -1150,73 +1323,85 @@
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "branch": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "call_return": {
         "mad": 0.0,
         "median": 3.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "float_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_alu": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_div": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "integer_mul": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "load": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "move": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       },
       "store": {
         "mad": 0.0,
         "median": 2.0,
         "sample_count": 9,
-        "source": "rdcycle"
+        "source": "rdcycle",
+        "validity": "accepted"
       }
     }
   },
@@ -1245,13 +1430,15 @@
       "mad": 0.0,
       "median": 1.0,
       "sample_count": 9,
-      "source": "rdcycle"
+      "source": "rdcycle",
+      "validity": "accepted"
     },
     "store": {
       "mad": 0.0,
       "median": 1.0,
       "sample_count": 9,
-      "source": "rdcycle"
+      "source": "rdcycle",
+      "validity": "accepted"
     }
   },
   "target": {

@@ -51,7 +51,7 @@ def measurement(values, source, clock_hz):
     median = statistics.median(numeric)
     deviations = [abs(value - median) for value in numeric]
     return {"median": float(median), "mad": float(statistics.median(deviations)),
-        "sample_count": len(numeric), "source": source}
+        "sample_count": len(numeric), "source": source, "validity": "accepted"}
 
 
 def profile_from_raw(template, raw):

@@ -1,6 +1,9 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
 
-from tools.benchmark.report import BenchmarkError, analyze
+from tools.benchmark.report import BenchmarkError, analyze, validate_manifest
 
 
 def run(ratio):
@@ -39,6 +42,26 @@ class BenchmarkReportTest(unittest.TestCase):
             cache_reused=True)
         with self.assertRaisesRegex(BenchmarkError, "cold start"):
             analyze(document)
+
+    def test_manifest_preflight_rejects_path_escape_and_missing_required_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "case.sy").write_text("int main(){return 0;}", encoding="utf-8")
+            (root / "case.out").write_text("0\n", encoding="utf-8")
+            manifest = {"schema_version": 1, "target": "rv64gc", "abi": "lp64d",
+                "runtime": "field", "max_static_bytes": 1024, "cases": [{"id": "case",
+                    "source": "case.sy", "input": None, "input_required": True,
+                    "expected": "case.out", "timeout_seconds": 1,
+                    "expected_static_bytes": 0, "excluded_reason": None}]}
+            path = root / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(BenchmarkError, "requires an input"):
+                validate_manifest(path)
+            manifest["cases"][0]["input_required"] = False
+            manifest["cases"][0]["source"] = "../escape.sy"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(BenchmarkError, "escapes"):
+                validate_manifest(path)
 
 
 if __name__ == "__main__":

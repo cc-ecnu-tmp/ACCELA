@@ -36,7 +36,7 @@ def _positive(value, name):
 
 def _measurement(table, name, max_relative_mad, minimum_samples=1):
     table = _table(table, name)
-    _keys(table, ("median", "mad", "sample_count", "source"), name)
+    _keys(table, ("median", "mad", "sample_count", "source", "validity"), name)
     median = _positive(table["median"], f"{name}.median")
     mad = table["mad"]
     if isinstance(mad, bool) or not isinstance(mad, (int, float)) or not math.isfinite(mad) or mad < 0:
@@ -46,6 +46,8 @@ def _measurement(table, name, max_relative_mad, minimum_samples=1):
         raise ValidationError(f"{name}.sample_count must be at least {minimum_samples}")
     if not isinstance(table["source"], str) or not table["source"].strip():
         raise ValidationError(f"{name}.source must be non-empty")
+    if table["validity"] != "accepted":
+        raise ValidationError(f"{name}.validity must be accepted")
     if mad / median > max_relative_mad:
         raise ValidationError(
             f"{name} is unstable: MAD/median={mad / median:.6f} exceeds {max_relative_mad:.6f}"
@@ -214,7 +216,7 @@ def validate_profile(profile):
 def _measurement_nodes(value, path="profile"):
     if not isinstance(value, Mapping):
         return
-    if set(value) == {"median", "mad", "sample_count", "source"}:
+    if set(value) == {"median", "mad", "sample_count", "source", "validity"}:
         yield path, value
         return
     for key, child in value.items():

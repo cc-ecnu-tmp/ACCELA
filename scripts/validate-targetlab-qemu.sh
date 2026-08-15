@@ -36,8 +36,8 @@ bare_profile="$result_dir/baremetal.profile.json"
   --debug-server-kind qemu \
   --debug-server-mode managed \
   --debug-server-executable "$qemu_system" \
-  --startup tools/targetlab/tests/fixtures/rv64-start.S \
-  --linker tools/targetlab/tests/fixtures/rv64-virt.ld \
+  --startup tools/targetlab/platform/qemu-virt/start.S \
+  --linker tools/targetlab/platform/qemu-virt/link.ld \
   --build-dir "$result_dir/baremetal-build" \
   --output "$bare_config"
 "$python_bin" -m tools.targetlab doctor "$bare_config"
@@ -79,11 +79,17 @@ if ! "$python_bin" -m tools.targetlab run "$linux_config" --output "$linux_raw" 
   exit 2
 fi
 "$python_bin" -m tools.targetlab collect "$linux_raw" "$linux_collected"
+linux_profile_log="$result_dir/linux-profile.log"
 if "$python_bin" -m tools.targetlab profile "$linux_collected" \
     config/target/boomv3-development.json "$linux_profile" \
-    --profile-id qemu-rv64gc-linux-smoke; then
+    --profile-id qemu-rv64gc-linux-smoke 2>"$linux_profile_log"; then
   "$python_bin" -m tools.targetlab validate "$linux_profile"
   printf '%s\n' 'TargetLab QEMU validation: bare-metal and Linux profiles passed quality gates'
 else
-  printf '%s\n' 'TargetLab QEMU validation: bare-metal passed; Linux transport passed but quality gate rejected noisy QEMU timing'
+  cat "$linux_profile_log" >&2
+  if grep -Eq 'is unstable: MAD/median=.* exceeds ' "$linux_profile_log"; then
+    printf '%s\n' 'TargetLab QEMU validation: bare-metal passed; Linux transport passed but quality gate rejected noisy QEMU timing'
+  else
+    exit 2
+  fi
 fi

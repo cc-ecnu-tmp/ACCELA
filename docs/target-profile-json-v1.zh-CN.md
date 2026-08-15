@@ -10,7 +10,7 @@
 
 ## 测量对象与单位
 
-每个 measurement 必须包含 `median`、`mad`、`sample_count`、`source`。内部单位是 cycle；样本数是扣除 empty kernel 后保留的正式样本数；source 必须与 TargetLab 报告一致。原始 JSON 使用整数缩放单位 `rdcycle_x1000` 或 `clock_gettime_ns_x1000`，避免跨语言浮点文本差异。后者必须结合 `target.clock_hz` 转成 cycle，降级不得静默发生。
+每个 measurement 必须包含 `median`、`mad`、`sample_count`、`source` 和 `validity:"accepted"`。内部单位是 cycle；样本数是扣除 empty kernel 后保留的正式样本数；source 必须与 TargetLab 报告一致。拒绝或不完整的测量只保留在 raw 诊断中，不能伪装成 Profile measurement。原始 JSON 使用整数缩放单位 `rdcycle_x1000` 或 `clock_gettime_ns_x1000`，避免跨语言浮点文本差异。后者必须结合 `target.clock_hz` 转成 cycle，降级不得静默发生。
 
 算术、吞吐和 pairing 要求 `MAD/median <= 0.01`；branch、memory、working-set 和 spill 转折允许 `<= 0.05`。样本不足 9、计数器倒退、empty 扣除后非正或超过门槛均拒绝 Profile；不丢弃离群样本。
 

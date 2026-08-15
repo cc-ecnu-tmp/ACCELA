@@ -1,1191 +1,1453 @@
 {
-  "schema_version": 1,
-  "profile": {
-    "id": "boomv3-development-uncalibrated",
-    "calibrated": false,
-    "evidence_level": "declared"
+  "branch": {
+    "predictable": {
+      "mad": 0,
+      "median": 1,
+      "sample_count": 1,
+      "source": "declared-development",
+      "validity": "accepted"
+    },
+    "unpredictable": {
+      "mad": 0,
+      "median": 8,
+      "sample_count": 1,
+      "source": "declared-development",
+      "validity": "accepted"
+    }
   },
-  "target": {
-    "isa": "rv64gc",
-    "abi": "lp64d",
-    "code_model": "medany",
-    "clock_hz": 50000000,
-    "fetch_width": 2,
-    "issue_width": 2,
-    "retire_width": 2
+  "diagnostics": {
+    "frontend": {
+      "1024": {
+        "mad": 0,
+        "median": 128,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "256": {
+        "mad": 0,
+        "median": 32,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "64": {
+        "mad": 0,
+        "median": 8,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "load_use": {
+      "mad": 0,
+      "median": 5,
+      "sample_count": 1,
+      "source": "declared-development",
+      "validity": "accepted"
+    },
+    "pointer_chase": {
+      "mad": 0,
+      "median": 8,
+      "sample_count": 1,
+      "source": "declared-development",
+      "validity": "accepted"
+    },
+    "register_pressure": {
+      "16": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "24": {
+        "mad": 0,
+        "median": 17,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "32": {
+        "mad": 0,
+        "median": 33,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "8": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "stride": {
+      "512": {
+        "mad": 0,
+        "median": 8,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "64": {
+        "mad": 0,
+        "median": 5,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "8": {
+        "mad": 0,
+        "median": 5,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "working_set": {
+      "262144": {
+        "mad": 0,
+        "median": 8,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "32768": {
+        "mad": 0,
+        "median": 5,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "4096": {
+        "mad": 0,
+        "median": 5,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    }
   },
   "measurement_environment": {
     "backend": "unmeasured",
+    "clock_hz": 50000000,
+    "measurement_mode": "declared",
+    "minimum_cycles": 1000000,
     "rdcycle": null,
     "rdinstret": null,
-    "timer": "unmeasured",
-    "clock_hz": 50000000,
-    "minimum_cycles": 1000000,
-    "warmup_count": 2,
     "sample_count": 9,
-    "measurement_mode": "declared"
+    "timer": "unmeasured",
+    "warmup_count": 2
+  },
+  "operations": {
+    "address": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "address",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "branch": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "branch",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "call_return": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 3,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "call_return",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "float_alu": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 3,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "float_alu",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "float_div": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 12,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "float_div",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "float_mul": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 4,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "float_mul",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "integer_alu": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "integer_alu",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "integer_div": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 12,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "integer_div",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "integer_mul": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 3,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "integer_mul",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "load": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 4,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "load",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "move": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "move",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "store": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "resource": "store",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    }
+  },
+  "pairing": {
+    "address": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "branch": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "call_return": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "float_alu": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "float_div": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "float_mul": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "integer_alu": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "integer_div": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 2,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "integer_mul": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "load": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "move": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    },
+    "store": {
+      "address": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0,
+        "median": 1,
+        "sample_count": 1,
+        "source": "declared-development",
+        "validity": "accepted"
+      }
+    }
+  },
+  "profile": {
+    "calibrated": false,
+    "evidence_level": "declared",
+    "id": "boomv3-development-uncalibrated"
   },
   "scheduler": {
-    "enabled": true,
     "beam_width": 8,
+    "enabled": true,
     "max_function_expansions": 1024,
     "max_module_expansions": 4096,
     "uncertainty_weight": 1
   },
-  "operations": {
-    "integer_alu": {
-      "latency": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "integer_alu"
-    },
-    "integer_mul": {
-      "latency": {
-        "median": 3,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "integer_mul"
-    },
-    "integer_div": {
-      "latency": {
-        "median": 12,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "integer_div"
-    },
-    "float_alu": {
-      "latency": {
-        "median": 3,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "float_alu"
-    },
-    "float_mul": {
-      "latency": {
-        "median": 4,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "float_mul"
-    },
-    "float_div": {
-      "latency": {
-        "median": 12,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "float_div"
-    },
-    "load": {
-      "latency": {
-        "median": 4,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "load"
-    },
-    "store": {
-      "latency": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "store"
-    },
-    "branch": {
-      "latency": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "branch"
-    },
-    "call_return": {
-      "latency": {
-        "median": 3,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "call_return"
-    },
-    "address": {
-      "latency": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "address"
-    },
-    "move": {
-      "latency": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "throughput": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "resource_occupancy": 1,
-      "code_bytes": 4,
-      "resource": "move"
-    }
-  },
-  "pairing": {
-    "integer_alu": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "integer_mul": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "integer_div": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 2,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "float_alu": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "float_mul": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "float_div": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "load": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "store": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "branch": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "call_return": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "address": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    },
-    "move": {
-      "integer_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "integer_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_alu": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_mul": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "float_div": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "load": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "store": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "branch": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "call_return": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "address": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      },
-      "move": {
-        "median": 1,
-        "mad": 0,
-        "sample_count": 1,
-        "source": "declared-development"
-      }
-    }
-  },
-  "branch": {
-    "predictable": {
-      "median": 1,
-      "mad": 0,
-      "sample_count": 1,
-      "source": "declared-development"
-    },
-    "unpredictable": {
-      "median": 8,
-      "mad": 0,
-      "sample_count": 1,
-      "source": "declared-development"
-    }
+  "schema_version": 1,
+  "simd": {
+    "abi": null,
+    "benchmark_classes": [],
+    "enabled": false,
+    "isa_extension": null,
+    "register_classes": []
   },
   "spills": {
     "load": {
-      "median": 5,
       "mad": 0,
+      "median": 5,
       "sample_count": 1,
-      "source": "declared-development"
+      "source": "declared-development",
+      "validity": "accepted"
     },
     "store": {
-      "median": 2,
       "mad": 0,
+      "median": 2,
       "sample_count": 1,
-      "source": "declared-development"
+      "source": "declared-development",
+      "validity": "accepted"
     }
   },
-  "diagnostics": {
-    "load_use": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
-    "pointer_chase": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"},
-    "working_set": {
-      "4096": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "32768": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "262144": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"}
-    },
-    "stride": {
-      "8": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "64": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "512": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"}
-    },
-    "frontend": {
-      "64": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "256": {"median": 32, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "1024": {"median": 128, "mad": 0, "sample_count": 1, "source": "declared-development"}
-    },
-    "register_pressure": {
-      "8": {"median": 1, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "16": {"median": 1, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "24": {"median": 17, "mad": 0, "sample_count": 1, "source": "declared-development"},
-      "32": {"median": 33, "mad": 0, "sample_count": 1, "source": "declared-development"}
-    }
-  },
-  "simd": {
-    "enabled": false,
-    "isa_extension": null,
-    "abi": null,
-    "register_classes": [],
-    "benchmark_classes": []
+  "target": {
+    "abi": "lp64d",
+    "clock_hz": 50000000,
+    "code_model": "medany",
+    "fetch_width": 2,
+    "isa": "rv64gc",
+    "issue_width": 2,
+    "retire_width": 2
   }
 }

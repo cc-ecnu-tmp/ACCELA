@@ -63,13 +63,13 @@ public final class MachineCandidateScheduler {
     }
     MachineVerifier.verify(candidate);
     if (!profile.calibrated() || !profile.scheduler().enabled()) {
-      function.replaceWith(candidate);
       trace.accept(new DecisionTraceSink.Decision(profile.id(), profile.evidenceLevel().name().toLowerCase(),
-          candidateId, "machine-function", function.getName(), "applied",
-          "uncalibrated_profile_preserves_production_pipeline", "proved", legality.obligation(),
+          candidateId, "machine-function", function.getName(), "rejected",
+          !profile.calibrated() ? "profile_not_calibrated" : "scheduler_disabled",
+          "proved", legality.obligation(),
           Map.of(), null, null, null,
           expansions, profile.scheduler().maxFunctionExpansions()));
-      return true;
+      return false;
     }
     CostEstimate baseline = costModel.estimate(function);
     CostEstimate transformed = costModel.estimate(candidate);

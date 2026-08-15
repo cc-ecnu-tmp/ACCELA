@@ -50,7 +50,14 @@ public final class IRCandidateScheduler {
   public accela.ir.Module schedule(accela.ir.Module input) {
     IRVerifier.verifyModule(input);
     State initial = state(IRSnapshot.deepCopy(input), List.of());
-    if (!profile.calibrated() || !profile.scheduler().enabled()) return initial.module();
+    if (!profile.calibrated() || !profile.scheduler().enabled()) {
+      trace.accept(new DecisionTraceSink.Decision(profile.id(),
+          profile.evidenceLevel().name().toLowerCase(), "ir.beam.final", "module", "module",
+          "rejected", !profile.calibrated() ? "profile_not_calibrated" : "scheduler_disabled",
+          "not_evaluated", "ir.beam.validated-state", Map.of("sequence", ""), initial.cost(),
+          initial.cost(), initial.allocation(), 0, profile.scheduler().maxModuleExpansions()));
+      return initial.module();
+    }
 
     List<Spec> specs = new ArrayList<>();
     for (int index = 0; index < input.getFunctions().size(); index++) {
