@@ -137,9 +137,16 @@ public class IRPrinter {
       case SITOFP: return printConv(inst, "sitofp");
       case FPTOSI: return printConv(inst, "fptosi");
 
+      case BUILD_VECTOR:    return printBuildVector(inst);
+      case SPLAT:           return printSplat(inst);
+      case EXTRACT_ELEMENT: return printExtractElement(inst);
+      case INSERT_ELEMENT:  return printInsertElement(inst);
+      case SHUFFLE_VECTOR:  return printShuffleVector(inst);
+
       case XOR:  return printBinOp(inst, "xor");
       case CALL: return printCall(inst);
       case PHI:  return printPhi(inst);
+      case SELECT: return printSelect(inst);
       default:   return "; unknown instruction";
     }
   }
@@ -149,6 +156,11 @@ public class IRPrinter {
     String lhs = val(inst.getOperand(0));
     String rhs = val(inst.getOperand(1));
     return name(inst) + " = " + op + " " + inst.getType() + " " + lhs + ", " + rhs;
+  }
+
+  private String printSelect(Instruction inst) {
+    return name(inst) + " = select i1 " + val(inst.getOperand(0)) + ", "
+        + typed(inst.getOperand(1)) + ", " + typed(inst.getOperand(2));
   }
 
   /** Expands the internal i32 smulh primitive into valid LLVM IR for debug execution. */
@@ -167,7 +179,7 @@ public class IRPrinter {
 
   // %v0 = fneg float %v1
   private String printFNeg(Instruction inst) {
-    return name(inst) + " = fneg float " + val(inst.getOperand(0));
+    return name(inst) + " = fneg " + inst.getType() + " " + val(inst.getOperand(0));
   }
 
   // %v0 = icmp slt i32 %v1, %v2
@@ -234,6 +246,40 @@ public class IRPrinter {
     return name(inst) + " = " + op + " " + typed(src) + " to " + inst.getType();
   }
 
+  // %v0 = build_vector <4 x i32> [i32 1, i32 2, i32 3, i32 4]
+  private String printBuildVector(Instruction inst) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(name(inst)).append(" = build_vector ").append(inst.getType()).append(" [");
+    for (int index = 0; index < inst.getNumOperands(); index++) {
+      if (index > 0) sb.append(", ");
+      sb.append(typed(inst.getOperand(index)));
+    }
+    return sb.append("]").toString();
+  }
+
+  // %v0 = splat <4 x i32> i32 %v1
+  private String printSplat(Instruction inst) {
+    return name(inst) + " = splat " + inst.getType() + " " + typed(inst.getOperand(0));
+  }
+
+  // %v0 = extractelement <4 x i32> %v1, i32 2
+  private String printExtractElement(Instruction inst) {
+    return name(inst) + " = extractelement " + typed(inst.getOperand(0)) + ", "
+        + typed(inst.getOperand(1));
+  }
+
+  // %v0 = insertelement <4 x i32> %v1, i32 %v2, i32 2
+  private String printInsertElement(Instruction inst) {
+    return name(inst) + " = insertelement " + typed(inst.getOperand(0)) + ", "
+        + typed(inst.getOperand(1)) + ", " + typed(inst.getOperand(2));
+  }
+
+  // %v0 = shufflevector <4 x i32> %v1, <4 x i32> %v2, <4 x i32> <...>
+  private String printShuffleVector(Instruction inst) {
+    return name(inst) + " = shufflevector " + typed(inst.getOperand(0)) + ", "
+        + typed(inst.getOperand(1)) + ", " + typed(inst.getOperand(2));
+  }
+
   // %v0 = call i32 @foo(i32 %v1, float %v2)
   private String printCall(Instruction inst) {
     Function callee = inst.getCallee();
@@ -296,6 +342,9 @@ public class IRPrinter {
     if (c instanceof Constant.Array) {
       return printConstantArray((Constant.Array) c);
     }
+    if (c instanceof Constant.Vector) {
+      return printConstantVector((Constant.Vector) c);
+    }
     return "0";
   }
 
@@ -312,6 +361,17 @@ public class IRPrinter {
       sb.append(elemType).append(" ").append(constVal(elem));
     }
     sb.append("]");
+    return sb.toString();
+  }
+
+  private String printConstantVector(Constant.Vector vector) {
+    StringBuilder sb = new StringBuilder("<");
+    for (int i = 0; i < vector.elements.size(); i++) {
+      if (i > 0) sb.append(", ");
+      Constant element = vector.elements.get(i);
+      sb.append(element.getType()).append(" ").append(constVal(element));
+    }
+    sb.append(">");
     return sb.toString();
   }
 }
