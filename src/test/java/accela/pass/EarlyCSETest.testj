@@ -35,6 +35,23 @@ final class EarlyCSETest {
   }
 
   @Test
+  void eliminatesRepeatedVectorExpressions() {
+    Function function = new Function("vector", Type.INT);
+    Value lane = function.addArgument(Type.INT, "lane");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Instruction first = builder.createSplat(int4, lane);
+    Instruction duplicate = builder.createSplat(int4, lane);
+    Instruction extracted = builder.createExtractElement(duplicate, Constant.intConst(0));
+    builder.createRet(extracted);
+
+    assertTrue(EarlyCSE.runOnFunction(function));
+    assertSame(first, extracted.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
+  @Test
   void forwardsAStoreThroughEquivalentGep() {
     Function function = new Function("f", Type.INT);
     BasicBlock entry = function.addBlock("entry");
@@ -72,6 +89,37 @@ final class EarlyCSETest {
     assertEquals(1, count(entry, Instruction.Opcode.LOAD));
     assertTrue(secondLoad.getParent() == null);
     assertSame(firstLoad, ret.getOperand(0));
+  }
+
+  @Test
+  void doesNotForwardAWideStoreToANarrowLoadAtTheSameAddress() {
+    Function function = new Function("typed_memory", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value pointer = builder.createAlloca(int4);
+    builder.createStore(Constant.zero(int4), pointer);
+    Instruction narrowLoad = builder.createLoad(Type.INT, pointer);
+    Instruction ret = builder.createRet(narrowLoad);
+
+    assertFalse(EarlyCSE.runOnFunction(function));
+    assertSame(entry, narrowLoad.getParent());
+    assertSame(narrowLoad, ret.getOperand(0));
+  }
+
+  @Test
+  void doesNotForwardAStoreToASameWidthLoadOfAnotherType() {
+    Function function = new Function("typed_memory", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value pointer = builder.createAlloca(Type.FLOAT);
+    builder.createStore(Constant.floatConst(1.0f), pointer);
+    Instruction integerLoad = builder.createLoad(Type.INT, pointer);
+    Instruction ret = builder.createRet(integerLoad);
+
+    assertFalse(EarlyCSE.runOnFunction(function));
+    assertSame(entry, integerLoad.getParent());
+    assertSame(integerLoad, ret.getOperand(0));
   }
 
   @Test

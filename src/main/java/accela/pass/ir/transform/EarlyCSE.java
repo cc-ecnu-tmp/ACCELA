@@ -10,11 +10,11 @@ import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
+import accela.pass.ir.analysis.MemoryLocation;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -63,21 +63,22 @@ public final class EarlyCSE {
   private static boolean runOnBlock(
       BasicBlock block, GlobalModRefAnalysis.Result modRef) {
     Map<Expression, Value> available = new HashMap<>();
-    Map<Value, Value> availableLoads = new IdentityHashMap<>();
+    Map<MemoryLocation, Value> availableLoads = new HashMap<>();
     boolean changed = false;
     for (Instruction instruction : new ArrayList<>(block.getInstructions())) {
       if (instruction.getOpcode() == Instruction.Opcode.STORE) {
         Value stored = instruction.getOperand(0);
-        Value pointer = instruction.getOperand(1);
-        boolean redundant = availableLoads.get(pointer) == stored;
+        MemoryLocation storedLocation = MemoryLocation.fromInstruction(instruction);
+        boolean redundant = availableLoads.get(storedLocation) == stored;
 
         // Equal-width, naturally aligned accesses into one object are either identical or
         // disjoint. Writing the known value therefore preserves the load fact in both cases.
-        availableLoads.keySet().removeIf(
-            loadedPointer -> PointerProvenance.mayAlias(loadedPointer, pointer)
-                && (availableLoads.get(loadedPointer) != stored
-                    || mayPartiallyOverlap(loadedPointer, pointer, stored.getType())));
-        if (!redundant) availableLoads.put(pointer, stored);
+        availableLoads.keySet().removeIf(loadedLocation ->
+            PointerProvenance.mayAlias(loadedLocation.pointer(), storedLocation.pointer())
+                && (availableLoads.get(loadedLocation) != stored
+                    || !loadedLocation.hasSameAccessShape(storedLocation)
+                    || mayPartiallyOverlap(loadedLocation, storedLocation)));
+        if (!redundant) availableLoads.put(storedLocation, stored);
         if (redundant) {
           instruction.eraseFromParent();
           changed = true;
@@ -88,11 +89,12 @@ public final class EarlyCSE {
         case CALL -> {
           if (modRef == null) availableLoads.clear();
           else availableLoads.keySet().removeIf(
-              pointer -> modRef.mayWrite(instruction, pointer));
+              location -> modRef.mayWrite(instruction, location.pointer()));
           yield modRef != null && modRef.isPure(instruction)
               ? available.putIfAbsent(expressionFor(instruction), instruction) : null;
         }
-        case LOAD -> availableLoads.putIfAbsent(instruction.getOperand(0), instruction);
+        case LOAD -> availableLoads.putIfAbsent(
+            MemoryLocation.fromInstruction(instruction), instruction);
         default -> {
           if (!isSimple(instruction)) yield null;
           yield available.putIfAbsent(expressionFor(instruction), instruction);
@@ -106,21 +108,23 @@ public final class EarlyCSE {
     return changed;
   }
 
-  private static boolean mayPartiallyOverlap(Value left, Value right, Type accessType) {
-    if (left == right || !PointerProvenance.mayAlias(left, right)) return false;
-    Value root = PointerProvenance.root(left);
-    if (root != PointerProvenance.root(right)
+  private static boolean mayPartiallyOverlap(MemoryLocation left, MemoryLocation right) {
+    if (left.pointer() == right.pointer()
+        || !PointerProvenance.mayAlias(left.pointer(), right.pointer())) return false;
+    Value root = PointerProvenance.root(left.pointer());
+    if (root != PointerProvenance.root(right.pointer())
         || !(root instanceof GlobalVariable || isAlloca(root))) return true;
-    long accessSize = sizeOf(accessType);
-    return !isAlignedTo(left, accessSize) || !isAlignedTo(right, accessSize);
+    return !isAlignedTo(left.pointer(), left.byteSize())
+        || !isAlignedTo(right.pointer(), right.byteSize());
   }
 
   private static boolean isAlignedTo(Value pointer, long alignment) {
     if (pointer instanceof GlobalVariable global) {
-      return sizeOf(global.getValueType().scalarType()) % alignment == 0;
+      return MemoryLocation.byteSize(arrayLeafType(global.getValueType())) % alignment == 0;
     }
     if (isAlloca(pointer)) {
-      return sizeOf(((Instruction) pointer).getAllocatedType().scalarType()) % alignment == 0;
+      return MemoryLocation.byteSize(arrayLeafType(((Instruction) pointer).getAllocatedType()))
+          % alignment == 0;
     }
     if (!(pointer instanceof Instruction gep)
         || gep.getOpcode() != Instruction.Opcode.GEP
@@ -136,13 +140,12 @@ public final class EarlyCSE {
     for (int index = 1; index < operandIndex; index++) {
       if (type.isArray()) type = type.innerType;
     }
-    return sizeOf(type);
+    return MemoryLocation.byteSize(type);
   }
 
-  private static long sizeOf(Type type) {
-    if (type.isArray()) return Math.multiplyExact(type.size, sizeOf(type.innerType));
-    if (type == Type.I64 || type.isPointer()) return 8;
-    return type == Type.I1 ? 1 : 4;
+  private static Type arrayLeafType(Type type) {
+    while (type.isArray()) type = type.innerType;
+    return type;
   }
 
   private static boolean isAlloca(Value value) {
@@ -153,7 +156,8 @@ public final class EarlyCSE {
   private static boolean isSimple(Instruction instruction) {
     return switch (instruction.getOpcode()) {
       case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, FADD, FSUB, FMUL, FDIV, FNEG,
-          ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, XOR -> true;
+          ICMP, FCMP, GEP, ZEXT, SEXT, SITOFP, FPTOSI, XOR,
+          BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR, SELECT -> true;
       default -> false;
     };
   }
@@ -180,6 +184,13 @@ public final class EarlyCSE {
     if (value instanceof Constant.Float floating) {
       return new FloatKey(Float.floatToRawIntBits(floating.value));
     }
+    if (value instanceof Constant.Zero zero) {
+      return new ZeroKey(zero.getType().toString());
+    }
+    if (value instanceof Constant.Vector vector) {
+      return new VectorKey(
+          vector.getType().toString(), vector.elements.stream().map(EarlyCSE::valueKey).toList());
+    }
     return value;
   }
 
@@ -189,4 +200,8 @@ public final class EarlyCSE {
   private record IntegerKey(Type.DataType type, long value) {}
 
   private record FloatKey(int bits) {}
+
+  private record ZeroKey(String type) {}
+
+  private record VectorKey(String type, List<Object> elements) {}
 }
