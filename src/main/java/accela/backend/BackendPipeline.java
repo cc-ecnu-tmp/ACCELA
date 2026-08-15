@@ -21,6 +21,8 @@ import accela.backend.target.RISCVAsmEmitter;
 import accela.backend.target.RISCVAsmPrinter;
 import accela.backend.target.RISCVFrameLowering;
 import accela.backend.target.RISCVTarget;
+import accela.pass.ir.transform.VectorScalarization;
+import accela.pass.ir.transform.ScalarizedVectorCleanup;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -44,6 +46,7 @@ final class BackendPipeline {
   private final RISCVAsmPrinter asmPrinter = new RISCVAsmPrinter(target, frameLowering, asmEmitter);
 
   String compileToAssembly(accela.ir.Module module) {
+    if (VectorScalarization.run(module)) ScalarizedVectorCleanup.run(module);
     MachineModule machineModule = lowering.lower(module);
     GlobalMerge globalMerge = new GlobalMerge(machineModule, target);
     Map<MachineFunction, AllocationResult> allocations = new LinkedHashMap<>();
