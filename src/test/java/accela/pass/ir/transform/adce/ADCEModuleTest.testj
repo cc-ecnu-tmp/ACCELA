@@ -35,6 +35,9 @@ final class ADCEModuleTest {
     Module module = new Module();
     Function reachable = constantFunction(module, "reachable", 7);
     Function dead = constantFunction(module, "dead", 9);
+    IRBuilder deadBuilder = new IRBuilder();
+    deadBuilder.setInsertPointBefore(dead.getEntryBlock().getTerminator());
+    deadBuilder.createSplat(Type.vector(Type.INT, 4), Constant.intConst(3));
     GlobalVariable liveGlobal = new GlobalVariable(
         "live", Type.INT, Constant.intConst(1), false);
     GlobalVariable deadGlobal = new GlobalVariable(
