@@ -102,6 +102,45 @@ final class GVNTest {
   }
 
   @Test
+  void doesNotMergeLoadsWithDifferentTypesAndWidthsAtTheSameAddress() {
+    Function function = new Function("typed_memory", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Type int4 = Type.vector(Type.INT, 4);
+    Value pointer = entryBuilder.createAlloca(int4);
+    Instruction wideLoad = entryBuilder.createLoad(int4, pointer);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction narrowLoad = bodyBuilder.createLoad(Type.INT, pointer);
+    Instruction ret = bodyBuilder.createRet(narrowLoad);
+
+    assertFalse(GVN.runOnFunction(function));
+    assertSame(entry, wideLoad.getParent());
+    assertSame(body, narrowLoad.getParent());
+    assertSame(narrowLoad, ret.getOperand(0));
+  }
+
+  @Test
+  void doesNotMergeSameWidthLoadsOfDifferentTypesAtTheSameAddress() {
+    Function function = new Function("typed_memory", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Value pointer = entryBuilder.createAlloca(Type.FLOAT);
+    Instruction floatLoad = entryBuilder.createLoad(Type.FLOAT, pointer);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction integerLoad = bodyBuilder.createLoad(Type.INT, pointer);
+    Instruction ret = bodyBuilder.createRet(integerLoad);
+
+    assertFalse(GVN.runOnFunction(function));
+    assertSame(entry, floatLoad.getParent());
+    assertSame(body, integerLoad.getParent());
+    assertSame(integerLoad, ret.getOperand(0));
+  }
+
+  @Test
   void eliminatesGepExpressionsFromDominatingBlocks() {
     Function function = new Function("f", Type.PTR);
     Value index = function.addArgument(Type.I64, "index");

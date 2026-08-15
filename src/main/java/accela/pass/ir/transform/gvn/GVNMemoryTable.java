@@ -5,6 +5,7 @@ import accela.ir.Constant;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
+import accela.pass.ir.analysis.MemoryLocation;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
 import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.ArrayList;
@@ -14,11 +15,11 @@ import java.util.Map;
 
 /** Tracks available loads along one dominator-tree path. */
 final class GVNMemoryTable {
-  private final Map<Object, AvailableLoad> loads = new HashMap<>();
+  private final Map<MemoryKey, AvailableLoad> loads = new HashMap<>();
 
   GVNMemoryTable() {}
 
-  private GVNMemoryTable(Map<Object, AvailableLoad> loads) {
+  private GVNMemoryTable(Map<MemoryKey, AvailableLoad> loads) {
     this.loads.putAll(loads);
   }
 
@@ -28,20 +29,21 @@ final class GVNMemoryTable {
 
   Value findOrAdd(Instruction instruction, GlobalModRefAnalysis.Result modRef) {
     if (instruction.getOpcode() == Instruction.Opcode.LOAD) {
-      Value pointer = instruction.getOperand(0);
-      AvailableLoad existing = loads.get(pointerKey(pointer));
+      MemoryLocation location = MemoryLocation.fromInstruction(instruction);
+      AvailableLoad existing = loads.get(memoryKey(location));
       if (existing != null && hasUniquePath(existing.value(), instruction)) {
         return existing.value();
       }
-      loads.put(pointerKey(pointer), new AvailableLoad(pointer, instruction));
+      loads.put(memoryKey(location), new AvailableLoad(location, instruction));
     } else if (instruction.getOpcode() == Instruction.Opcode.STORE) {
-      Value pointer = instruction.getOperand(1);
+      MemoryLocation location = MemoryLocation.fromInstruction(instruction);
       loads.values().removeIf(
-          load -> PointerProvenance.mayAlias(load.pointer(), pointer));
+          load -> PointerProvenance.mayAlias(
+              load.location().pointer(), location.pointer()));
     } else if (instruction.getOpcode() == Instruction.Opcode.CALL) {
       if (modRef == null) loads.clear();
       else loads.values().removeIf(
-          load -> modRef.mayWrite(instruction, load.pointer()));
+          load -> modRef.mayWrite(instruction, load.location().pointer()));
     }
     return null;
   }
@@ -75,6 +77,11 @@ final class GVNMemoryTable {
         instruction.getOpcode(), instruction.getType().toString(), detail, List.copyOf(operands));
   }
 
+  private static MemoryKey memoryKey(MemoryLocation location) {
+    return new MemoryKey(
+        pointerKey(location.pointer()), location.accessType(), location.byteSize());
+  }
+
   private static Object valueKey(Value value) {
     if (value instanceof Constant.Int integer) {
       return new IntegerKey(integer.getType().dataType, integer.value);
@@ -82,10 +89,19 @@ final class GVNMemoryTable {
     if (value instanceof Constant.Float floating) {
       return new FloatKey(Float.floatToRawIntBits(floating.value));
     }
+    if (value instanceof Constant.Zero zero) {
+      return new ZeroKey(zero.getType().toString());
+    }
+    if (value instanceof Constant.Vector vector) {
+      return new VectorKey(
+          vector.getType().toString(), vector.elements.stream().map(GVNMemoryTable::valueKey).toList());
+    }
     return value;
   }
 
-  private record AvailableLoad(Value pointer, Instruction value) {}
+  private record AvailableLoad(MemoryLocation location, Instruction value) {}
+
+  private record MemoryKey(Object pointer, Type accessType, long byteSize) {}
 
   private record MemoryExpression(
       Instruction.Opcode opcode, String type, String detail, List<Object> operands) {}
@@ -93,4 +109,8 @@ final class GVNMemoryTable {
   private record IntegerKey(Type.DataType type, long value) {}
 
   private record FloatKey(int bits) {}
+
+  private record ZeroKey(String type) {}
+
+  private record VectorKey(String type, List<Object> elements) {}
 }
