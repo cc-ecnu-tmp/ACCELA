@@ -1,0 +1,4856 @@
+{
+  "environment": {
+    "backend": "linux",
+    "clock_hz": 1500000000,
+    "measurement_mode": "hardware",
+    "minimum_cycles": 10000000,
+    "rdcycle": false,
+    "rdinstret": false,
+    "sample_count": 9,
+    "timer": "clock_gettime",
+    "warmup_count": 2
+  },
+  "samples": [
+    {
+      "baseline_values": [
+        275759,
+        262509,
+        262508,
+        262508,
+        262509,
+        274508,
+        262509,
+        262508,
+        274509
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11315355,
+        11328106,
+        11318106,
+        11493861,
+        11319606,
+        11329606,
+        11333606,
+        11316106,
+        11319105
+      ],
+      "metric": "operations.integer_alu.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        658,
+        659,
+        658,
+        669,
+        659,
+        658,
+        659,
+        658,
+        658
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        262258,
+        274758,
+        262508,
+        262509,
+        274759,
+        262509,
+        262508
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11418109,
+        11475611,
+        11402109,
+        11406109,
+        11425109,
+        11402358,
+        11407358,
+        11419109,
+        11404858
+      ],
+      "metric": "operations.integer_alu.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        332,
+        334,
+        331,
+        331,
+        332,
+        331,
+        331,
+        332,
+        332
+      ]
+    },
+    {
+      "baseline_values": [
+        66002,
+        66002,
+        65752,
+        65752,
+        65752,
+        65752,
+        66002,
+        66002,
+        65753
+      ],
+      "category": "arithmetic",
+      "iterations": 32768,
+      "measured_values": [
+        8499017,
+        8495517,
+        8483767,
+        8493767,
+        8493017,
+        8494267,
+        8483517,
+        8498267,
+        8482016
+      ],
+      "metric": "operations.integer_mul.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2010,
+        2009,
+        2007,
+        2009,
+        2009,
+        2009,
+        2006,
+        2010,
+        2006
+      ]
+    },
+    {
+      "baseline_values": [
+        79753,
+        65752,
+        65752,
+        65752,
+        66002,
+        65752,
+        65752,
+        66002,
+        65752
+      ],
+      "category": "arithmetic",
+      "iterations": 32768,
+      "measured_values": [
+        8486267,
+        8494267,
+        8483767,
+        8506017,
+        8483767,
+        8493767,
+        8492517,
+        8493767,
+        8505268
+      ],
+      "metric": "operations.integer_mul.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1002,
+        1004,
+        1003,
+        1006,
+        1003,
+        1004,
+        1004,
+        1004,
+        1006
+      ]
+    },
+    {
+      "baseline_values": [
+        4501,
+        4250,
+        4500,
+        4250,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500
+      ],
+      "category": "arithmetic",
+      "iterations": 2048,
+      "measured_values": [
+        12025128,
+        12051129,
+        12025878,
+        12059379,
+        12025878,
+        12029629,
+        12024128,
+        12029628,
+        12035629
+      ],
+      "metric": "operations.integer_div.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45855,
+        45955,
+        45857,
+        45986,
+        45857,
+        45872,
+        45851,
+        45872,
+        45895
+      ]
+    },
+    {
+      "baseline_values": [
+        2250,
+        2501,
+        2250,
+        2500,
+        2251,
+        2500,
+        2500,
+        2500,
+        2250
+      ],
+      "category": "arithmetic",
+      "iterations": 1024,
+      "measured_values": [
+        12026878,
+        12059879,
+        12031878,
+        12033878,
+        12025628,
+        12024128,
+        12024128,
+        12028378,
+        12024628
+      ],
+      "metric": "operations.integer_div.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45870,
+        45995,
+        45889,
+        45896,
+        45865,
+        45858,
+        45858,
+        45875,
+        45861
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33251,
+        33251,
+        45252,
+        33001,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "arithmetic",
+      "iterations": 16384,
+      "measured_values": [
+        7073722,
+        7073723,
+        7073722,
+        7073722,
+        7072222,
+        7079473,
+        7072222,
+        7075223,
+        7074722
+      ],
+      "metric": "operations.float_alu.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3357,
+        3357,
+        3357,
+        3357,
+        3350,
+        3360,
+        3356,
+        3357,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        33251,
+        33251,
+        33251,
+        33001,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "arithmetic",
+      "iterations": 16384,
+      "measured_values": [
+        7077472,
+        7080223,
+        7086973,
+        7071972,
+        7073723,
+        7083972,
+        7071973,
+        7073972,
+        7073723
+      ],
+      "metric": "operations.float_alu.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1679,
+        1680,
+        1681,
+        1678,
+        1678,
+        1681,
+        1678,
+        1678,
+        1678
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        45001,
+        33001,
+        33251,
+        33001,
+        33251,
+        33001,
+        33001,
+        33001
+      ],
+      "category": "arithmetic",
+      "iterations": 16384,
+      "measured_values": [
+        7071973,
+        7075472,
+        7097973,
+        7071972,
+        7074723,
+        7071722,
+        7073472,
+        7073223,
+        7071722
+      ],
+      "metric": "operations.float_mul.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3356,
+        3352,
+        3368,
+        3356,
+        3357,
+        3356,
+        3357,
+        3357,
+        3356
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33251,
+        33001,
+        33251,
+        33001,
+        33251,
+        45251,
+        33001
+      ],
+      "category": "arithmetic",
+      "iterations": 16384,
+      "measured_values": [
+        7077473,
+        7074222,
+        7078473,
+        7082222,
+        7072473,
+        7077722,
+        7074223,
+        7113724,
+        7073722
+      ],
+      "metric": "operations.float_mul.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1679,
+        1678,
+        1679,
+        1680,
+        1678,
+        1679,
+        1678,
+        1685,
+        1678
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33001,
+        45002,
+        33251,
+        33001,
+        33001,
+        33001,
+        33251
+      ],
+      "category": "arithmetic",
+      "iterations": 16384,
+      "measured_values": [
+        12760401,
+        12735401,
+        12732900,
+        12724400,
+        12737400,
+        12737651,
+        12736900,
+        12723900,
+        12735651
+      ],
+      "metric": "operations.float_div.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6068,
+        6056,
+        6055,
+        6046,
+        6057,
+        6058,
+        6057,
+        6051,
+        6056
+      ]
+    },
+    {
+      "baseline_values": [
+        16751,
+        16751,
+        16751,
+        16750,
+        16751,
+        16750,
+        16751,
+        16750,
+        16751
+      ],
+      "category": "arithmetic",
+      "iterations": 8192,
+      "measured_values": [
+        11346856,
+        11334106,
+        11331356,
+        11343107,
+        11333106,
+        11343107,
+        11332606,
+        11343357,
+        11344106
+      ],
+      "metric": "operations.float_div.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        5402,
+        5396,
+        5395,
+        5400,
+        5396,
+        5400,
+        5395,
+        5400,
+        5401
+      ]
+    },
+    {
+      "baseline_values": [
+        262509,
+        262509,
+        262508,
+        274509,
+        262509,
+        262508,
+        262509,
+        262508,
+        276508
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11316105,
+        11426859,
+        11315856,
+        11316105,
+        11327856,
+        11331856,
+        11329356,
+        11314606,
+        11321106
+      ],
+      "metric": "operations.load.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        658,
+        665,
+        658,
+        658,
+        659,
+        659,
+        659,
+        658,
+        658
+      ]
+    },
+    {
+      "baseline_values": [
+        131254,
+        131504,
+        143504,
+        131504,
+        143504,
+        131504,
+        131254,
+        131504,
+        131504
+      ],
+      "category": "arithmetic",
+      "iterations": 65536,
+      "measured_values": [
+        11316856,
+        11316856,
+        11316606,
+        11315356,
+        11316606,
+        11315356,
+        11345107,
+        11316856,
+        11328356
+      ],
+      "metric": "operations.load.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        666,
+        666,
+        665,
+        666,
+        665,
+        666,
+        668,
+        666,
+        667
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        262508,
+        274508,
+        262508,
+        262508,
+        262508,
+        262508,
+        274509
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11316106,
+        11326607,
+        11315606,
+        11322606,
+        11333857,
+        11314356,
+        11327606,
+        11315356,
+        11314355
+      ],
+      "metric": "operations.store.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        658,
+        659,
+        658,
+        658,
+        659,
+        658,
+        659,
+        658,
+        658
+      ]
+    },
+    {
+      "baseline_values": [
+        143505,
+        131504,
+        143505,
+        131504,
+        131504,
+        131254,
+        131504,
+        131254,
+        131504
+      ],
+      "category": "arithmetic",
+      "iterations": 65536,
+      "measured_values": [
+        11315856,
+        11341106,
+        11319356,
+        11315606,
+        11327356,
+        11314356,
+        11349357,
+        11318106,
+        11325606
+      ],
+      "metric": "operations.store.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        665,
+        668,
+        666,
+        666,
+        667,
+        666,
+        668,
+        666,
+        667
+      ]
+    },
+    {
+      "baseline_values": [
+        131254,
+        131504,
+        131504,
+        131254,
+        131254,
+        131504,
+        131504,
+        131255,
+        131504
+      ],
+      "category": "arithmetic",
+      "iterations": 65536,
+      "measured_values": [
+        11363358,
+        11370107,
+        11364858,
+        11371607,
+        11358358,
+        11372857,
+        11358857,
+        11370357,
+        11357107
+      ],
+      "metric": "operations.branch.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1338,
+        1339,
+        1339,
+        1339,
+        1338,
+        1340,
+        1338,
+        1339,
+        1338
+      ]
+    },
+    {
+      "baseline_values": [
+        65753,
+        66002,
+        65752,
+        66002,
+        65752,
+        65752,
+        65752,
+        65752,
+        66002
+      ],
+      "category": "arithmetic",
+      "iterations": 32768,
+      "measured_values": [
+        11350106,
+        11338107,
+        11348107,
+        11337856,
+        11337857,
+        11348107,
+        11336356,
+        11349857,
+        11337607
+      ],
+      "metric": "operations.branch.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1345,
+        1343,
+        1344,
+        1343,
+        1343,
+        1344,
+        1343,
+        1345,
+        1343
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33002,
+        33251,
+        33251,
+        33251,
+        33251,
+        33251,
+        33001
+      ],
+      "category": "arithmetic",
+      "iterations": 16384,
+      "measured_values": [
+        8516767,
+        8528018,
+        8528018,
+        8514517,
+        8528269,
+        8514767,
+        8528268,
+        8526269,
+        8537018
+      ],
+      "metric": "operations.call_return.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4045,
+        4050,
+        4050,
+        4044,
+        4050,
+        4044,
+        4050,
+        4049,
+        4055
+      ]
+    },
+    {
+      "baseline_values": [
+        16751,
+        16751,
+        16751,
+        16750,
+        16751,
+        16750,
+        16751,
+        16750,
+        16750
+      ],
+      "category": "arithmetic",
+      "iterations": 8192,
+      "measured_values": [
+        8514017,
+        8502017,
+        8515018,
+        8502267,
+        8512518,
+        8600520,
+        8518018,
+        8501518,
+        8512268
+      ],
+      "metric": "operations.call_return.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4051,
+        4046,
+        4052,
+        4046,
+        4051,
+        4093,
+        4053,
+        4045,
+        4050
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262509,
+        262509,
+        262508,
+        274508,
+        262508,
+        274509,
+        262509,
+        262508
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11331606,
+        11315105,
+        11326606,
+        11315106,
+        11315106,
+        11313606,
+        11313605,
+        11328356,
+        11313606
+      ],
+      "metric": "operations.address.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        659,
+        658,
+        659,
+        658,
+        658,
+        658,
+        657,
+        659,
+        658
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        274508,
+        262508,
+        262508,
+        274509,
+        262509,
+        262508,
+        274509,
+        262509
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11402609,
+        11425859,
+        11413859,
+        11402358,
+        11403108,
+        11412108,
+        11401858,
+        11405858,
+        11442359
+      ],
+      "metric": "operations.address.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        332,
+        332,
+        332,
+        331,
+        331,
+        332,
+        331,
+        331,
+        333
+      ]
+    },
+    {
+      "baseline_values": [
+        262509,
+        274508,
+        262508,
+        276009,
+        262508,
+        262508,
+        262508,
+        262508,
+        274508
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11323606,
+        11313356,
+        11325606,
+        11315106,
+        11324856,
+        11314856,
+        11338107,
+        11314856,
+        11314606
+      ],
+      "metric": "operations.move.latency",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        659,
+        657,
+        659,
+        657,
+        659,
+        658,
+        660,
+        658,
+        658
+      ]
+    },
+    {
+      "baseline_values": [
+        276759,
+        262508,
+        262508,
+        274509,
+        262508,
+        262509,
+        274509,
+        262508,
+        262509
+      ],
+      "category": "arithmetic",
+      "iterations": 131072,
+      "measured_values": [
+        11402359,
+        11415109,
+        11401858,
+        11403359,
+        11564363,
+        11401108,
+        11400858,
+        11417609,
+        11412608
+      ],
+      "metric": "operations.move.throughput",
+      "normalization": 256,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        331,
+        332,
+        331,
+        331,
+        336,
+        331,
+        331,
+        332,
+        332
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        262509,
+        262508,
+        262508,
+        262508,
+        262508,
+        262508,
+        274508
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11414109,
+        11400858,
+        11423859,
+        11415609,
+        11408109,
+        11412609,
+        11413859,
+        11427860,
+        11400359
+      ],
+      "metric": "pairing.integer_alu.integer_alu",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        664,
+        663,
+        665,
+        664,
+        664,
+        664,
+        664,
+        665,
+        663
+      ]
+    },
+    {
+      "baseline_values": [
+        66002,
+        66002,
+        66002,
+        66002,
+        66002,
+        65752,
+        66002,
+        65752,
+        78002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8495517,
+        8483517,
+        8499267,
+        8483767,
+        8493517,
+        8483517,
+        8495267,
+        8483267,
+        8481767
+      ],
+      "metric": "pairing.integer_alu.integer_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2009,
+        2006,
+        2010,
+        2006,
+        2009,
+        2006,
+        2009,
+        2006,
+        2003
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4250,
+        16501,
+        4250,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12024378,
+        12024128,
+        12031129,
+        12025628,
+        12023878,
+        12025628,
+        12025378,
+        12124131,
+        12025128
+      ],
+      "metric": "pairing.integer_alu.integer_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45852,
+        45851,
+        45877,
+        45856,
+        45850,
+        45857,
+        45810,
+        46233,
+        45855
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33001,
+        33001,
+        33001,
+        33251,
+        45001,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7075972,
+        7072723,
+        7079972,
+        7072223,
+        7074222,
+        7075723,
+        7072473,
+        7075722,
+        7072472
+      ],
+      "metric": "pairing.integer_alu.float_alu",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3358,
+        3356,
+        3360,
+        3356,
+        3357,
+        3358,
+        3350,
+        3358,
+        3356
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33001,
+        33001,
+        33001,
+        45252,
+        33001,
+        33001,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7074972,
+        7075223,
+        7073722,
+        7071973,
+        7073722,
+        7071972,
+        7075222,
+        7079223,
+        7073222
+      ],
+      "metric": "pairing.integer_alu.float_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3357,
+        3357,
+        3357,
+        3356,
+        3357,
+        3350,
+        3357,
+        3359,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33001,
+        33001,
+        33251,
+        33251,
+        33001,
+        33251,
+        43752
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12737401,
+        12735650,
+        12736901,
+        12724900,
+        12737150,
+        12740901,
+        12735400,
+        12726400,
+        12725400
+      ],
+      "metric": "pairing.integer_alu.float_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6057,
+        6056,
+        6057,
+        6051,
+        6057,
+        6059,
+        6056,
+        6052,
+        6047
+      ]
+    },
+    {
+      "baseline_values": [
+        131254,
+        131504,
+        131504,
+        131254,
+        131254,
+        143504,
+        131254,
+        131504,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        7119974,
+        7117474,
+        7117474,
+        7117474,
+        7115724,
+        7117474,
+        7121474,
+        7117474,
+        7117224
+      ],
+      "metric": "pairing.integer_alu.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        833,
+        832,
+        832,
+        832,
+        832,
+        831,
+        833,
+        832,
+        832
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        143504,
+        131504,
+        131255,
+        131504,
+        131254,
+        131504,
+        131254,
+        131255
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        7119474,
+        7118474,
+        7159975,
+        7116223,
+        7129724,
+        7119224,
+        7118224,
+        7116473,
+        7129974
+      ],
+      "metric": "pairing.integer_alu.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        833,
+        831,
+        837,
+        832,
+        834,
+        833,
+        832,
+        832,
+        834
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131255,
+        131254,
+        131505,
+        131504,
+        131504,
+        131504,
+        131504,
+        131254
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        8544518,
+        8539268,
+        8530268,
+        8539518,
+        8541019,
+        8571269,
+        8540519,
+        8540019,
+        8528768
+      ],
+      "metric": "pairing.integer_alu.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1002,
+        1002,
+        1001,
+        1002,
+        1002,
+        1006,
+        1002,
+        1002,
+        1001
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        45251,
+        33251,
+        33001,
+        33001,
+        33001,
+        33001,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        9229291,
+        9226290,
+        9227790,
+        9225790,
+        9227540,
+        9237790,
+        9229290,
+        9226040,
+        9236291
+      ],
+      "metric": "pairing.integer_alu.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4385,
+        4383,
+        4378,
+        4383,
+        4384,
+        4389,
+        4385,
+        4383,
+        4388
+      ]
+    },
+    {
+      "baseline_values": [
+        262509,
+        274509,
+        262508,
+        262508,
+        274509,
+        262508,
+        262508,
+        274509,
+        262509
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11401608,
+        11403358,
+        11422860,
+        11401358,
+        11438110,
+        11413359,
+        11402608,
+        11402608,
+        11412859
+      ],
+      "metric": "pairing.integer_alu.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        663,
+        663,
+        665,
+        663,
+        665,
+        664,
+        664,
+        663,
+        664
+      ]
+    },
+    {
+      "baseline_values": [
+        262509,
+        262509,
+        274509,
+        262509,
+        262508,
+        262508,
+        275259,
+        262508,
+        262508
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11416608,
+        11402358,
+        11528612,
+        11424109,
+        11417609,
+        11411109,
+        11406858,
+        11423610,
+        11410859
+      ],
+      "metric": "pairing.integer_alu.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        664,
+        663,
+        670,
+        665,
+        664,
+        664,
+        663,
+        665,
+        664
+      ]
+    },
+    {
+      "baseline_values": [
+        76502,
+        65752,
+        65752,
+        65752,
+        66003,
+        66002,
+        66002,
+        66002,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8487267,
+        8495017,
+        8520768,
+        8495767,
+        8486016,
+        8497768,
+        8485016,
+        8496018,
+        8497017
+      ],
+      "metric": "pairing.integer_mul.integer_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2005,
+        2009,
+        2015,
+        2009,
+        2007,
+        2010,
+        2007,
+        2009,
+        2010
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4501,
+        4500,
+        4250,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12024879,
+        12027378,
+        12060379,
+        12025628,
+        12024128,
+        12028378,
+        12034878,
+        12035129,
+        12028378
+      ],
+      "metric": "pairing.integer_mul.integer_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45854,
+        45863,
+        45989,
+        45856,
+        45851,
+        45867,
+        45892,
+        45894,
+        45867
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33251,
+        33001,
+        33001,
+        33251,
+        33001,
+        33001,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7075722,
+        7091723,
+        7074973,
+        7074722,
+        7073973,
+        7072472,
+        7075473,
+        7079972,
+        7074723
+      ],
+      "metric": "pairing.integer_mul.float_alu",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3358,
+        3365,
+        3357,
+        3357,
+        3357,
+        3356,
+        3358,
+        3360,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33002,
+        33001,
+        33001,
+        33001,
+        33251,
+        33001,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7073972,
+        7075222,
+        7071972,
+        7075973,
+        7074222,
+        7072223,
+        7073972,
+        7073723,
+        7103473
+      ],
+      "metric": "pairing.integer_mul.float_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3357,
+        3357,
+        3356,
+        3358,
+        3357,
+        3356,
+        3357,
+        3357,
+        3371
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33251,
+        45251,
+        33251,
+        33001,
+        33251,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12915406,
+        12738901,
+        12725150,
+        12728900,
+        12742400,
+        12748651,
+        12739650,
+        12728150,
+        12741400
+      ],
+      "metric": "pairing.integer_mul.float_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6142,
+        6058,
+        6051,
+        6048,
+        6060,
+        6063,
+        6058,
+        6053,
+        6059
+      ]
+    },
+    {
+      "baseline_values": [
+        66002,
+        66002,
+        65752,
+        65753,
+        78003,
+        66002,
+        66002,
+        65752,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8504267,
+        8489267,
+        8494517,
+        8487766,
+        8482517,
+        8499017,
+        8482517,
+        8498517,
+        8482767
+      ],
+      "metric": "pairing.integer_mul.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2011,
+        2008,
+        2009,
+        2007,
+        2003,
+        2010,
+        2006,
+        2010,
+        2006
+      ]
+    },
+    {
+      "baseline_values": [
+        65752,
+        66002,
+        65752,
+        65752,
+        65752,
+        65752,
+        65753,
+        66002,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8501017,
+        8482017,
+        8495517,
+        8493767,
+        8486267,
+        8500517,
+        8487016,
+        8519268,
+        8483017
+      ],
+      "metric": "pairing.integer_mul.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2011,
+        2006,
+        2009,
+        2009,
+        2007,
+        2011,
+        2007,
+        2015,
+        2006
+      ]
+    },
+    {
+      "baseline_values": [
+        66002,
+        65752,
+        66002,
+        65752,
+        66002,
+        65752,
+        66002,
+        65752,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8494017,
+        8501517,
+        8511268,
+        8496267,
+        8481517,
+        8502517,
+        8481767,
+        8495017,
+        8483267
+      ],
+      "metric": "pairing.integer_mul.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2009,
+        2011,
+        2013,
+        2009,
+        2006,
+        2011,
+        2006,
+        2009,
+        2006
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33001,
+        33001,
+        33002,
+        33001,
+        33001,
+        33001,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        8530268,
+        8531268,
+        8520268,
+        8529018,
+        8514767,
+        8528268,
+        8515018,
+        8529768,
+        8515018
+      ],
+      "metric": "pairing.integer_mul.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4051,
+        4052,
+        4047,
+        4051,
+        4044,
+        4050,
+        4044,
+        4051,
+        4044
+      ]
+    },
+    {
+      "baseline_values": [
+        66002,
+        65752,
+        66002,
+        65752,
+        65752,
+        66002,
+        65752,
+        66002,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8487517,
+        8494767,
+        8484267,
+        8494517,
+        8490017,
+        8494767,
+        8485767,
+        8494767,
+        8496267
+      ],
+      "metric": "pairing.integer_mul.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2007,
+        2009,
+        2007,
+        2009,
+        2008,
+        2009,
+        2007,
+        2009,
+        2009
+      ]
+    },
+    {
+      "baseline_values": [
+        66003,
+        66002,
+        65752,
+        66002,
+        66002,
+        65752,
+        65752,
+        76253,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        8482516,
+        8495017,
+        8481517,
+        8495017,
+        8481767,
+        8496267,
+        8489017,
+        8483266,
+        8495017
+      ],
+      "metric": "pairing.integer_mul.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2006,
+        2009,
+        2006,
+        2009,
+        2006,
+        2009,
+        2008,
+        2004,
+        2009
+      ]
+    },
+    {
+      "baseline_values": [
+        2250,
+        2250,
+        2250,
+        2500,
+        2500,
+        2250,
+        2251,
+        2500,
+        2250
+      ],
+      "category": "pairing",
+      "iterations": 1024,
+      "measured_values": [
+        12028878,
+        12023878,
+        12026878,
+        12027378,
+        12024128,
+        12035628,
+        12026878,
+        12025378,
+        12023628
+      ],
+      "metric": "pairing.integer_div.integer_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        91755,
+        91717,
+        91740,
+        91742,
+        91717,
+        91807,
+        91740,
+        91727,
+        91715
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4500,
+        4501,
+        4250,
+        4500,
+        4250,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12035878,
+        12030629,
+        12025378,
+        12033878,
+        12024128,
+        12186133,
+        12023878,
+        12025378,
+        12025128
+      ],
+      "metric": "pairing.integer_div.float_alu",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45896,
+        45876,
+        45856,
+        45888,
+        45851,
+        46470,
+        45850,
+        45856,
+        45855
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4250,
+        4500,
+        4501,
+        4500,
+        4500,
+        4501,
+        15000,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12026628,
+        12029628,
+        12025628,
+        12039378,
+        12024878,
+        12025378,
+        12027628,
+        12027878,
+        12024628
+      ],
+      "metric": "pairing.integer_div.float_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45860,
+        45873,
+        45856,
+        45909,
+        45854,
+        45856,
+        45864,
+        45825,
+        45853
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4250,
+        4500,
+        4501,
+        4500,
+        4500,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12025628,
+        12025128,
+        12030879,
+        12026628,
+        12032878,
+        12029378,
+        12025128,
+        12025378,
+        12028378
+      ],
+      "metric": "pairing.integer_div.float_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45856,
+        45855,
+        45876,
+        45861,
+        45884,
+        45871,
+        45855,
+        45856,
+        45867
+      ]
+    },
+    {
+      "baseline_values": [
+        16500,
+        4501,
+        4500,
+        4250,
+        4250,
+        4500,
+        4500,
+        4251,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12032628,
+        12025628,
+        12024128,
+        12025378,
+        12109131,
+        12024378,
+        12033628,
+        12025878,
+        12031128
+      ],
+      "metric": "pairing.integer_div.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45837,
+        45856,
+        45851,
+        45856,
+        46176,
+        45852,
+        45887,
+        45858,
+        45877
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4501,
+        4500,
+        4500,
+        4500,
+        4501,
+        4250
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12024128,
+        12023628,
+        12026878,
+        12023628,
+        12025378,
+        12023878,
+        12031128,
+        12024628,
+        12026128
+      ],
+      "metric": "pairing.integer_div.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45851,
+        45849,
+        45861,
+        45849,
+        45856,
+        45850,
+        45877,
+        45853,
+        45859
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12025878,
+        12025879,
+        12024128,
+        12024128,
+        12033378,
+        12024129,
+        12025128,
+        12025878,
+        12035878
+      ],
+      "metric": "pairing.integer_div.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45857,
+        45857,
+        45851,
+        45851,
+        45886,
+        45851,
+        45855,
+        45857,
+        45896
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4501,
+        4500,
+        4250,
+        4500,
+        4500,
+        4251
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12027128,
+        12037378,
+        12030128,
+        12025128,
+        12025128,
+        12023878,
+        12025378,
+        12023878,
+        12025128
+      ],
+      "metric": "pairing.integer_div.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45862,
+        45901,
+        45874,
+        45855,
+        45855,
+        45851,
+        45856,
+        45850,
+        45856
+      ]
+    },
+    {
+      "baseline_values": [
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12031378,
+        12025878,
+        12164883,
+        12023378,
+        12024878,
+        12024878,
+        12024629,
+        12023128,
+        12063129
+      ],
+      "metric": "pairing.integer_div.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45878,
+        45857,
+        46388,
+        45848,
+        45854,
+        45854,
+        45853,
+        45847,
+        46000
+      ]
+    },
+    {
+      "baseline_values": [
+        4250,
+        4500,
+        4500,
+        4250,
+        4500,
+        4500,
+        4251,
+        4500,
+        4500
+      ],
+      "category": "pairing",
+      "iterations": 2048,
+      "measured_values": [
+        12027628,
+        12025878,
+        12024628,
+        12026128,
+        12026128,
+        12024628,
+        12036878,
+        12026128,
+        12024628
+      ],
+      "metric": "pairing.integer_div.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        45865,
+        45857,
+        45853,
+        45859,
+        45858,
+        45853,
+        45900,
+        45858,
+        45853
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        45252,
+        33251,
+        33001,
+        33251,
+        33251,
+        33001,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7075223,
+        7082472,
+        7079972,
+        7075473,
+        7072472,
+        7076723,
+        7074222,
+        7072473,
+        7074222
+      ],
+      "metric": "pairing.float_alu.float_alu",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3357,
+        3361,
+        3354,
+        3357,
+        3356,
+        3358,
+        3357,
+        3356,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        33001,
+        33251,
+        33001,
+        33251,
+        33251,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7087973,
+        7077972,
+        7073723,
+        7073972,
+        7073473,
+        7074222,
+        7074972,
+        7074223,
+        7074222
+      ],
+      "metric": "pairing.float_alu.float_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3364,
+        3359,
+        3357,
+        3357,
+        3357,
+        3357,
+        3357,
+        3357,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        16751,
+        16751,
+        16500,
+        16750,
+        16750,
+        16750,
+        16750,
+        16750,
+        16751
+      ],
+      "category": "pairing",
+      "iterations": 8192,
+      "measured_values": [
+        7072472,
+        7163475,
+        7068473,
+        7087473,
+        7068473,
+        7071223,
+        7073972,
+        7068472,
+        7066972
+      ],
+      "metric": "pairing.float_alu.float_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6728,
+        6815,
+        6725,
+        6743,
+        6725,
+        6727,
+        6730,
+        6725,
+        6723
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33001,
+        33251,
+        33251,
+        33251,
+        33251,
+        33001,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7082223,
+        7075223,
+        7073722,
+        7083723,
+        7073472,
+        7071973,
+        7073722,
+        7074973,
+        7071472
+      ],
+      "metric": "pairing.float_alu.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3361,
+        3357,
+        3357,
+        3361,
+        3357,
+        3356,
+        3357,
+        3357,
+        3356
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        33001,
+        33251,
+        33251,
+        33251,
+        33251,
+        33001,
+        33252
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7072722,
+        7073972,
+        7087473,
+        7074223,
+        7074222,
+        7072723,
+        7074222,
+        7072472,
+        7074222
+      ],
+      "metric": "pairing.float_alu.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3356,
+        3357,
+        3363,
+        3357,
+        3357,
+        3356,
+        3357,
+        3356,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        45251,
+        33251,
+        33001,
+        33001,
+        33001,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7073973,
+        7073973,
+        7072472,
+        7082473,
+        7072222,
+        7073973,
+        7073722,
+        7072222,
+        7083973
+      ],
+      "metric": "pairing.float_alu.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3357,
+        3351,
+        3356,
+        3361,
+        3356,
+        3357,
+        3357,
+        3356,
+        3362
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33001,
+        33001,
+        33001,
+        33001,
+        33251,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        8526518,
+        8516018,
+        8530518,
+        8518768,
+        8526018,
+        8527518,
+        8520018,
+        8527768,
+        8514268
+      ],
+      "metric": "pairing.float_alu.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4049,
+        4044,
+        4051,
+        4046,
+        4049,
+        4050,
+        4046,
+        4050,
+        4044
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33001,
+        33251,
+        33001,
+        33001,
+        33001,
+        33001,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7072473,
+        7085723,
+        7073722,
+        7075223,
+        7073972,
+        7116474,
+        7075222,
+        7073223,
+        7071722
+      ],
+      "metric": "pairing.float_alu.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3356,
+        3362,
+        3357,
+        3357,
+        3357,
+        3377,
+        3357,
+        3357,
+        3356
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        57502,
+        33001,
+        33001,
+        33001,
+        33001,
+        45251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7075473,
+        7147474,
+        7117974,
+        7073472,
+        7076723,
+        7071972,
+        7097974,
+        7071722,
+        7073473
+      ],
+      "metric": "pairing.float_alu.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3358,
+        3392,
+        3366,
+        3357,
+        3358,
+        3356,
+        3368,
+        3350,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33251,
+        33001,
+        33251,
+        33001,
+        45252,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7077723,
+        7072972,
+        7080223,
+        7074722,
+        7072973,
+        7076222,
+        7074222,
+        7074723,
+        7074722
+      ],
+      "metric": "pairing.float_mul.float_mul",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3359,
+        3356,
+        3360,
+        3357,
+        3356,
+        3358,
+        3351,
+        3357,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        16750,
+        16750,
+        16750,
+        16751,
+        16751,
+        16750,
+        16750,
+        16750,
+        16750
+      ],
+      "category": "pairing",
+      "iterations": 8192,
+      "measured_values": [
+        7085223,
+        7067223,
+        7068472,
+        7067222,
+        7069472,
+        7070973,
+        7068723,
+        7075723,
+        7066972
+      ],
+      "metric": "pairing.float_mul.float_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6741,
+        6723,
+        6725,
+        6723,
+        6725,
+        6727,
+        6725,
+        6731,
+        6723
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33001,
+        33001,
+        33001,
+        33001,
+        33251,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7087223,
+        7075722,
+        7074223,
+        7072722,
+        7074223,
+        7072472,
+        7074472,
+        7075972,
+        7072722
+      ],
+      "metric": "pairing.float_mul.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3363,
+        3358,
+        3357,
+        3356,
+        3357,
+        3356,
+        3357,
+        3358,
+        3356
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33001,
+        33001,
+        33001,
+        33251,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7075722,
+        7073973,
+        7072472,
+        7075473,
+        7073972,
+        7072473,
+        7073972,
+        7072222,
+        7087473
+      ],
+      "metric": "pairing.float_mul.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3358,
+        3357,
+        3356,
+        3358,
+        3357,
+        3356,
+        3357,
+        3356,
+        3363
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33251,
+        33251,
+        33252,
+        33001,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7156475,
+        7072222,
+        7075722,
+        7073972,
+        7079722,
+        7073723,
+        7083972,
+        7073973,
+        7073722
+      ],
+      "metric": "pairing.float_mul.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3396,
+        3356,
+        3358,
+        3357,
+        3360,
+        3357,
+        3362,
+        3357,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33251,
+        33251,
+        33001,
+        33251,
+        33001,
+        33251,
+        33001,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        8514518,
+        8528018,
+        8514768,
+        8528018,
+        8516018,
+        8528268,
+        8539518,
+        8516268,
+        8527518
+      ],
+      "metric": "pairing.float_mul.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4044,
+        4050,
+        4044,
+        4050,
+        4044,
+        4050,
+        4056,
+        4045,
+        4050
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        33001,
+        33001,
+        33251,
+        33001,
+        33251,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7072472,
+        7073972,
+        7073722,
+        7072222,
+        7075473,
+        7072472,
+        7074222,
+        7072472,
+        7073972
+      ],
+      "metric": "pairing.float_mul.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3356,
+        3357,
+        3357,
+        3356,
+        3357,
+        3356,
+        3357,
+        3356,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33251,
+        33001,
+        33001,
+        33001,
+        33251,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        7102223,
+        7073972,
+        7079973,
+        7097973,
+        7083723,
+        7076473,
+        7075222,
+        7071972,
+        7073723
+      ],
+      "metric": "pairing.float_mul.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        3370,
+        3357,
+        3360,
+        3368,
+        3362,
+        3358,
+        3357,
+        3356,
+        3357
+      ]
+    },
+    {
+      "baseline_values": [
+        16751,
+        16750,
+        16750,
+        16751,
+        16751,
+        16751,
+        16751,
+        16751,
+        16750
+      ],
+      "category": "pairing",
+      "iterations": 8192,
+      "measured_values": [
+        11349607,
+        11330357,
+        11330356,
+        11345106,
+        11330106,
+        11331856,
+        11343606,
+        11331606,
+        11331857
+      ],
+      "metric": "pairing.float_div.float_div",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        10807,
+        10789,
+        10789,
+        10803,
+        10789,
+        10790,
+        10802,
+        10790,
+        10790
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        45002,
+        33251,
+        33001,
+        33001,
+        33251,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12735151,
+        12869654,
+        12723150,
+        12738150,
+        12734901,
+        12734900,
+        12750151,
+        12736900,
+        12741901
+      ],
+      "metric": "pairing.float_div.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6056,
+        6120,
+        6045,
+        6058,
+        6056,
+        6056,
+        6063,
+        6057,
+        6059
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33002,
+        33001,
+        33001,
+        33001,
+        33251,
+        33002,
+        45251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12737400,
+        12735400,
+        12736900,
+        12725400,
+        12737401,
+        12743650,
+        12759901,
+        12731650,
+        12727900
+      ],
+      "metric": "pairing.float_div.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6057,
+        6056,
+        6057,
+        6052,
+        6057,
+        6060,
+        6068,
+        6055,
+        6047
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        46501,
+        33251,
+        33001,
+        33251,
+        33251,
+        33251,
+        33001,
+        33002
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12757901,
+        12727901,
+        12742900,
+        12737901,
+        12735900,
+        12726900,
+        12744901,
+        12735650,
+        12735650
+      ],
+      "metric": "pairing.float_div.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6067,
+        6046,
+        6060,
+        6058,
+        6057,
+        6052,
+        6061,
+        6057,
+        6057
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33251,
+        45251,
+        33251,
+        33001,
+        33251,
+        33001,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12739150,
+        12737151,
+        12724150,
+        12725650,
+        12737151,
+        12735900,
+        12736151,
+        12725650,
+        12737400
+      ],
+      "metric": "pairing.float_div.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6058,
+        6057,
+        6051,
+        6046,
+        6057,
+        6057,
+        6057,
+        6052,
+        6057
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33251,
+        33001,
+        33002,
+        33251,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12723650,
+        12744401,
+        12735400,
+        12736650,
+        12724650,
+        12736900,
+        12740401,
+        12737150,
+        12735651
+      ],
+      "metric": "pairing.float_div.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6051,
+        6061,
+        6056,
+        6057,
+        6051,
+        6057,
+        6059,
+        6057,
+        6056
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33001,
+        33251,
+        33002,
+        33001,
+        45251,
+        33001,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        12735650,
+        12723650,
+        12737151,
+        12742650,
+        12735400,
+        12723400,
+        12727901,
+        12758901,
+        12738400
+      ],
+      "metric": "pairing.float_div.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        6056,
+        6051,
+        6057,
+        6060,
+        6056,
+        6051,
+        6047,
+        6068,
+        6058
+      ]
+    },
+    {
+      "baseline_values": [
+        142005,
+        131504,
+        131254,
+        131504,
+        131254,
+        131504,
+        131504,
+        131504,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        11325106,
+        11316606,
+        11330106,
+        11318106,
+        11326606,
+        11461111,
+        11330606,
+        11314606,
+        11335107
+      ],
+      "metric": "pairing.load.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1333,
+        1333,
+        1335,
+        1333,
+        1334,
+        1350,
+        1335,
+        1333,
+        1335
+      ]
+    },
+    {
+      "baseline_values": [
+        65752,
+        66002,
+        66002,
+        65752,
+        65752,
+        66002,
+        66002,
+        65752,
+        66002
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        11314856,
+        11331107,
+        11319605,
+        11326856,
+        11328606,
+        11317106,
+        11329606,
+        11317356,
+        11329356
+      ],
+      "metric": "pairing.load.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2681,
+        2685,
+        2683,
+        2684,
+        2685,
+        2682,
+        2685,
+        2682,
+        2685
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        262509,
+        262508,
+        262508,
+        274509,
+        262508,
+        262508,
+        279258
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11423110,
+        11402858,
+        11419609,
+        11414359,
+        11402608,
+        11404359,
+        11416109,
+        11402609,
+        11405359
+      ],
+      "metric": "pairing.load.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        665,
+        664,
+        665,
+        664,
+        664,
+        663,
+        664,
+        664,
+        663
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33251,
+        45251,
+        33251,
+        33001,
+        33001,
+        33251,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        8525018,
+        8528768,
+        8515518,
+        8516768,
+        8531518,
+        8517017,
+        8527518,
+        8517018,
+        8617021
+      ],
+      "metric": "pairing.load.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4049,
+        4051,
+        4044,
+        4039,
+        4052,
+        4045,
+        4050,
+        4045,
+        4093
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131254,
+        131504,
+        131254,
+        131254,
+        131504,
+        131504,
+        131254,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        7119974,
+        7117974,
+        7128724,
+        7118224,
+        7118224,
+        7117974,
+        7129974,
+        7116474,
+        7118224
+      ],
+      "metric": "pairing.load.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        833,
+        832,
+        834,
+        832,
+        832,
+        832,
+        834,
+        832,
+        832
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131504,
+        143504,
+        131504,
+        131504,
+        131254,
+        143504,
+        131504,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        7117724,
+        7121474,
+        7117474,
+        7117474,
+        7115974,
+        7117474,
+        7117474,
+        7117724,
+        7117724
+      ],
+      "metric": "pairing.load.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        832,
+        833,
+        831,
+        832,
+        832,
+        832,
+        831,
+        832,
+        832
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131254,
+        131504,
+        143504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        11314356,
+        11327356,
+        11319856,
+        11343607,
+        11315856,
+        11325856,
+        11318856,
+        11317106,
+        11314606
+      ],
+      "metric": "pairing.store.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1333,
+        1334,
+        1333,
+        1336,
+        1333,
+        1334,
+        1333,
+        1333,
+        1331
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262509,
+        262509,
+        262508,
+        262509,
+        262508,
+        274509,
+        262509,
+        262509
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11421359,
+        11413608,
+        11403358,
+        11416608,
+        11445860,
+        11401608,
+        11403108,
+        11414858,
+        11401358
+      ],
+      "metric": "pairing.store.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        665,
+        664,
+        664,
+        664,
+        666,
+        663,
+        663,
+        664,
+        663
+      ]
+    },
+    {
+      "baseline_values": [
+        33251,
+        33001,
+        33001,
+        33251,
+        33251,
+        33251,
+        33001,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        8529519,
+        8517267,
+        8528019,
+        8517767,
+        8527768,
+        8689523,
+        8516768,
+        8529018,
+        8515267
+      ],
+      "metric": "pairing.store.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4051,
+        4045,
+        4050,
+        4045,
+        4050,
+        4127,
+        4045,
+        4051,
+        4044
+      ]
+    },
+    {
+      "baseline_values": [
+        131255,
+        143504,
+        131504,
+        131504,
+        131504,
+        143504,
+        131504,
+        131504,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        7122974,
+        7124224,
+        7116724,
+        7118474,
+        7116974,
+        7118474,
+        7118474,
+        7118224,
+        7118224
+      ],
+      "metric": "pairing.store.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        833,
+        832,
+        832,
+        832,
+        832,
+        831,
+        832,
+        832,
+        832
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        7129474,
+        7117724,
+        7117474,
+        7116224,
+        7129474,
+        7117724,
+        7121474,
+        7128224,
+        7129224
+      ],
+      "metric": "pairing.store.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        834,
+        832,
+        832,
+        832,
+        834,
+        832,
+        833,
+        834,
+        834
+      ]
+    },
+    {
+      "baseline_values": [
+        65752,
+        65752,
+        65752,
+        65752,
+        66002,
+        65752,
+        77753,
+        65752,
+        65752
+      ],
+      "category": "pairing",
+      "iterations": 32768,
+      "measured_values": [
+        11336357,
+        11349357,
+        11335856,
+        11347607,
+        11338857,
+        11342106,
+        11337856,
+        11338107,
+        11350107
+      ],
+      "metric": "pairing.branch.branch",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2687,
+        2690,
+        2687,
+        2689,
+        2687,
+        2688,
+        2684,
+        2687,
+        2690
+      ]
+    },
+    {
+      "baseline_values": [
+        45251,
+        33001,
+        33251,
+        33001,
+        33251,
+        33001,
+        33001,
+        45001,
+        33251
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        8516518,
+        8528018,
+        8516018,
+        8526268,
+        8516018,
+        8616521,
+        8516018,
+        8515768,
+        8527768
+      ],
+      "metric": "pairing.branch.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4039,
+        4050,
+        4044,
+        4049,
+        4044,
+        4092,
+        4045,
+        4039,
+        4050
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131504,
+        143505,
+        131504,
+        131504,
+        143505,
+        131504,
+        131504,
+        143504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        8551769,
+        8530768,
+        8527268,
+        8542269,
+        8527018,
+        8528768,
+        8540268,
+        8534269,
+        8527268
+      ],
+      "metric": "pairing.branch.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1003,
+        1001,
+        999,
+        1002,
+        1000,
+        999,
+        1002,
+        1001,
+        999
+      ]
+    },
+    {
+      "baseline_values": [
+        131254,
+        131504,
+        131255,
+        131254,
+        131505,
+        131504,
+        131504,
+        131504,
+        131504
+      ],
+      "category": "pairing",
+      "iterations": 65536,
+      "measured_values": [
+        8528768,
+        8538518,
+        8541768,
+        8526768,
+        8540268,
+        8540269,
+        8528518,
+        8538768,
+        8540518
+      ],
+      "metric": "pairing.branch.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1001,
+        1002,
+        1002,
+        1000,
+        1002,
+        1002,
+        1001,
+        1002,
+        1002
+      ]
+    },
+    {
+      "baseline_values": [
+        16750,
+        16751,
+        16750,
+        16751,
+        16751,
+        16750,
+        16751,
+        16750,
+        16751
+      ],
+      "category": "pairing",
+      "iterations": 8192,
+      "measured_values": [
+        8504767,
+        8510518,
+        8500017,
+        8510017,
+        8513518,
+        8498267,
+        8519268,
+        8498517,
+        8511768
+      ],
+      "metric": "pairing.call_return.call_return",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        8094,
+        8100,
+        8090,
+        8099,
+        8103,
+        8088,
+        8108,
+        8088,
+        8101
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        45251,
+        33001,
+        33001,
+        33251,
+        33251,
+        33001,
+        33002,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        9224790,
+        9225040,
+        9227790,
+        9225290,
+        9281792,
+        9226290,
+        9226040,
+        9224290,
+        9239290
+      ],
+      "metric": "pairing.call_return.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4382,
+        4377,
+        4384,
+        4383,
+        4410,
+        4383,
+        4383,
+        4382,
+        4389
+      ]
+    },
+    {
+      "baseline_values": [
+        33001,
+        33001,
+        33251,
+        33251,
+        33001,
+        33251,
+        33251,
+        33251,
+        33001
+      ],
+      "category": "pairing",
+      "iterations": 16384,
+      "measured_values": [
+        9238290,
+        9226541,
+        9225040,
+        9226540,
+        9236790,
+        9368795,
+        9227040,
+        9238040,
+        9226541
+      ],
+      "metric": "pairing.call_return.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4389,
+        4383,
+        4382,
+        4383,
+        4388,
+        4451,
+        4383,
+        4389,
+        4383
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        274509,
+        262508,
+        262508,
+        262508,
+        262509,
+        262508,
+        262508
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11414859,
+        11401358,
+        11402609,
+        11416109,
+        11441110,
+        11400858,
+        11414108,
+        11414109,
+        11400858
+      ],
+      "metric": "pairing.address.address",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        664,
+        663,
+        663,
+        664,
+        666,
+        663,
+        664,
+        664,
+        663
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        262508,
+        262508,
+        262508,
+        262508,
+        262508,
+        262508,
+        262508
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11401858,
+        11413609,
+        11416609,
+        11402109,
+        11413609,
+        11415109,
+        11401609,
+        11421359,
+        11415359
+      ],
+      "metric": "pairing.address.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        663,
+        664,
+        664,
+        663,
+        664,
+        664,
+        663,
+        665,
+        664
+      ]
+    },
+    {
+      "baseline_values": [
+        262509,
+        262509,
+        274509,
+        262508,
+        262509,
+        274509,
+        262508,
+        262508,
+        274509
+      ],
+      "category": "pairing",
+      "iterations": 131072,
+      "measured_values": [
+        11439859,
+        11402858,
+        11403108,
+        11414609,
+        11402858,
+        11493611,
+        11418109,
+        11405108,
+        11401608
+      ],
+      "metric": "pairing.move.move",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        666,
+        664,
+        663,
+        664,
+        664,
+        668,
+        664,
+        664,
+        663
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131505,
+        131504,
+        131504,
+        131254,
+        131255,
+        131504,
+        131254,
+        131255
+      ],
+      "category": "branch",
+      "iterations": 65536,
+      "measured_values": [
+        11368607,
+        11356857,
+        11370107,
+        11364358,
+        11376607,
+        11358607,
+        11368607,
+        11359857,
+        11370107
+      ],
+      "metric": "branch.predictable",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1339,
+        1338,
+        1339,
+        1339,
+        1340,
+        1338,
+        1339,
+        1338,
+        1339
+      ]
+    },
+    {
+      "baseline_values": [
+        9939062,
+        9910062,
+        9908561,
+        9908561,
+        9910562,
+        9918812,
+        9909312,
+        9910812,
+        9898062
+      ],
+      "category": "branch",
+      "iterations": 16384,
+      "measured_values": [
+        12774151,
+        12757901,
+        12774152,
+        12778652,
+        12758901,
+        12802652,
+        12779901,
+        12758151,
+        12770651
+      ],
+      "metric": "branch.unpredictable",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1351,
+        1357,
+        1366,
+        1368,
+        1358,
+        1375,
+        1368,
+        1357,
+        1369
+      ]
+    },
+    {
+      "baseline_values": [
+        262508,
+        262508,
+        274508,
+        262508,
+        274509,
+        262508,
+        262508,
+        274509,
+        262508
+      ],
+      "category": "spill",
+      "iterations": 131072,
+      "measured_values": [
+        11354607,
+        11316106,
+        11314606,
+        11316106,
+        11315106,
+        11327606,
+        11458860,
+        11314106,
+        11325606
+      ],
+      "metric": "spills.load",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        661,
+        658,
+        658,
+        658,
+        658,
+        659,
+        667,
+        658,
+        659
+      ]
+    },
+    {
+      "baseline_values": [
+        262509,
+        262508,
+        262508,
+        274758,
+        262508,
+        273008,
+        262508,
+        262508,
+        262508
+      ],
+      "category": "spill",
+      "iterations": 131072,
+      "measured_values": [
+        11314105,
+        11328607,
+        11315356,
+        11317606,
+        11337607,
+        11315356,
+        11327356,
+        11315605,
+        11342106
+      ],
+      "metric": "spills.store",
+      "normalization": 128,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        658,
+        659,
+        658,
+        658,
+        660,
+        658,
+        659,
+        658,
+        660
+      ]
+    },
+    {
+      "baseline_values": [
+        8494767,
+        8497267,
+        8483516,
+        8489267,
+        8482017,
+        8493767,
+        8493767,
+        8483767,
+        8485017
+      ],
+      "category": "memory",
+      "iterations": 4194304,
+      "measured_values": [
+        11314855,
+        11313606,
+        11326856,
+        11327106,
+        11315356,
+        11316606,
+        11313605,
+        11326606,
+        11325106
+      ],
+      "metric": "diagnostics.load_use",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        672,
+        671,
+        677,
+        676,
+        675,
+        673,
+        672,
+        677,
+        677
+      ]
+    },
+    {
+      "baseline_values": [
+        4244384,
+        4256133,
+        4243134,
+        4244383,
+        4257634,
+        4242883,
+        4244633,
+        4256134,
+        4242883
+      ],
+      "category": "memory",
+      "iterations": 2097152,
+      "measured_values": [
+        7119474,
+        7120724,
+        7125224,
+        7118974,
+        7120974,
+        7120724,
+        7119473,
+        7120724,
+        7127725
+      ],
+      "metric": "diagnostics.pointer_chase",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1370,
+        1365,
+        1374,
+        1370,
+        1365,
+        1372,
+        1370,
+        1365,
+        1375
+      ]
+    },
+    {
+      "baseline_values": [
+        8483267,
+        8490517,
+        8495267,
+        8501017,
+        8495017,
+        8481516,
+        8481767,
+        8494767,
+        8494517
+      ],
+      "category": "working_set",
+      "iterations": 4194304,
+      "measured_values": [
+        11327606,
+        11317106,
+        11326106,
+        11316856,
+        11316606,
+        11328356,
+        11316856,
+        11315106,
+        11316356
+      ],
+      "metric": "diagnostics.working_set.4096",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        678,
+        673,
+        674,
+        671,
+        672,
+        678,
+        675,
+        672,
+        672
+      ]
+    },
+    {
+      "baseline_values": [
+        8487267,
+        8486017,
+        8486266,
+        8486016,
+        8486266,
+        8498017,
+        8497517,
+        8496017,
+        8497768
+      ],
+      "category": "working_set",
+      "iterations": 4194304,
+      "measured_values": [
+        11422609,
+        11420609,
+        11429110,
+        11425860,
+        11401359,
+        11403359,
+        11402358,
+        11582114,
+        11400858
+      ],
+      "metric": "diagnostics.working_set.32768",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        699,
+        699,
+        701,
+        700,
+        695,
+        692,
+        692,
+        735,
+        692
+      ]
+    },
+    {
+      "baseline_values": [
+        1063283,
+        1075034,
+        1064783,
+        1063283,
+        1063283,
+        1063284,
+        1063283,
+        1063284,
+        1061784
+      ],
+      "category": "working_set",
+      "iterations": 524288,
+      "measured_values": [
+        7151475,
+        7147225,
+        7150975,
+        7147475,
+        7151975,
+        7163475,
+        7148725,
+        7148724,
+        7149225
+      ],
+      "metric": "diagnostics.working_set.262144",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        11612,
+        11581,
+        11608,
+        11604,
+        11613,
+        11635,
+        11607,
+        11607,
+        11610
+      ]
+    },
+    {
+      "baseline_values": [
+        4249884,
+        4244633,
+        4245883,
+        4256383,
+        4242883,
+        4244383,
+        4246134,
+        4244634,
+        4254634
+      ],
+      "category": "stride",
+      "iterations": 2097152,
+      "measured_values": [
+        8547769,
+        8546519,
+        8532019,
+        8533518,
+        8548019,
+        8546269,
+        8546518,
+        8535018,
+        8533518
+      ],
+      "metric": "diagnostics.stride.8",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        2049,
+        2051,
+        2043,
+        2039,
+        2052,
+        2051,
+        2050,
+        2045,
+        2040
+      ]
+    },
+    {
+      "baseline_values": [
+        1063283,
+        1061783,
+        1063284,
+        1061783,
+        1063283,
+        1063283,
+        1063284,
+        1063033,
+        1063283
+      ],
+      "category": "stride",
+      "iterations": 524288,
+      "measured_values": [
+        7174976,
+        7163725,
+        7148725,
+        7148975,
+        7150725,
+        7147725,
+        7164975,
+        7147475,
+        7148975
+      ],
+      "metric": "diagnostics.stride.64",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        11657,
+        11638,
+        11607,
+        11610,
+        11610,
+        11605,
+        11638,
+        11605,
+        11607
+      ]
+    },
+    {
+      "baseline_values": [
+        1073283,
+        1061283,
+        1061283,
+        1061283,
+        1061283,
+        1061283,
+        1061283,
+        1061283,
+        1061283
+      ],
+      "category": "stride",
+      "iterations": 524288,
+      "measured_values": [
+        7524237,
+        7532487,
+        7640991,
+        7533987,
+        7530487,
+        7521487,
+        7534237,
+        7520237,
+        7531237
+      ],
+      "metric": "diagnostics.stride.512",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        12304,
+        12342,
+        12549,
+        12345,
+        12339,
+        12321,
+        12346,
+        12319,
+        12340
+      ]
+    },
+    {
+      "baseline_values": [
+        2121567,
+        2135567,
+        2122566,
+        2121317,
+        2121316,
+        2119817,
+        2121317,
+        2121317,
+        2121317
+      ],
+      "category": "frontend",
+      "iterations": 1048576,
+      "measured_values": [
+        7772744,
+        7777245,
+        7784245,
+        7784245,
+        7786995,
+        7784244,
+        7782745,
+        7785744,
+        7782745
+      ],
+      "metric": "diagnostics.frontend.64",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        5389,
+        5380,
+        5399,
+        5400,
+        5403,
+        5402,
+        5399,
+        5402,
+        5399
+      ]
+    },
+    {
+      "baseline_values": [
+        524767,
+        524767,
+        524766,
+        524516,
+        524516,
+        524766,
+        536767,
+        536766,
+        536767
+      ],
+      "category": "frontend",
+      "iterations": 262144,
+      "measured_values": [
+        10440578,
+        10446578,
+        10442078,
+        10448329,
+        10441079,
+        10427828,
+        10427828,
+        10429578,
+        10429328
+      ],
+      "metric": "diagnostics.frontend.256",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        37825,
+        37848,
+        37831,
+        37856,
+        37828,
+        37777,
+        37731,
+        37738,
+        37737
+      ]
+    },
+    {
+      "baseline_values": [
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131504,
+        131505,
+        131504,
+        131504
+      ],
+      "category": "frontend",
+      "iterations": 65536,
+      "measured_values": [
+        11097599,
+        11135100,
+        11097599,
+        11095849,
+        11097349,
+        11110599,
+        11095848,
+        11101349,
+        11103599
+      ],
+      "metric": "diagnostics.frontend.1024",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        167329,
+        167901,
+        167329,
+        167302,
+        167325,
+        167527,
+        167302,
+        167386,
+        167420
+      ]
+    },
+    {
+      "baseline_values": [
+        4242133,
+        4243634,
+        4248384,
+        4241883,
+        4242134,
+        4240383,
+        4242133,
+        4241884,
+        4240383
+      ],
+      "category": "register_pressure",
+      "iterations": 2097152,
+      "measured_values": [
+        7120224,
+        7075222,
+        7073222,
+        7086473,
+        7073472,
+        7074973,
+        7228977,
+        7073472,
+        7073473
+      ],
+      "metric": "diagnostics.register_pressure.8",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        1372,
+        1350,
+        1346,
+        1356,
+        1350,
+        1351,
+        1424,
+        1350,
+        1350
+      ]
+    },
+    {
+      "baseline_values": [
+        2121317,
+        2121817,
+        2121316,
+        2119567,
+        2121317,
+        2121317,
+        2121317,
+        2148567,
+        2121066
+      ],
+      "category": "register_pressure",
+      "iterations": 1048576,
+      "measured_values": [
+        7076223,
+        7085223,
+        7073472,
+        7074972,
+        7074722,
+        7073722,
+        7083473,
+        7077473,
+        7084973
+      ],
+      "metric": "diagnostics.register_pressure.16",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        4725,
+        4733,
+        4722,
+        4725,
+        4723,
+        4722,
+        4732,
+        4700,
+        4733
+      ]
+    },
+    {
+      "baseline_values": [
+        2121316,
+        2121316,
+        2119816,
+        2121317,
+        2121317,
+        2121817,
+        2121317,
+        2121317,
+        2121317
+      ],
+      "category": "register_pressure",
+      "iterations": 1048576,
+      "measured_values": [
+        9904812,
+        9905062,
+        9904812,
+        9903311,
+        9911061,
+        9904561,
+        9902811,
+        9903061,
+        9910062
+      ],
+      "metric": "diagnostics.register_pressure.24",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        7422,
+        7423,
+        7424,
+        7421,
+        7428,
+        7422,
+        7421,
+        7421,
+        7427
+      ]
+    },
+    {
+      "baseline_values": [
+        524766,
+        536767,
+        524766,
+        536517,
+        535017,
+        524766,
+        536767,
+        524767,
+        524766
+      ],
+      "category": "register_pressure",
+      "iterations": 262144,
+      "measured_values": [
+        8843528,
+        8852779,
+        8843528,
+        8832778,
+        8844528,
+        8843278,
+        8844778,
+        8844278,
+        8844528
+      ],
+      "metric": "diagnostics.register_pressure.32",
+      "normalization": 1,
+      "source": "clock_gettime_ns_x1000",
+      "values": [
+        31733,
+        31723,
+        31733,
+        31647,
+        31698,
+        31732,
+        31692,
+        31736,
+        31737
+      ]
+    }
+  ],
+  "schema_version": 1
+}

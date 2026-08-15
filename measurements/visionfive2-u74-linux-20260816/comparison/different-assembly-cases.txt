@@ -1,0 +1,6 @@
+50_short_circuit
+65_color
+71_full_conn
+75_max_flow
+85_long_code
+87_many_params

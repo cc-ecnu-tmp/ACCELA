@@ -1,0 +1,7 @@
+profile=visionfive2-u74-linux-10m-20260816
+corpus=testsuite/functional
+total=100
+byte_identical=94
+different=6
+baseline=r1
+candidate=r2

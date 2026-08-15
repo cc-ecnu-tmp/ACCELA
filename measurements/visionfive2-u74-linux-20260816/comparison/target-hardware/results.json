@@ -1,0 +1,407 @@
+{
+  "abi": "lp64d",
+  "cases": [
+    {
+      "excluded_reason": null,
+      "id": "50_short_circuit",
+      "runs": [
+        {
+          "baseline_code_bytes": 1866,
+          "baseline_compile_seconds": 4.819621856000595,
+          "baseline_peak_bytes": 73658368,
+          "baseline_runtime": 0.003521864,
+          "cache_reused": false,
+          "candidate_code_bytes": 1862,
+          "candidate_compile_seconds": 18.311439952,
+          "candidate_peak_bytes": 101195776,
+          "candidate_runtime": 0.002342325,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 1866,
+          "baseline_compile_seconds": 4.675290696000957,
+          "baseline_peak_bytes": 72904704,
+          "baseline_runtime": 0.002386827,
+          "cache_reused": false,
+          "candidate_code_bytes": 1862,
+          "candidate_compile_seconds": 18.43452167599935,
+          "candidate_peak_bytes": 92307456,
+          "candidate_runtime": 0.003519364,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 1866,
+          "baseline_compile_seconds": 4.73798847100079,
+          "baseline_peak_bytes": 72577024,
+          "baseline_runtime": 0.003637618,
+          "cache_reused": false,
+          "candidate_code_bytes": 1862,
+          "candidate_compile_seconds": 18.52983650399983,
+          "candidate_peak_bytes": 93949952,
+          "candidate_runtime": 0.002323325,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 1866,
+          "baseline_compile_seconds": 4.808303240999521,
+          "baseline_peak_bytes": 72630272,
+          "baseline_runtime": 0.003614366,
+          "cache_reused": false,
+          "candidate_code_bytes": 1862,
+          "candidate_compile_seconds": 18.543597698000667,
+          "candidate_peak_bytes": 100630528,
+          "candidate_runtime": 0.002312075,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 1866,
+          "baseline_compile_seconds": 4.670225531999677,
+          "baseline_peak_bytes": 72794112,
+          "baseline_runtime": 0.003526114,
+          "cache_reused": false,
+          "candidate_code_bytes": 1862,
+          "candidate_compile_seconds": 18.194678932000897,
+          "candidate_peak_bytes": 94461952,
+          "candidate_runtime": 0.003543615,
+          "cold_start": true
+        }
+      ]
+    },
+    {
+      "excluded_reason": null,
+      "id": "65_color",
+      "runs": [
+        {
+          "baseline_code_bytes": 2876,
+          "baseline_compile_seconds": 13.211717492000389,
+          "baseline_peak_bytes": 81575936,
+          "baseline_runtime": 0.167160695,
+          "cache_reused": false,
+          "candidate_code_bytes": 2876,
+          "candidate_compile_seconds": 68.0567032300005,
+          "candidate_peak_bytes": 146767872,
+          "candidate_runtime": 0.16580115,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2876,
+          "baseline_compile_seconds": 13.4545279390004,
+          "baseline_peak_bytes": 83918848,
+          "baseline_runtime": 0.16793222,
+          "cache_reused": false,
+          "candidate_code_bytes": 2876,
+          "candidate_compile_seconds": 69.11422217100153,
+          "candidate_peak_bytes": 150274048,
+          "candidate_runtime": 0.168921501,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2876,
+          "baseline_compile_seconds": 13.174255560999882,
+          "baseline_peak_bytes": 82280448,
+          "baseline_runtime": 0.188100626,
+          "cache_reused": false,
+          "candidate_code_bytes": 2876,
+          "candidate_compile_seconds": 69.59873170100036,
+          "candidate_peak_bytes": 140357632,
+          "candidate_runtime": 0.18667483,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2876,
+          "baseline_compile_seconds": 13.213911851999,
+          "baseline_peak_bytes": 84979712,
+          "baseline_runtime": 0.191720994,
+          "cache_reused": false,
+          "candidate_code_bytes": 2876,
+          "candidate_compile_seconds": 68.5482499890004,
+          "candidate_peak_bytes": 148115456,
+          "candidate_runtime": 0.167981471,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2876,
+          "baseline_compile_seconds": 13.334847291000187,
+          "baseline_peak_bytes": 82223104,
+          "baseline_runtime": 0.17719302,
+          "cache_reused": false,
+          "candidate_code_bytes": 2876,
+          "candidate_compile_seconds": 70.20591347499976,
+          "candidate_peak_bytes": 139411456,
+          "candidate_runtime": 0.178609317,
+          "cold_start": true
+        }
+      ]
+    },
+    {
+      "excluded_reason": null,
+      "id": "71_full_conn",
+      "runs": [
+        {
+          "baseline_code_bytes": 6020,
+          "baseline_compile_seconds": 25.170406502998958,
+          "baseline_peak_bytes": 102572032,
+          "baseline_runtime": 0.003588116,
+          "cache_reused": false,
+          "candidate_code_bytes": 6020,
+          "candidate_compile_seconds": 207.94617417000154,
+          "candidate_peak_bytes": 265723904,
+          "candidate_runtime": 0.003591617,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6020,
+          "baseline_compile_seconds": 24.81727500299894,
+          "baseline_peak_bytes": 108572672,
+          "baseline_runtime": 0.003457863,
+          "cache_reused": false,
+          "candidate_code_bytes": 6020,
+          "candidate_compile_seconds": 221.7672437959991,
+          "candidate_peak_bytes": 279269376,
+          "candidate_runtime": 0.002267324,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6020,
+          "baseline_compile_seconds": 25.012688365999566,
+          "baseline_peak_bytes": 109461504,
+          "baseline_runtime": 0.003459112,
+          "cache_reused": false,
+          "candidate_code_bytes": 6020,
+          "candidate_compile_seconds": 205.34727072999885,
+          "candidate_peak_bytes": 262037504,
+          "candidate_runtime": 0.003474363,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6020,
+          "baseline_compile_seconds": 24.699859955999273,
+          "baseline_peak_bytes": 108523520,
+          "baseline_runtime": 0.003456362,
+          "cache_reused": false,
+          "candidate_code_bytes": 6020,
+          "candidate_compile_seconds": 218.19287183599954,
+          "candidate_peak_bytes": 262217728,
+          "candidate_runtime": 0.003539115,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6020,
+          "baseline_compile_seconds": 24.709730526001294,
+          "baseline_peak_bytes": 108756992,
+          "baseline_runtime": 0.00341611,
+          "cache_reused": false,
+          "candidate_code_bytes": 6020,
+          "candidate_compile_seconds": 223.97618244899968,
+          "candidate_peak_bytes": 282075136,
+          "candidate_runtime": 0.003416611,
+          "cold_start": true
+        }
+      ]
+    },
+    {
+      "excluded_reason": null,
+      "id": "75_max_flow",
+      "runs": [
+        {
+          "baseline_code_bytes": 2780,
+          "baseline_compile_seconds": 12.227868399000727,
+          "baseline_peak_bytes": 87494656,
+          "baseline_runtime": 0.00248033,
+          "cache_reused": false,
+          "candidate_code_bytes": 2780,
+          "candidate_compile_seconds": 49.43116718099918,
+          "candidate_peak_bytes": 145301504,
+          "candidate_runtime": 0.003508864,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2780,
+          "baseline_compile_seconds": 12.01658080299967,
+          "baseline_peak_bytes": 87416832,
+          "baseline_runtime": 0.00340961,
+          "cache_reused": false,
+          "candidate_code_bytes": 2780,
+          "candidate_compile_seconds": 49.717477705999045,
+          "candidate_peak_bytes": 143908864,
+          "candidate_runtime": 0.003462862,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2780,
+          "baseline_compile_seconds": 12.453925472000265,
+          "baseline_peak_bytes": 87691264,
+          "baseline_runtime": 0.003416861,
+          "cache_reused": false,
+          "candidate_code_bytes": 2780,
+          "candidate_compile_seconds": 48.03407091900044,
+          "candidate_peak_bytes": 143769600,
+          "candidate_runtime": 0.00338761,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2780,
+          "baseline_compile_seconds": 12.093666300999757,
+          "baseline_peak_bytes": 88158208,
+          "baseline_runtime": 0.00338511,
+          "cache_reused": false,
+          "candidate_code_bytes": 2780,
+          "candidate_compile_seconds": 48.51562102000025,
+          "candidate_peak_bytes": 139579392,
+          "candidate_runtime": 0.003520114,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 2780,
+          "baseline_compile_seconds": 12.1955438519999,
+          "baseline_peak_bytes": 88506368,
+          "baseline_runtime": 0.003809123,
+          "cache_reused": false,
+          "candidate_code_bytes": 2780,
+          "candidate_compile_seconds": 48.34604477599896,
+          "candidate_peak_bytes": 141942784,
+          "candidate_runtime": 0.003442361,
+          "cold_start": true
+        }
+      ]
+    },
+    {
+      "excluded_reason": null,
+      "id": "85_long_code",
+      "runs": [
+        {
+          "baseline_code_bytes": 3528,
+          "baseline_compile_seconds": 21.81385595700158,
+          "baseline_peak_bytes": 98074624,
+          "baseline_runtime": 0.002343826,
+          "cache_reused": false,
+          "candidate_code_bytes": 3528,
+          "candidate_compile_seconds": 118.3573512669991,
+          "candidate_peak_bytes": 228904960,
+          "candidate_runtime": 0.002195321,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 3528,
+          "baseline_compile_seconds": 22.439640129998224,
+          "baseline_peak_bytes": 105824256,
+          "baseline_runtime": 0.003435861,
+          "cache_reused": false,
+          "candidate_code_bytes": 3528,
+          "candidate_compile_seconds": 123.46070984900143,
+          "candidate_peak_bytes": 241455104,
+          "candidate_runtime": 0.002349326,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 3528,
+          "baseline_compile_seconds": 22.158994780000285,
+          "baseline_peak_bytes": 98508800,
+          "baseline_runtime": 0.002264823,
+          "cache_reused": false,
+          "candidate_code_bytes": 3528,
+          "candidate_compile_seconds": 121.52530859199942,
+          "candidate_peak_bytes": 235868160,
+          "candidate_runtime": 0.003486363,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 3528,
+          "baseline_compile_seconds": 21.623364162000144,
+          "baseline_peak_bytes": 98426880,
+          "baseline_runtime": 0.002272824,
+          "cache_reused": false,
+          "candidate_code_bytes": 3528,
+          "candidate_compile_seconds": 123.58752046200061,
+          "candidate_peak_bytes": 238161920,
+          "candidate_runtime": 0.002443079,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 3528,
+          "baseline_compile_seconds": 21.606994130001112,
+          "baseline_peak_bytes": 98484224,
+          "baseline_runtime": 0.002389577,
+          "cache_reused": false,
+          "candidate_code_bytes": 3528,
+          "candidate_compile_seconds": 121.92588258099931,
+          "candidate_peak_bytes": 232038400,
+          "candidate_runtime": 0.002286324,
+          "cold_start": true
+        }
+      ]
+    },
+    {
+      "excluded_reason": null,
+      "id": "87_many_params",
+      "runs": [
+        {
+          "baseline_code_bytes": 6544,
+          "baseline_compile_seconds": 25.331261643999824,
+          "baseline_peak_bytes": 109154304,
+          "baseline_runtime": 0.003483363,
+          "cache_reused": false,
+          "candidate_code_bytes": 6540,
+          "candidate_compile_seconds": 224.925578710001,
+          "candidate_peak_bytes": 234680320,
+          "candidate_runtime": 0.003440111,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6544,
+          "baseline_compile_seconds": 26.611283899999762,
+          "baseline_peak_bytes": 111562752,
+          "baseline_runtime": 0.003431612,
+          "cache_reused": false,
+          "candidate_code_bytes": 6540,
+          "candidate_compile_seconds": 254.27200568399894,
+          "candidate_peak_bytes": 233078784,
+          "candidate_runtime": 0.002271324,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6544,
+          "baseline_compile_seconds": 26.03207132499847,
+          "baseline_peak_bytes": 108605440,
+          "baseline_runtime": 0.003464613,
+          "cache_reused": false,
+          "candidate_code_bytes": 6540,
+          "candidate_compile_seconds": 248.33420102499986,
+          "candidate_peak_bytes": 232411136,
+          "candidate_runtime": 0.003451113,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6544,
+          "baseline_compile_seconds": 26.46388895400014,
+          "baseline_peak_bytes": 109502464,
+          "baseline_runtime": 0.003425612,
+          "cache_reused": false,
+          "candidate_code_bytes": 6540,
+          "candidate_compile_seconds": 250.52149559899954,
+          "candidate_peak_bytes": 231747584,
+          "candidate_runtime": 0.003449612,
+          "cold_start": true
+        },
+        {
+          "baseline_code_bytes": 6544,
+          "baseline_compile_seconds": 26.524123175999193,
+          "baseline_peak_bytes": 110411776,
+          "baseline_runtime": 0.003519615,
+          "cache_reused": false,
+          "candidate_code_bytes": 6540,
+          "candidate_compile_seconds": 245.0779424730008,
+          "candidate_peak_bytes": 233005056,
+          "candidate_runtime": 0.003433112,
+          "cold_start": true
+        }
+      ]
+    }
+  ],
+  "comparison": "r2_r1",
+  "evidence_level": "target_hardware",
+  "runtime": "visionfive2-u74-linux",
+  "runtime_metric": "seconds",
+  "schema_version": 2,
+  "target": "rv64gc"
+}
