@@ -29,8 +29,10 @@ public class Instruction extends Value {
     BR, CONDBR, RET,
     // Conversion
     ZEXT, SEXT, SITOFP, FPTOSI,
+    // Vector construction and lane manipulation
+    BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR,
     // Other
-    CALL, PHI, XOR;
+    CALL, PHI, SELECT, XOR;
 
     public boolean isTerminator() {
       return this == BR || this == CONDBR || this == RET;
