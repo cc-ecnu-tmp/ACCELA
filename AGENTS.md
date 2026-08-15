@@ -16,6 +16,9 @@
 - Search limits are deterministic expansion budgets. Budget exhaustion selects the best already-validated state and emits `budget_exhausted`.
 - `PassRegistry` and `PipelineProfile.r1()` are the single source for R1 pass identity, phase order, dependencies, required boundaries, and legality obligation IDs. The 12 unranked experimental transforms are absent.
 - R1 always builds complete production `FULL` as an immutable fallback. Alternate pass timing is an explicit `ir.schedule.deferred-r1` schedule candidate, never an empty or hidden ablation; it may commit only after verifier/lowering/DryRunRA and fail-closed dominance guards beat `FULL`. Recursive reachable call graphs, a worse unknown-loop recurring slope, any worse cost component, or a non-strict robust score retain `FULL`. MIR candidate rejection likewise retains production GlobalMerge and MachineLICM behavior.
+- R2 development starts from the accepted R1 implementation and remains a candidate until BOOM evidence closes its gates. `R2PassRegistry.production()` is the occurrence-level source of truth for the 71 current production IR/MIR/RA/emission steps. Its initial DAG deliberately preserves the production order; an edge may be relaxed only with an explicit analysis-validity and legality proof.
+- Every R2 Beam node carries an immutable decision prefix and `R2AnalysisState`. Required SSA construction, IR-to-MIR lowering, PHI elimination, register allocation, and emission occurrences cannot be skipped. A pass with missing analysis prerequisites fails immediately; phase crossings and IR/MIR analysis-domain crossings are invalid configurations.
+- The 12 experimental transforms remain absent from the R2 production registry until each passes correctness, additive `FULL + candidate`, combination, long-tail, and BOOM evaluation.
 
 ## Evidence
 

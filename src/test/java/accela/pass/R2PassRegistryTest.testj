@@ -1,0 +1,89 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Set;
+import java.util.Map;
+import accela.util.StrictJson;
+import org.junit.jupiter.api.Test;
+
+final class R2PassRegistryTest {
+  @Test
+  void productionRegistryCoversEveryCurrentOccurrenceAndNoExperiment() {
+    R2PassRegistry registry = R2PassRegistry.production();
+    assertEquals(71, registry.all().size());
+    assertEquals(5, registry.family(R2PassRegistry.IR_SIMPLIFY_CFG).size());
+    assertEquals(2, registry.family(R2PassRegistry.IR_SROA).size());
+    assertEquals(7, registry.family(R2PassRegistry.IR_EARLY_CSE).size());
+    assertEquals(3, registry.family(R2PassRegistry.IR_SCCP).size());
+    assertEquals(4, registry.family(R2PassRegistry.IR_INST_SIMPLIFY).size());
+    assertEquals(3, registry.family(R2PassRegistry.IR_ADCE).size());
+    assertEquals(3, registry.family(R2PassRegistry.IR_GLOBAL_DCE).size());
+    assertEquals(2, registry.family(R2PassRegistry.IR_LICM).size());
+    assertEquals(2, registry.family(R2PassRegistry.IR_UNROLL).size());
+    assertEquals(2, registry.family(R2PassRegistry.BLOCK_PLACEMENT).size());
+    assertTrue(registry.all().stream().noneMatch(pass -> pass.id().startsWith("candidate.")));
+  }
+
+  @Test
+  void fullProfileAppliesEveryOccurrenceInStableOrder() {
+    R2PipelineProfile profile = R2PipelineProfile.full();
+    assertEquals(profile.registry().fullDecisionOrder(), profile.applied());
+    assertEquals(profile.registry().all().size(), profile.decisions().size());
+  }
+
+  @Test
+  void registryJsonIsDeterministicAndComplete() {
+    R2PassRegistry registry = R2PassRegistry.production();
+    assertEquals(registry.toJson(), registry.toJson());
+    Object parsed = StrictJson.parse(registry.toJson());
+    assertTrue(parsed instanceof Map<?, ?>);
+    Map<?, ?> root = (Map<?, ?>) parsed;
+    assertEquals(R2PassRegistry.SCHEMA_VERSION, root.get("schema_version"));
+    assertEquals(71, ((List<?>) root.get("occurrences")).size());
+  }
+
+  @Test
+  void schedulePrefixIsDependencyOrderedAndRequiredPassesCannotBeSkipped() {
+    R2PassRegistry registry = R2PassRegistry.production();
+    R2ScheduleState state = R2ScheduleState.initial(registry);
+    assertEquals(List.of("ir.simplify-cfg.1"),
+        state.available().stream().map(R2PassOccurrence::id).toList());
+    R2ScheduleState initial = state;
+    assertThrows(IllegalArgumentException.class, () -> initial.decide(
+        new R2ScheduleState.Decision("ir.sroa.1", R2ScheduleState.Action.APPLY, Set.of())));
+    state = state.decide(new R2ScheduleState.Decision("ir.simplify-cfg.1",
+        R2ScheduleState.Action.SKIP, Set.of()));
+    state = state.decide(new R2ScheduleState.Decision("ir.sroa.1",
+        R2ScheduleState.Action.SKIP, Set.of()));
+    R2ScheduleState beforeRequired = state;
+    assertThrows(IllegalArgumentException.class, () -> beforeRequired.decide(
+        new R2ScheduleState.Decision("ir.mem2reg.1", R2ScheduleState.Action.SKIP, Set.of())));
+    assertFalse(state.complete());
+  }
+
+  @Test
+  void missingAnalysisFailsClosedAndInvalidationIsExplicit() {
+    R2PassOccurrence licm = R2PassRegistry.production().family(R2PassRegistry.IR_LICM).getFirst();
+    assertThrows(IllegalStateException.class,
+        () -> R2AnalysisState.empty().apply(licm, Set.of()));
+    R2AnalysisState after = R2AnalysisState.empty().apply(licm, licm.requiredAnalyses());
+    assertTrue(after.valid().isEmpty());
+  }
+
+  @Test
+  void stageAndAnalysisDomainsCannotCross() {
+    assertThrows(IllegalArgumentException.class, () -> new R2PassOccurrence(
+        "ir.invalid.1", "ir.invalid", PassDescriptor.Stage.IR,
+        R2PassOccurrence.Scope.FUNCTION, false, List.of(),
+        Set.of(R2PassOccurrence.Analysis.LIVENESS), Set.of()));
+    assertThrows(IllegalArgumentException.class, () -> new R2PassOccurrence(
+        "backend.invalid.1", "backend.invalid", PassDescriptor.Stage.MIR,
+        R2PassOccurrence.Scope.FUNCTION, false, List.of(),
+        Set.of(R2PassOccurrence.Analysis.LOOP_INFO), Set.of()));
+  }
+}

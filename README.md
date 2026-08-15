@@ -24,6 +24,7 @@ python -m tools.targetlab verify-embedded \
 现场测量从人工合规确认开始，统一流程为 `configure -> build -> run -> collect -> profile -> validate -> embed -> report`。详见：
 
 - [成本调度器架构](docs/cost-scheduler-architecture.zh-CN.md)
+- [R2 分层调度器状态与边界](docs/r2-scheduler-status.zh-CN.md)
 - [TargetProfile JSON v1 规范](docs/target-profile-json-v1.zh-CN.md)
 - [TargetLab 现场手册](docs/targetlab-field-guide.zh-CN.md)
 - [Linux 测量后端](docs/targetlab-linux.zh-CN.md)
