@@ -695,7 +695,7 @@ public final class ScalarEvolutionAnalysis
         case I1 -> ONE;
         case INT, FLOAT -> BigInteger.valueOf(4);
         case I64, POINTER -> BigInteger.valueOf(8);
-        case ARRAY -> BigInteger.valueOf(type.size).multiply(allocationSize(type.innerType));
+        case ARRAY, VECTOR -> BigInteger.valueOf(type.size).multiply(allocationSize(type.innerType));
         case VOID -> throw new IllegalArgumentException("void has no allocation size");
       };
     }
