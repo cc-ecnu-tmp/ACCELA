@@ -10,6 +10,12 @@ import org.junit.jupiter.api.Test;
 
 final class PassRegistryTest {
   @Test
+  void productionPipelineCannotBeConstructedAsHiddenR1Ablation() {
+    assertThrows(NoSuchMethodException.class,
+        () -> PassBuilder.class.getDeclaredConstructor(boolean.class));
+  }
+
+  @Test
   void r1RegistryHasStableDAGAndNoExperimentalTransforms() {
     PassRegistry registry = PassRegistry.r1();
     assertEquals(12, registry.all().size());

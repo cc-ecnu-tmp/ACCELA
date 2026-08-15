@@ -71,9 +71,13 @@ final class BackendPipeline {
       phiElimination.run(function);
       memoryAddressFolding.run(function);
       machineCse.run(function);
+      // Preserve the production FULL baseline first.  The scheduler may only consider an
+      // additional idempotent application; rejecting it must never remove the established pass.
+      globalMerge.run(function);
       scheduler.apply(globalMergePass.id(), new LegalityResult(LegalityResult.Status.PROVED,
               globalMergePass.primaryObligation(), "address equivalence proved by matcher"),
           function, globalMerge::run);
+      machineLicm.run(function);
       scheduler.apply(machineLicmPass.id(), new LegalityResult(LegalityResult.Status.PROVED,
               machineLicmPass.primaryObligation(), "loop invariance proved by matcher"),
           function, machineLicm::run);

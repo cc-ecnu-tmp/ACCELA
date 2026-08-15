@@ -4,6 +4,8 @@
 
 R1 将硬件事实、候选合法性、机器成本和寄存器分配压力分开。`profilec` 是 JSON 到 Java 的唯一生成入口；生成代码不得手工修改。最终编译器只链接 `GeneratedTargetProfile`，既没有 JSON 解析器，也没有运行时 Profile 覆盖入口。
 
+R1 Beam 的初始状态必须是当前生产 `FULL`，所有候选只允许以 `FULL + candidate` 的方式事务化展开。空序列表示保留 `FULL`，不得表示移除 LICM、Unroll、StrengthReduction、Inlining、GlobalMerge 或 MachineLICM 的隐藏 ablation。MIR 候选同样先执行生产 Pass，再评估额外的幂等应用；成本模型拒绝候选时必须保留生产行为。
+
 ```text
 TargetLab raw JSON -> profilec -> target-profile.v1 JSON -> strict validate
                                                        -> generated Java -> compiler

@@ -15,6 +15,7 @@
 - Candidate evaluation is transactional. Internal errors and verifier failures abort compilation; they never select a fallback candidate silently.
 - Search limits are deterministic expansion budgets. Budget exhaustion selects the best already-validated state and emits `budget_exhausted`.
 - `PassRegistry` and `PipelineProfile.r1()` are the single source for R1 pass identity, phase order, dependencies, required boundaries, and legality obligation IDs. The 12 unranked experimental transforms are absent.
+- R1 scheduling is strictly additive: the initial state is the complete production `FULL` pipeline, and candidates are evaluated only as `FULL + candidate`. There is no API for constructing a hidden R1-pass ablation; rejecting an IR or MIR candidate must retain production LICM, Unroll, StrengthReduction, Inlining, GlobalMerge, and MachineLICM behavior.
 
 ## Evidence
 

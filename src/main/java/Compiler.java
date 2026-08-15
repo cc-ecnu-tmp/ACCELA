@@ -56,7 +56,10 @@ public class Compiler {
     accela.ir.Module module = new AST2IR().convert(unit);
     IRVerifier.verifyModule(module);
 
-    PassBuilder passBuilder = new PassBuilder(true);
+    // R1 candidates are additive to the established production FULL pipeline.  Starting the
+    // search from a pipeline with profitable passes removed made the empty beam state a hidden
+    // ablation and allowed it to replace FULL on an inaccurate proxy model.
+    PassBuilder passBuilder = new PassBuilder();
     ModuleAnalysisManager mam = passBuilder.buildModuleAnalysisManager();
     FunctionAnalysisManager fam = passBuilder.buildFunctionAnalysisManager();
     PassInstrumentation instrumentation = passBuilder.buildIRInstrumentation(false);
