@@ -13,6 +13,12 @@
     "issue_width": 2,
     "retire_width": 2
   },
+  "measurement_environment": {
+    "backend": "unmeasured",
+    "rdcycle": null,
+    "rdinstret": null,
+    "timer": "unmeasured"
+  },
   "scheduler": {
     "enabled": true,
     "beam_width": 8,
@@ -1144,8 +1150,32 @@
       "source": "declared-development"
     }
   },
+  "diagnostics": {
+    "load_use": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
+    "pointer_chase": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"},
+    "working_set": {
+      "4096": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "32768": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "262144": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"}
+    },
+    "stride": {
+      "8": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "64": {"median": 5, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "512": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"}
+    },
+    "frontend": {
+      "64": {"median": 8, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "256": {"median": 32, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "1024": {"median": 128, "mad": 0, "sample_count": 1, "source": "declared-development"}
+    },
+    "register_pressure": {
+      "8": {"median": 1, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "16": {"median": 1, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "24": {"median": 17, "mad": 0, "sample_count": 1, "source": "declared-development"},
+      "32": {"median": 33, "mad": 0, "sample_count": 1, "source": "declared-development"}
+    }
+  },
   "simd": {
     "enabled": false
   }
 }
-

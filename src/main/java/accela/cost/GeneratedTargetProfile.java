@@ -139,6 +139,13 @@ public final class GeneratedTargetProfile {
     builder.pair(InstructionClass.MOVE, InstructionClass.MOVE, new Measurement(1.0, 0.0, 1, "declared-development"));
     builder.branch(new Measurement(1.0, 0.0, 1, "declared-development"), new Measurement(8.0, 0.0, 1, "declared-development"));
     builder.spills(new Measurement(5.0, 0.0, 1, "declared-development"), new Measurement(2.0, 0.0, 1, "declared-development"));
+    builder.diagnostics(new TargetProfile.DiagnosticCosts(
+        new Measurement(5.0, 0.0, 1, "declared-development"),
+        new Measurement(8.0, 0.0, 1, "declared-development"),
+        new java.util.TreeMap<>(java.util.Map.of(4096, new Measurement(5.0, 0.0, 1, "declared-development"), 32768, new Measurement(5.0, 0.0, 1, "declared-development"), 262144, new Measurement(8.0, 0.0, 1, "declared-development"))),
+        new java.util.TreeMap<>(java.util.Map.of(8, new Measurement(5.0, 0.0, 1, "declared-development"), 64, new Measurement(5.0, 0.0, 1, "declared-development"), 512, new Measurement(8.0, 0.0, 1, "declared-development"))),
+        new java.util.TreeMap<>(java.util.Map.of(64, new Measurement(8.0, 0.0, 1, "declared-development"), 256, new Measurement(32.0, 0.0, 1, "declared-development"), 1024, new Measurement(128.0, 0.0, 1, "declared-development"))),
+        new java.util.TreeMap<>(java.util.Map.of(8, new Measurement(1.0, 0.0, 1, "declared-development"), 16, new Measurement(1.0, 0.0, 1, "declared-development"), 24, new Measurement(17.0, 0.0, 1, "declared-development"), 32, new Measurement(33.0, 0.0, 1, "declared-development")))));
     return builder.build();
   }
 }

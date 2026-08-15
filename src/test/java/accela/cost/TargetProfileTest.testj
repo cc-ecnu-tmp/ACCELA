@@ -18,6 +18,7 @@ final class TargetProfileTest {
     assertFalse(profile.calibrated());
     assertFalse(profile.simdEnabled());
     assertEquals(8, profile.scheduler().beamWidth());
+    assertEquals(4, profile.diagnostics().registerPressure().size());
   }
 
   @Test

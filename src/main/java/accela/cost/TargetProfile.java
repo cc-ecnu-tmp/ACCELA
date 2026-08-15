@@ -2,7 +2,9 @@ package accela.cost;
 
 import java.util.EnumMap;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Objects;
+import java.util.TreeMap;
 
 /** Immutable, fully validated cost-model ABI. Runtime JSON loading is intentionally unsupported. */
 public final class TargetProfile {
@@ -25,6 +27,35 @@ public final class TargetProfile {
     }
   }
 
+  public record DiagnosticCosts(
+      Measurement loadUse,
+      Measurement pointerChase,
+      NavigableMap<Integer, Measurement> workingSet,
+      NavigableMap<Integer, Measurement> stride,
+      NavigableMap<Integer, Measurement> frontend,
+      NavigableMap<Integer, Measurement> registerPressure) {
+    public DiagnosticCosts {
+      Objects.requireNonNull(loadUse, "loadUse");
+      Objects.requireNonNull(pointerChase, "pointerChase");
+      workingSet = checkedCurve(workingSet, "workingSet");
+      stride = checkedCurve(stride, "stride");
+      frontend = checkedCurve(frontend, "frontend");
+      registerPressure = checkedCurve(registerPressure, "registerPressure");
+    }
+
+    private static NavigableMap<Integer, Measurement> checkedCurve(
+        Map<Integer, Measurement> source, String name) {
+      Objects.requireNonNull(source, name);
+      TreeMap<Integer, Measurement> result = new TreeMap<>();
+      source.forEach((point, measurement) -> {
+        if (point == null || point <= 0) throw new IllegalArgumentException(name + " points must be positive");
+        result.put(point, Objects.requireNonNull(measurement, name + " measurement"));
+      });
+      if (result.isEmpty()) throw new IllegalArgumentException(name + " curve is empty");
+      return java.util.Collections.unmodifiableNavigableMap(result);
+    }
+  }
+
   private final String id;
   private final String isa;
   private final String abi;
@@ -42,6 +73,7 @@ public final class TargetProfile {
   private final Measurement unpredictableBranch;
   private final Measurement spillLoad;
   private final Measurement spillStore;
+  private final DiagnosticCosts diagnostics;
 
   private TargetProfile(Builder builder) {
     id = requireText(builder.id, "id");
@@ -76,7 +108,7 @@ public final class TargetProfile {
         if (value == null || reverse == null) {
           throw new IllegalArgumentException("incomplete pairing matrix at " + left + "/" + right);
         }
-        if (Double.compare(value.median(), reverse.median()) != 0) {
+        if (!value.equals(reverse)) {
           throw new IllegalArgumentException("asymmetric pairing matrix at " + left + "/" + right);
         }
       }
@@ -87,6 +119,7 @@ public final class TargetProfile {
     unpredictableBranch = Objects.requireNonNull(builder.unpredictableBranch, "unpredictableBranch");
     spillLoad = Objects.requireNonNull(builder.spillLoad, "spillLoad");
     spillStore = Objects.requireNonNull(builder.spillStore, "spillStore");
+    diagnostics = Objects.requireNonNull(builder.diagnostics, "diagnostics");
   }
 
   public String id() { return id; }
@@ -106,6 +139,7 @@ public final class TargetProfile {
   public Measurement unpredictableBranch() { return unpredictableBranch; }
   public Measurement spillLoad() { return spillLoad; }
   public Measurement spillStore() { return spillStore; }
+  public DiagnosticCosts diagnostics() { return diagnostics; }
 
   public static Builder builder() { return new Builder(); }
 
@@ -137,6 +171,7 @@ public final class TargetProfile {
     private Measurement unpredictableBranch;
     private Measurement spillLoad;
     private Measurement spillStore;
+    private DiagnosticCosts diagnostics;
 
     public Builder identity(String id, String isa, String abi, String codeModel) {
       this.id = id; this.isa = isa; this.abi = abi; this.codeModel = codeModel; return this;
@@ -163,6 +198,7 @@ public final class TargetProfile {
     public Builder spills(Measurement load, Measurement store) {
       spillLoad = load; spillStore = store; return this;
     }
+    public Builder diagnostics(DiagnosticCosts costs) { diagnostics = costs; return this; }
     public TargetProfile build() { return new TargetProfile(this); }
   }
 }

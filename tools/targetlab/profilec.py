@@ -10,7 +10,25 @@ from .schema import INSTRUCTION_CLASSES, ValidationError, validate_profile
 
 def load_json(path: Path):
     with path.open("r", encoding="utf-8") as stream:
-        return json.load(stream)
+        return parse_json(stream.read(), str(path))
+
+
+def parse_json(text, source="JSON input"):
+    try:
+        return json.loads(text, object_pairs_hook=_unique_object,
+            parse_constant=lambda value: (_ for _ in ()).throw(
+                ValidationError(f"non-finite JSON number is forbidden: {value}")))
+    except json.JSONDecodeError as exception:
+        raise ValidationError(f"invalid JSON in {source}: {exception}") from exception
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValidationError(f"duplicate JSON key is forbidden: {key}")
+        result[key] = value
+    return result
 
 
 def canonical_json(document) -> str:
@@ -18,8 +36,10 @@ def canonical_json(document) -> str:
 
 
 def measurement(values, source, clock_hz):
-    if len(values) < 1:
-        raise ValidationError("measurement has no samples")
+    if len(values) != 9:
+        raise ValidationError("measurement must contain exactly 9 samples")
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in values):
+        raise ValidationError("raw measurement values must be positive integers")
     numeric = [float(value) for value in values]
     if source == "rdcycle_x1000":
         numeric = [value / 1000.0 for value in numeric]
@@ -35,8 +55,20 @@ def measurement(values, source, clock_hz):
 
 def profile_from_raw(template, raw):
     profile = copy.deepcopy(template)
-    if raw.get("schema_version") != 1 or set(raw) != {"schema_version", "samples"}:
-        raise ValidationError("raw archive must contain schema_version=1 and samples only")
+    validate_profile(profile)
+    if raw.get("schema_version") != 1 or set(raw) != {"schema_version", "environment", "samples"}:
+        raise ValidationError("raw archive must contain schema_version=1, environment, and samples only")
+    environment = raw["environment"]
+    if not isinstance(environment, dict) or set(environment) != {"backend", "rdcycle", "rdinstret", "timer"}:
+        raise ValidationError("raw environment is invalid")
+    if environment["backend"] not in {"linux", "baremetal"}:
+        raise ValidationError("raw environment backend is invalid")
+    if not isinstance(environment["rdcycle"], bool) or not isinstance(environment["rdinstret"], bool):
+        raise ValidationError("raw counter availability must be boolean")
+    if environment["timer"] not in {"rdcycle", "clock_gettime"}:
+        raise ValidationError("raw timer is invalid")
+    profile["measurement_environment"] = copy.deepcopy(environment)
+    expected = _expected_metrics(profile)
     seen = set()
     for index, sample in enumerate(raw["samples"]):
         if set(sample) != {"metric", "category", "source", "values"}:
@@ -45,8 +77,16 @@ def profile_from_raw(template, raw):
         if metric in seen:
             raise ValidationError(f"duplicate raw metric {metric}")
         seen.add(metric)
+        if metric not in expected:
+            raise ValidationError(f"unsupported raw metric {metric}")
+        if len(sample["values"]) != 9:
+            raise ValidationError(f"raw metric {metric} must contain exactly 9 samples")
+        expected_source = "rdcycle_x1000" if environment["timer"] == "rdcycle" \
+            else "clock_gettime_ns_x1000"
+        if sample["source"] != expected_source:
+            raise ValidationError(f"raw metric {metric} source conflicts with measured environment")
         path = metric.split(".")
-        if path[0] not in {"operations", "pairing", "branch", "spills"}:
+        if path[0] not in {"operations", "pairing", "branch", "spills", "diagnostics"}:
             raise ValidationError(f"unsupported raw metric {metric}")
         current = profile
         for part in path[:-1]:
@@ -56,10 +96,31 @@ def profile_from_raw(template, raw):
         leaf = path[-1]
         if leaf not in current or not isinstance(current[leaf], dict):
             raise ValidationError(f"raw metric does not name a measurement: {metric}")
-        current[leaf] = measurement(sample["values"], sample["source"],
-            profile["target"]["clock_hz"])
+        measured = measurement(sample["values"], sample["source"], profile["target"]["clock_hz"])
+        current[leaf] = measured
+        if path[0] == "pairing" and path[1] != path[2]:
+            profile["pairing"][path[2]][path[1]] = copy.deepcopy(measured)
+    missing = expected - seen
+    if missing:
+        raise ValidationError(f"raw archive misses {len(missing)} required metrics; first: {sorted(missing)[0]}")
     profile["profile"]["calibrated"] = True
     return validate_profile(profile)
+
+
+def _expected_metrics(profile):
+    result = set()
+    for name in INSTRUCTION_CLASSES:
+        result.update((f"operations.{name}.latency", f"operations.{name}.throughput"))
+        for right in INSTRUCTION_CLASSES[INSTRUCTION_CLASSES.index(name):]:
+            result.add(f"pairing.{name}.{right}")
+    result.update(("branch.predictable", "branch.unpredictable", "spills.load", "spills.store"))
+    result.update(("diagnostics.load_use", "diagnostics.pointer_chase"))
+    for group, keys in (("working_set", ("4096", "32768", "262144")),
+                        ("stride", ("8", "64", "512")),
+                        ("frontend", ("64", "256", "1024")),
+                        ("register_pressure", ("8", "16", "24", "32"))):
+        result.update(f"diagnostics.{group}.{key}" for key in keys)
+    return result
 
 
 def generate_java(profile) -> str:
@@ -91,6 +152,13 @@ def generate_java(profile) -> str:
                 f"{_java_measurement(profile['pairing'][left][right])});")
     lines.extend((f"    builder.branch({_java_measurement(profile['branch']['predictable'])}, {_java_measurement(profile['branch']['unpredictable'])});",
         f"    builder.spills({_java_measurement(profile['spills']['load'])}, {_java_measurement(profile['spills']['store'])});",
+        "    builder.diagnostics(new TargetProfile.DiagnosticCosts(",
+        f"        {_java_measurement(profile['diagnostics']['load_use'])},",
+        f"        {_java_measurement(profile['diagnostics']['pointer_chase'])},",
+        f"        {_java_curve(profile['diagnostics']['working_set'])},",
+        f"        {_java_curve(profile['diagnostics']['stride'])},",
+        f"        {_java_curve(profile['diagnostics']['frontend'])},",
+        f"        {_java_curve(profile['diagnostics']['register_pressure'])}));",
         "    return builder.build();", "  }", "}", ""))
     return "\n".join(lines)
 
@@ -107,6 +175,13 @@ def _java_string(value):
 def _java_measurement(value):
     return "new Measurement(" + _double(value["median"]) + ", " + _double(value["mad"]) \
         + f", {value['sample_count']}, " + _java_string(value["source"]) + ")"
+
+
+def _java_curve(value):
+    entries = []
+    for point, measurement_value in sorted(value.items(), key=lambda item: int(item[0])):
+        entries.extend((str(int(point)), _java_measurement(measurement_value)))
+    return "new java.util.TreeMap<>(java.util.Map.of(" + ", ".join(entries) + "))"
 
 
 def embed(profile_path: Path, output_path: Path, verify=False):

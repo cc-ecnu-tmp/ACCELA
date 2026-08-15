@@ -34,6 +34,7 @@ public final class MachineCostModel {
     int branches = 0;
     int loads = 0;
     int stores = 0;
+    int loadUseEdges = 0;
     double criticalPath = 0.0;
     double resourceCycles = 0.0;
     double variance = 0.0;
@@ -42,6 +43,7 @@ public final class MachineCostModel {
     for (MachineBasicBlock block : function.getBlocks()) {
       criticalPath += criticalPath(block);
       resourceCycles += simulate(block);
+      loadUseEdges += loadUseEdges(block);
       for (MachineInstr instruction : block.getInstructions()) {
         InstructionClass instructionClass = InstructionClass.of(instruction.getOpcode());
         TargetProfile.OperationCost operation = profile.operation(instructionClass);
@@ -57,10 +59,14 @@ public final class MachineCostModel {
       }
     }
 
-    double frontend = Math.ceil((double) instructionCount / profile.fetchWidth());
+    double frontend = Math.max(Math.ceil((double) instructionCount / profile.fetchWidth()),
+        curveEstimate(profile.diagnostics().frontend(), codeBytes));
+    double loadUseExtra = Math.max(0.0, profile.diagnostics().loadUse().median()
+        - profile.operation(InstructionClass.LOAD).latency().median());
     double memory =
         loads * profile.operation(InstructionClass.LOAD).reciprocalThroughput().median()
-            + stores * profile.operation(InstructionClass.STORE).reciprocalThroughput().median();
+            + stores * profile.operation(InstructionClass.STORE).reciprocalThroughput().median()
+            + loadUseEdges * loadUseExtra;
     double branch = branches * profile.predictableBranch().median();
     AllocationEstimate allocation = allocator.estimate(function, target);
     double spill = allocation.spillWeight()
@@ -69,10 +75,33 @@ public final class MachineCostModel {
     double bottleneck = Math.max(Math.max(criticalPath, frontend), Math.max(resourceCycles, memory));
     double cycles = bottleneck + branch + spill + codeSize;
     variance += branches * square(profile.predictableBranch().mad());
+    variance += loadUseEdges * square(profile.diagnostics().loadUse().mad());
     variance += allocation.predictedSpills()
         * (square(profile.spillLoad().mad()) + square(profile.spillStore().mad()));
     return new CostEstimate(cycles, Math.sqrt(variance), criticalPath, frontend,
         resourceCycles, memory, branch, spill, codeSize);
+  }
+
+  private int loadUseEdges(MachineBasicBlock block) {
+    Map<VirtualRegister, InstructionClass> definitions = new HashMap<>();
+    int edges = 0;
+    for (MachineInstr instruction : block.getInstructions()) {
+      for (var operand : instruction.getOperands()) {
+        if (operand instanceof VRegOperand register
+            && definitions.get(register.getRegister()) == InstructionClass.LOAD) edges++;
+      }
+      if (instruction.getDest() != null) {
+        definitions.put(instruction.getDest(), InstructionClass.of(instruction.getOpcode()));
+      }
+    }
+    return edges;
+  }
+
+  private static double curveEstimate(java.util.NavigableMap<Integer, Measurement> curve, int point) {
+    Map.Entry<Integer, Measurement> ceiling = curve.ceilingEntry(Math.max(1, point));
+    if (ceiling != null) return ceiling.getValue().median();
+    Map.Entry<Integer, Measurement> last = curve.lastEntry();
+    return last.getValue().median() * point / last.getKey();
   }
 
   private double criticalPath(MachineBasicBlock block) {

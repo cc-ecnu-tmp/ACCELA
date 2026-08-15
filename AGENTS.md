@@ -28,6 +28,8 @@
 - TargetLab is offline, assembly-level, and independent of ACCELA code generation.
 - JSON inputs are strict: unknown fields, incomplete pairing matrices, invalid units, unstable critical measurements, and malformed mailboxes fail immediately.
 - Every result records its timer source. `rdcycle` to `clock_gettime` fallback is explicit and retained in the generated profile.
+- A calibrated profile requires the complete registry, exactly nine positive raw samples per metric, a measured counter environment, and exact symmetric pairing data. Partial archives never inherit development values.
+- Run `python -m tools.targetlab selftest` and `doctor` before field measurement. Preserve raw JSONL, Mailbox dumps, OpenOCD logs, and failure status.
 - Do not run TargetLab at an event until a human has confirmed generic hardware microbenchmarks are permitted.
 
 ## Change discipline

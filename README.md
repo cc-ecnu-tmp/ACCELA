@@ -12,6 +12,7 @@ ACCELA 是面向 RV64GC/LP64D 的 SysY 编译器。本分支加入目标校准�
 
 ```sh
 python -m tools.targetlab validate config/target/boomv3-development.json
+python -m tools.targetlab selftest
 python -m tools.targetlab verify-embedded \
   config/target/boomv3-development.json \
   src/main/java/accela/cost/GeneratedTargetProfile.java
@@ -24,3 +25,4 @@ python -m tools.targetlab verify-embedded \
 - [TargetProfile JSON v1 规范](docs/target-profile-json-v1.zh-CN.md)
 - [TargetLab 现场手册](docs/targetlab-field-guide.zh-CN.md)
 - [LLVM 对标与发布门禁](docs/benchmark-and-release.zh-CN.md)
+- [未校准示例报告](docs/examples/boomv3-development-report.md)
