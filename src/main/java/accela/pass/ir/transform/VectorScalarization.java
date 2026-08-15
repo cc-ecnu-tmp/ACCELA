@@ -23,7 +23,8 @@ import java.util.Map;
  * through the mid-end, then expands construction, lane-wise arithmetic/comparisons/conversions,
  * lane manipulation, PHIs, and contiguous vector loads/stores immediately before machine
  * lowering. Direct vector allocas and globals are split into independent scalar storage lanes;
- * vector function ABIs remain explicit errors until the contest ABI is known.
+ * defined vector parameters expand into ordinary scalar ABI lanes. Vector returns and external
+ * vector declarations remain explicit errors until the contest ABI is known.
  */
 public final class VectorScalarization {
   private VectorScalarization() {}
