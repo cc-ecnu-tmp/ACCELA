@@ -60,7 +60,8 @@ final class GVNValueTable {
     return switch (instruction.getOpcode()) {
       case ADD, SUB, MUL, SMULH, SDIV, SREM, SHL, ASHR, AND, XOR,
           FADD, FSUB, FMUL, FDIV, FNEG, ICMP, FCMP, GEP,
-          ZEXT, SEXT, SITOFP, FPTOSI -> true;
+          ZEXT, SEXT, SITOFP, FPTOSI,
+          BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR, SELECT -> true;
       default -> false;
     };
   }
@@ -87,6 +88,13 @@ final class GVNValueTable {
     if (value instanceof Constant.Float floating) {
       return new FloatKey(Float.floatToRawIntBits(floating.value));
     }
+    if (value instanceof Constant.Zero zero) {
+      return new ZeroKey(zero.getType().toString());
+    }
+    if (value instanceof Constant.Vector vector) {
+      return new VectorKey(
+          vector.getType().toString(), vector.elements.stream().map(GVNValueTable::valueKey).toList());
+    }
     return value;
   }
 
@@ -96,4 +104,8 @@ final class GVNValueTable {
   private record IntegerKey(Type.DataType type, long value) {}
 
   private record FloatKey(int bits) {}
+
+  private record ZeroKey(String type) {}
+
+  private record VectorKey(String type, List<Object> elements) {}
 }

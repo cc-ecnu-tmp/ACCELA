@@ -82,6 +82,26 @@ final class GVNTest {
   }
 
   @Test
+  void eliminatesDominatedVectorExpressions() {
+    Function function = new Function("vector", Type.INT);
+    Value lane = function.addArgument(Type.INT, "lane");
+    Type int4 = Type.vector(Type.INT, 4);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock body = function.addBlock("body");
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Instruction first = entryBuilder.createSplat(int4, lane);
+    entryBuilder.createBr(body);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction duplicate = bodyBuilder.createSplat(int4, lane);
+    Instruction extracted = bodyBuilder.createExtractElement(duplicate, Constant.intConst(0));
+    bodyBuilder.createRet(extracted);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(first, extracted.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
+  @Test
   void eliminatesGepExpressionsFromDominatingBlocks() {
     Function function = new Function("f", Type.PTR);
     Value index = function.addArgument(Type.I64, "index");
