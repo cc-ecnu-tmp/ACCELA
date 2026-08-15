@@ -2,13 +2,14 @@
 
 ACCELA uses one evaluator with no campaign contracts, hashes, ledgers, receipts, or audit chain.
 It compiles, links, executes, checks exact output, records QEMU dynamic instructions, and ranks
-the six active candidates over B2--B6.  The active profile directory contains only
-`baseline.json` plus one profile for each of `candidate.extended-affine-summarization`,
-`candidate.finite-state-acceleration`, `candidate.same-domain-loop-fusion`,
-`candidate.integer-linear-transition`, `candidate.rrt2-on-demand-memoization`, and
-`candidate.prefix-scan-reuse`; all six are default-off and are enabled only by
-`BenchmarkCompiler` profiles.  The formally selected nested row-major address recurrence is
-now part of the production `ir.loop-strength-reduce` pass and has no candidate profile.
+the six experimental candidates over B2--B6.  This branch keeps the candidate implementations,
+their legality/profitability remarks, and the complete evaluator together for follow-up work.
+The active profile directory contains only `baseline.json` plus one profile for each of
+`candidate.sysy-region-memory-forwarding`, `candidate.function-specialization`,
+`candidate.array-object-promotion`, `candidate.nested-address-recurrence`,
+`candidate.cost-model-loop-tiling`, and `candidate.rv64-word-pressure`; all six are
+default-off and are enabled only by `BenchmarkCompiler` profiles.  The judge-facing
+`Compiler` pipeline remains unchanged.
 
 Run from a Linux-native checkout:
 
@@ -18,10 +19,11 @@ python3 scripts/evaluate_candidates.py --max-runs 6 --jobs 4
 
 The evaluator builds the compiler and QEMU plugins, runs up to six profiles concurrently and
 four cases per profile, resumes already-passed cases, then writes `summary.json` and `REPORT.md`
-under `.tmp/simple-evaluation`. B3 also evaluates the three pair profiles formed from its Top 3
-single candidates. A complete B2–B6 run then performs the greedy combination pass and a distinct
-final verification profile. Failed cases remain in the report and make that profile unrankable;
-they are never silently skipped. Use `--no-diagnostics` to skip the B3 pairs and
+under `.tmp/simple-evaluation`. It records candidate `matched`, legality/profitability
+rejections, and `applied` decisions. B3 also evaluates the three pair profiles formed from its
+Top 3 single candidates. A complete B2–B6 run then performs the greedy combination pass and a
+distinct final verification profile. Failed cases remain in the report and make that profile
+unrankable; they are never silently skipped. Use `--no-diagnostics` to skip the B3 pairs and
 `--skip-build` only when the current checkout has already been built.
 Pass `--environment-label Ubuntu-Dev-RH2288V3` only on the authenticated dedicated host; other
 labels produce provisional metrics and cannot authorize integration.

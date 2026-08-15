@@ -28,18 +28,12 @@ public final class LoopStrengthReduce {
   private LoopStrengthReduce() {}
 
   public static boolean run(Function function, FunctionAnalysisManager fam) {
-    // Row-major nested address recurrences are part of the production LSR pass after the
-    // formal candidate evaluation. Run them first so the ordinary induction pass sees the
-    // same preheader/latch shape that the screened implementation used.
-    boolean changed = runNested(function, fam);
-    if (changed) fam.invalidate(function, PreservedAnalyses.none());
     return runWithInductions(
-        function, fam, fam.getResult(InductionVariableAnalysis.class, function).inductions(), false)
-        || changed;
+        function, fam, fam.getResult(InductionVariableAnalysis.class, function).inductions(), false);
   }
 
-  /** Visits inductions whose preheader is another loop and whose addresses are row-major. */
-  private static boolean runNested(Function function, FunctionAnalysisManager fam) {
+  /** Candidate-only variant that also visits inductions whose preheader is another loop. */
+  public static boolean runNested(Function function, FunctionAnalysisManager fam) {
     List<InductionVariableAnalysis.Induction> nested = fam
         .getResult(InductionVariableAnalysis.class, function).allInductions().stream()
         .filter(induction -> induction.predecessor() != induction.loop().header()

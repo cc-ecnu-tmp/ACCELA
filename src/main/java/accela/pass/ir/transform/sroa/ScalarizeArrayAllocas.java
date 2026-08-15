@@ -24,6 +24,12 @@ public final class ScalarizeArrayAllocas {
   private ScalarizeArrayAllocas() {}
 
   public static boolean runOnFunction(Function function) {
+    return runOnFunction(function, Integer.MAX_VALUE);
+  }
+
+  /** Runs the same transform with a caller-provided aggregate element budget. */
+  public static boolean runOnFunction(Function function, int maxElements) {
+    if (maxElements < 1) throw new IllegalArgumentException("maxElements must be positive");
     BasicBlock entry = function.getEntryBlock();
     if (entry == null) return false;
 
@@ -32,13 +38,13 @@ public final class ScalarizeArrayAllocas {
       if (inst.getOpcode() != Instruction.Opcode.ALLOCA) continue;
       Type allocType = inst.getAllocatedType();
       if (allocType == null || !allocType.isArray()) continue;
-      if (splitAlloca(function, inst)) changed = true;
+      if (splitAlloca(function, inst, maxElements)) changed = true;
     }
     return changed;
   }
 
-  private static boolean splitAlloca(Function function, Instruction alloca) {
-    SplitPlan plan = analyzeAlloca(alloca);
+  private static boolean splitAlloca(Function function, Instruction alloca, int maxElements) {
+    SplitPlan plan = analyzeAlloca(alloca, maxElements);
     if (plan == null) return false;
 
     BasicBlock entry = function.getEntryBlock();
@@ -78,12 +84,13 @@ public final class ScalarizeArrayAllocas {
     return true;
   }
 
-  private static SplitPlan analyzeAlloca(Instruction alloca) {
+  private static SplitPlan analyzeAlloca(Instruction alloca, int maxElements) {
     Type allocType = alloca.getAllocatedType();
     if (allocType == null || !allocType.isArray()) return null;
 
     SplitPlan plan = new SplitPlan(allocType.scalarType(), countLeafElements(allocType));
     if (plan.leafCount <= 0) return null;
+    if (plan.leafCount > maxElements) return null;
 
     for (Use use : new ArrayList<>(alloca.getUses())) {
       Instruction user = use.getUser();

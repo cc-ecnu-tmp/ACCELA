@@ -15,6 +15,7 @@ final class MemoryEffects {
   final Set<GlobalVariable> writes = identitySet();
   final BitSet readArguments = new BitSet();
   final BitSet writtenArguments = new BitSet();
+  final BitSet escapedArguments = new BitSet();
   boolean unknownRead;
   boolean unknownWrite;
   boolean observable;
@@ -39,6 +40,16 @@ final class MemoryEffects {
     boolean changed = reads.addAll(callee.reads) | writes.addAll(callee.writes);
     changed |= markUnknown(false, callee.unknownRead);
     changed |= markUnknown(true, callee.unknownWrite);
+    if (callee.unknownRead || callee.unknownWrite) {
+      for (int index = 0; index < call.getNumOperands(); index++) {
+        Value root = PointerProvenance.root(call.getOperand(index));
+        if (root instanceof Function.Argument argument && argument.getParent() == caller
+            && !escapedArguments.get(argument.getArgNo())) {
+          escapedArguments.set(argument.getArgNo());
+          changed = true;
+        }
+      }
+    }
     if (callee.observable && !observable) {
       observable = true;
       changed = true;

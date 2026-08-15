@@ -53,15 +53,15 @@ class EvaluateCandidatesTest(unittest.TestCase):
         self.assertEqual(
             MODULE._canonical_candidates(
                 [
-                    "candidate.integer-linear-transition",
-                    "candidate.same-domain-loop-fusion",
-                    "candidate.extended-affine-summarization",
+                    "candidate.rv64-word-pressure",
+                    "candidate.array-object-promotion",
+                    "candidate.sysy-region-memory-forwarding",
                 ]
             ),
             [
-                "candidate.extended-affine-summarization",
-                "candidate.same-domain-loop-fusion",
-                "candidate.integer-linear-transition",
+                "candidate.sysy-region-memory-forwarding",
+                "candidate.array-object-promotion",
+                "candidate.rv64-word-pressure",
             ],
         )
 

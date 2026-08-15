@@ -19,7 +19,7 @@ public class BackendCompiler {
     this(profile, instrumentation, BackendPipeline.CandidatePassProvider.empty());
   }
 
-  BackendCompiler(
+  public BackendCompiler(
       PipelineProfile profile,
       BackendPassInstrumentation instrumentation,
       BackendPipeline.CandidatePassProvider candidatePassProvider) {
