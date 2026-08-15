@@ -13,6 +13,7 @@ import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
+import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
 final class IPSCCPSolverTest {
@@ -66,5 +67,29 @@ final class IPSCCPSolverTest {
 
     assertSame(one, sum.getOperand(0));
     assertSame(two, sum.getOperand(1));
+  }
+
+  @Test
+  void propagatesVectorConstantsThroughArgumentsAndScalarReturns() {
+    Module module = new Module();
+    Type int4 = Type.vector(Type.INT, 4);
+    Function extract = new Function("extract", Type.INT);
+    module.addFunction(extract);
+    Value vector = extract.addArgument(int4, "vector");
+    IRBuilder extractBuilder = new IRBuilder(extract.addBlock("entry"));
+    extractBuilder.createRet(
+        extractBuilder.createExtractElement(vector, Constant.intConst(2)));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction call = builder.createCall(extract, Type.INT, Constant.zero(int4));
+    Instruction ret = builder.createRet(call);
+
+    assertTrue(new IPSCCPSolver(module).solve());
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(0, result.value);
   }
 }
