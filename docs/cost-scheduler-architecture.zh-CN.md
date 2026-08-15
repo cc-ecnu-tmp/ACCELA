@@ -21,6 +21,7 @@ IR/MIR candidate -> legality -> isolated snapshot -> verifier/lowering
 - `OptimizationCandidate` 提供稳定 ID、参数、作用区域、合法性结果和事务化 apply。
 - `SchedulerPolicy` 来自嵌入 Profile。默认 Beam 宽度 8，每函数 1024 次、每模块 4096 次展开。
 - `AllocationEstimate` 来自真实图着色流程：liveness、interference、simplify/coalesce、spill selection 和 coloring；在 spill rewrite 前停止。
+- `PassRegistry` 与 `PipelineProfile.r1()` 固化 R1 的阶段 DAG、必需边界、候选顺序和合法性义务 ID。SSA、lowering、PHI 消除、正式 RA 和 emission 不可关闭或跨越；尚无 BOOM 排名的 12 个实验变换不在 R1 Registry 中。
 
 任何候选都在深拷贝上执行。IR 快照重建 module、global、declaration、function、argument、block、instruction、operand 和 direct-call 映射；MIR 快照重建虚拟寄存器、块、栈槽和操作数。R1 IR Beam 在 LICM、两次小常量循环展开、整数强度削弱和 Inlining 的合法位置上保留基线与变换分支，每次变换后执行局部 cleanup、IR verifier、IR→MIR、PHI 消除、MIR verifier、成本模拟和 DryRunRA。变换异常、校验失败、非法配置属于编译错误，禁止静默退回旧启发式。预算耗尽不是错误：提交当前已验证最优状态，并在 trace 中记录 `budget_exhausted`。
 

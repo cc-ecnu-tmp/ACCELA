@@ -25,6 +25,9 @@ import accela.cost.DecisionTraceSink;
 import accela.cost.MachineCandidateScheduler;
 import accela.cost.LegalityResult;
 import accela.cost.TargetProfile;
+import accela.pass.PassDescriptor;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -57,6 +60,9 @@ final class BackendPipeline {
   String compileToAssembly(accela.ir.Module module) {
     MachineModule machineModule = lowering.lower(module);
     GlobalMerge globalMerge = new GlobalMerge(machineModule, target);
+    PipelineProfile pipeline = PipelineProfile.r1();
+    PassDescriptor globalMergePass = pipeline.require(PassRegistry.GLOBAL_MERGE);
+    PassDescriptor machineLicmPass = pipeline.require(PassRegistry.MACHINE_LICM);
     Map<MachineFunction, AllocationResult> allocations = new LinkedHashMap<>();
 
     for (MachineFunction function : machineModule.getFunctions()) {
@@ -65,11 +71,11 @@ final class BackendPipeline {
       phiElimination.run(function);
       memoryAddressFolding.run(function);
       machineCse.run(function);
-      scheduler.apply("backend.global-merge", new LegalityResult(LegalityResult.Status.PROVED,
-              "backend.global-merge.address-equivalence", "address equivalence proved by matcher"),
+      scheduler.apply(globalMergePass.id(), new LegalityResult(LegalityResult.Status.PROVED,
+              globalMergePass.primaryObligation(), "address equivalence proved by matcher"),
           function, globalMerge::run);
-      scheduler.apply("backend.machine-licm", new LegalityResult(LegalityResult.Status.PROVED,
-              "backend.machine-licm.loop-invariance", "loop invariance proved by matcher"),
+      scheduler.apply(machineLicmPass.id(), new LegalityResult(LegalityResult.Status.PROVED,
+              machineLicmPass.primaryObligation(), "loop invariance proved by matcher"),
           function, machineLicm::run);
       loopConditionDuplication.run(function);
       constantCse.run(function);

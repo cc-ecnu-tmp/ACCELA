@@ -14,6 +14,7 @@
 - Legality is fail-closed: only `PROVED` candidates may transform code; `REJECTED` and `UNKNOWN` remain unchanged and observable.
 - Candidate evaluation is transactional. Internal errors and verifier failures abort compilation; they never select a fallback candidate silently.
 - Search limits are deterministic expansion budgets. Budget exhaustion selects the best already-validated state and emits `budget_exhausted`.
+- `PassRegistry` and `PipelineProfile.r1()` are the single source for R1 pass identity, phase order, dependencies, required boundaries, and legality obligation IDs. The 12 unranked experimental transforms are absent.
 
 ## Evidence
 

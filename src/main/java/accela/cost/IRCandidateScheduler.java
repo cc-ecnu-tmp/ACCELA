@@ -13,6 +13,9 @@ import accela.backend.regalloc.RegisterAllocator;
 import accela.backend.target.RISCVTarget;
 import accela.ir.IRSnapshot;
 import accela.pass.PassBuilder;
+import accela.pass.PassDescriptor;
+import accela.pass.PassRegistry;
+import accela.pass.PipelineProfile;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.transform.LICM;
@@ -60,22 +63,28 @@ public final class IRCandidateScheduler {
     }
 
     List<Spec> specs = new ArrayList<>();
+    PipelineProfile pipeline = PipelineProfile.r1();
+    PassDescriptor licm = pipeline.require(PassRegistry.IR_LICM);
+    PassDescriptor unroll1 = pipeline.require(PassRegistry.IR_UNROLL_1);
+    PassDescriptor unroll2 = pipeline.require(PassRegistry.IR_UNROLL_2);
+    PassDescriptor strength = pipeline.require(PassRegistry.IR_STRENGTH);
+    PassDescriptor inliner = pipeline.require(PassRegistry.IR_INLINER);
     for (int index = 0; index < input.getFunctions().size(); index++) {
       String function = input.getFunctions().get(index).getName();
-      specs.add(functionSpec("ir.licm", "ir.licm.memory-and-dominance", index, function,
+      specs.add(functionSpec(licm.id(), licm.primaryObligation(), index, function,
           (candidate, functionIndex, fam) -> LICM.runOnFunction(
               candidate.getFunctions().get(functionIndex), fam)));
-      specs.add(functionSpec("ir.loop-unroll.1", "ir.loop-unroll.constant-trip", index, function,
+      specs.add(functionSpec(unroll1.id(), unroll1.primaryObligation(), index, function,
           (candidate, functionIndex, fam) -> LoopUnroll.run(
               candidate.getFunctions().get(functionIndex), fam)));
-      specs.add(functionSpec("ir.loop-unroll.2", "ir.loop-unroll.constant-trip", index, function,
+      specs.add(functionSpec(unroll2.id(), unroll2.primaryObligation(), index, function,
           (candidate, functionIndex, fam) -> LoopUnroll.run(
               candidate.getFunctions().get(functionIndex), fam)));
-      specs.add(functionSpec("ir.strength-reduction", "ir.strength-reduction.signed-arithmetic", index,
+      specs.add(functionSpec(strength.id(), strength.primaryObligation(), index,
           function, (candidate, functionIndex, fam) -> StrengthReduction.runOnFunction(
               candidate.getFunctions().get(functionIndex))));
     }
-    specs.add(new Spec("ir.inliner", "ir.inliner.direct-call-and-return", -1, "module",
+    specs.add(new Spec(inliner.id(), inliner.primaryObligation(), -1, "module",
         candidate -> {
           PassBuilder builder = new PassBuilder();
           FunctionAnalysisManager fam = builder.buildFunctionAnalysisManager();
