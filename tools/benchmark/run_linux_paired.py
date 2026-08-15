@@ -143,6 +143,7 @@ def _run_case(args, case_id: str, stream) -> None:
                 baseline_metadata["peak_bytes"], candidate_metadata["peak_bytes"],
                 artifacts["baseline"][2], artifacts["candidate"][2])
             stream.write("\t".join(_render(value) for value in values) + "\n")
+            stream.flush()
 
 
 def _checked(command: list[str], timeout: float) -> None:
