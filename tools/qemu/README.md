@@ -69,7 +69,9 @@ riscv64-elf-objdump -d build/qemu-run/NAME/program.elf
 
 ## 环境变量
 
-Default is for macOS.
+脚本同时支持 macOS 的 `.dylib` 和 Linux/WSL 的 `.so` QEMU 插件构建，并根据
+宿主系统选择正确的链接参数。QEMU plugin API 兼容旧版回调 ABI 和
+`QEMU_PLUGIN_VERSION >= 7` 的新回调 ABI。
 
 | 变量                  | 默认值                         | 用途                                  |
 |-----------------------|--------------------------------|---------------------------------------|
@@ -77,8 +79,10 @@ Default is for macOS.
 | `QEMU_COMPILER`       | `accela`                       | 可选 `accela` 或 `llvm`               |
 | `QEMU_TIMEOUT`        | `120`                          | 单个测试点的超时秒数                  |
 | `LLVM_CLANG`          | Homebrew LLVM `clang`          | LLVM 对照编译器路径                    |
-| `ACCELA_JAVA_HOME`    | `/opt/homebrew/opt/openjdk@21` | runner 使用的 JDK                     |
-| `QEMU_PLUGIN_INCLUDE` | `/opt/homebrew/include`        | `qemu-plugin.h` 所在目录              |
+| `ACCELA_JAVA_HOME`    | `JAVA_HOME`，macOS 后备为 Homebrew JDK 21 | runner 使用的 JDK          |
+| `ACCELA_CLASSES`      | `build/classes/java/main`      | 显式选择待测 ACCELA class 目录         |
+| `QEMU_WORK_ROOT`      | `build/qemu-run`               | 隔离不同编译器/实验的运行产物          |
+| `QEMU_PLUGIN_INCLUDE` | Linux `/usr/include`；macOS `/opt/homebrew/include` | `qemu-plugin.h` 目录 |
 
 ## 测量边界与限制
 
