@@ -2,6 +2,7 @@ package accela.pass.ir.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -101,6 +102,73 @@ final class InstCombineTest {
     assertTrue(InstCombine.runOnFunction(function));
     assertSame(lane, result.getOperand(0));
     assertFalse(extract.hasUses());
+  }
+
+  @Test
+  void foldsZeroExtractAndLaneForLaneVectorRebuild() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_rebuild", Type.INT);
+    var input = function.addArgument(int4, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var zeroLane = builder.createExtractElement(Constant.zero(int4), Constant.intConst(2));
+    var rebuilt = builder.createBuildVector(
+        int4,
+        builder.createExtractElement(input, Constant.intConst(0)),
+        builder.createExtractElement(input, Constant.intConst(1)),
+        builder.createExtractElement(input, Constant.intConst(2)),
+        builder.createExtractElement(input, Constant.intConst(3)));
+    var rebuiltLane = builder.createExtractElement(rebuilt, Constant.intConst(1));
+    var sum = builder.createAdd(zeroLane, rebuiltLane);
+    builder.createRet(sum);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    assertSame(input, rebuiltLane.getOperand(0));
+    assertNull(rebuilt.getParent());
+    assertNull(zeroLane.getParent());
+    assertTrue(sum.getOperand(0) instanceof Constant.Int zero && zero.value == 0);
+    IRVerifier.verifyFunction(function);
+  }
+
+  @Test
+  void removesIdentityShufflesFromEitherInput() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("identity_shuffle", Type.INT);
+    var left = function.addArgument(int4, "left");
+    var right = function.addArgument(int4, "right");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var leftShuffle = builder.createShuffleVector(
+        left, right, Constant.vector(int4, java.util.List.of(
+            Constant.intConst(0), Constant.intConst(1),
+            Constant.intConst(2), Constant.intConst(3))));
+    var rightShuffle = builder.createShuffleVector(
+        left, right, Constant.vector(int4, java.util.List.of(
+            Constant.intConst(4), Constant.intConst(5),
+            Constant.intConst(6), Constant.intConst(7))));
+    var leftLane = builder.createExtractElement(leftShuffle, Constant.intConst(0));
+    var rightLane = builder.createExtractElement(rightShuffle, Constant.intConst(1));
+    builder.createRet(builder.createAdd(leftLane, rightLane));
+
+    assertTrue(InstCombine.runOnFunction(function));
+    assertSame(left, leftLane.getOperand(0));
+    assertSame(right, rightLane.getOperand(0));
+    assertNull(leftShuffle.getParent());
+    assertNull(rightShuffle.getParent());
+  }
+
+  @Test
+  void removesInsertionOfAnUnchangedLane() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("redundant_insert", Type.INT);
+    var input = function.addArgument(int4, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    var lane = builder.createExtractElement(input, Constant.intConst(2));
+    var inserted = builder.createInsertElement(input, lane, Constant.intConst(2));
+    var result = builder.createExtractElement(inserted, Constant.intConst(0));
+    builder.createRet(result);
+
+    assertTrue(InstCombine.runOnFunction(function));
+    assertSame(input, result.getOperand(0));
+    assertNull(inserted.getParent());
   }
 
   @Test

@@ -67,9 +67,11 @@ public class Type {
 
   /** Build the LLVM array type for a multi-dim SysY array, e.g. int[3][4] -> [3 x [4 x i32]]. */
   public static Type fromSysY(accela.ast.Ty ty) {
+    if (ty.kind == accela.ast.Ty.Kind.VECTOR) {
+      return vector(fromSysY(ty.elem), ty.lanes);
+    }
     if (ty.kind == accela.ast.Ty.Kind.ARRAY) {
-      Type elem = ty.elem.isFloat() ? FLOAT : INT;
-      Type result = elem;
+      Type result = fromSysY(ty.elem);
       for (int i = ty.dims.length - 1; i >= 0; i--) result = array(result, ty.dims[i]);
       return result;
     }

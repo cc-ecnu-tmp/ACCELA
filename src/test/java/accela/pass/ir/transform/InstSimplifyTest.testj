@@ -1,14 +1,18 @@
 package accela.pass.ir.transform;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Type;
+import accela.ir.Value;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -44,5 +48,124 @@ final class InstSimplifyTest {
     assertSame(input, extract.getOperand(0));
     assertNull(sum.getParent());
     assertNull(product.getParent());
+  }
+
+  @Test
+  void foldsVectorConstantsWithoutSccp() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Type float4 = Type.vector(Type.FLOAT, 4);
+    Function function = new Function("vector_constants", Type.INT);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction built = builder.createBuildVector(
+        float4,
+        Constant.floatConst(1.5f),
+        Constant.floatConst(2.0f),
+        Constant.floatConst(3.0f),
+        Constant.floatConst(4.0f));
+    Instruction sum = builder.createFAdd(
+        built, builder.createSplat(float4, Constant.floatConst(0.5f)));
+    Instruction converted = builder.createFPToSI(sum, int4);
+    Instruction shuffled = builder.createShuffleVector(
+        converted,
+        Constant.zero(int4),
+        Constant.vector(int4, List.of(
+            Constant.intConst(0), Constant.intConst(5),
+            Constant.intConst(2), Constant.intConst(7))));
+    Instruction result = builder.createExtractElement(shuffled, Constant.intConst(2));
+    Instruction ret = builder.createRet(result);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    Constant.Int folded = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(3, folded.value);
+    assertNull(built.getParent());
+    assertNull(shuffled.getParent());
+  }
+
+  @Test
+  void simplifiesIntegerVectorIdentitiesAndSelfComparison() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_algebra", Type.I1);
+    Value input = function.addArgument(int4, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction xor = builder.createXor(input, Constant.zero(int4));
+    Instruction masked = builder.createAnd(xor, Constant.vector(
+        int4, List.of(
+            Constant.intConst(-1), Constant.intConst(-1),
+            Constant.intConst(-1), Constant.intConst(-1))));
+    Instruction remainder = builder.createSRem(masked, Constant.vector(
+        int4, List.of(
+            Constant.intConst(1), Constant.intConst(1),
+            Constant.intConst(1), Constant.intConst(1))));
+    Instruction comparison = builder.createICmp("eq", remainder, remainder);
+    Instruction lane = builder.createExtractElement(comparison, Constant.intConst(3));
+    Instruction ret = builder.createRet(lane);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    Constant.Int folded = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(1, folded.value);
+    assertNull(xor.getParent());
+    assertNull(masked.getParent());
+    assertNull(remainder.getParent());
+    assertNull(comparison.getParent());
+  }
+
+  @Test
+  void foldsNonzeroTestOfExtendedBooleanVector() {
+    Type bool4 = Type.vector(Type.I1, 4);
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("boolean_vector", Type.I1);
+    Value condition = function.addArgument(bool4, "condition");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction extension = builder.createZExt(condition, int4);
+    Instruction compare = builder.createICmp("ne", extension, Constant.zero(int4));
+    Instruction extract = builder.createExtractElement(compare, Constant.intConst(2));
+    builder.createRet(extract);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    assertSame(condition, extract.getOperand(0));
+    assertNull(compare.getParent());
+  }
+
+  @Test
+  void eliminatesDoubleFloatingVectorNegation() {
+    Type float4 = Type.vector(Type.FLOAT, 4);
+    Function function = new Function("vector_fneg", Type.FLOAT);
+    Value input = function.addArgument(float4, "input");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Instruction first = builder.createFNeg(input);
+    Instruction second = builder.createFNeg(first);
+    Instruction extract = builder.createExtractElement(second, Constant.intConst(1));
+    builder.createRet(extract);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    assertSame(input, extract.getOperand(0));
+    assertNull(second.getParent());
+  }
+
+  @Test
+  void removesVectorPhiWithIdenticalIncomingValues() {
+    Type int4 = Type.vector(Type.INT, 4);
+    Function function = new Function("vector_phi", Type.INT);
+    Value condition = function.addArgument(Type.I1, "condition");
+    Value input = function.addArgument(int4, "input");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    new IRBuilder(left).createBr(merge);
+    new IRBuilder(right).createBr(merge);
+    IRBuilder builder = new IRBuilder(merge);
+    Instruction phi = builder.createPhi(int4);
+    phi.addOperand(input);
+    phi.addOperand(left);
+    phi.addOperand(input);
+    phi.addOperand(right);
+    Instruction extract = builder.createExtractElement(phi, Constant.intConst(0));
+    builder.createRet(extract);
+
+    assertTrue(InstSimplify.runOnFunction(function));
+    assertSame(input, extract.getOperand(0));
+    assertNull(phi.getParent());
   }
 }

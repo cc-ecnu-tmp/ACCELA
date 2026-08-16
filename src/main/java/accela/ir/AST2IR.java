@@ -196,6 +196,16 @@ public class AST2IR {
    * layout expected by the IR printer and backend.
    */
   private Constant buildGlobalInit(Node initNode, Type type) {
+    if (type.isVector()) {
+      List<Constant> elements = new ArrayList<>();
+      if (initNode.tag == INIT_LIST) {
+        for (Node child : initNode.kids) elements.add(buildGlobalInit(child, type.getElementType()));
+      } else {
+        Constant scalar = buildGlobalInit(initNode, type.getElementType());
+        elements.addAll(Collections.nCopies(type.getLaneCount(), scalar));
+      }
+      return Constant.vector(type, elements);
+    }
     if (type.isArray()) {
       if (initNode.tag == INIT_LIST) return buildGlobalArrayInit(initNode, type);
       return Constant.zero(type);
@@ -371,30 +381,36 @@ public class AST2IR {
     b.createStore(Constant.zero(arrType), base);
 
     List<Node> flatElems = new ArrayList<>();
-    flattenInitList(initList, flatElems);
+    flattenArrayLeaves(initList, dims.length, flatElems);
 
-    Type scalarType = arrType.scalarType();
+    Type leafType = arrType;
+    while (leafType.isArray()) leafType = leafType.getElementType();
     int totalElems = 1;
     for (int d : dims) totalElems *= d;
 
     for (int i = 0; i < flatElems.size() && i < totalElems; i++) {
       Node elem = flatElems.get(i);
-      if (elem.tag == LIT && elem.literal.isZero()) continue;
+      if (isZeroInit(elem)) continue;
       Value val = emitExpr(elem);
-      val = ensureType(val, scalarType);
-      Instruction gep = b.createGEP(scalarType, base,
+      val = ensureType(val, leafType);
+      Instruction gep = b.createGEP(leafType, base,
           new Value[] {Constant.int64Const(i)}, true);
       b.createStore(val, gep);
     }
   }
 
-  /** Flattens nested initializer braces into left-to-right scalar element order. */
-  private void flattenInitList(Node node, List<Node> out) {
-    if (node.tag == INIT_LIST) {
-      for (Node child : node.kids) flattenInitList(child, out);
-    } else {
+  /** Flattens only array dimensions, preserving vector initializer lists as aggregate leaves. */
+  private void flattenArrayLeaves(Node node, int arrayLevels, List<Node> out) {
+    if (arrayLevels == 0 || node.tag != INIT_LIST) {
       out.add(node);
+      return;
     }
+    for (Node child : node.kids) flattenArrayLeaves(child, arrayLevels - 1, out);
+  }
+
+  private boolean isZeroInit(Node node) {
+    if (node.tag == LIT) return node.literal.isZero();
+    return node.tag == INIT_LIST && node.kids.stream().allMatch(this::isZeroInit);
   }
 
   /**
@@ -476,8 +492,24 @@ public class AST2IR {
       case CALL:  return emitCall(n);
       case SUB:   return emitSubscript(n);
       case CAST:  return emitCast(n);
+      case INIT_LIST: return emitVectorInit(n);
       default:    return Constant.intConst(0);
     }
+  }
+
+  /** Lowers a Sema-normalized vector initializer. */
+  private Value emitVectorInit(Node n) {
+    if (n.ty == null || !n.ty.isVector())
+      throw new IllegalStateException("untyped initializer list reached IR lowering");
+    Type vectorType = Type.fromSysY(n.ty);
+    Type elementType = vectorType.getElementType();
+    List<Value> elements = new ArrayList<>();
+    for (Node child : n.kids) elements.add(ensureType(emitExpr(child), elementType));
+    if (elements.stream().allMatch(Constant.class::isInstance)) {
+      List<Constant> constants = elements.stream().map(Constant.class::cast).toList();
+      return Constant.vector(vectorType, constants);
+    }
+    return b.createBuildVector(vectorType, elements.toArray(new Value[0]));
   }
 
   private Value emitLiteral(Node n) {
@@ -546,11 +578,10 @@ public class AST2IR {
    */
   private Value emitBinOp(Node n, Value lhs, Value rhs) {
     Type resultType = (n.ty != null) ? Type.fromSysY(n.ty) : Type.INT;
-    lhs = ensureType(lhs, resultType);
-    rhs = ensureType(rhs, resultType);
-    boolean isFloat = resultType.isFloat();
 
     if (n.op.isRelational()) {
+      boolean isFloat = lhs.getType().scalarType().isFloat()
+          || rhs.getType().scalarType().isFloat();
       Value cmpResult;
       if (isFloat) {
         String pred = floatPred(n.op);
@@ -559,10 +590,15 @@ public class AST2IR {
         String pred = intPred(n.op);
         cmpResult = b.createICmp(pred, lhs, rhs);
       }
-      return b.createZExt(cmpResult, Type.INT);
+      Type extendedType = cmpResult.getType().isVector()
+          ? Type.vector(Type.INT, cmpResult.getType().getLaneCount()) : Type.INT;
+      return b.createZExt(cmpResult, extendedType);
     }
 
     // Arithmetic
+    lhs = ensureType(lhs, resultType);
+    rhs = ensureType(rhs, resultType);
+    boolean isFloat = resultType.scalarType().isFloat();
     if (isFloat) {
       switch (n.op) {
         case ADD: return b.createFAdd(lhs, rhs);
@@ -647,6 +683,27 @@ public class AST2IR {
       b.createStore(rhs, ptr);
       return rhs;
     } else if (lhs.tag == Node.Tag.SUB) {
+      Node base = lhs.kids.get(0);
+      if (base.ty != null && base.ty.isVector()) {
+        if (base.tag != Node.Tag.REF)
+          throw new IllegalStateException("vector element assignment requires an addressable base");
+        Value ptr = lookupVar(base.s);
+        Type vectorType = lookupType(base.s);
+        Value vector = b.createLoad(vectorType, ptr);
+        Value index = ensureType(emitExpr(lhs.kids.get(1)), Type.INT);
+        rhs = ensureType(rhs, vectorType.getElementType());
+        b.createStore(b.createInsertElement(vector, rhs, index), ptr);
+        return rhs;
+      }
+      if (isVectorArrayLaneSubscript(lhs)) {
+        Value ptr = emitVectorArrayElementPointer(lhs);
+        Type vectorType = Type.fromSysY(base.ty.elem);
+        Value vector = b.createLoad(vectorType, ptr);
+        Value index = ensureType(emitExpr(lhs.kids.getLast()), Type.INT);
+        rhs = ensureType(rhs, vectorType.getElementType());
+        b.createStore(b.createInsertElement(vector, rhs, index), ptr);
+        return rhs;
+      }
       Value gep = emitGEP(lhs);
       Type elemType = lhs.ty != null ? Type.fromSysY(lhs.ty) : Type.INT;
       rhs = ensureType(rhs, elemType);
@@ -660,7 +717,7 @@ public class AST2IR {
     Value operand = emitExpr(n.kids.get(0));
     switch (n.op) {
       case NEG:
-        if (operand.getType().isFloat()) return b.createFNeg(operand);
+        if (operand.getType().scalarType().isFloat()) return b.createFNeg(operand);
         return b.createSub(Constant.intConst(0), operand);
       case NOT: {
         Value boolVal = toBool(operand);
@@ -740,6 +797,18 @@ public class AST2IR {
    * returns the computed address so it can decay/persist as a pointer.
    */
   private Value emitSubscript(Node n) {
+    Node base = n.kids.get(0);
+    if (base.ty != null && base.ty.isVector()) {
+      Value vector = emitExpr(base);
+      Value index = ensureType(emitExpr(n.kids.get(1)), Type.INT);
+      return b.createExtractElement(vector, index);
+    }
+    if (isVectorArrayLaneSubscript(n)) {
+      Type vectorType = Type.fromSysY(base.ty.elem);
+      Value vector = b.createLoad(vectorType, emitVectorArrayElementPointer(n));
+      Value index = ensureType(emitExpr(n.kids.getLast()), Type.INT);
+      return b.createExtractElement(vector, index);
+    }
     Value gep = emitGEP(n);
     Type elemType = n.ty != null ? Type.fromSysY(n.ty) : Type.INT;
 
@@ -747,6 +816,22 @@ public class AST2IR {
       return gep; // partial subscript: return pointer
     }
     return b.createLoad(elemType, gep);
+  }
+
+  private static boolean isVectorArrayLaneSubscript(Node subscript) {
+    Ty baseType = subscript.kids.get(0).ty;
+    return baseType != null
+        && baseType.isArray()
+        && baseType.elem.isVector()
+        && subscript.kids.size() == baseType.dims.length + 2;
+  }
+
+  /** Computes the address of the vector containing the final lane subscript. */
+  private Value emitVectorArrayElementPointer(Node laneSubscript) {
+    Node vectorSubscript = new Node(Node.Tag.SUB);
+    vectorSubscript.kids.addAll(
+        laneSubscript.kids.subList(0, laneSubscript.kids.size() - 1));
+    return emitGEP(vectorSubscript);
   }
 
   /**
@@ -892,10 +977,43 @@ public class AST2IR {
   }
 
   private Value castValue(Value val, Type target) {
-    if (val.getType() == target) return val;
+    if (val.getType().equals(target)) return val;
+    if (target.isVector()) {
+      if (!val.getType().isVector()) {
+        Value scalar = castValue(val, target.getElementType());
+        return scalar instanceof Constant constant
+            ? Constant.vector(target, Collections.nCopies(target.getLaneCount(), constant))
+            : b.createSplat(target, scalar);
+      }
+      Type sameWidthTarget = Type.vector(target.getElementType(), val.getType().getLaneCount());
+      Value converted = castVectorElements(val, sameWidthTarget);
+      return resizeVector(converted, target);
+    }
     if (target.isFloat() && val.getType().isInt()) return b.createSIToFP(val, Type.FLOAT);
     if (target.isInt() && val.getType().isFloat()) return b.createFPToSI(val, Type.INT);
     return val;
+  }
+
+  private Value castVectorElements(Value val, Type target) {
+    Type sourceElement = val.getType().getElementType();
+    Type targetElement = target.getElementType();
+    if (sourceElement.equals(targetElement)) return val;
+    if (targetElement.isFloat() && sourceElement.isInteger()) return b.createSIToFP(val, target);
+    if (targetElement.isInteger() && sourceElement.isFloat()) return b.createFPToSI(val, target);
+    return val;
+  }
+
+  /** Resizes a vector by preserving its prefix and using zero for any new tail lanes. */
+  private Value resizeVector(Value val, Type target) {
+    int sourceLanes = val.getType().getLaneCount();
+    if (sourceLanes == target.getLaneCount()) return val;
+    if (val instanceof Constant.Zero) return Constant.zero(target);
+    List<Constant> maskElements = new ArrayList<>();
+    for (int lane = 0; lane < target.getLaneCount(); lane++) {
+      maskElements.add(Constant.intConst(lane < sourceLanes ? lane : sourceLanes));
+    }
+    Constant.Vector mask = Constant.vector(Type.vector(Type.INT, target.getLaneCount()), maskElements);
+    return b.createShuffleVector(val, Constant.zero(val.getType()), mask);
   }
 
   private Value ensureType(Value val, Type expected) {
