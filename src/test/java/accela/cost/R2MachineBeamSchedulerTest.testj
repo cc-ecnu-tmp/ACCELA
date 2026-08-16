@@ -1,0 +1,70 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.MachineVerifier;
+import accela.backend.regalloc.IteratedRegisterAllocator;
+import accela.backend.target.RISCVTarget;
+import accela.pass.R2PassRegistry;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class R2MachineBeamSchedulerTest {
+  @Test
+  void functionBudgetExhaustionCompletesDagBeforeFormalAllocation() {
+    MachineFunction function = new MachineFunction("budget", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.setType(MachineType.VOID);
+    entry.addInstruction(ret);
+    List<String> trace = new ArrayList<>();
+    SchedulerPolicy oneExpansion = new SchedulerPolicy(1, 1, 1, 1.0, true);
+    R2MachineBeamScheduler scheduler = new R2MachineBeamScheduler(
+        GeneratedTargetProfile.get(),
+        decision -> trace.add(accela.util.StrictJson.stringify(decision.toJson())),
+        new IteratedRegisterAllocator(), new RISCVTarget(), oneExpansion);
+    R2MachineBeamScheduler.Step optional = new R2MachineBeamScheduler.Step(
+        R2PassRegistry.production().family(R2PassRegistry.COPY_PROPAGATION).getFirst(),
+        ignored -> false);
+    R2MachineBeamScheduler.Plan plan = scheduler.schedule(function, List.of(optional),
+        (ignored, allocation) -> false, ignored -> false);
+    MachineVerifier.verify(plan.preRaFunction());
+    assertTrue(trace.stream().anyMatch(line -> line.contains("\"reason\":\"budget_exhausted\"")));
+    assertTrue(trace.stream().anyMatch(line ->
+        line.contains("\"reason\":\"budget_exhausted_full_retained\"")));
+  }
+
+  @Test
+  void phiFreeRequiredBoundaryInitializesCostForFollowingBeamBranches() {
+    MachineFunction function = new MachineFunction("phi_free", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.setType(MachineType.VOID);
+    entry.addInstruction(ret);
+    List<String> trace = new ArrayList<>();
+    SchedulerPolicy policy = new SchedulerPolicy(2, 32, 32, 1.0, true);
+    R2MachineBeamScheduler scheduler = new R2MachineBeamScheduler(
+        GeneratedTargetProfile.get(),
+        decision -> trace.add(accela.util.StrictJson.stringify(decision.toJson())),
+        new IteratedRegisterAllocator(), new RISCVTarget(), policy);
+    R2MachineBeamScheduler.Step phi = new R2MachineBeamScheduler.Step(
+        R2PassRegistry.production().family(R2PassRegistry.PHI_ELIMINATION).getFirst(),
+        ignored -> false);
+    R2MachineBeamScheduler.Step address = new R2MachineBeamScheduler.Step(
+        R2PassRegistry.production().family(R2PassRegistry.ADDRESS_FOLDING).getFirst(),
+        ignored -> false);
+    scheduler.schedule(function, List.of(phi, address),
+        (ignored, allocation) -> false, ignored -> false);
+    String addressDecision = trace.stream()
+        .filter(line -> line.contains("\"candidate\":\"backend.memory-address-folding.1\""))
+        .findFirst().orElseThrow();
+    assertFalse(addressDecision.contains("\"baseline\":null"));
+  }
+}

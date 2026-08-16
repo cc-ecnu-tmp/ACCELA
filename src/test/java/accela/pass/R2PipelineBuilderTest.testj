@@ -1,0 +1,88 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ast.Node;
+import accela.backend.BackendCompiler;
+import accela.cost.DecisionTraceSink;
+import accela.ir.AST2IR;
+import accela.ir.IRSnapshot;
+import accela.ir.Module;
+import accela.parse.Lexer;
+import accela.parse.Parser;
+import accela.parse.Sema;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.ModuleAnalysisManager;
+import accela.pass.ir.ModulePassManager;
+import accela.pass.ir.instrument.PassInstrumentation;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+final class R2PipelineBuilderTest {
+  @Test
+  void fullOccurrenceProfileReproducesProductionFullAssembly() {
+    String source = "int twice(int x) { return x * 2; }"
+        + " int main() { int i = 0; int s = 0;"
+        + " while (i < 8) { s = s + twice(i); i = i + 1; } return s; }";
+    Node unit = new Parser(new Lexer(source, "r2-full-equivalence.sy").tokenize()).parse();
+    new Sema().analyze(unit);
+    Module production = new AST2IR().convert(unit);
+    Module r2 = IRSnapshot.deepCopy(production);
+
+    PassBuilder productionBuilder = new PassBuilder();
+    ModulePassManager productionPipeline =
+        productionBuilder.buildIRO0Pipeline(PassInstrumentation.noop());
+    productionPipeline.run(production, productionBuilder.buildModuleAnalysisManager(),
+        productionBuilder.buildFunctionAnalysisManager());
+    IRVerifier.verifyModule(production);
+
+    R2PipelineBuilder r2Builder = new R2PipelineBuilder(R2PipelineProfile.full());
+    ModulePassManager r2Pipeline = r2Builder.buildIRPipeline(PassInstrumentation.noop());
+    ModuleAnalysisManager mam = r2Builder.buildModuleAnalysisManager();
+    FunctionAnalysisManager fam = r2Builder.buildFunctionAnalysisManager();
+    r2Pipeline.run(r2, mam, fam);
+    IRVerifier.verifyModule(r2);
+
+    assertEquals(new BackendCompiler().compileToAssembly(production),
+        new BackendCompiler(DecisionTraceSink.noop(), R2PipelineProfile.full())
+            .compileToAssembly(r2));
+  }
+
+  @Test
+  void dynamicMirBeamIsAssemblyAndTraceDeterministic(@TempDir Path temporary) throws Exception {
+    String source = "int f(int a, int b) { int c = a + b; return c + 1; }"
+        + " int main() { return f(20, 21); }";
+    Module first = optimizedModule(source, "r2-mir-determinism.sy");
+    Module second = optimizedModule(source, "r2-mir-determinism.sy");
+    Path firstTrace = temporary.resolve("first.jsonl");
+    Path secondTrace = temporary.resolve("second.jsonl");
+    String firstAssembly;
+    String secondAssembly;
+    try (DecisionTraceSink sink = DecisionTraceSink.jsonl(firstTrace)) {
+      firstAssembly = new BackendCompiler(sink, R2PipelineProfile.full())
+          .compileToAssembly(first);
+    }
+    try (DecisionTraceSink sink = DecisionTraceSink.jsonl(secondTrace)) {
+      secondAssembly = new BackendCompiler(sink, R2PipelineProfile.full())
+          .compileToAssembly(second);
+    }
+    assertEquals(firstAssembly, secondAssembly);
+    assertEquals(Files.readString(firstTrace), Files.readString(secondTrace));
+    assertTrue(Files.readString(firstTrace).contains("\"candidate\":\"r2.mir.beam.final\""));
+  }
+
+  private static Module optimizedModule(String source, String name) {
+    Node unit = new Parser(new Lexer(source, name).tokenize()).parse();
+    new Sema().analyze(unit);
+    Module module = new AST2IR().convert(unit);
+    PassBuilder builder = new PassBuilder();
+    builder.buildIRO0Pipeline(PassInstrumentation.noop()).run(module,
+        builder.buildModuleAnalysisManager(), builder.buildFunctionAnalysisManager());
+    IRVerifier.verifyModule(module);
+    return module;
+  }
+}

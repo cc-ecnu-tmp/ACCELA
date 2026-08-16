@@ -1,0 +1,2 @@
+profile generation rejected this batch as required
+operations.integer_alu.latency is unstable: MAD/median=0.012085 exceeds 0.010000

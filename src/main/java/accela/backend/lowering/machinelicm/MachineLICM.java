@@ -9,6 +9,7 @@ import accela.backend.machine.VirtualRegister;
 import accela.backend.regalloc.LivenessAnalysis;
 import accela.backend.regalloc.TargetRegisterInfo;
 import java.util.Set;
+import accela.cost.HotnessModel;
 
 /** Hoists expensive invariant constant materializations before machine loops. */
 public final class MachineLICM {
@@ -28,9 +29,9 @@ public final class MachineLICM {
       }
       boolean hoistedCheapBranch = false;
       for (LoopInvariantConstant constant : LoopInvariantConstant.collect(loop)) {
-        if (loop.phiSplitPreheader()
-            && !constant.isPointerAdd()
-            && loop.tripCount() < MIN_CHEAP_BRANCH_TRIP_COUNT) continue;
+        if (loop.phiSplitPreheader() && !constant.isPointerAdd()
+            && !HotnessModel.DEFAULT.amortizes(loop.tripCount(), 1.0,
+                MIN_CHEAP_BRANCH_TRIP_COUNT - 1.0)) continue;
         if (crossesCall && constant.isCheapBranchConstant()) continue;
         // A cheap branch constant may require a callee-saved register. Only pay that
         // entry/exit cost when the source IR proves enough reuse inside the loop.

@@ -9,6 +9,7 @@ import accela.ir.Instruction.Opcode;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
+import accela.pass.ir.transform.CFGUpdateUtils;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.FunctionPass;
 import java.util.ArrayDeque;
@@ -180,6 +181,13 @@ public final class SimplifyCFG {
     for (BasicBlock bb : function.getBlocks()) {
       if (!reachable.contains(bb)) {
         dead.add(bb);
+      }
+    }
+    for (BasicBlock bb : dead) {
+      for (BasicBlock successor : new ArrayList<>(bb.getSuccessors())) {
+        if (reachable.contains(successor)) {
+          CFGUpdateUtils.removePredecessorEdge(bb, successor);
+        }
       }
     }
     for (BasicBlock bb : dead) {

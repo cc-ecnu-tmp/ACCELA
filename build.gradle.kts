@@ -26,6 +26,34 @@ tasks.test {
     useJUnitPlatform()
 }
 
+val targetProfilePython = providers.gradleProperty("targetProfilePython").orElse("python")
+val targetProfileSource = providers.gradleProperty("targetProfile")
+    .orElse("config/target/qemu-rv64gc-development.json")
+val generatedTargetProfile = "src/main/java/accela/cost/GeneratedTargetProfile.java"
+
+val verifyTargetProfile by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Strictly validates the JSON TargetProfile and verifies its embedded Java source."
+    commandLine(targetProfilePython.get(), "-m", "tools.targetlab", "validate", targetProfileSource.get())
+    doLast {
+        exec {
+            commandLine(targetProfilePython.get(), "-m", "tools.targetlab", "verify-embedded",
+                targetProfileSource.get(), generatedTargetProfile)
+        }
+    }
+}
+
+tasks.register<Exec>("embedTargetProfile") {
+    group = "build setup"
+    description = "Validates a JSON TargetProfile and regenerates the embedded Java profile."
+    commandLine(targetProfilePython.get(), "-m", "tools.targetlab", "embed",
+        targetProfileSource.get(), generatedTargetProfile)
+}
+
+tasks.named("check") {
+    dependsOn(verifyTargetProfile)
+}
+
 val testJavaDir = layout.projectDirectory.dir("src/test/java")
 
 fun renameTestSources(fromSuffix: String, toSuffix: String) {

@@ -1,0 +1,1453 @@
+{
+  "branch": {
+    "predictable": {
+      "mad": 0.0,
+      "median": 2.0085,
+      "sample_count": 9,
+      "source": "clock_gettime",
+      "validity": "accepted"
+    },
+    "unpredictable": {
+      "mad": 0.01200000000000001,
+      "median": 2.0490000000000004,
+      "sample_count": 9,
+      "source": "clock_gettime",
+      "validity": "accepted"
+    }
+  },
+  "diagnostics": {
+    "frontend": {
+      "1024": {
+        "mad": 0.04050000000000864,
+        "median": 250.9935,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "256": {
+        "mad": 0.04649999999999466,
+        "median": 56.737500000000004,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "64": {
+        "mad": 0.0045000000000001705,
+        "median": 8.0985,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "load_use": {
+      "mad": 0.0029999999999998916,
+      "median": 1.0125000000000002,
+      "sample_count": 9,
+      "source": "clock_gettime",
+      "validity": "accepted"
+    },
+    "pointer_chase": {
+      "mad": 0.006000000000000227,
+      "median": 2.055,
+      "sample_count": 9,
+      "source": "clock_gettime",
+      "validity": "accepted"
+    },
+    "register_pressure": {
+      "16": {
+        "mad": 0.004499999999998394,
+        "median": 7.0874999999999995,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "24": {
+        "mad": 0.0014999999999982805,
+        "median": 11.133,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "32": {
+        "mad": 0.007500000000000284,
+        "median": 47.598,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "8": {
+        "mad": 0.0014999999999996128,
+        "median": 2.0250000000000004,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "stride": {
+      "512": {
+        "mad": 0.008999999999996788,
+        "median": 18.51,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "64": {
+        "mad": 0.007500000000000284,
+        "median": 17.415,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "8": {
+        "mad": 0.0044999999999997264,
+        "median": 3.0735,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "working_set": {
+      "262144": {
+        "mad": 0.006000000000000227,
+        "median": 17.412,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "32768": {
+        "mad": 0.006000000000000005,
+        "median": 1.0485,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "4096": {
+        "mad": 0.0015000000000000568,
+        "median": 1.0095,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    }
+  },
+  "measurement_environment": {
+    "backend": "linux",
+    "clock_hz": 1500000000,
+    "measurement_mode": "hardware",
+    "minimum_cycles": 10000000,
+    "rdcycle": false,
+    "rdinstret": false,
+    "sample_count": 9,
+    "timer": "clock_gettime",
+    "warmup_count": 2
+  },
+  "operations": {
+    "address": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 0.987,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "address",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0015000000000000013,
+        "median": 0.498,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "branch": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0015000000000000568,
+        "median": 2.0085,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "branch",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 2.0145,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "call_return": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0014999999999991687,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "call_return",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0030000000000001137,
+        "median": 6.0765,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "float_alu": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "float_alu",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 2.517,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "float_div": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0015000000000000568,
+        "median": 9.084,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "float_div",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0029999999999983373,
+        "median": 8.100000000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "float_mul": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0015000000000000568,
+        "median": 5.034,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "float_mul",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0015000000000000568,
+        "median": 2.5185,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "integer_alu": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 0.987,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "integer_alu",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0015000000000000013,
+        "median": 0.498,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "integer_div": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.025500000000008072,
+        "median": 68.808,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "integer_div",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.018000000000000682,
+        "median": 68.805,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "integer_mul": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0014999999999996128,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "integer_mul",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0015000000000002789,
+        "median": 1.506,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "load": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 0.987,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "load",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 0.999,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "move": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0014999999999999458,
+        "median": 0.987,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "move",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0,
+        "median": 0.4965,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "store": {
+      "code_bytes": 4,
+      "latency": {
+        "mad": 0.0,
+        "median": 0.987,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "resource": "store",
+      "resource_occupancy": 1,
+      "throughput": {
+        "mad": 0.0014999999999999458,
+        "median": 0.999,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    }
+  },
+  "pairing": {
+    "address": {
+      "address": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0015000000000000568,
+        "median": 1.5014999999999998,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.001500000000000945,
+        "median": 6.5745,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0015000000000000568,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.009000000000000341,
+        "median": 68.781,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "branch": {
+      "address": {
+        "mad": 0.0015000000000000568,
+        "median": 1.5014999999999998,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0015000000000018332,
+        "median": 4.030499999999999,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.007500000000000284,
+        "median": 6.0675,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0045000000000001705,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 1.503,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.009000000000000341,
+        "median": 68.7855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0030000000000001137,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 1.503,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "call_return": {
+      "address": {
+        "mad": 0.001500000000000945,
+        "median": 6.5745,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.007500000000000284,
+        "median": 6.0675,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.007500000000000284,
+        "median": 12.1485,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0029999999999992255,
+        "median": 6.073500000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.007500000000000284,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.001500000000000945,
+        "median": 6.5760000000000005,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.00750000000000739,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0029999999999992255,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0060000000000011156,
+        "median": 6.073500000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.001500000000000945,
+        "median": 6.5745,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.007500000000000284,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "float_alu": {
+      "address": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.0029999999999992255,
+        "median": 6.073500000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0030000000000001137,
+        "median": 10.0905,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.009000000000000341,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0030000000000001137,
+        "median": 5.037,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "float_div": {
+      "address": {
+        "mad": 0.0015000000000000568,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0045000000000001705,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.0,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0030000000000001137,
+        "median": 10.0905,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0015000000000000568,
+        "median": 16.185,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0030000000000001137,
+        "median": 10.0875,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 9.084,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.009000000000000341,
+        "median": 68.7915,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.007500000000000284,
+        "median": 9.087,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0015000000000000568,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.006000000000000227,
+        "median": 9.084,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0030000000000001137,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "float_mul": {
+      "address": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.007500000000000284,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0030000000000001137,
+        "median": 10.0875,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.006000000000000227,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0030000000000001137,
+        "median": 5.037,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "integer_alu": {
+      "address": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 1.503,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.001500000000000945,
+        "median": 6.5760000000000005,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0015000000000000568,
+        "median": 9.084,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.006000000000000227,
+        "median": 68.7825,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.004499999999999282,
+        "median": 3.0089999999999995,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0015000000000000568,
+        "median": 1.2495,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "integer_div": {
+      "address": {
+        "mad": 0.009000000000000341,
+        "median": 68.781,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.009000000000000341,
+        "median": 68.7855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.00750000000000739,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.009000000000000341,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.009000000000000341,
+        "median": 68.7915,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.006000000000000227,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.006000000000000227,
+        "median": 68.7825,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.022499999999979536,
+        "median": 137.61,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.019499999999993634,
+        "median": 68.8005,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.00750000000000739,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.00750000000000739,
+        "median": 68.787,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.006000000000000227,
+        "median": 68.7795,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "integer_mul": {
+      "address": {
+        "mad": 0.0,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0030000000000001137,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.0029999999999992255,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.007500000000000284,
+        "median": 9.087,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.004499999999999282,
+        "median": 3.0089999999999995,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.019499999999993634,
+        "median": 68.8005,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0014999999999996128,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0029999999999996696,
+        "median": 3.012,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0015000000000000568,
+        "median": 3.012,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0030000000000001137,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "load": {
+      "address": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.0060000000000011156,
+        "median": 6.073500000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0015000000000000568,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.00750000000000739,
+        "median": 68.784,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0029999999999996696,
+        "median": 3.012,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0014999999999998348,
+        "median": 2.001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0014999999999991687,
+        "median": 4.026000000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "move": {
+      "address": {
+        "mad": 0.0,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0,
+        "median": 1.503,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.001500000000000945,
+        "median": 6.5745,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0030000000000001137,
+        "median": 5.037,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.006000000000000227,
+        "median": 9.084,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0030000000000001137,
+        "median": 5.037,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.00750000000000739,
+        "median": 68.787,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0015000000000000568,
+        "median": 3.012,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0014999999999998348,
+        "median": 1.2495,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    },
+    "store": {
+      "address": {
+        "mad": 0.0,
+        "median": 1.248,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "branch": {
+        "mad": 0.0014999999999999458,
+        "median": 0.996,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "call_return": {
+        "mad": 0.007500000000000284,
+        "median": 6.075,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_alu": {
+        "mad": 0.0,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_div": {
+        "mad": 0.0030000000000001137,
+        "median": 9.0855,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "float_mul": {
+        "mad": 0.0015000000000000568,
+        "median": 5.0355,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_alu": {
+        "mad": 0.0015000000000000568,
+        "median": 1.2495,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_div": {
+        "mad": 0.006000000000000227,
+        "median": 68.7795,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "integer_mul": {
+        "mad": 0.0030000000000001137,
+        "median": 3.0135,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "load": {
+        "mad": 0.0014999999999991687,
+        "median": 4.026000000000001,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "move": {
+        "mad": 0.0014999999999998348,
+        "median": 1.2495,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      },
+      "store": {
+        "mad": 0.0,
+        "median": 1.9995,
+        "sample_count": 9,
+        "source": "clock_gettime",
+        "validity": "accepted"
+      }
+    }
+  },
+  "profile": {
+    "calibrated": true,
+    "evidence_level": "target_hardware",
+    "id": "visionfive2-u74-linux-10m-20260816"
+  },
+  "scheduler": {
+    "beam_width": 8,
+    "enabled": true,
+    "max_function_expansions": 1024,
+    "max_module_expansions": 4096,
+    "uncertainty_weight": 1
+  },
+  "schema_version": 1,
+  "simd": {
+    "abi": null,
+    "benchmark_classes": [],
+    "enabled": false,
+    "isa_extension": null,
+    "register_classes": []
+  },
+  "spills": {
+    "load": {
+      "mad": 0.0,
+      "median": 0.987,
+      "sample_count": 9,
+      "source": "clock_gettime",
+      "validity": "accepted"
+    },
+    "store": {
+      "mad": 0.0,
+      "median": 0.987,
+      "sample_count": 9,
+      "source": "clock_gettime",
+      "validity": "accepted"
+    }
+  },
+  "target": {
+    "abi": "lp64d",
+    "clock_hz": 1500000000,
+    "code_model": "medany",
+    "fetch_width": 2,
+    "isa": "rv64gc",
+    "issue_width": 2,
+    "retire_width": 2
+  }
+}

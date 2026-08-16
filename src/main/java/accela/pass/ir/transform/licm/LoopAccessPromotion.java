@@ -8,7 +8,7 @@ import accela.ir.Value;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.alias.GlobalModRefAnalysis;
-import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -32,7 +32,7 @@ final class LoopAccessPromotion {
       LoopAnalysis.Loop loop,
       List<PromotionCandidate> candidates) {
     IRBuilder builder = new IRBuilder();
-    Map<PromotionCandidate, Instruction> slots = new IdentityHashMap<>();
+    Map<PromotionCandidate, Instruction> slots = new LinkedHashMap<>();
     for (PromotionCandidate candidate : candidates) {
       Instruction slot =
           builder.createAllocaInEntry(candidate.valueType(), function.getEntryBlock());
@@ -42,7 +42,7 @@ final class LoopAccessPromotion {
       slots.put(candidate, slot);
     }
 
-    for (BasicBlock block : loop.blocks()) {
+    for (BasicBlock block : PromotionCandidate.orderedBlocks(loop)) {
       for (Instruction instruction : block.getInstructions()) {
         int pointerIndex = PromotionCandidate.pointerIndex(instruction);
         if (pointerIndex < 0) continue;
@@ -58,9 +58,9 @@ final class LoopAccessPromotion {
     List<PromotionCandidate.ExitEdge> exitEdges = candidates.getFirst().exitEdges();
     int edgeIndex = 0;
     for (PromotionCandidate.ExitEdge edge : exitEdges) {
+      String baseLabel = loop.header().getLabel() + ".promote.exit." + edgeIndex++;
       BasicBlock writeback = function.insertBlockAfter(
-          edge.predecessor(),
-          loop.header().getLabel() + ".promote.exit." + edgeIndex++);
+          edge.predecessor(), uniqueBlockLabel(function, baseLabel));
       for (PromotionCandidate candidate : candidates) {
         builder.setInsertPoint(writeback);
         builder.createStore(
@@ -78,6 +78,18 @@ final class LoopAccessPromotion {
         new DominatorTreeAnalysis().run(function, null);
     for (Instruction slot : slots.values()) {
       PromoteMemoryToRegister.promoteAlloca(function, slot, updatedDominators);
+    }
+  }
+
+  private static String uniqueBlockLabel(Function function, String base) {
+    if (function.getBlocks().stream().noneMatch(block -> block.getLabel().equals(base))) {
+      return base;
+    }
+    int suffix = 1;
+    while (true) {
+      String candidate = base + "." + suffix++;
+      if (function.getBlocks().stream()
+          .noneMatch(block -> block.getLabel().equals(candidate))) return candidate;
     }
   }
 

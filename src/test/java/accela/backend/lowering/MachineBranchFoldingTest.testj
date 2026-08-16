@@ -3,6 +3,7 @@ package accela.backend.lowering;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import accela.backend.machine.AllocatedMachineVerifier;
 import accela.backend.machine.BlockOperand;
 import accela.backend.machine.MachineFunction;
 import accela.backend.machine.MachineInstr;
@@ -39,6 +40,32 @@ final class MachineBranchFoldingTest {
     assertEquals(2, function.getBlocks().size());
     assertSame(target, ((BlockOperand) entry.getInstructions().getLast()
         .getOperands().getFirst()).getBlock());
+  }
+
+  @Test
+  void allocatedVerifierAcceptsAUseWhoseCoalescedCopyBlockWasFolded() {
+    MachineFunction function = new MachineFunction("allocated", MachineType.I32);
+    var entry = function.addBlock("entry");
+    var edge = function.addBlock("edge");
+    var target = function.addBlock("target");
+    var source = function.createVirtualRegister(MachineType.I32, "source");
+    var destination = function.createVirtualRegister(MachineType.I32, "destination");
+    branch(entry, edge);
+    MachineInstr copy = new MachineInstr(MachineOpcode.MOVE, destination);
+    copy.addOperand(new VRegOperand(source));
+    edge.addInstruction(copy);
+    branch(edge, target);
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.addOperand(new VRegOperand(destination));
+    ret.setType(MachineType.I32);
+    target.addInstruction(ret);
+    AllocationResult allocation = new AllocationResult();
+    PhysicalRegister register = new PhysicalRegister("t0", MachineType.I32);
+    allocation.put(source, new RegisterLocation(register));
+    allocation.put(destination, new RegisterLocation(register));
+
+    new MachineBranchFolding().run(function, allocation);
+    AllocatedMachineVerifier.verify(function, allocation);
   }
 
   private static void branch(

@@ -61,8 +61,13 @@ static void access_memory(unsigned int cpu, qemu_plugin_meminfo_t info,
   else misses++;
 }
 
+#if QEMU_PLUGIN_VERSION >= 7
+static void instrument(struct qemu_plugin_tb *tb, void *data) {
+  (void) data;
+#else
 static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   (void) id;
+#endif
   size_t count = qemu_plugin_tb_n_insns(tb);
   for (size_t index = 0; index < count; index++) {
     struct qemu_plugin_insn *instruction = qemu_plugin_tb_get_insn(tb, index);
@@ -87,8 +92,12 @@ static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   }
 }
 
+#if QEMU_PLUGIN_VERSION >= 7
+static void report(void *data) {
+#else
 static void report(qemu_plugin_id_t id, void *data) {
   (void) id;
+#endif
   (void) data;
   uint64_t accesses = hits + misses;
   g_autofree char *output = g_strdup_printf(
@@ -107,7 +116,11 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
   (void) argv;
   if (!info->system_emulation || g_strcmp0(info->target_name, "riscv64"))
     return -1;
+#if QEMU_PLUGIN_VERSION >= 7
+  qemu_plugin_register_vcpu_tb_trans_cb(id, instrument, NULL);
+#else
   qemu_plugin_register_vcpu_tb_trans_cb(id, instrument);
+#endif
   qemu_plugin_register_atexit_cb(id, report, NULL);
   return 0;
 }

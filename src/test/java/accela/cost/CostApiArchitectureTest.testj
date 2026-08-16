@@ -1,0 +1,67 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.regalloc.AllocationEstimate;
+import accela.util.StrictJson;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+
+final class CostApiArchitectureTest {
+  private static final List<String> FORBIDDEN = List.of(
+      "filename", "filepath", "sourcebytes", "caseid", "expectedoutput",
+      "filehash", "astfingerprint", "testconstant", "testcase");
+
+  @Test
+  void schedulingContractsCannotAcquireTestIdentityInputs() {
+    for (Class<?> contract : List.of(CostEstimate.class, OptimizationCandidate.class,
+        CandidateProvider.class, LegalityResult.class, SchedulerPolicy.class,
+        AllocationEstimate.class, TargetProfile.class, IRCandidateScheduler.class,
+        MachineCandidateScheduler.class, MachineCostModel.class, ModuleCostEvaluator.class,
+        R2IRBeamScheduler.class, R2MachineBeamScheduler.class)) {
+      for (Field field : contract.getDeclaredFields()) reject(contract, field.getName());
+      for (Method method : contract.getDeclaredMethods()) reject(contract, method.getName());
+      for (RecordComponent component : contract.getRecordComponents() == null
+          ? new RecordComponent[0] : contract.getRecordComponents()) {
+        reject(contract, component.getName());
+      }
+    }
+  }
+
+  @Test
+  void decisionTraceIsStructuredVersionedJson() {
+    DecisionTraceSink.Decision decision = new DecisionTraceSink.Decision(
+        "profile", "qemu_proxy", "candidate", "mir-function", "function", "rejected",
+        "unknown legality", "unknown", "candidate.valid-shape", Map.of("factor", "2"),
+        null, null, null, 1, 1024);
+    Object parsed = StrictJson.parse(StrictJson.stringify(decision.toJson()));
+    assertTrue(parsed instanceof Map<?, ?>);
+    assertTrue(((Map<?, ?>) parsed).containsKey("schema_version"));
+  }
+
+  @Test
+  void decisionTraceAllocationFieldsHaveStableOrder() {
+    DecisionTraceSink.Decision decision = new DecisionTraceSink.Decision(
+        "profile", "qemu_proxy", "candidate", "mir-function", "function", "considered",
+        "proved_and_costed", "proved", "candidate.valid-shape", Map.of(), null, null,
+        new AllocationEstimate(1, 2.0, 3, 4, 5, 6), 1, 8);
+    String json = StrictJson.stringify(decision.toJson());
+    assertTrue(json.contains("\"allocation\":{\"predicted_spills\":1,\"spill_weight\":2.0,"
+        + "\"max_integer_live\":3,\"max_float_live\":4,\"callee_save_cost\":5,"
+        + "\"coalescing_loss\":6}"));
+  }
+
+  private static void reject(Class<?> contract, String name) {
+    String normalized = name.replace("_", "").toLowerCase(Locale.ROOT);
+    for (String forbidden : FORBIDDEN) {
+      assertFalse(normalized.contains(forbidden),
+          () -> contract.getName() + " leaks forbidden scheduling input through " + name);
+    }
+  }
+}

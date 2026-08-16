@@ -1,0 +1,188 @@
+package accela.cost;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.ImmOperand;
+import accela.backend.machine.BlockOperand;
+import accela.backend.machine.MachineBasicBlock;
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineInstr;
+import accela.backend.machine.MachineOpcode;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VRegOperand;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.regalloc.AllocationEstimate;
+import accela.backend.regalloc.IteratedRegisterAllocator;
+import accela.backend.target.RISCVTarget;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+
+final class MachineCostModelTest {
+  @Test
+  void estimatesDependenciesAndDryRunWithoutMutation() {
+    MachineFunction function = simpleFunction();
+    int before = function.getEntryBlock().getInstructions().size();
+    IteratedRegisterAllocator allocator = new IteratedRegisterAllocator();
+    CostEstimate cost = new MachineCostModel(GeneratedTargetProfile.get(), allocator,
+        new RISCVTarget()).estimate(function);
+    AllocationEstimate allocation = allocator.estimate(function, new RISCVTarget());
+    assertTrue(cost.cycles() > 0.0);
+    assertTrue(cost.criticalPath() >= 2.0);
+    assertTrue(allocation.maxIntegerLive() >= 1);
+    assertEquals(before, function.getEntryBlock().getInstructions().size());
+  }
+
+  @Test
+  void machineCopyIsTransactionalAndCalibratedProfileSelectsValidCandidate() {
+    MachineFunction function = simpleFunction();
+    MachineFunction copy = function.deepCopy();
+    copy.getEntryBlock().getInstructions().removeFirst();
+    assertEquals(3, function.getEntryBlock().getInstructions().size());
+    assertEquals(2, copy.getEntryBlock().getInstructions().size());
+
+    AtomicInteger applied = new AtomicInteger();
+    MachineCandidateScheduler scheduler = new MachineCandidateScheduler(GeneratedTargetProfile.get(),
+        new IteratedRegisterAllocator(), new RISCVTarget(), DecisionTraceSink.noop());
+    assertTrue(scheduler.apply("test.candidate", new LegalityResult(LegalityResult.Status.PROVED,
+        "test.candidate.safe", "test proof"), function, candidate -> {
+      VirtualRegister constant = candidate.getEntryBlock().getInstructions().getFirst().getDest();
+      candidate.getEntryBlock().getInstructions().getLast().setOperand(0, new VRegOperand(constant));
+      candidate.getEntryBlock().getInstructions().remove(1);
+      applied.incrementAndGet();
+      return true;
+    }));
+    assertEquals(1, applied.get());
+    assertEquals(2, function.getEntryBlock().getInstructions().size());
+  }
+
+  @Test
+  void unknownLegalityAndTransformExceptionsNeverMutateBaseline() {
+    MachineFunction function = simpleFunction();
+    MachineCandidateScheduler scheduler = new MachineCandidateScheduler(GeneratedTargetProfile.get(),
+        new IteratedRegisterAllocator(), new RISCVTarget(), DecisionTraceSink.noop());
+    AtomicInteger called = new AtomicInteger();
+    assertFalse(scheduler.apply("test.unknown", new LegalityResult(LegalityResult.Status.UNKNOWN,
+        "test.unknown.proof", "insufficient dominance evidence"), function, candidate -> {
+          called.incrementAndGet();
+          return true;
+        }));
+    assertEquals(0, called.get());
+    assertEquals(3, function.getEntryBlock().getInstructions().size());
+
+    assertThrows(IllegalStateException.class, () -> scheduler.apply("test.exception",
+        new LegalityResult(LegalityResult.Status.PROVED, "test.exception.proof", "proved"),
+        function, candidate -> {
+          candidate.getEntryBlock().getInstructions().removeFirst();
+          throw new IllegalStateException("transform failed");
+        }));
+    assertEquals(3, function.getEntryBlock().getInstructions().size());
+  }
+
+  @Test
+  void unknownLoopSlopeGuardIsRenameIndependentAndFailClosed() {
+    assertTrue(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
+        Map.of("main::old_header", 20.0, "main::other", 5.0),
+        Map.of("main::renamed_header", 19.0, "main::renamed_other", 5.0)));
+    assertFalse(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
+        Map.of("main::old_header", 20.0, "main::other", 5.0),
+        Map.of("main::renamed_header", 21.0, "main::renamed_other", 4.0)));
+    assertFalse(IRCandidateScheduler.noWorseUnboundedLoopSlopes(
+        Map.of("main::old_header", 20.0),
+        Map.of("main::renamed_header", 20.0, "main::new_loop", 1.0)));
+  }
+
+  @Test
+  void countsImplicitBranchImmediateMaterializationAndNonFallthroughJump() {
+    MachineFunction function = new MachineFunction("branch_expansion", MachineType.VOID);
+    MachineBasicBlock entry = function.addBlock("entry");
+    MachineBasicBlock ifTrue = function.addBlock("true");
+    MachineBasicBlock ifFalse = function.addBlock("false");
+    VirtualRegister value = function.createVirtualRegister(MachineType.I32, "value");
+    MachineInstr branch = new MachineInstr(MachineOpcode.CONDBR, null);
+    branch.setPredicate("slt");
+    branch.addOperand(new VRegOperand(value));
+    branch.addOperand(new ImmOperand(100));
+    branch.addOperand(new BlockOperand(ifTrue));
+    branch.addOperand(new BlockOperand(ifFalse));
+    entry.addInstruction(branch);
+
+    assertEquals(2, MachineCostModel.emittedInstructionCount(branch, ifTrue));
+    assertEquals(3, MachineCostModel.emittedInstructionCount(branch, null));
+
+    MachineInstr fallthrough = new MachineInstr(MachineOpcode.BR, null);
+    fallthrough.addOperand(new BlockOperand(ifTrue));
+    assertEquals(0, MachineCostModel.emittedInstructionCount(fallthrough, ifTrue));
+    assertEquals(1, MachineCostModel.emittedInstructionCount(fallthrough, ifFalse));
+    assertEquals(0, MachineCostModel.emittedBranchCount(fallthrough, ifTrue));
+    assertEquals(1, MachineCostModel.emittedBranchCount(fallthrough, ifFalse));
+
+    MachineInstr branchOnZero = new MachineInstr(MachineOpcode.CONDBR, null);
+    branchOnZero.addOperand(new ImmOperand(0));
+    branchOnZero.addOperand(new BlockOperand(ifTrue));
+    branchOnZero.addOperand(new BlockOperand(ifFalse));
+    assertEquals(2, MachineCostModel.emittedInstructionCount(branchOnZero, ifTrue));
+    assertEquals(1, MachineCostModel.emittedBranchCount(branchOnZero, ifTrue));
+    assertEquals(2, MachineCostModel.emittedBranchCount(branchOnZero, null));
+  }
+
+  @Test
+  void frontendCurveInterpolatesInsteadOfChargingTheNextBucket() {
+    var curve = GeneratedTargetProfile.get().diagnostics().frontend();
+    assertEquals(5.5, MachineCostModel.curveEstimate(curve, 32), 0.000001);
+    assertEquals(11.0, MachineCostModel.curveEstimate(curve, 64), 0.000001);
+    assertEquals(35.0, MachineCostModel.curveEstimate(curve, 160), 0.000001);
+  }
+
+  @Test
+  void machineCycleEnvelopeUsesRealCfgCycles() {
+    MachineFunction function = new MachineFunction("cycle", MachineType.VOID);
+    MachineBasicBlock first = function.addBlock("first");
+    MachineBasicBlock second = function.addBlock("second");
+    MachineInstr toSecond = new MachineInstr(MachineOpcode.BR, null);
+    toSecond.addOperand(new BlockOperand(second));
+    first.addInstruction(toSecond);
+    MachineInstr toFirst = new MachineInstr(MachineOpcode.BR, null);
+    toFirst.addOperand(new BlockOperand(first));
+    second.addInstruction(toFirst);
+
+    MachineCostModel model = new MachineCostModel(GeneratedTargetProfile.get(),
+        new IteratedRegisterAllocator(), new RISCVTarget());
+    assertEquals(java.util.List.of(1.0), model.machineCycleUpperBounds(function));
+    assertEquals(java.util.List.of(1.0), model.machineCycleLowerBounds(function));
+  }
+
+  @Test
+  void unreachableFunctionStillContributesStaticCodeSize() {
+    CostEstimate function = new CostEstimate(10, 2, 3, 4, 5, 6, 7, 8, 64);
+    CostEstimate unreachable = ModuleCostEvaluator.scaleRuntimeCost(function, 0.0);
+    assertEquals(0.0, unreachable.cycles());
+    assertEquals(0.0, unreachable.uncertainty());
+    assertEquals(0.0, unreachable.spill());
+    assertEquals(64.0, unreachable.codeSize());
+  }
+
+  private static MachineFunction simpleFunction() {
+    MachineFunction function = new MachineFunction("cost", MachineType.I32);
+    MachineBasicBlock block = function.addBlock("entry");
+    VirtualRegister first = function.createVirtualRegister(MachineType.I32, "first");
+    MachineInstr constant = new MachineInstr(MachineOpcode.CONST_INT, first);
+    constant.setType(MachineType.I32);
+    constant.addOperand(new ImmOperand(7));
+    block.addInstruction(constant);
+    VirtualRegister second = function.createVirtualRegister(MachineType.I32, "second");
+    MachineInstr add = new MachineInstr(MachineOpcode.ADD, second);
+    add.setType(MachineType.I32);
+    add.addOperand(new VRegOperand(first));
+    add.addOperand(new ImmOperand(1));
+    block.addInstruction(add);
+    MachineInstr ret = new MachineInstr(MachineOpcode.RET, null);
+    ret.setType(MachineType.I32);
+    ret.addOperand(new VRegOperand(second));
+    block.addInstruction(ret);
+    return function;
+  }
+}

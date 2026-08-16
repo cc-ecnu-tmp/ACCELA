@@ -1,0 +1,14 @@
+board=VisionFive 2
+cpu=SiFive U74 x4
+isa=rv64gc_zba_zbb
+abi=lp64d
+code_model=medany
+maximum_frequency_hz=1500000000
+kernel=Linux 6.12
+java=OpenJDK 21
+gcc=16.1
+binutils=2.46
+profile_cpu_affinity=3
+benchmark_cpu_affinity=3
+benchmark_governor=performance
+restored_governor=ondemand

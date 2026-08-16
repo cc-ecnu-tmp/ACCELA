@@ -1,0 +1,37 @@
+package accela.ir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
+
+import accela.ast.Node;
+import accela.parse.Lexer;
+import accela.parse.Parser;
+import accela.parse.Sema;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class IRSnapshotTest {
+  @Test
+  void deepCopyRemapsCallsBlocksArgumentsAndInstructions() {
+    String source = "int half(int x) { return x / 3; } int main() { return half(9); }";
+    Node unit = new Parser(new Lexer(source, "snapshot.sy").tokenize()).parse();
+    new Sema().analyze(unit);
+    Module original = new AST2IR().convert(unit);
+    IRVerifier.verifyModule(original);
+
+    Module copy = IRSnapshot.deepCopy(original);
+    IRVerifier.verifyModule(copy);
+
+    assertNotSame(original, copy);
+    assertNotSame(original.getFunctions().get(0), copy.getFunctions().get(0));
+    Instruction copiedCall = copy.getFunctions().get(1).getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.CALL)
+        .findFirst().orElseThrow();
+    assertSame(copy.getFunctions().get(0), copiedCall.getCallee());
+    assertEquals(Instruction.Opcode.SDIV, original.getFunctions().get(0).getBlocks().getFirst()
+        .getInstructions().stream().filter(instruction -> instruction.getOpcode() == Instruction.Opcode.SDIV)
+        .findFirst().orElseThrow().getOpcode());
+  }
+}

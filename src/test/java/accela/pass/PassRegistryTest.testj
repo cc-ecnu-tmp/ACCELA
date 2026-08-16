@@ -1,0 +1,42 @@
+package accela.pass;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+final class PassRegistryTest {
+  @Test
+  void productionPipelineCannotBeConstructedAsHiddenR1Ablation() {
+    assertThrows(NoSuchMethodException.class,
+        () -> PassBuilder.class.getDeclaredConstructor(boolean.class));
+    assertTrue(PassBuilder.forR1CandidateStaging() != null);
+  }
+
+  @Test
+  void r1RegistryHasStableDAGAndNoExperimentalTransforms() {
+    PassRegistry registry = PassRegistry.r1();
+    assertEquals(12, registry.all().size());
+    assertEquals(List.of(PassRegistry.IR_LICM, PassRegistry.IR_UNROLL_1,
+        PassRegistry.IR_UNROLL_2, PassRegistry.IR_STRENGTH, PassRegistry.IR_INLINER),
+        registry.optional(PassDescriptor.Stage.IR).stream().map(PassDescriptor::id).toList());
+    assertTrue(registry.all().stream().noneMatch(pass -> pass.id().startsWith("candidate.")));
+    assertEquals(registry.all().stream().map(PassDescriptor::id).toList(),
+        PipelineProfile.r1().enabled());
+  }
+
+  @Test
+  void pipelineCannotCrossPhaseOrDropRequiredDependency() {
+    List<String> missingSsa = new ArrayList<>(PipelineProfile.r1().enabled());
+    missingSsa.remove(PassRegistry.IR_SSA);
+    assertThrows(IllegalArgumentException.class,
+        () -> new PipelineProfile(PassRegistry.r1(), missingSsa));
+    List<String> reordered = new ArrayList<>(PipelineProfile.r1().enabled());
+    java.util.Collections.swap(reordered, 1, 6);
+    assertThrows(IllegalArgumentException.class,
+        () -> new PipelineProfile(PassRegistry.r1(), reordered));
+  }
+}

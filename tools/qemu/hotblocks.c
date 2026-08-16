@@ -45,8 +45,13 @@ static void end_main(unsigned int cpu, void *data) {
   if (!saw_explicit_region) end_region(cpu, data);
 }
 
+#if QEMU_PLUGIN_VERSION >= 7
+static void instrument(struct qemu_plugin_tb *tb, void *data) {
+  (void) data;
+#else
 static void instrument(qemu_plugin_id_t id, struct qemu_plugin_tb *tb) {
   (void) id;
+#endif
   size_t count = qemu_plugin_tb_n_insns(tb);
   struct qemu_plugin_insn *first = qemu_plugin_tb_get_insn(tb, 0);
   if (qemu_plugin_insn_vaddr(first) < 0x80000000ULL || is_io_runtime(first)) return;
@@ -84,8 +89,12 @@ static gint hottest_first(gconstpointer left, gconstpointer right) {
   return a_dynamic < b_dynamic ? 1 : a_dynamic > b_dynamic ? -1 : 0;
 }
 
+#if QEMU_PLUGIN_VERSION >= 7
+static void report(void *data) {
+#else
 static void report(qemu_plugin_id_t id, void *data) {
   (void) id;
+#endif
   (void) data;
   if (!ended) snapshot(0);
   g_ptr_array_sort(blocks, hottest_first);
@@ -114,7 +123,11 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
   if (!info->system_emulation || g_strcmp0(info->target_name, "riscv64"))
     return -1;
   blocks = g_ptr_array_new();
+#if QEMU_PLUGIN_VERSION >= 7
+  qemu_plugin_register_vcpu_tb_trans_cb(id, instrument, NULL);
+#else
   qemu_plugin_register_vcpu_tb_trans_cb(id, instrument);
+#endif
   qemu_plugin_register_atexit_cb(id, report, NULL);
   return 0;
 }

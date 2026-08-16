@@ -1,0 +1,12 @@
+{
+  "backend": "linux",
+  "build_dir": "build/targetlab",
+  "cc": "gcc",
+  "clock_hz": 1500000000,
+  "execute": "taskset -c 3",
+  "measurement_mode": "hardware",
+  "minimum_cycles": 1000000,
+  "nm": "nm",
+  "objcopy": "objcopy",
+  "timeout_seconds": 7200
+}
