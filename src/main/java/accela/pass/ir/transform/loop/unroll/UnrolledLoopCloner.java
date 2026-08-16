@@ -29,7 +29,7 @@ final class UnrolledLoopCloner {
         candidate, null, candidate.induction().predecessor());
     for (int iteration = 0; iteration < candidate.tripCount(); iteration++) {
       Map<Value, Value> values = LoopIterationCloner.clone(
-          candidate, sources, blocks, iteration, carried);
+          candidate, sources, blocks, iteration, carried, candidate.exit());
       carried = headerValues(candidate, values, candidate.induction().latch());
     }
     return new Result(

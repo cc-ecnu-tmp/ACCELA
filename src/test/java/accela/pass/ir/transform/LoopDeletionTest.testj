@@ -1,0 +1,132 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.pass.PassBuilder;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.transform.loop.deletion.LoopDeletion;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopDeletionTest {
+  @Test
+  void deletesZeroTripLoopAndRepairsExitPhi() {
+    Function function = new Function("zero_trip", Type.INT);
+    LoopFixture loop = buildCountedLoop(function, 0);
+    IRBuilder exitBuilder = new IRBuilder(loop.exit);
+    Instruction result = exitBuilder.createPhi(Type.INT);
+    result.addOperand(loop.index);
+    result.addOperand(loop.header);
+    exitBuilder.createRet(result);
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopDeletion.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(2, function.getBlocks().size());
+    assertEquals(loop.exit, loop.entry.getSuccessors().getFirst());
+    assertEquals(0, ((Constant.Int) loop.exit.getTerminator().getOperand(0)).value);
+  }
+
+  @Test
+  void deletesFiniteSideEffectFreeLoopWithoutLiveOutputs() {
+    Function function = new Function("dead_pure", Type.VOID);
+    LoopFixture loop = buildCountedLoop(function, 8);
+    new IRBuilder(loop.body).createMul(loop.index, Constant.intConst(3));
+    new IRBuilder(loop.exit).createRetVoid();
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopDeletion.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(2, function.getBlocks().size());
+    assertTrue(analyses.getResult(LoopAnalysis.class, function).loops().isEmpty());
+  }
+
+  @Test
+  void keepsLoopContainingStore() {
+    Function function = new Function("store_loop", Type.VOID);
+    var destination = function.addArgument(Type.PTR, "destination");
+    LoopFixture loop = buildCountedLoop(function, 4);
+    new IRBuilder(loop.body).createStore(loop.index, destination);
+    new IRBuilder(loop.exit).createRetVoid();
+
+    assertLoopRemains(function);
+  }
+
+  @Test
+  void keepsLoopContainingCall() {
+    Function callee = new Function("observe", Type.VOID);
+    Function function = new Function("call_loop", Type.VOID);
+    LoopFixture loop = buildCountedLoop(function, 4);
+    new IRBuilder(loop.body).createCall(callee, Type.VOID);
+    new IRBuilder(loop.exit).createRetVoid();
+
+    assertLoopRemains(function);
+  }
+
+  @Test
+  void keepsZeroTripLoopWithEffectfulHeader() {
+    Function callee = new Function("observe_header", Type.VOID);
+    Function function = new Function("zero_trip_header_call", Type.VOID);
+    LoopFixture loop = buildCountedLoop(function, 0);
+    new IRBuilder(loop.header).createCall(callee, Type.VOID);
+    new IRBuilder(loop.exit).createRetVoid();
+
+    assertLoopRemains(function);
+  }
+
+  @Test
+  void keepsLoopWithLiveLoopDefinedOutput() {
+    Function function = new Function("live_out", Type.INT);
+    LoopFixture loop = buildCountedLoop(function, 4);
+    new IRBuilder(loop.exit).createRet(loop.index);
+
+    assertLoopRemains(function);
+  }
+
+  private static void assertLoopRemains(Function function) {
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertFalse(LoopDeletion.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+    assertFalse(analyses.getResult(LoopAnalysis.class, function).loops().isEmpty());
+  }
+
+  private static LoopFixture buildCountedLoop(Function function, int limit) {
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    Instruction condition =
+        headerBuilder.createICmp("slt", index, Constant.intConst(limit));
+    headerBuilder.createCondBr(condition, body, exit);
+
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(next);
+    index.addOperand(body);
+    return new LoopFixture(entry, header, body, exit, index);
+  }
+
+  private record LoopFixture(
+      BasicBlock entry,
+      BasicBlock header,
+      BasicBlock body,
+      BasicBlock exit,
+      Instruction index) {}
+}

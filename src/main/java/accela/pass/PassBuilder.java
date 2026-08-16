@@ -7,6 +7,7 @@ import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.ModuleToFunctionPassAdaptor;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
+import accela.pass.ir.analysis.LoopAccessAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.analysis.PostDominatorTreeAnalysis;
 import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
@@ -20,6 +21,9 @@ import accela.pass.ir.transform.IPSCCP;
 import accela.pass.ir.transform.InstCombine;
 import accela.pass.ir.transform.InstSimplify;
 import accela.pass.ir.transform.LICM;
+import accela.pass.ir.transform.LICMRuntimeVersioning;
+import accela.pass.ir.transform.LoopCanonicalization;
+import accela.pass.ir.transform.LoopCanonicalizationCleanup;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.ReductionPushdown;
 import accela.pass.ir.transform.SCCP;
@@ -30,12 +34,14 @@ import accela.pass.ir.transform.TailRecursionElimination;
 import accela.pass.ir.transform.gvn.GVN;
 import accela.pass.ir.transform.indvars.IndVarSimplify;
 import accela.pass.ir.transform.inliner.Inliner;
+import accela.pass.ir.transform.loop.deletion.LoopDeletion;
 import accela.pass.ir.transform.loop.interchange.LoopInterchange;
 import accela.pass.ir.transform.loop.load.LoopLoadElimination;
 import accela.pass.ir.transform.loop.strength.LoopStrengthReduce;
 import accela.pass.ir.transform.loop.rotate.LoopRotate;
 import accela.pass.ir.transform.loop.unroll.LoopUnroll;
 import accela.pass.ir.transform.loop.unroll.LoopUnrollAndJam;
+import accela.pass.ir.transform.loop.unswitch.LoopUnswitch;
 import accela.pass.ir.transform.recurrence.RankedRecurrenceTabulation;
 
 /**
@@ -131,6 +137,18 @@ public final class PassBuilder {
         || disable.equalsIgnoreCase("false");
   }
 
+  private static boolean isLoopDeletionEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_DELETION");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isLoopUnswitchEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_LOOP_UNSWITCH");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
   private static boolean isIndVarSimplifyEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_INDVAR_SIMPLIFY");
     return disable == null || disable.isEmpty() || disable.equals("0")
@@ -164,10 +182,15 @@ public final class PassBuilder {
     FunctionAnalysisManager fam = new FunctionAnalysisManager();
     fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
     fam.registerPass(InductionVariableAnalysis.class, new InductionVariableAnalysis());
+    fam.registerPass(LoopAccessAnalysis.class, new LoopAccessAnalysis());
     fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
     fam.registerPass(PostDominatorTreeAnalysis.class, new PostDominatorTreeAnalysis());
     fam.registerPass(ScalarEvolutionAnalysis.class, new ScalarEvolutionAnalysis());
     return fam;
+  }
+
+  private static void addLoopCanonicalization(FunctionPassManager fpm) {
+    fpm.addPass(new LoopCanonicalization.Pass());
   }
 
   /**
@@ -258,6 +281,7 @@ public final class PassBuilder {
       postIpsccpFpm.addPass(new LoopRotate.Pass());
     }
     if (isLicmEnabled()) {
+      postIpsccpFpm.addPass(new LICMRuntimeVersioning.Pass());
       postIpsccpFpm.addPass(new LICM.Pass());
       if (isEarlyCseEnabled()) {
         postIpsccpFpm.addPass(new EarlyCSE.Pass());
@@ -270,10 +294,19 @@ public final class PassBuilder {
       postIpsccpFpm.addPass(new LoopUnroll.Pass());
       postIpsccpFpm.addPass(new LoopUnroll.Pass());
     }
+    if (isLoopUnswitchEnabled()) {
+      // Unswitching consumes dedicated exits/LCSSA and immediately removes trivial PHIs.
+      addLoopCanonicalization(postIpsccpFpm);
+      postIpsccpFpm.addPass(new LoopUnswitch.Pass());
+      postIpsccpFpm.addPass(new LoopCanonicalizationCleanup.Pass());
+    }
     if (isIndVarSimplifyEnabled()) {
       postIpsccpFpm.addPass(new IndVarSimplify.Pass());
       postIpsccpFpm.addPass(new InstSimplify.Pass());
       postIpsccpFpm.addPass(new SimplifyCFG.Pass());
+    }
+    if (isLoopDeletionEnabled()) {
+      postIpsccpFpm.addPass(new LoopDeletion.Pass());
     }
     postIpsccpFpm.addPass(new GVN.Pass());
     if (isLoopStrengthReduceEnabled()) {

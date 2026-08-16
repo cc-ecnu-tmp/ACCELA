@@ -17,7 +17,8 @@ final class LoopIterationCloner {
       List<BasicBlock> sources,
       List<Map<BasicBlock, BasicBlock>> iterations,
       int iteration,
-      Map<Instruction, Value> carried) {
+      Map<Instruction, Value> carried,
+      BasicBlock finalTarget) {
     Map<BasicBlock, BasicBlock> blocks = iterations.get(iteration);
     Map<Value, Value> values = new IdentityHashMap<>();
     values.putAll(carried);
@@ -43,7 +44,7 @@ final class LoopIterationCloner {
         .createBr(blocks.get(candidate.body()));
     BasicBlock next = iteration + 1 < iterations.size()
         ? iterations.get(iteration + 1).get(candidate.loop().header())
-        : candidate.exit();
+        : finalTarget;
     new IRBuilder(blocks.get(candidate.induction().latch())).createBr(next);
     return values;
   }

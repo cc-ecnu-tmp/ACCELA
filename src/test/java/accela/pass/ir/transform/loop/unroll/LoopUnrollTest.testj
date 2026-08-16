@@ -1,6 +1,7 @@
 package accela.pass.ir.transform.loop.unroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import accela.ir.Function;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Type;
+import accela.ir.Value;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.InductionVariableAnalysis;
@@ -19,6 +21,88 @@ import accela.pass.ir.verify.IRVerifier;
 import org.junit.jupiter.api.Test;
 
 final class LoopUnrollTest {
+  @Test
+  void rejectsNotEqualCountdownWhoseChunkCanCrossZero() {
+    Function function = new Function("countdown_ne", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction count = headerBuilder.createPhi(Type.INT);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("ne", count, Constant.intConst(0)), body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction next = bodyBuilder.createSub(count, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    count.addOperand(Constant.intConst(10));
+    count.addOperand(entry);
+    count.addOperand(next);
+    count.addOperand(body);
+    new IRBuilder(exit).createRet(count);
+
+    assertFalse(LoopUnroll.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+  }
+
+  @Test
+  void leavesDynamicMemoryLoopForScalarFallback() {
+    Function function = new Function("dynamic_memory", Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    Value destination = function.addArgument(Type.PTR, "destination");
+    buildReductionLoop(function, bound);
+    BasicBlock body =
+        function.getBlocks().stream().filter(block -> block.getLabel().equals("body"))
+            .findFirst().orElseThrow();
+    Instruction value = body.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.ADD)
+        .findFirst().orElseThrow();
+    new IRBuilder(body).createStore(value, destination);
+
+    assertFalse(LoopUnroll.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertTrue(function.getBlocks().stream()
+        .noneMatch(block -> block.getLabel().contains(".unroll.main.")));
+  }
+
+  @Test
+  void partiallyUnrollsLargerConstantLoopWithScalarRemainder() {
+    Function function = reductionLoop("partial_constant", Constant.intConst(10));
+
+    assertTrue(LoopUnroll.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertTrue(function.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().contains(".unroll.main.")));
+    assertTrue(function.getBlocks().stream()
+        .anyMatch(block -> block.getLabel().equals("header")));
+    assertEquals(4, function.getBlocks().stream()
+        .filter(block -> block.getLabel().startsWith("body.unroll.chunk."))
+        .count());
+  }
+
+  @Test
+  void unrollsDynamicLoopAndRetainsScalarRemainderAndLiveOut() {
+    Function function = new Function("dynamic_remainder", Type.INT);
+    Value bound = function.addArgument(Type.INT, "bound");
+    buildReductionLoop(function, bound);
+
+    assertTrue(LoopUnroll.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    BasicBlock scalarHeader = function.getBlocks().stream()
+        .filter(block -> block.getLabel().equals("header"))
+        .findFirst()
+        .orElseThrow();
+    assertTrue(scalarHeader.getPredecessors().stream()
+        .anyMatch(block -> block.getLabel().contains(".unroll.main.")));
+    Instruction ret = function.getBlocks().stream()
+        .map(BasicBlock::getTerminator)
+        .filter(term -> term != null && term.getOpcode() == Instruction.Opcode.RET)
+        .findFirst()
+        .orElseThrow();
+    assertTrue(ret.getOperand(0) instanceof Instruction);
+  }
+
   @Test
   void clonesVectorOperationsIntoEveryUnrolledIteration() {
     Function function = new Function("vector_unroll", Type.INT);
@@ -139,6 +223,38 @@ final class LoopUnrollTest {
     assertTrue(function.getBlocks().stream()
         .noneMatch(block -> block.getLabel().equals("header")
             || block.getLabel().equals("body")));
+  }
+
+  private static Function reductionLoop(String name, Value bound) {
+    Function function = new Function(name, Type.INT);
+    buildReductionLoop(function, bound);
+    return function;
+  }
+
+  private static void buildReductionLoop(Function function, Value bound) {
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction index = headerBuilder.createPhi(Type.INT);
+    Instruction sum = headerBuilder.createPhi(Type.INT);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", index, bound), body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    Instruction nextSum = bodyBuilder.createAdd(sum, index);
+    Instruction nextIndex = bodyBuilder.createAdd(index, Constant.intConst(1));
+    bodyBuilder.createBr(header);
+    index.addOperand(Constant.intConst(0));
+    index.addOperand(entry);
+    index.addOperand(nextIndex);
+    index.addOperand(body);
+    sum.addOperand(Constant.intConst(0));
+    sum.addOperand(entry);
+    sum.addOperand(nextSum);
+    sum.addOperand(body);
+    new IRBuilder(exit).createRet(sum);
   }
 
   private static FunctionAnalysisManager analysisManager() {

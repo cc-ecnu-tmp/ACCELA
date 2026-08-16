@@ -16,7 +16,7 @@ public final class LoopUnroll {
 
   public static boolean run(Function function, FunctionAnalysisManager fam) {
     LoopUnrollCandidate candidate = LoopUnrollCandidate.find(function, fam);
-    if (candidate == null) return false;
+    if (candidate == null) return LoopPartialUnroll.run(function, fam);
 
     UnrolledLoopCloner.Result clones =
         UnrolledLoopCloner.clone(function, candidate);

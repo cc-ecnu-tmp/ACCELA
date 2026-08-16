@@ -1,0 +1,95 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.pass.PassBuilder;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LoopCanonicalizationCleanupTest {
+  @Test
+  void reversesOnlyTrivialCanonicalEdgeSplits() {
+    Function function = new Function("cleanup", Type.INT);
+    var enter = function.addArgument(Type.I1, "enter");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock bypass = function.addBlock("bypass");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createCondBr(enter, header, bypass);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction value = headerBuilder.createPhi(Type.INT);
+    value.addOperand(Constant.intConst(0));
+    value.addOperand(entry);
+    headerBuilder.createBr(latch);
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(value, Constant.intConst(1));
+    latchBuilder.createCondBr(enter, header, exit);
+    value.addOperand(next);
+    value.addOperand(latch);
+    new IRBuilder(bypass).createBr(exit);
+    IRBuilder exitBuilder = new IRBuilder(exit);
+    Instruction result = exitBuilder.createPhi(Type.INT);
+    result.addOperand(next);
+    result.addOperand(latch);
+    result.addOperand(Constant.intConst(9));
+    result.addOperand(bypass);
+    exitBuilder.createRet(result);
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopSimplify.runOnFunction(function, analyses));
+    assertTrue(function.getBlocks().size() > 5);
+    assertTrue(LoopCanonicalizationCleanup.runOnFunction(function));
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(5, function.getBlocks().size());
+    assertFalse(function.getBlocks().stream().anyMatch(block ->
+        block.getLabel().matches(".*\\.(?:preheader|backedge|exit)\\.\\d+")));
+  }
+
+  @Test
+  void restoresCompactLoopAndExpandsNontrivialPreheaderPhi() {
+    Function function = new Function("cleanup", Type.INT);
+    var direct = function.addArgument(Type.I1, "direct");
+    var repeat = function.addArgument(Type.I1, "repeat");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock alternate = function.addBlock("alternate");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createCondBr(direct, header, alternate);
+    new IRBuilder(alternate).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction induction = headerBuilder.createPhi(Type.INT);
+    induction.addOperand(Constant.intConst(1));
+    induction.addOperand(entry);
+    induction.addOperand(Constant.intConst(2));
+    induction.addOperand(alternate);
+    headerBuilder.createCondBr(repeat, latch, exit);
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(induction, Constant.intConst(1));
+    latchBuilder.createBr(header);
+    induction.addOperand(next);
+    induction.addOperand(latch);
+    new IRBuilder(exit).createRet(induction);
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopSimplify.runOnFunction(function, analyses));
+    assertTrue(LCSSA.runOnFunction(function, analyses));
+    assertTrue(LoopCanonicalizationCleanup.runOnFunction(function));
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(5, function.getBlocks().size());
+    assertEquals(6, induction.getNumOperands());
+    assertEquals(3, header.getPredecessors().size());
+  }
+}

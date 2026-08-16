@@ -11,11 +11,12 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.pass.PassBuilder;
 import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class LoopSimplifyTest {
   @Test
-  void canonicalizesEqualInductionUpdatesOnMultipleLatches() {
+  void mergesInductionUpdatesOnMultipleLatchesWithoutSynthesizingWork() {
     Function function = new Function("induction", Type.VOID);
     var chooseLeft = function.addArgument(Type.I1, "chooseLeft");
     BasicBlock entry = function.addBlock("entry");
@@ -50,9 +51,11 @@ final class LoopSimplifyTest {
     BasicBlock backedge = (BasicBlock) phi.getOperand(3);
     Instruction update = (Instruction) phi.getOperand(2);
     assertEquals(backedge, update.getParent());
-    assertEquals(Instruction.Opcode.ADD, update.getOpcode());
-    assertEquals(phi, update.getOperand(0));
-    assertEquals(1, ((Constant.Int) update.getOperand(1)).value);
+    assertEquals(Instruction.Opcode.PHI, update.getOpcode());
+    assertEquals(leftNext, update.getOperand(0));
+    assertEquals(left, update.getOperand(1));
+    assertEquals(rightNext, update.getOperand(2));
+    assertEquals(right, update.getOperand(3));
   }
 
   @Test
@@ -91,5 +94,56 @@ final class LoopSimplifyTest {
         .orElseThrow();
     assertEquals(2, backedge.getPredecessors().size());
     assertEquals(Instruction.Opcode.PHI, backedge.getInstructions().getFirst().getOpcode());
+  }
+
+  @Test
+  void formsPreheaderAndDedicatedExitWhilePreservingPhiEdges() {
+    Function function = new Function("canonical", Type.INT);
+    var enterFirst = function.addArgument(Type.I1, "enterFirst");
+    var enterSecond = function.addArgument(Type.I1, "enterSecond");
+    var repeat = function.addArgument(Type.I1, "repeat");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock alternate = function.addBlock("alternate");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock bypass = function.addBlock("bypass");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createCondBr(enterFirst, header, alternate);
+    new IRBuilder(alternate).createCondBr(enterSecond, header, bypass);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction induction = headerBuilder.createPhi(Type.INT);
+    induction.addOperand(Constant.intConst(1));
+    induction.addOperand(entry);
+    induction.addOperand(Constant.intConst(2));
+    induction.addOperand(alternate);
+    headerBuilder.createBr(latch);
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(induction, Constant.intConst(1));
+    latchBuilder.createCondBr(repeat, header, exit);
+    induction.addOperand(next);
+    induction.addOperand(latch);
+    new IRBuilder(bypass).createBr(exit);
+    IRBuilder exitBuilder = new IRBuilder(exit);
+    Instruction result = exitBuilder.createPhi(Type.INT);
+    result.addOperand(next);
+    result.addOperand(latch);
+    result.addOperand(Constant.intConst(9));
+    result.addOperand(bypass);
+    exitBuilder.createRet(result);
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    assertTrue(LoopSimplify.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(2, header.getPredecessors().size());
+    BasicBlock preheader =
+        header.getPredecessors().stream().filter(block -> block != latch).findFirst().orElseThrow();
+    assertEquals(2, preheader.getPredecessors().size());
+    BasicBlock dedicated =
+        exit.getPredecessors().stream().filter(block -> block != bypass).findFirst().orElseThrow();
+    assertEquals(List.of(latch), dedicated.getPredecessors());
+    assertEquals(bypass, result.getOperand(1));
+    assertEquals(dedicated, result.getOperand(3));
   }
 }

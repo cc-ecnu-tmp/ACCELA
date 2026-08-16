@@ -1,0 +1,111 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.pass.PassBuilder;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LCSSATest {
+  @Test
+  void mergesEscapingValueFromMultipleExits() {
+    Function function = new Function("multiExit", Type.INT);
+    var leaveEarly = function.addArgument(Type.I1, "leaveEarly");
+    var leaveLate = function.addArgument(Type.I1, "leaveLate");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock latch = function.addBlock("latch");
+    BasicBlock leftExit = function.addBlock("left.exit");
+    BasicBlock rightExit = function.addBlock("right.exit");
+    BasicBlock join = function.addBlock("join");
+    new IRBuilder(entry).createBr(header);
+
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction induction = headerBuilder.createPhi(Type.INT);
+    induction.addOperand(Constant.intConst(0));
+    induction.addOperand(entry);
+    headerBuilder.createCondBr(leaveEarly, leftExit, body);
+    new IRBuilder(body).createCondBr(leaveLate, rightExit, latch);
+    IRBuilder latchBuilder = new IRBuilder(latch);
+    Instruction next = latchBuilder.createAdd(induction, Constant.intConst(1));
+    latchBuilder.createBr(header);
+    induction.addOperand(next);
+    induction.addOperand(latch);
+    new IRBuilder(leftExit).createBr(join);
+    new IRBuilder(rightExit).createBr(join);
+    IRBuilder joinBuilder = new IRBuilder(join);
+    Instruction result = joinBuilder.createAdd(induction, Constant.intConst(7));
+    joinBuilder.createRet(result);
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    LoopSimplify.runOnFunction(function, analyses);
+    assertTrue(LCSSA.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+
+    assertEquals(Instruction.Opcode.PHI, leftExit.getInstructions().getFirst().getOpcode());
+    assertEquals(Instruction.Opcode.PHI, rightExit.getInstructions().getFirst().getOpcode());
+    Instruction merged = (Instruction) result.getOperand(0);
+    assertEquals(join, merged.getParent());
+    assertEquals(Instruction.Opcode.PHI, merged.getOpcode());
+    assertNotEquals(induction, merged);
+  }
+
+  @Test
+  void closesInnerThenOuterLoopForNestedEscape() {
+    Function function = new Function("nested", Type.INT);
+    var repeatInner = function.addArgument(Type.I1, "repeatInner");
+    var repeatOuter = function.addArgument(Type.I1, "repeatOuter");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock outerHeader = function.addBlock("outer.header");
+    BasicBlock innerHeader = function.addBlock("inner.header");
+    BasicBlock innerLatch = function.addBlock("inner.latch");
+    BasicBlock innerExit = function.addBlock("inner.exit");
+    BasicBlock outerLatch = function.addBlock("outer.latch");
+    BasicBlock outerExit = function.addBlock("outer.exit");
+    new IRBuilder(entry).createBr(outerHeader);
+
+    IRBuilder outerBuilder = new IRBuilder(outerHeader);
+    Instruction outerValue = outerBuilder.createPhi(Type.INT);
+    outerValue.addOperand(Constant.intConst(0));
+    outerValue.addOperand(entry);
+    outerBuilder.createBr(innerHeader);
+    IRBuilder innerBuilder = new IRBuilder(innerHeader);
+    Instruction innerValue = innerBuilder.createPhi(Type.INT);
+    innerValue.addOperand(outerValue);
+    innerValue.addOperand(outerHeader);
+    innerBuilder.createCondBr(repeatInner, innerLatch, innerExit);
+    IRBuilder innerLatchBuilder = new IRBuilder(innerLatch);
+    Instruction innerNext = innerLatchBuilder.createAdd(innerValue, Constant.intConst(1));
+    innerLatchBuilder.createBr(innerHeader);
+    innerValue.addOperand(innerNext);
+    innerValue.addOperand(innerLatch);
+    new IRBuilder(innerExit).createCondBr(repeatOuter, outerLatch, outerExit);
+    IRBuilder outerLatchBuilder = new IRBuilder(outerLatch);
+    Instruction outerNext = outerLatchBuilder.createAdd(outerValue, Constant.intConst(1));
+    outerLatchBuilder.createBr(outerHeader);
+    outerValue.addOperand(outerNext);
+    outerValue.addOperand(outerLatch);
+    Instruction ret = new IRBuilder(outerExit).createRet(innerValue);
+
+    var analyses = new PassBuilder().buildFunctionAnalysisManager();
+    LoopSimplify.runOnFunction(function, analyses);
+    assertTrue(LCSSA.runOnFunction(function, analyses));
+    IRVerifier.verifyFunction(function);
+
+    Instruction outerExitPhi = (Instruction) ret.getOperand(0);
+    assertEquals(outerExit, outerExitPhi.getParent());
+    assertEquals(Instruction.Opcode.PHI, outerExitPhi.getOpcode());
+    Instruction innerExitPhi = (Instruction) outerExitPhi.getOperand(0);
+    assertEquals(innerExit, innerExitPhi.getParent());
+    assertEquals(Instruction.Opcode.PHI, innerExitPhi.getOpcode());
+  }
+}

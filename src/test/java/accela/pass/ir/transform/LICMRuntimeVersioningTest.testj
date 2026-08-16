@@ -1,0 +1,206 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Module;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.analysis.DominatorTreeAnalysis;
+import accela.pass.ir.analysis.LoopAccessAnalysis;
+import accela.pass.ir.analysis.LoopAnalysis;
+import accela.pass.ir.analysis.ScalarEvolutionAnalysis;
+import accela.pass.ir.analysis.scev.SCEV;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class LICMRuntimeVersioningTest {
+  @Test
+  void guardsFastCloneAndKeepsOriginalFallback() {
+    Fixture fixture = new Fixture(8, false, false);
+
+    assertTrue(LICMRuntimeVersioning.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    Instruction dispatch = fixture.entry.getTerminator();
+    assertEquals(Instruction.Opcode.CONDBR, dispatch.getOpcode());
+    assertEquals(Instruction.Opcode.ICMP, ((Instruction) dispatch.getOperand(0)).getOpcode());
+    assertEquals("ne", ((Instruction) dispatch.getOperand(0)).getPredicate());
+    assertSame(fixture.header, dispatch.getOperand(2));
+    assertTrue(fixture.header.getInstructions().contains(fixture.load));
+    assertTrue(fixture.body.getInstructions().contains(fixture.store));
+
+    BasicBlock fastPreheader = blockContaining(fixture.function, ".licm.fast.preheader.");
+    assertNotNull(fastPreheader);
+    assertTrue(fastPreheader.getInstructions().stream().anyMatch(
+        instruction ->
+            instruction.getOpcode() == Instruction.Opcode.LOAD
+                && instruction.getOperand(0) == fixture.source));
+    assertFalse(fixture.function.getBlocks().stream()
+        .filter(block -> block.getLabel().contains(".licm.fast.")
+            && !block.getLabel().contains(".preheader."))
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.LOAD));
+  }
+
+  @Test
+  void ordinaryLicmHoistsFastPathDependents() {
+    Fixture fixture = new Fixture(8, false, false);
+
+    assertTrue(LICMRuntimeVersioning.run(fixture.function, analysisManager()));
+    IRVerifier.verifyFunction(fixture.function);
+
+    BasicBlock fastPreheader = blockContaining(fixture.function, ".licm.fast.preheader.");
+    assertNotNull(fastPreheader);
+    assertTrue(fastPreheader.getInstructions().stream().anyMatch(
+        instruction -> instruction.getOpcode() == Instruction.Opcode.ADD));
+  }
+
+  @Test
+  void mergesFastAndFallbackLiveOutsThroughExitPhi() {
+    Module module = new Module();
+    Function function = new Function("versioned_liveout", Type.INT);
+    Value source = function.addArgument(Type.PTR, "source");
+    Value destination = function.addArgument(Type.PTR, "destination");
+    module.addFunction(function);
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock header = function.addBlock("header");
+    BasicBlock body = function.addBlock("body");
+    BasicBlock exit = function.addBlock("exit");
+    new IRBuilder(entry).createBr(header);
+    IRBuilder headerBuilder = new IRBuilder(header);
+    Instruction induction = headerBuilder.createPhi(Type.INT);
+    induction.addOperand(Constant.intConst(0));
+    induction.addOperand(entry);
+    Instruction loaded = headerBuilder.createLoad(Type.INT, source);
+    headerBuilder.createCondBr(
+        headerBuilder.createICmp("slt", induction, Constant.intConst(8)), body, exit);
+    IRBuilder bodyBuilder = new IRBuilder(body);
+    bodyBuilder.createStore(
+        bodyBuilder.createAdd(loaded, Constant.intConst(1)), destination);
+    Instruction next = bodyBuilder.createAdd(induction, Constant.intConst(1));
+    induction.addOperand(next);
+    induction.addOperand(body);
+    bodyBuilder.createBr(header);
+    Instruction liveOut = Instruction.createPhi(Type.INT);
+    liveOut.addOperand(induction);
+    liveOut.addOperand(header);
+    exit.addInstructionToFront(liveOut);
+    new IRBuilder(exit).createRet(liveOut);
+
+    assertTrue(LICMRuntimeVersioning.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(4, liveOut.getNumOperands());
+    assertTrue(liveOut.getOperand(3) instanceof BasicBlock clonedHeader
+        && clonedHeader.getLabel().contains(".licm.fast."));
+    assertTrue(liveOut.getOperand(2) instanceof Instruction clonedInduction
+        && clonedInduction.getParent() == liveOut.getOperand(3));
+  }
+
+  @Test
+  void rejectsLoopVaryingStoreAddressEvenThoughScevDescribesIt() {
+    Fixture fixture = new Fixture(8, true, false);
+    FunctionAnalysisManager fam = analysisManager();
+
+    assertFalse(LICMRuntimeVersioning.run(fixture.function, fam));
+    IRVerifier.verifyFunction(fixture.function);
+    LoopAnalysis.Loop loop =
+        fam.getResult(LoopAnalysis.class, fixture.function).loops().getFirst();
+    assertTrue(
+        fam.getResult(LoopAccessAnalysis.class, fixture.function)
+                .getInfo(loop)
+                .stores()
+                .getFirst()
+                .address()
+            instanceof SCEV.AddRec);
+    assertEquals(Instruction.Opcode.BR, fixture.entry.getTerminator().getOpcode());
+    assertFalse(fixture.function.getBlocks().stream().anyMatch(
+        block -> block.getLabel().contains(".licm.fast.")));
+  }
+
+  @Test
+  void rejectsUnprofitableShortLoopAndMismatchedAccessShape() {
+    Fixture shortLoop = new Fixture(2, false, false);
+    Fixture mismatched = new Fixture(8, false, true);
+
+    assertFalse(LICMRuntimeVersioning.run(shortLoop.function, analysisManager()));
+    assertFalse(LICMRuntimeVersioning.run(mismatched.function, analysisManager()));
+    IRVerifier.verifyFunction(shortLoop.function);
+    IRVerifier.verifyFunction(mismatched.function);
+  }
+
+  private static BasicBlock blockContaining(Function function, String labelPart) {
+    return function.getBlocks().stream()
+        .filter(block -> block.getLabel().contains(labelPart))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    FunctionAnalysisManager fam = new FunctionAnalysisManager();
+    fam.registerPass(DominatorTreeAnalysis.class, new DominatorTreeAnalysis());
+    fam.registerPass(LoopAnalysis.class, new LoopAnalysis());
+    fam.registerPass(ScalarEvolutionAnalysis.class, new ScalarEvolutionAnalysis());
+    fam.registerPass(LoopAccessAnalysis.class, new LoopAccessAnalysis());
+    return fam;
+  }
+
+  private static final class Fixture {
+    private static final Type ARRAY = Type.array(Type.INT, 32);
+
+    final Module module = new Module();
+    final Function function = new Function("versioned", Type.VOID);
+    final Value source = function.addArgument(Type.PTR, "source");
+    final Value destination = function.addArgument(Type.PTR, "destination");
+    final BasicBlock entry = function.addBlock("entry");
+    final BasicBlock header = function.addBlock("header");
+    final BasicBlock body = function.addBlock("body");
+    final BasicBlock exit = function.addBlock("exit");
+    final Instruction load;
+    final Instruction store;
+
+    Fixture(int bound, boolean varyingStoreAddress, boolean mismatchedShape) {
+      module.addFunction(function);
+      new IRBuilder(entry).createBr(header);
+
+      IRBuilder headerBuilder = new IRBuilder(header);
+      Instruction induction = headerBuilder.createPhi(Type.INT);
+      induction.addOperand(Constant.intConst(0));
+      induction.addOperand(entry);
+      load = headerBuilder.createLoad(Type.INT, source);
+      Instruction condition =
+          headerBuilder.createICmp("slt", induction, Constant.intConst(bound));
+      headerBuilder.createCondBr(condition, body, exit);
+
+      IRBuilder bodyBuilder = new IRBuilder(body);
+      Value storePointer = destination;
+      if (varyingStoreAddress) {
+        storePointer = bodyBuilder.createGEP(
+            ARRAY,
+            destination,
+            new Value[] {Constant.int64Const(0), induction},
+            true);
+      }
+      Value stored = bodyBuilder.createAdd(load, Constant.intConst(1));
+      store =
+          mismatchedShape
+              ? bodyBuilder.createStore(
+                  bodyBuilder.createSExt(stored, Type.I64), storePointer)
+              : bodyBuilder.createStore(stored, storePointer);
+      Instruction next = bodyBuilder.createAdd(induction, Constant.intConst(1));
+      induction.addOperand(next);
+      induction.addOperand(body);
+      bodyBuilder.createBr(header);
+      new IRBuilder(exit).createRetVoid();
+    }
+  }
+}
