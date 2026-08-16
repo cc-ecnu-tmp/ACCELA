@@ -76,10 +76,9 @@ public class Parser {
    * resolves dimension expressions and turns it into the final parameter type.
    */
   private Node parseFuncFParam() {
-    Token tt = peek();
-    if (tt.type == INT) consume(INT);
-    else consume(FLOAT);
-    Node p = new Node(Tag.PARM, consume(IDENT).text, tt.type == FLOAT ? Ty.FLOAT : Ty.INT);
+    Ty paramType = parseVarType();
+    if (paramType == Ty.VOID) throw new RuntimeException("Function parameter cannot be void");
+    Node p = new Node(Tag.PARM, consume(IDENT).text, paramType);
     List<Node> dimExprs = new ArrayList<>();
     if (peek().type == LS) {
       consume(LS);
@@ -110,7 +109,7 @@ public class Parser {
   /** Parses a declaration statement or ordinary statement appearing inside a block. */
   private Node parseBlockItem() {
     Token tok = peek();
-    if (tok.type == INT || tok.type == CONST || tok.type == FLOAT) {
+    if (tok.type == CONST || isTypeStart(0)) {
       Node ds = new Node(Tag.DECL_STMT);
       ds.kids.addAll(parseVarDeclList());
       return ds;
@@ -125,11 +124,7 @@ public class Parser {
       consume(CONST);
       isConst = true;
     }
-    Token tt = peek();
-    if (tt.type == INT) consume(INT);
-    else if (tt.type == FLOAT) consume(FLOAT);
-    else consume(VOID);
-    Ty baseTy = tt.type == FLOAT ? Ty.FLOAT : tt.type == VOID ? Ty.VOID : Ty.INT;
+    Ty baseTy = parseVarType();
     List<Node> decls = new ArrayList<>();
     while (true) {
       decls.add(parseVarDef(baseTy, isConst));
@@ -138,6 +133,63 @@ public class Parser {
     }
     consume(SEMI);
     return decls;
+  }
+
+  /** Parses scalar types plus the two provisional fixed-vector spellings. */
+  private Ty parseVarType() {
+    Token tok = peek();
+    if (tok.type == INT) {
+      consume(INT);
+      return Ty.INT;
+    }
+    if (tok.type == FLOAT) {
+      consume(FLOAT);
+      return Ty.FLOAT;
+    }
+    if (tok.type == VOID) {
+      consume(VOID);
+      return Ty.VOID;
+    }
+    if (tok.type == IDENT && tok.text.equals("vector")) {
+      consume(IDENT);
+      Token elem = peek();
+      if (elem.type != INT && elem.type != FLOAT)
+        throw new RuntimeException("Expected int or float after vector");
+      consume(elem.type);
+      return Ty.inferredVector(elem.type == FLOAT ? Ty.FLOAT : Ty.INT);
+    }
+    int lanes = vectorLanes(tok.text);
+    if (tok.type == IDENT && lanes > 0) {
+      consume(IDENT);
+      return Ty.vector(tok.text.startsWith("float") ? Ty.FLOAT : Ty.INT, lanes);
+    }
+    throw new RuntimeException("Expected type but got " + tok);
+  }
+
+  private boolean isTypeStart(int lookahead) {
+    Token tok = peek(lookahead);
+    if (tok.type == INT || tok.type == FLOAT || tok.type == VOID) return true;
+    if (tok.type != IDENT) return false;
+    if (tok.text.equals("vector")) {
+      T next = peek(lookahead + 1).type;
+      return next == INT || next == FLOAT;
+    }
+    return vectorLanes(tok.text) > 0;
+  }
+
+  private static int vectorLanes(String spelling) {
+    String suffix;
+    if (spelling.startsWith("int")) suffix = spelling.substring(3);
+    else if (spelling.startsWith("float")) suffix = spelling.substring(5);
+    else return 0;
+    if (suffix.isEmpty()) return 0;
+    for (int i = 0; i < suffix.length(); i++) if (!Character.isDigit(suffix.charAt(i))) return 0;
+    try {
+      int lanes = Integer.parseInt(suffix);
+      return lanes > 0 ? lanes : 0;
+    } catch (NumberFormatException ignored) {
+      return 0;
+    }
   }
 
   /** Parses one declared variable/constant, including optional dimensions and initializer. */
