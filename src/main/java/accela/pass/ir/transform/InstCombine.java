@@ -48,6 +48,9 @@ public final class InstCombine {
       for (Instruction instruction : List.copyOf(block.getInstructions())) {
         changed |= foldExactPowerOfTwoDivision(instruction);
         changed |= foldVectorLaneOperation(instruction);
+        changed |= foldVectorRebuild(instruction);
+        changed |= foldIdentityShuffle(instruction);
+        changed |= foldRedundantInsert(instruction);
       }
     }
     return changed;
@@ -56,11 +59,18 @@ public final class InstCombine {
   /** Forwards constant-lane extracts through vector constructors and updates. */
   private static boolean foldVectorLaneOperation(Instruction extract) {
     if (extract.getOpcode() != Instruction.Opcode.EXTRACT_ELEMENT
-        || !(extract.getOperand(1) instanceof Constant.Int lane)
-        || !(extract.getOperand(0) instanceof Instruction vector)) return false;
+        || !(extract.getOperand(1) instanceof Constant.Int lane)) return false;
     int index = (int) lane.value;
+    Type vectorType = extract.getOperand(0).getType();
+    if (index < 0 || index >= vectorType.getLaneCount()) return false;
     Value replacement = null;
-    if (vector.getOpcode() == Instruction.Opcode.BUILD_VECTOR
+    if (extract.getOperand(0) instanceof Constant.Vector vectorConstant) {
+      replacement = vectorConstant.elements.get(index);
+    } else if (extract.getOperand(0) instanceof Constant.Zero) {
+      replacement = scalarZero(vectorType.getElementType());
+    } else if (!(extract.getOperand(0) instanceof Instruction vector)) {
+      return false;
+    } else if (vector.getOpcode() == Instruction.Opcode.BUILD_VECTOR
         && index >= 0 && index < vector.getNumOperands()) {
       replacement = vector.getOperand(index);
     } else if (vector.getOpcode() == Instruction.Opcode.SPLAT) {
@@ -79,6 +89,68 @@ public final class InstCombine {
     extract.replaceAllUsesWith(replacement);
     extract.eraseFromParent();
     return true;
+  }
+
+  /** Removes a vector rebuilt lane-for-lane from the same source vector. */
+  private static boolean foldVectorRebuild(Instruction build) {
+    if (build.getOpcode() != Instruction.Opcode.BUILD_VECTOR) return false;
+    Value source = null;
+    for (int lane = 0; lane < build.getNumOperands(); lane++) {
+      if (!(build.getOperand(lane) instanceof Instruction extract)
+          || extract.getOpcode() != Instruction.Opcode.EXTRACT_ELEMENT
+          || !(extract.getOperand(1) instanceof Constant.Int index)
+          || index.value != lane) return false;
+      if (source == null) source = extract.getOperand(0);
+      else if (source != extract.getOperand(0)) return false;
+    }
+    if (source == null || !source.getType().equals(build.getType())) return false;
+    build.replaceAllUsesWith(source);
+    build.eraseFromParent();
+    return true;
+  }
+
+  /** Removes shuffles whose mask selects one input unchanged. */
+  private static boolean foldIdentityShuffle(Instruction shuffle) {
+    if (shuffle.getOpcode() != Instruction.Opcode.SHUFFLE_VECTOR
+        || !(shuffle.getOperand(2) instanceof Constant.Vector mask)) return false;
+    int lanes = shuffle.getOperand(0).getType().getLaneCount();
+    if (shuffle.getType().getLaneCount() != lanes) return false;
+    boolean leftIdentity = true;
+    boolean rightIdentity = true;
+    for (int lane = 0; lane < lanes; lane++) {
+      if (!(mask.elements.get(lane) instanceof Constant.Int index)) return false;
+      leftIdentity &= index.value == lane;
+      rightIdentity &= index.value == lanes + lane;
+    }
+    Value replacement = leftIdentity ? shuffle.getOperand(0)
+        : rightIdentity ? shuffle.getOperand(1) : null;
+    if (replacement == null) return false;
+    shuffle.replaceAllUsesWith(replacement);
+    shuffle.eraseFromParent();
+    return true;
+  }
+
+  /** Removes insertion of a lane extracted unchanged from the same vector. */
+  private static boolean foldRedundantInsert(Instruction insert) {
+    if (insert.getOpcode() != Instruction.Opcode.INSERT_ELEMENT
+        || !(insert.getOperand(1) instanceof Instruction extract)
+        || extract.getOpcode() != Instruction.Opcode.EXTRACT_ELEMENT
+        || extract.getOperand(0) != insert.getOperand(0)
+        || !(insert.getOperand(2) instanceof Constant.Int insertedLane)
+        || !(extract.getOperand(1) instanceof Constant.Int extractedLane)
+        || insertedLane.value != extractedLane.value
+        || insertedLane.value < 0
+        || insertedLane.value >= insert.getType().getLaneCount()) return false;
+    insert.replaceAllUsesWith(insert.getOperand(0));
+    insert.eraseFromParent();
+    return true;
+  }
+
+  private static Constant scalarZero(Type type) {
+    if (type == Type.FLOAT) return Constant.floatConst(0.0f);
+    if (type == Type.I1) return Constant.boolConst(false);
+    if (type == Type.I64) return Constant.int64Const(0);
+    return Constant.intConst(0);
   }
 
   /** Cancels repeated terms in a bounded i32 add/sub tree when that reduces instruction count. */
