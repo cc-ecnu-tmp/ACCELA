@@ -1,0 +1,111 @@
+int4 global_state = {1, 2, 3, 4};
+int4 global_rows[2] = {
+    {1, 2, 3, 4},
+    {5, 6, 7, 8}
+};
+
+int checksum4(int4 values) {
+    return values[0]
+           + values[1] * 10
+           + values[2] * 100
+           + values[3] * 1000;
+}
+
+int float_checksum(float4 values) {
+    return values[0]
+           + values[1] * 10
+           + values[2] * 100
+           + values[3] * 1000;
+}
+
+int main() {
+    // Explicit widths, inferred widths, scalar broadcast, and right-zero-padding.
+    int2 short_values = {10, 20};
+    int4 long_values = {1, 2, 3, 4};
+    vector int inferred = {5, 6, 7, 8, 9, 10};
+    vector float inferred_floats = {0.5, 1.5, 2.5, 3.5, 4.5};
+    int4 padded = short_values + long_values;
+    int4 arithmetic = padded * 2 - 1;
+
+    putint(checksum4(padded));
+    putch(10);
+    putint(checksum4(arithmetic));
+    putch(10);
+    putint(inferred[5]);
+    putch(10);
+    int inferred_float_tail = inferred_floats[4];
+    putint(inferred_float_tail);
+    putch(10);
+
+    // Integer vector division, remainder, comparisons, and comparison-result widening.
+    int4 divisors = {3, 5, 2, 4};
+    int4 moduli = {4, 6, 4, 3};
+    int4 thresholds = {20, 40, 10, 0};
+    int4 divided = arithmetic / divisors;
+    int4 remainders = arithmetic % moduli;
+    int4 greater = arithmetic > thresholds;
+    int4 equal_to_one = remainders == 1;
+
+    putint(checksum4(divided));
+    putch(10);
+    putint(checksum4(remainders));
+    putch(10);
+    putint(checksum4(greater));
+    putch(10);
+    putint(checksum4(equal_to_one));
+    putch(10);
+
+    // Mixed numeric promotion, vector conversion, floating arithmetic, and double negation.
+    int4 exact_integral_promotion = short_values + 1.0;
+    float4 promoted = short_values + 0.5;
+    int4 converted = promoted;
+    float4 floats = {1.5, 2.5, 3.5, 4.5};
+    float4 adjusted = -(floats * 2.0 - 1.0) / 2.0;
+    float4 restored = -(-adjusted);
+
+    putint(checksum4(exact_integral_promotion));
+    putch(10);
+    putint(checksum4(converted));
+    putch(10);
+    putint(float_checksum(restored));
+    putch(10);
+
+    // Lane reordering lowers through extract/build-vector operations.
+    int4 reordered = {
+        arithmetic[2], arithmetic[0], arithmetic[3], arithmetic[1]
+    };
+    putint(checksum4(reordered));
+    putch(10);
+
+    // Dynamic lane access and update.
+    int lane = 3;
+    arithmetic[lane] = arithmetic[0] + arithmetic[1];
+    putint(checksum4(arithmetic));
+    putch(10);
+
+    // Global vectors, arrays of vectors, whole-vector stores, and lane stores.
+    global_state = global_state + 2;
+    global_rows[0] = global_rows[0] + global_rows[1];
+    global_rows[1][2] = arithmetic[lane];
+
+    putint(checksum4(global_state));
+    putch(10);
+    putint(checksum4(global_rows[0]));
+    putch(10);
+    putint(checksum4(global_rows[1]));
+    putch(10);
+
+    // Algebraic identities exercised by InstSimplify.
+    int4 zero_by_subtract = (arithmetic + 0) * 1 - arithmetic;
+    int4 zero_by_remainder = arithmetic % 1;
+    putint(checksum4(zero_by_subtract) + checksum4(zero_by_remainder));
+    putch(10);
+
+    // Rebuilding all lanes exercises extract/build-vector combining.
+    int4 rebuilt = {
+        arithmetic[0], arithmetic[1], arithmetic[2], arithmetic[3]
+    };
+    putint(checksum4(rebuilt));
+    putch(10);
+    return 0;
+}

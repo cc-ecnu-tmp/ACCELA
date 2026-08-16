@@ -1,0 +1,11 @@
+int main() {
+    vector int integers = {1, 2, 3, 4, 5, 6};
+    vector float floats = {0.5, 1.5, 2.5, 3.5, 4.5};
+    integers = integers + 1;
+    int converted = floats[4];
+    putint(integers[5]);
+    putch(10);
+    putint(converted);
+    putch(10);
+    return 0;
+}

@@ -1,0 +1,22 @@
+int main() {
+    vector int state = {3, 5, 7, 11};
+    int checksum = 0;
+    int iter = 0;
+    while (iter < 1024) {
+        int4 even = {state[2], state[0], state[3], state[1]};
+        int4 odd = {state[1], state[3], state[0], state[2]};
+        if (iter % 2 == 0) {
+            state = even + iter % 17;
+        } else {
+            state = odd + 1.0;
+        }
+        int lane = iter % 4;
+        state[lane] = state[lane] + 3;
+        checksum = (checksum + state[0] * 3 + state[1] * 5
+                    + state[2] * 7 + state[3] * 11) % 1000000007;
+        iter = iter + 1;
+    }
+    putint(checksum);
+    putch(10);
+    return 0;
+}

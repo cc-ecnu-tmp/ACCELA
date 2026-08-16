@@ -1,0 +1,14 @@
+int main() {
+    int2 shortv = {1, 2};
+    int4 longv = {10, 20, 30, 40};
+    int4 padded = shortv + longv;
+    int4 exact = 1.0 + shortv;
+    float4 mixed = 1.5 + shortv;
+    putint(padded[0]); putch(32); putint(padded[1]); putch(32);
+    putint(padded[2]); putch(32); putint(padded[3]); putch(10);
+    putint(exact[0]); putch(32); putint(exact[1]); putch(32);
+    putint(exact[2]); putch(32); putint(exact[3]); putch(10);
+    putint(mixed[0]); putch(32); putint(mixed[1]); putch(32);
+    putint(mixed[2]); putch(32); putint(mixed[3]); putch(10);
+    return 0;
+}

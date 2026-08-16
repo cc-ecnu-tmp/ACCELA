@@ -1,0 +1,24 @@
+int main() {
+    int4 r0 = {1, 2, 3, 4};
+    vector int r1 = {5, 6, 7, 8};
+    int4 r2 = {9, 10, 11, 12};
+    vector int r3 = {13, 14, 15, 16};
+    int checksum = 0;
+    int iter = 0;
+    while (iter < 256) {
+        int4 c0 = {r0[0], r1[0], r2[0], r3[0]};
+        int4 c1 = {r0[1], r1[1], r2[1], r3[1]};
+        int4 c2 = {r0[2], r1[2], r2[2], r3[2]};
+        int4 c3 = {r0[3], r1[3], r2[3], r3[3]};
+        int bias = iter % 13;
+        r0 = c0 + bias;
+        r1 = c1 + 1;
+        r2 = c2 + 2;
+        r3 = c3 + 3;
+        checksum = (checksum + r0[0] + r1[1] + r2[2] + r3[3]) % 1000000007;
+        iter = iter + 1;
+    }
+    putint(checksum);
+    putch(10);
+    return 0;
+}

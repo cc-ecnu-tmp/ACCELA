@@ -1,0 +1,17 @@
+int4 state = {1, 2, 3, 4};
+
+int main() {
+    int checksum = 0;
+    int iter = 0;
+    while (iter < 128) {
+        state = state + iter % 7;
+        int lane = iter % 4;
+        state[lane] = state[lane] + 2;
+        checksum = (checksum + state[0] + state[1] * 3
+                    + state[2] * 5 + state[3] * 7) % 1000000007;
+        iter = iter + 1;
+    }
+    putint(checksum);
+    putch(10);
+    return 0;
+}

@@ -1,0 +1,35 @@
+int sum8(int8 values, int bias) {
+    return values[0] + values[1] + values[2] + values[3]
+           + values[4] + values[5] + values[6] + values[7] + bias;
+}
+
+int sumf(float8 values, float bias) {
+    return values[0] + values[1] + values[2] + values[3]
+           + values[4] + values[5] + values[6] + values[7] + bias;
+}
+
+int mix(int4 integers, vector float floats) {
+    return integers[0] + integers[1] + integers[2] + integers[3]
+           + floats[0] + floats[1] + floats[2] + floats[3];
+}
+
+int recurse(int4 state, int depth) {
+    if (depth == 0) {
+        return state[0] + state[1] + state[2] + state[3];
+    }
+    state = state + depth;
+    return recurse(state, depth - 1) + 1;
+}
+
+int main() {
+    int bias = getint();
+    int8 values = {1, 2, 3, 4, 5, 6, 7, 8};
+    float8 float_values = {0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5};
+    int4 integers = {1, 2, 3, 4};
+    float4 floats = {1.5, 2.5, 3.5, 4.5};
+    putint(sum8(values, bias)); putch(10);
+    putint(sumf(float_values, bias)); putch(10);
+    putint(mix(integers + bias, floats)); putch(10);
+    putint(recurse(integers, 3)); putch(10);
+    return 0;
+}

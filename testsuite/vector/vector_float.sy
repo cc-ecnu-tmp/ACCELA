@@ -1,0 +1,18 @@
+int main() {
+    int4 base = {1, 2, 3, 4};
+    float4 state = {0.5, 1.5, 2.5, 3.5};
+    vector float step = base + state;
+    int checksum = 0;
+    int iter = 0;
+    while (iter < 256) {
+        state = state + step + 1;
+        int lane = iter % 4;
+        state[lane] = state[lane] + 0.25;
+        int delta = state[0] + state[1] * 2 + state[2] * 3 + state[3] * 4;
+        checksum = (checksum + delta) % 1000000007;
+        iter = iter + 1;
+    }
+    putint(checksum);
+    putch(10);
+    return 0;
+}
