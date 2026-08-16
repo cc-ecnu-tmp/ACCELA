@@ -29,6 +29,7 @@ python -m tools.targetlab verify-embedded \
 - [R2 分层调度器状态与边界](docs/r2-scheduler-status.zh-CN.md)
 - [TargetProfile JSON v1 规范](docs/target-profile-json-v1.zh-CN.md)
 - [TargetLab 现场手册](docs/targetlab-field-guide.zh-CN.md)
+- [BOOM v3 板端取样操作手册](docs/targetlab-boomv3-sampling.zh-CN.md)
 - [Linux 测量后端](docs/targetlab-linux.zh-CN.md)
 - [Bare-metal、OpenOCD 与 Mailbox](docs/targetlab-baremetal.zh-CN.md)
 - [Profile 生成与嵌入](docs/profile-embedding.zh-CN.md)

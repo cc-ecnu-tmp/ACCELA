@@ -6,6 +6,8 @@
 
 TargetLab 不经过 ACCELA 编译，只用显式指定的 RISC-V GCC/binutils 构建汇编微核。现场依赖仅为 POSIX sh、Python 3、make、目标 GCC/binutils；bare-metal 另需 OpenOCD 与 GDB。套件不联网、不使用容器、不安装运行时包。
 
+BOOM v3 实板应按 [BOOM v3 板端 TargetLab 取样操作手册](targetlab-boomv3-sampling.zh-CN.md) 执行。该手册补充板卡/bitstream 身份冻结、核心频率来源、hart 隔离、Linux 与 bare-metal 选择、121 项完整度、R1/R2 配对测量和现场恢复要求。
+
 解包后先运行 `python -m tools.targetlab selftest`。该命令在临时目录验证 `collect -> profile -> validate -> embed -> report` 全链路，不产生可用于比赛的校准 Profile；失败时不得进入现场测量。
 
 ## 1. Linux 后端
