@@ -18,7 +18,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Hoists loop-invariant computations and promotes loop-local scalar memory traffic. */
+/** Hoists loop-invariant computations and promotes loop-local scalar/vector memory traffic. */
 public final class LICM {
   private LICM() {}
 
@@ -138,8 +138,7 @@ public final class LICM {
           executesOnEveryBackedge(instruction, loop, dominators);
       case GEP, ZEXT, SEXT -> true;
       case SDIV, SREM -> executesOnEveryBackedge(instruction, loop, dominators)
-          && instruction.getOperand(1) instanceof Constant.Int divisor
-          && divisor.value != 0;
+          && isNonZeroConstant(instruction.getOperand(1));
       case LOAD -> shouldHoistLoad(instruction, loop, memory)
           && (instruction.getParent() == loop.header()
               || isScalarObject(instruction.getOperand(0)))
@@ -150,6 +149,14 @@ public final class LICM {
           && modRef != null && modRef.isPure(instruction);
       default -> false;
     };
+  }
+
+  private static boolean isNonZeroConstant(Value value) {
+    if (value instanceof Constant.Int integer) return integer.value != 0;
+    if (value instanceof Constant.Vector vector) {
+      return vector.elements.stream().allMatch(LICM::isNonZeroConstant);
+    }
+    return false;
   }
 
   private static boolean executesOnEveryBackedge(

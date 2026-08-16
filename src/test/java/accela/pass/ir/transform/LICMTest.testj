@@ -17,6 +17,7 @@ import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.analysis.DominatorTreeAnalysis;
 import accela.pass.ir.analysis.LoopAnalysis;
 import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class LICMTest {
@@ -303,6 +304,44 @@ final class LICMTest {
 
     assertTrue(LICM.runOnFunction(function, analysisManager()));
     assertSame(entry, vector.getParent());
+  }
+
+  @Test
+  void hoistsVectorDivisionByNonZeroConstants() {
+    Module module = new Module();
+    Function function = loopFunction(module, "vector_division");
+    Type int2 = Type.vector(Type.INT, 2);
+    Value dividend = function.addArgument(int2, "dividend");
+    BasicBlock entry = function.getBlocks().get(0);
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(body.getTerminator());
+    Instruction division = builder.createSDiv(dividend, Constant.vector(
+        int2, List.of(Constant.intConst(3), Constant.intConst(5))));
+    Instruction remainder = builder.createSRem(dividend, Constant.vector(
+        int2, List.of(Constant.intConst(-2), Constant.intConst(7))));
+
+    assertTrue(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(entry, division.getParent());
+    assertSame(entry, remainder.getParent());
+  }
+
+  @Test
+  void keepsVectorDivisionWithAZeroLaneInTheLoop() {
+    Module module = new Module();
+    Function function = loopFunction(module, "unsafe_vector_division");
+    Type int2 = Type.vector(Type.INT, 2);
+    Value dividend = function.addArgument(int2, "dividend");
+    BasicBlock body = function.getBlocks().get(2);
+    IRBuilder builder = new IRBuilder();
+    builder.setInsertPointBefore(body.getTerminator());
+    Instruction division = builder.createSDiv(dividend, Constant.vector(
+        int2, List.of(Constant.intConst(3), Constant.intConst(0))));
+
+    assertFalse(LICM.runOnFunction(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertSame(body, division.getParent());
   }
 
   @Test

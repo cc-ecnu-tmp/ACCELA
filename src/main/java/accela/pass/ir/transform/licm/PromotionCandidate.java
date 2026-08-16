@@ -16,7 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** A scalar object whose memory traffic LICM can replace with loop-carried SSA values. */
+/** A scalar/vector object whose memory traffic LICM can replace with loop-carried SSA values. */
 record PromotionCandidate(Value pointer, Type valueType, List<ExitEdge> exitEdges) {
   record ExitEdge(BasicBlock predecessor, BasicBlock exit) {}
 

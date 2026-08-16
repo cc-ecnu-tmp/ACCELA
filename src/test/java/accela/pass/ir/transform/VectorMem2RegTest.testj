@@ -44,4 +44,45 @@ final class VectorMem2RegTest {
             || instruction.getOpcode() == Instruction.Opcode.STORE)
         .count());
   }
+
+  @Test
+  void createsVectorPhisForBranchingStores() {
+    Function function = new Function("vector_mem2reg_phi", Type.INT);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    Type int2 = Type.vector(Type.INT, 2);
+    Constant.Vector leftValue = Constant.vector(
+        int2, List.of(Constant.intConst(1), Constant.intConst(2)));
+    Constant.Vector rightValue = Constant.vector(
+        int2, List.of(Constant.intConst(3), Constant.intConst(4)));
+    IRBuilder entryBuilder = new IRBuilder(entry);
+    Value slot = entryBuilder.createAlloca(int2);
+    entryBuilder.createCondBr(condition, left, right);
+    IRBuilder leftBuilder = new IRBuilder(left);
+    leftBuilder.createStore(leftValue, slot);
+    leftBuilder.createBr(merge);
+    IRBuilder rightBuilder = new IRBuilder(right);
+    rightBuilder.createStore(rightValue, slot);
+    rightBuilder.createBr(merge);
+    IRBuilder mergeBuilder = new IRBuilder(merge);
+    Value loaded = mergeBuilder.createLoad(int2, slot);
+    mergeBuilder.createRet(mergeBuilder.createExtractElement(loaded, Constant.intConst(0)));
+
+    assertTrue(PromoteMemoryToRegister.run(
+        function, new DominatorTreeAnalysis().run(function, null)));
+    IRVerifier.verifyFunction(function);
+
+    Instruction phi = merge.getInstructions().getFirst();
+    assertEquals(Instruction.Opcode.PHI, phi.getOpcode());
+    assertEquals(int2, phi.getType());
+    assertEquals(0, function.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.ALLOCA
+            || instruction.getOpcode() == Instruction.Opcode.LOAD
+            || instruction.getOpcode() == Instruction.Opcode.STORE)
+        .count());
+  }
 }

@@ -136,6 +136,37 @@ final class SCCPVectorTest {
   }
 
   @Test
+  void propagatesInsertedLanesThroughShuffleConversionAndComparison() {
+    Module module = new Module();
+    Type int2 = Type.vector(Type.INT, 2);
+    Type i64x2 = Type.vector(Type.I64, 2);
+    Function function = new Function("partial_vector_operations", Type.INT);
+    module.addFunction(function);
+    Value unknown = function.addArgument(int2, "unknown");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Value inserted = builder.createInsertElement(
+        unknown, Constant.intConst(9), Constant.intConst(1));
+    Value shuffled = builder.createShuffleVector(
+        inserted,
+        Constant.zero(int2),
+        Constant.vector(List.of(Constant.intConst(1), Constant.intConst(0))));
+    Value extended = builder.createSExt(shuffled, i64x2);
+    Value compared = builder.createICmp(
+        "eq",
+        extended,
+        Constant.vector(i64x2, List.of(Constant.int64Const(9), Constant.int64Const(0))));
+    Instruction extract = builder.createExtractElement(compared, Constant.intConst(0));
+    Instruction ret = builder.createRet(builder.createZExt(extract, Type.INT));
+
+    assertTrue(SCCP.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(1, result.value);
+    assertNull(extract.getParent());
+  }
+
+  @Test
   void foldsLaneWiseArithmeticComparisonAndStructuralOperations() {
     Module module = new Module();
     Function function = new Function("vector_integer_constants", Type.INT);

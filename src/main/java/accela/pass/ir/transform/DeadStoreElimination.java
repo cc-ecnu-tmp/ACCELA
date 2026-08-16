@@ -1,12 +1,9 @@
 package accela.pass.ir.transform;
 
 import accela.ir.BasicBlock;
-import accela.ir.ConstantFolding;
 import accela.ir.Function;
 import accela.ir.GlobalVariable;
 import accela.ir.Instruction;
-import accela.ir.Type;
-import accela.ir.Value;
 import accela.pass.PreservedAnalyses;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
@@ -58,38 +55,8 @@ public final class DeadStoreElimination {
 
   private static boolean mayAliasLocation(MemoryLocation left, MemoryLocation right) {
     if (!PointerProvenance.mayAlias(left.pointer(), right.pointer())) return false;
-    GlobalRange leftRange = constantGlobalRange(left);
-    GlobalRange rightRange = constantGlobalRange(right);
-    if (leftRange == null || rightRange == null) return true;
-    if (leftRange.global != rightRange.global) return false;
-    return !MemoryLocation.areDisjointAtOffset(
-        leftRange.byteOffset - rightRange.byteOffset,
-        left.byteSize(),
-        right.byteSize());
+    return !left.isKnownDisjoint(right);
   }
-
-  private static GlobalRange constantGlobalRange(MemoryLocation location) {
-    Value pointer = location.pointer();
-    if (!(pointer instanceof Instruction gep)
-        || !(PointerProvenance.root(pointer) instanceof GlobalVariable global)) return null;
-    Integer leaf = ConstantFolding.constantArrayIndex(global, gep);
-    if (leaf == null) return null;
-    try {
-      return new GlobalRange(
-          global,
-          Math.multiplyExact(
-              (long) leaf, MemoryLocation.byteSize(arrayLeafType(global.getValueType()))));
-    } catch (ArithmeticException overflow) {
-      return null;
-    }
-  }
-
-  private static Type arrayLeafType(Type type) {
-    while (type.isArray()) type = type.innerType;
-    return type;
-  }
-
-  private record GlobalRange(GlobalVariable global, long byteOffset) {}
 
   private static boolean runOnBlock(
       BasicBlock block, GlobalModRefAnalysis.Result modRef) {
@@ -118,19 +85,7 @@ public final class DeadStoreElimination {
   }
 
   private static boolean fullyCovers(MemoryLocation later, MemoryLocation earlier) {
-    if (later.fullyCovers(earlier)) return true;
-    GlobalRange laterRange = constantGlobalRange(later);
-    GlobalRange earlierRange = constantGlobalRange(earlier);
-    if (laterRange == null
-        || earlierRange == null
-        || laterRange.global != earlierRange.global) return false;
-    try {
-      long laterEnd = Math.addExact(laterRange.byteOffset, later.byteSize());
-      long earlierEnd = Math.addExact(earlierRange.byteOffset, earlier.byteSize());
-      return laterRange.byteOffset <= earlierRange.byteOffset && laterEnd >= earlierEnd;
-    } catch (ArithmeticException overflow) {
-      return false;
-    }
+    return later.isKnownToCover(earlier);
   }
 
   public static final class Pass implements ModulePass {

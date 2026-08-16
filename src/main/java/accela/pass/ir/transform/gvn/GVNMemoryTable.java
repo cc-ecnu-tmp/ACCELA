@@ -15,37 +15,43 @@ import java.util.Map;
 
 /** Tracks available loads along one dominator-tree path. */
 final class GVNMemoryTable {
-  private final Map<MemoryKey, AvailableLoad> loads = new HashMap<>();
+  private final Map<MemoryKey, AvailableValue> values = new HashMap<>();
 
   GVNMemoryTable() {}
 
-  private GVNMemoryTable(Map<MemoryKey, AvailableLoad> loads) {
-    this.loads.putAll(loads);
+  private GVNMemoryTable(Map<MemoryKey, AvailableValue> values) {
+    this.values.putAll(values);
   }
 
   GVNMemoryTable copy() {
-    return new GVNMemoryTable(loads);
+    return new GVNMemoryTable(values);
   }
 
   Value findOrAdd(Instruction instruction, GlobalModRefAnalysis.Result modRef) {
     if (instruction.getOpcode() == Instruction.Opcode.LOAD) {
       MemoryLocation location = MemoryLocation.fromInstruction(instruction);
-      AvailableLoad existing = loads.get(memoryKey(location));
-      if (existing != null && hasUniquePath(existing.value(), instruction)) {
+      AvailableValue existing = values.get(memoryKey(location));
+      if (existing != null && hasUniquePath(existing.origin(), instruction)) {
         return existing.value();
       }
-      loads.put(memoryKey(location), new AvailableLoad(location, instruction));
+      values.put(memoryKey(location), new AvailableValue(location, instruction, instruction));
     } else if (instruction.getOpcode() == Instruction.Opcode.STORE) {
       MemoryLocation location = MemoryLocation.fromInstruction(instruction);
-      loads.values().removeIf(
-          load -> PointerProvenance.mayAlias(
-              load.location().pointer(), location.pointer()));
+      values.values().removeIf(available -> mayOverlap(available.location(), location));
+      values.put(
+          memoryKey(location),
+          new AvailableValue(location, instruction.getOperand(0), instruction));
     } else if (instruction.getOpcode() == Instruction.Opcode.CALL) {
-      if (modRef == null) loads.clear();
-      else loads.values().removeIf(
-          load -> modRef.mayWrite(instruction, load.location().pointer()));
+      if (modRef == null) values.clear();
+      else values.values().removeIf(
+          available -> modRef.mayWrite(instruction, available.location().pointer()));
     }
     return null;
+  }
+
+  private static boolean mayOverlap(MemoryLocation left, MemoryLocation right) {
+    return PointerProvenance.mayAlias(left.pointer(), right.pointer())
+        && !left.isKnownDisjoint(right);
   }
 
   /**
@@ -99,7 +105,7 @@ final class GVNMemoryTable {
     return value;
   }
 
-  private record AvailableLoad(MemoryLocation location, Instruction value) {}
+  private record AvailableValue(MemoryLocation location, Value value, Instruction origin) {}
 
   private record MemoryKey(Object pointer, Type accessType, long byteSize) {}
 

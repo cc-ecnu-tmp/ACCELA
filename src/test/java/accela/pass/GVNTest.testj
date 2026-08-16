@@ -7,12 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
 import accela.ir.Function;
+import accela.ir.GlobalVariable;
 import accela.ir.IRBuilder;
 import accela.ir.Instruction;
 import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.ir.transform.gvn.GVN;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class GVNTest {
@@ -98,6 +100,72 @@ final class GVNTest {
 
     assertTrue(GVN.runOnFunction(function));
     assertSame(first, extracted.getOperand(0));
+    assertTrue(duplicate.getParent() == null);
+  }
+
+  @Test
+  void forwardsVectorStoresToLoads() {
+    Function function = new Function("vector_store_forwarding", Type.INT);
+    Type int2 = Type.vector(Type.INT, 2);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Value pointer = builder.createAlloca(int2);
+    Constant.Vector stored = Constant.vector(
+        int2, List.of(Constant.intConst(4), Constant.intConst(9)));
+    builder.createStore(stored, pointer);
+    Instruction loaded = builder.createLoad(int2, pointer);
+    Instruction extract = builder.createExtractElement(loaded, Constant.intConst(1));
+    builder.createRet(extract);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(stored, extract.getOperand(0));
+    assertTrue(loaded.getParent() == null);
+  }
+
+  @Test
+  void invalidatesStoredValuesAfterMayAliasWrites() {
+    Function function = new Function("store_clobber", Type.INT);
+    Value pointer = function.addArgument(Type.PTR, "pointer");
+    Value alias = function.addArgument(Type.PTR, "alias");
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    builder.createStore(Constant.intConst(1), pointer);
+    builder.createStore(Constant.intConst(2), alias);
+    Instruction loaded = builder.createLoad(Type.INT, pointer);
+    Instruction ret = builder.createRet(loaded);
+
+    assertFalse(GVN.runOnFunction(function));
+    assertSame(loaded, ret.getOperand(0));
+  }
+
+  @Test
+  void preservesVectorLoadsAcrossDisjointGlobalArrayStores() {
+    Module module = new Module();
+    Type int2 = Type.vector(Type.INT, 2);
+    Type arrayType = Type.array(int2, 2);
+    GlobalVariable vectors =
+        new GlobalVariable("vectors", arrayType, Constant.zero(arrayType), false);
+    module.addGlobal(vectors);
+    Function function = new Function("disjoint_vector_accesses", Type.INT);
+    module.addFunction(function);
+    IRBuilder builder = new IRBuilder(function.addBlock("entry"));
+    Value firstPointer = builder.createGEP(
+        arrayType,
+        vectors,
+        new Value[] {Constant.int64Const(0), Constant.int64Const(0)},
+        true);
+    Value secondPointer = builder.createGEP(
+        arrayType,
+        vectors,
+        new Value[] {Constant.int64Const(0), Constant.int64Const(1)},
+        true);
+    Instruction firstLoad = builder.createLoad(int2, secondPointer);
+    builder.createStore(Constant.zero(int2), firstPointer);
+    Instruction duplicate = builder.createLoad(int2, secondPointer);
+    Instruction extract = builder.createExtractElement(duplicate, Constant.intConst(0));
+    builder.createRet(extract);
+
+    assertTrue(GVN.runOnFunction(function));
+    assertSame(firstLoad, extract.getOperand(0));
     assertTrue(duplicate.getParent() == null);
   }
 

@@ -12,7 +12,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Replaces repeated loop accesses to a stable scalar address with an SSA value. */
+/** Replaces repeated loop accesses to a stable scalar/vector address with an SSA value. */
 final class LoopAccessPromotion {
   private LoopAccessPromotion() {}
 

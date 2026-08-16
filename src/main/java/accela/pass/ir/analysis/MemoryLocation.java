@@ -1,8 +1,11 @@
 package accela.pass.ir.analysis;
 
+import accela.ir.ConstantFolding;
+import accela.ir.GlobalVariable;
 import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
+import accela.pass.ir.analysis.alias.PointerProvenance;
 import java.util.Objects;
 
 /** A typed byte range accessed through an opaque IR pointer. */
@@ -56,4 +59,53 @@ public record MemoryLocation(Value pointer, Type accessType, long byteSize) {
       long leftMinusRight, long leftSize, long rightSize) {
     return leftMinusRight >= rightSize || leftMinusRight <= -leftSize;
   }
+
+  /** Whether constant byte ranges prove that two accesses do not overlap. */
+  public boolean isKnownDisjoint(MemoryLocation other) {
+    ConstantRange left = constantRange();
+    ConstantRange right = other.constantRange();
+    if (left == null || right == null || left.base != right.base) return false;
+    try {
+      return areDisjointAtOffset(
+          Math.subtractExact(left.byteOffset, right.byteOffset), byteSize, other.byteSize);
+    } catch (ArithmeticException overflow) {
+      return false;
+    }
+  }
+
+  /** Whether this write's constant byte range fully covers {@code other}. */
+  public boolean isKnownToCover(MemoryLocation other) {
+    if (fullyCovers(other)) return true;
+    ConstantRange later = constantRange();
+    ConstantRange earlier = other.constantRange();
+    if (later == null || earlier == null || later.base != earlier.base) return false;
+    try {
+      long laterEnd = Math.addExact(later.byteOffset, byteSize);
+      long earlierEnd = Math.addExact(earlier.byteOffset, other.byteSize);
+      return later.byteOffset <= earlier.byteOffset && laterEnd >= earlierEnd;
+    } catch (ArithmeticException overflow) {
+      return false;
+    }
+  }
+
+  private ConstantRange constantRange() {
+    if (!(pointer instanceof Instruction gep)
+        || !(PointerProvenance.root(pointer) instanceof GlobalVariable global)) return null;
+    Integer leaf = ConstantFolding.constantArrayIndex(global, gep);
+    if (leaf == null) return null;
+    try {
+      return new ConstantRange(
+          global,
+          Math.multiplyExact((long) leaf, byteSize(arrayLeafType(global.getValueType()))));
+    } catch (ArithmeticException overflow) {
+      return null;
+    }
+  }
+
+  private static Type arrayLeafType(Type type) {
+    while (type.isArray()) type = type.innerType;
+    return type;
+  }
+
+  private record ConstantRange(Value base, long byteOffset) {}
 }
