@@ -35,22 +35,39 @@ public final class SCCP {
     }
   }
 
-  enum ValKind { BOT, CONST, TOP }
+  enum ValKind { BOT, CONST, VECTOR, TOP }
 
   static final class ConstVal {
     final ValKind kind;
     final Constant constant;
+    final Type vectorType;
+    final List<ConstVal> elements;
 
-    private ConstVal(ValKind kind, Constant constant) {
+    private ConstVal(ValKind kind, Constant constant, Type vectorType, List<ConstVal> elements) {
       this.kind = kind;
       this.constant = constant;
+      this.vectorType = vectorType;
+      this.elements = elements;
     }
 
-    static final ConstVal BOT = new ConstVal(ValKind.BOT, null);
-    static final ConstVal TOP = new ConstVal(ValKind.TOP, null);
+    static final ConstVal BOT = new ConstVal(ValKind.BOT, null, null, null);
+    static final ConstVal TOP = new ConstVal(ValKind.TOP, null, null, null);
 
     static ConstVal ofConstant(Constant constant) {
-      return new ConstVal(ValKind.CONST, constant);
+      return new ConstVal(ValKind.CONST, constant, null, null);
+    }
+
+    static ConstVal ofVector(Type type, List<ConstVal> elements) {
+      if (!type.isVector() || elements.size() != type.getLaneCount()) {
+        throw new IllegalArgumentException("vector lattice value shape mismatch for " + type);
+      }
+      if (elements.stream().allMatch(element -> element.kind == ValKind.BOT)) return BOT;
+      if (elements.stream().allMatch(element -> element.kind == ValKind.TOP)) return TOP;
+      if (elements.stream().allMatch(ConstVal::isConst)) {
+        return ofConstant(Constant.vector(
+            type, elements.stream().map(element -> element.constant).toList()));
+      }
+      return new ConstVal(ValKind.VECTOR, null, type, List.copyOf(elements));
     }
 
     boolean isConst() { return kind == ValKind.CONST; }
@@ -59,14 +76,38 @@ public final class SCCP {
       if (a.kind == ValKind.BOT) return b;
       if (b.kind == ValKind.BOT) return a;
       if (a.kind == ValKind.TOP || b.kind == ValKind.TOP) return TOP;
+      List<ConstVal> left = vectorElements(a);
+      List<ConstVal> right = vectorElements(b);
+      if (left != null || right != null) {
+        if (left == null || right == null || left.size() != right.size()) return TOP;
+        Type type = a.kind == ValKind.VECTOR ? a.vectorType
+            : b.kind == ValKind.VECTOR ? b.vectorType : a.constant.getType();
+        List<ConstVal> joined = new ArrayList<>();
+        for (int lane = 0; lane < left.size(); lane++) {
+          joined.add(join(left.get(lane), right.get(lane)));
+        }
+        return ofVector(type, joined);
+      }
       if (sameConstant(a.constant, b.constant)) return a;
       return TOP;
     }
 
     boolean equals(ConstVal other) {
       if (kind != other.kind) return false;
-      if (kind != ValKind.CONST) return true;
-      return sameConstant(constant, other.constant);
+      if (kind == ValKind.CONST) return sameConstant(constant, other.constant);
+      if (kind != ValKind.VECTOR) return true;
+      if (!vectorType.equals(other.vectorType)) return false;
+      for (int lane = 0; lane < elements.size(); lane++) {
+        if (!elements.get(lane).equals(other.elements.get(lane))) return false;
+      }
+      return true;
+    }
+
+    private static List<ConstVal> vectorElements(ConstVal value) {
+      if (value.kind == ValKind.VECTOR) return value.elements;
+      if (!value.isConst() || !value.constant.getType().isVector()) return null;
+      List<Constant> constants = constantElements(value.constant);
+      return constants == null ? null : constants.stream().map(ConstVal::ofConstant).toList();
     }
   }
 
@@ -265,184 +306,203 @@ public final class SCCP {
       ConstVal lhs = in.get(inst.getOperand(0));
       ConstVal rhs = in.get(inst.getOperand(1));
       if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
-      if (lhs.isConst() && rhs.isConst()) {
-        List<Constant> left = constantElements(lhs.constant);
-        List<Constant> right = constantElements(rhs.constant);
-        if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
-        Type elementType = scalarElement(inst.getType());
-        List<Constant> result = new ArrayList<>();
-        for (int lane = 0; lane < left.size(); lane++) {
-          Long a = integerValue(left.get(lane));
-          Long b = integerValue(right.get(lane));
-          if (a == null || b == null) return ConstVal.TOP;
-          Long folded = op.apply(a, b);
-          if (folded == null) return ConstVal.TOP;
-          result.add(integerConstant(elementType, folded));
+      List<ConstVal> left = latticeElements(lhs, inst.getOperand(0).getType());
+      List<ConstVal> right = latticeElements(rhs, inst.getOperand(1).getType());
+      if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
+      Type elementType = scalarElement(inst.getType());
+      List<ConstVal> result = new ArrayList<>();
+      for (int lane = 0; lane < left.size(); lane++) {
+        ConstVal a = left.get(lane);
+        ConstVal b = right.get(lane);
+        if (a.kind == ValKind.BOT || b.kind == ValKind.BOT) {
+          result.add(ConstVal.BOT);
+        } else if (a.isConst() && b.isConst()) {
+          Long leftValue = integerValue(a.constant);
+          Long rightValue = integerValue(b.constant);
+          Long folded = leftValue == null || rightValue == null
+              ? null : op.apply(leftValue, rightValue);
+          result.add(folded == null
+              ? ConstVal.TOP : ConstVal.ofConstant(integerConstant(elementType, folded)));
+        } else {
+          result.add(ConstVal.TOP);
         }
-        return ConstVal.ofConstant(packConstant(inst.getType(), result));
       }
-      return ConstVal.TOP;
+      return packLattice(inst.getType(), result);
     }
 
     private ConstVal evalICmp(Instruction inst, SCCPFact in) {
       ConstVal lhs = in.get(inst.getOperand(0));
       ConstVal rhs = in.get(inst.getOperand(1));
       if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!lhs.isConst() || !rhs.isConst()) return ConstVal.TOP;
-      List<Constant> left = constantElements(lhs.constant);
-      List<Constant> right = constantElements(rhs.constant);
+      List<ConstVal> left = latticeElements(lhs, inst.getOperand(0).getType());
+      List<ConstVal> right = latticeElements(rhs, inst.getOperand(1).getType());
       if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
-      List<Constant> result = new ArrayList<>();
+      List<ConstVal> result = new ArrayList<>();
       for (int lane = 0; lane < left.size(); lane++) {
-        Long a = integerValue(left.get(lane));
-        Long b = integerValue(right.get(lane));
-        if (a == null || b == null) return ConstVal.TOP;
-        Boolean folded = compareInteger(inst.getPredicate(), a, b);
-        if (folded == null) return ConstVal.TOP;
-        result.add(Constant.boolConst(folded));
+        ConstVal a = left.get(lane);
+        ConstVal b = right.get(lane);
+        if (a.kind == ValKind.BOT || b.kind == ValKind.BOT) result.add(ConstVal.BOT);
+        else if (!a.isConst() || !b.isConst()) result.add(ConstVal.TOP);
+        else {
+          Long leftValue = integerValue(a.constant);
+          Long rightValue = integerValue(b.constant);
+          Boolean folded = leftValue == null || rightValue == null
+              ? null : compareInteger(inst.getPredicate(), leftValue, rightValue);
+          result.add(folded == null
+              ? ConstVal.TOP : ConstVal.ofConstant(Constant.boolConst(folded)));
+        }
       }
-      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+      return packLattice(inst.getType(), result);
     }
 
     private ConstVal evalFloatBinop(Instruction inst, SCCPFact in, FloatBinOp op) {
       ConstVal lhs = in.get(inst.getOperand(0));
       ConstVal rhs = in.get(inst.getOperand(1));
       if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!lhs.isConst() || !rhs.isConst()) return ConstVal.TOP;
-      List<Constant> left = constantElements(lhs.constant);
-      List<Constant> right = constantElements(rhs.constant);
+      List<ConstVal> left = latticeElements(lhs, inst.getOperand(0).getType());
+      List<ConstVal> right = latticeElements(rhs, inst.getOperand(1).getType());
       if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
-      List<Constant> result = new ArrayList<>();
+      List<ConstVal> result = new ArrayList<>();
       for (int lane = 0; lane < left.size(); lane++) {
-        Float a = floatingValue(left.get(lane));
-        Float b = floatingValue(right.get(lane));
-        if (a == null || b == null) return ConstVal.TOP;
-        result.add(Constant.floatConst(op.apply(a, b)));
+        ConstVal a = left.get(lane);
+        ConstVal b = right.get(lane);
+        if (a.kind == ValKind.BOT || b.kind == ValKind.BOT) result.add(ConstVal.BOT);
+        else if (!a.isConst() || !b.isConst()) result.add(ConstVal.TOP);
+        else {
+          Float leftValue = floatingValue(a.constant);
+          Float rightValue = floatingValue(b.constant);
+          result.add(leftValue == null || rightValue == null ? ConstVal.TOP
+              : ConstVal.ofConstant(Constant.floatConst(op.apply(leftValue, rightValue))));
+        }
       }
-      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+      return packLattice(inst.getType(), result);
     }
 
     private ConstVal evalFNeg(Instruction inst, SCCPFact in) {
       ConstVal operand = in.get(inst.getOperand(0));
       if (operand.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!operand.isConst()) return ConstVal.TOP;
-      List<Constant> elements = constantElements(operand.constant);
+      List<ConstVal> elements = latticeElements(operand, inst.getOperand(0).getType());
       if (elements == null) return ConstVal.TOP;
-      List<Constant> result = new ArrayList<>();
-      for (Constant element : elements) {
-        Float value = floatingValue(element);
-        if (value == null) return ConstVal.TOP;
-        result.add(Constant.floatConst(-value));
+      List<ConstVal> result = new ArrayList<>();
+      for (ConstVal element : elements) {
+        if (element.kind == ValKind.BOT) result.add(ConstVal.BOT);
+        else if (!element.isConst()) result.add(ConstVal.TOP);
+        else {
+          Float value = floatingValue(element.constant);
+          result.add(value == null
+              ? ConstVal.TOP : ConstVal.ofConstant(Constant.floatConst(-value)));
+        }
       }
-      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+      return packLattice(inst.getType(), result);
     }
 
     private ConstVal evalFCmp(Instruction inst, SCCPFact in) {
       ConstVal lhs = in.get(inst.getOperand(0));
       ConstVal rhs = in.get(inst.getOperand(1));
       if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!lhs.isConst() || !rhs.isConst()) return ConstVal.TOP;
-      List<Constant> left = constantElements(lhs.constant);
-      List<Constant> right = constantElements(rhs.constant);
+      List<ConstVal> left = latticeElements(lhs, inst.getOperand(0).getType());
+      List<ConstVal> right = latticeElements(rhs, inst.getOperand(1).getType());
       if (left == null || right == null || left.size() != right.size()) return ConstVal.TOP;
-      List<Constant> result = new ArrayList<>();
+      List<ConstVal> result = new ArrayList<>();
       for (int lane = 0; lane < left.size(); lane++) {
-        Float a = floatingValue(left.get(lane));
-        Float b = floatingValue(right.get(lane));
-        if (a == null || b == null) return ConstVal.TOP;
-        Boolean folded = compareFloat(inst.getPredicate(), a, b);
-        if (folded == null) return ConstVal.TOP;
-        result.add(Constant.boolConst(folded));
+        ConstVal a = left.get(lane);
+        ConstVal b = right.get(lane);
+        if (a.kind == ValKind.BOT || b.kind == ValKind.BOT) result.add(ConstVal.BOT);
+        else if (!a.isConst() || !b.isConst()) result.add(ConstVal.TOP);
+        else {
+          Float leftValue = floatingValue(a.constant);
+          Float rightValue = floatingValue(b.constant);
+          Boolean folded = leftValue == null || rightValue == null
+              ? null : compareFloat(inst.getPredicate(), leftValue, rightValue);
+          result.add(folded == null
+              ? ConstVal.TOP : ConstVal.ofConstant(Constant.boolConst(folded)));
+        }
       }
-      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+      return packLattice(inst.getType(), result);
     }
 
     private ConstVal evalConversion(Instruction inst, SCCPFact in) {
       ConstVal operand = in.get(inst.getOperand(0));
       if (operand.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!operand.isConst()) return ConstVal.TOP;
-      List<Constant> elements = constantElements(operand.constant);
+      List<ConstVal> elements = latticeElements(operand, inst.getOperand(0).getType());
       if (elements == null) return ConstVal.TOP;
       Type sourceType = scalarElement(inst.getOperand(0).getType());
       Type destinationType = scalarElement(inst.getType());
-      List<Constant> result = new ArrayList<>();
-      for (Constant element : elements) {
-        Constant converted = convertConstant(
-            inst.getOpcode(), element, sourceType, destinationType);
-        if (converted == null) return ConstVal.TOP;
-        result.add(converted);
+      List<ConstVal> result = new ArrayList<>();
+      for (ConstVal element : elements) {
+        if (element.kind == ValKind.BOT) result.add(ConstVal.BOT);
+        else if (!element.isConst()) result.add(ConstVal.TOP);
+        else {
+          Constant converted = convertConstant(
+              inst.getOpcode(), element.constant, sourceType, destinationType);
+          result.add(converted == null ? ConstVal.TOP : ConstVal.ofConstant(converted));
+        }
       }
-      return ConstVal.ofConstant(packConstant(inst.getType(), result));
+      return packLattice(inst.getType(), result);
     }
 
     private ConstVal evalBuildVector(Instruction inst, SCCPFact in) {
-      List<Constant> elements = new ArrayList<>();
+      List<ConstVal> elements = new ArrayList<>();
       for (int operand = 0; operand < inst.getNumOperands(); operand++) {
         ConstVal value = in.get(inst.getOperand(operand));
-        if (value.kind == ValKind.BOT) return ConstVal.BOT;
-        if (!value.isConst() || value.constant.getType().isVector()) return ConstVal.TOP;
-        elements.add(value.constant);
+        elements.add(value);
       }
-      return ConstVal.ofConstant(Constant.vector(inst.getType(), elements));
+      return ConstVal.ofVector(inst.getType(), elements);
     }
 
     private ConstVal evalSplat(Instruction inst, SCCPFact in) {
       ConstVal value = in.get(inst.getOperand(0));
       if (value.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!value.isConst() || value.constant.getType().isVector()) return ConstVal.TOP;
-      return ConstVal.ofConstant(Constant.vector(
-          inst.getType(), Collections.nCopies(inst.getType().getLaneCount(), value.constant)));
+      if (value.kind == ValKind.VECTOR) return ConstVal.TOP;
+      return ConstVal.ofVector(
+          inst.getType(), Collections.nCopies(inst.getType().getLaneCount(), value));
     }
 
     private ConstVal evalExtractElement(Instruction inst, SCCPFact in) {
       ConstVal vector = in.get(inst.getOperand(0));
       ConstVal index = in.get(inst.getOperand(1));
       if (vector.kind == ValKind.BOT || index.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!vector.isConst() || !index.isConst()) return ConstVal.TOP;
-      List<Constant> elements = constantElements(vector.constant);
+      if (!index.isConst()) return ConstVal.TOP;
+      List<ConstVal> elements = latticeElements(vector, inst.getOperand(0).getType());
       Long selected = integerValue(index.constant);
       if (elements == null || selected == null || selected < 0 || selected >= elements.size()) {
         return ConstVal.TOP;
       }
-      return ConstVal.ofConstant(elements.get(selected.intValue()));
+      return elements.get(selected.intValue());
     }
 
     private ConstVal evalInsertElement(Instruction inst, SCCPFact in) {
       ConstVal vector = in.get(inst.getOperand(0));
       ConstVal element = in.get(inst.getOperand(1));
       ConstVal index = in.get(inst.getOperand(2));
-      if (vector.kind == ValKind.BOT || element.kind == ValKind.BOT || index.kind == ValKind.BOT) {
-        return ConstVal.BOT;
-      }
-      if (!vector.isConst() || !element.isConst() || !index.isConst()) return ConstVal.TOP;
-      List<Constant> elements = constantElements(vector.constant);
+      if (index.kind == ValKind.BOT) return ConstVal.BOT;
+      if (!index.isConst()) return ConstVal.TOP;
+      List<ConstVal> elements = latticeElements(vector, inst.getOperand(0).getType());
       Long selected = integerValue(index.constant);
       if (elements == null || selected == null || selected < 0 || selected >= elements.size()) {
         return ConstVal.TOP;
       }
-      List<Constant> result = new ArrayList<>(elements);
-      result.set(selected.intValue(), element.constant);
-      return ConstVal.ofConstant(Constant.vector(inst.getType(), result));
+      List<ConstVal> result = new ArrayList<>(elements);
+      result.set(selected.intValue(), element);
+      return ConstVal.ofVector(inst.getType(), result);
     }
 
     private ConstVal evalShuffleVector(Instruction inst, SCCPFact in) {
       ConstVal lhs = in.get(inst.getOperand(0));
       ConstVal rhs = in.get(inst.getOperand(1));
-      if (lhs.kind == ValKind.BOT || rhs.kind == ValKind.BOT) return ConstVal.BOT;
-      if (!lhs.isConst() || !rhs.isConst()
-          || !(inst.getOperand(2) instanceof Constant.Vector mask)) return ConstVal.TOP;
-      List<Constant> left = constantElements(lhs.constant);
-      List<Constant> right = constantElements(rhs.constant);
+      if (!(inst.getOperand(2) instanceof Constant.Vector mask)) return ConstVal.TOP;
+      List<ConstVal> left = latticeElements(lhs, inst.getOperand(0).getType());
+      List<ConstVal> right = latticeElements(rhs, inst.getOperand(1).getType());
       if (left == null || right == null) return ConstVal.TOP;
-      List<Constant> choices = new ArrayList<>(left);
+      List<ConstVal> choices = new ArrayList<>(left);
       choices.addAll(right);
-      List<Constant> result = new ArrayList<>();
+      List<ConstVal> result = new ArrayList<>();
       for (Constant maskElement : mask.elements) {
         Long selected = integerValue(maskElement);
         if (selected == null || selected < 0 || selected >= choices.size()) return ConstVal.TOP;
         result.add(choices.get(selected.intValue()));
       }
-      return ConstVal.ofConstant(Constant.vector(inst.getType(), result));
+      return ConstVal.ofVector(inst.getType(), result);
     }
 
     private ConstVal evalSelect(Instruction inst, SCCPFact in) {
@@ -578,12 +638,22 @@ public final class SCCP {
     return cv.constant;
   }
 
-  private static Constant packConstant(Type type, List<Constant> elements) {
-    if (type.isVector()) return Constant.vector(type, elements);
-    if (elements.size() != 1 || !elements.getFirst().getType().equals(type)) {
-      throw new IllegalArgumentException("constant result shape mismatch for " + type);
+  private static ConstVal packLattice(Type type, List<ConstVal> elements) {
+    if (type.isVector()) return ConstVal.ofVector(type, elements);
+    if (elements.size() != 1) {
+      throw new IllegalArgumentException("lattice result shape mismatch for " + type);
     }
     return elements.getFirst();
+  }
+
+  private static List<ConstVal> latticeElements(ConstVal value, Type type) {
+    if (value.kind == ValKind.VECTOR) return value.elements;
+    if (type.isVector() && (value.kind == ValKind.BOT || value.kind == ValKind.TOP)) {
+      return Collections.nCopies(type.getLaneCount(), value);
+    }
+    if (value.kind == ValKind.BOT || value.kind == ValKind.TOP) return null;
+    List<Constant> constants = constantElements(value.constant);
+    return constants == null ? null : constants.stream().map(ConstVal::ofConstant).toList();
   }
 
   private static List<Constant> constantElements(Constant constant) {

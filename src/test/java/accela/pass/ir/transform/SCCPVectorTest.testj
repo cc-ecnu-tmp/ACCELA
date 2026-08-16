@@ -3,6 +3,7 @@ package accela.pass.ir.transform;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import accela.ir.BasicBlock;
@@ -96,6 +97,42 @@ final class SCCPVectorTest {
     Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
     assertEquals(0, result.value);
     assertNull(phi.getParent());
+  }
+
+  @Test
+  void preservesConstantLanesAcrossVectorPhis() {
+    Module module = new Module();
+    Function function = new Function("partial_vector_phi", Type.INT);
+    module.addFunction(function);
+    Value condition = function.addArgument(Type.I1, "condition");
+    BasicBlock entry = function.addBlock("entry");
+    BasicBlock left = function.addBlock("left");
+    BasicBlock right = function.addBlock("right");
+    BasicBlock merge = function.addBlock("merge");
+    new IRBuilder(entry).createCondBr(condition, left, right);
+    new IRBuilder(left).createBr(merge);
+    new IRBuilder(right).createBr(merge);
+    Type int2 = Type.vector(Type.INT, 2);
+    IRBuilder builder = new IRBuilder(merge);
+    Instruction phi = builder.createPhi(int2);
+    phi.addOperand(Constant.vector(
+        int2, List.of(Constant.intConst(7), Constant.intConst(1))));
+    phi.addOperand(left);
+    phi.addOperand(Constant.vector(
+        int2, List.of(Constant.intConst(7), Constant.intConst(2))));
+    phi.addOperand(right);
+    Value sum = builder.createAdd(phi, Constant.vector(
+        int2, List.of(Constant.intConst(3), Constant.intConst(4))));
+    Instruction extract = builder.createExtractElement(sum, Constant.intConst(0));
+    Instruction ret = builder.createRet(extract);
+
+    assertTrue(SCCP.runOnFunction(function));
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(10, result.value);
+    assertNull(extract.getParent());
+    assertSame(phi, merge.getInstructions().getFirst());
   }
 
   @Test

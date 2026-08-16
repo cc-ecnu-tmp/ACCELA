@@ -14,6 +14,7 @@ import accela.ir.Module;
 import accela.ir.Type;
 import accela.ir.Value;
 import accela.pass.ir.verify.IRVerifier;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class IPSCCPSolverTest {
@@ -91,5 +92,32 @@ final class IPSCCPSolverTest {
 
     Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
     assertEquals(0, result.value);
+  }
+
+  @Test
+  void preservesConstantVectorLanesAcrossCallSites() {
+    Module module = new Module();
+    Type int2 = Type.vector(Type.INT, 2);
+    Function firstLane = new Function("first_lane", Type.INT);
+    module.addFunction(firstLane);
+    Value vector = firstLane.addArgument(int2, "vector");
+    IRBuilder calleeBuilder = new IRBuilder(firstLane.addBlock("entry"));
+    calleeBuilder.createRet(
+        calleeBuilder.createExtractElement(vector, Constant.intConst(0)));
+
+    Function main = new Function("main", Type.INT);
+    module.addFunction(main);
+    IRBuilder builder = new IRBuilder(main.addBlock("entry"));
+    Instruction first = builder.createCall(firstLane, Type.INT, Constant.vector(
+        int2, List.of(Constant.intConst(5), Constant.intConst(10))));
+    Instruction second = builder.createCall(firstLane, Type.INT, Constant.vector(
+        int2, List.of(Constant.intConst(5), Constant.intConst(20))));
+    Instruction ret = builder.createRet(builder.createAdd(first, second));
+
+    assertTrue(new IPSCCPSolver(module).solve());
+    IRVerifier.verifyModule(module);
+
+    Constant.Int result = assertInstanceOf(Constant.Int.class, ret.getOperand(0));
+    assertEquals(10, result.value);
   }
 }

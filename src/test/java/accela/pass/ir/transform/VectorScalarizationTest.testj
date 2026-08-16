@@ -288,7 +288,7 @@ final class VectorScalarizationTest {
         Constant.vector(List.of(
             Constant.intConst(0), Constant.intConst(5),
             Constant.intConst(2), Constant.intConst(7))));
-    builder.createRet(builder.createExtractElement(selected, Constant.intConst(1)));
+    builder.createRet(builder.createExtractElement(selected, Constant.intConst(0)));
 
     PassBuilder passBuilder = new PassBuilder();
     ModulePassManager pipeline =
