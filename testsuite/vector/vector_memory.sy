@@ -1,0 +1,16 @@
+int main() {
+    int seed = getint();
+    int index = getint() % 2;
+    int4 rows[2] = {
+        {seed, seed + 1, seed + 2, seed + 3},
+        {10, 20, 30, 40}
+    };
+    int4 combined = rows[index] + rows[1 - index];
+    rows[index] = combined;
+    putint(rows[index][0]
+           + rows[index][1] * 10
+           + rows[index][2] * 100
+           + rows[index][3] * 1000);
+    putch(10);
+    return 0;
+}

@@ -2,11 +2,24 @@ package accela.backend.regalloc;
 
 import accela.backend.machine.MachineType;
 import accela.backend.machine.PhysicalRegister;
+import accela.backend.machine.RegisterClass;
+import accela.backend.machine.VirtualRegister;
+import accela.backend.target.RISCVTarget;
+import java.util.HashSet;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
 public final class TargetRegisterInfo {
+  private final boolean hasVectorRegisters;
+
+  public TargetRegisterInfo() {
+    this.hasVectorRegisters = false;
+  }
+
+  public TargetRegisterInfo(RISCVTarget target) {
+    this.hasVectorRegisters = target.hasRVV();
+  }
   private static final List<PhysicalRegister> ALL_INT_REGISTERS =
       List.of(
           reg("t0", MachineType.I32),
@@ -127,6 +140,12 @@ public final class TargetRegisterInfo {
     return Collections.emptyList();
   }
 
+  public List<PhysicalRegister> allocatableRegisters(VirtualRegister register) {
+    if (!register.getType().isVector()) return allocatableRegisters(register.getType());
+    if (!hasVectorRegisters) return Collections.emptyList();
+    return vectorGroups(register.getVectorShape().lmul());
+  }
+
   public int registerCount(MachineType type) {
     return allocatableRegisters(type).size();
   }
@@ -137,8 +156,17 @@ public final class TargetRegisterInfo {
     return Collections.emptyList();
   }
 
+  public List<PhysicalRegister> nonArgumentRegisters(VirtualRegister register) {
+    return allocatableRegisters(register);
+  }
+
   public List<PhysicalRegister> callerSavedRegisters(MachineType type) {
     return allocatableRegisters(type).stream().filter(this::isCallerSaved).toList();
+  }
+
+  public List<PhysicalRegister> callerSavedRegisters(VirtualRegister register) {
+    if (register.getType().isVector()) return allocatableRegisters(register);
+    return callerSavedRegisters(register.getType());
   }
 
   public List<PhysicalRegister> calleeSavedRegisters(MachineType type) {
@@ -151,6 +179,11 @@ public final class TargetRegisterInfo {
     return Collections.emptyList();
   }
 
+  public List<PhysicalRegister> calleeSavedRegisters(VirtualRegister register) {
+    if (register.getType().isVector()) return Collections.emptyList();
+    return calleeSavedRegisters(register.getType());
+  }
+
   public boolean isReserved(PhysicalRegister register) {
     return RESERVED.contains(register.getName());
   }
@@ -160,6 +193,7 @@ public final class TargetRegisterInfo {
   }
 
   public boolean isCallerSaved(PhysicalRegister register) {
+    if (register.getRegisterClass() == RegisterClass.VR) return true;
     String name = register.getName();
     return INT_CALLER_SAVED.contains(name) || FLOAT_CALLER_SAVED.contains(name);
   }
@@ -185,5 +219,23 @@ public final class TargetRegisterInfo {
 
   private static boolean isArgumentRegisterName(String name) {
     return CALL_ARGUMENT_REGISTERS.contains(name);
+  }
+
+  private static List<PhysicalRegister> vectorGroups(int lmul) {
+    java.util.ArrayList<PhysicalRegister> groups = new java.util.ArrayList<>();
+    for (int base = 0; base + lmul <= 32; base += lmul) {
+      // v0 is the dedicated execution-mask scratch and is not allocator-visible.
+      if (base == 0) continue;
+      Set<Integer> units = new HashSet<>();
+      for (int index = 0; index < lmul; index++) units.add(base + index);
+      groups.add(
+          new PhysicalRegister(
+              "v" + base,
+              MachineType.VECTOR,
+              RegisterClass.VR,
+              base,
+              units));
+    }
+    return List.copyOf(groups);
   }
 }

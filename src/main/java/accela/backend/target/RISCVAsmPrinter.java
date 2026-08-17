@@ -31,7 +31,7 @@ public final class RISCVAsmPrinter {
 
   public String print(MachineModule module, Map<MachineFunction, AllocationResult> allocations) {
     List<String> lines = new ArrayList<>();
-    lines.add(".attribute arch, \"rv64gc\"");
+    lines.add(".attribute arch, \"" + target.architectureAttribute() + "\"");
     emitGlobals(module.getSourceModule(), lines);
     lines.add(".text");
     for (MachineFunction function : module.getFunctions()) {

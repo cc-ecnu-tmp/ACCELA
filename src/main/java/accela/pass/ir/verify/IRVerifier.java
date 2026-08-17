@@ -6,6 +6,7 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Use;
 import accela.ir.Value;
+import accela.backend.machine.MachineType;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -132,13 +133,24 @@ public final class IRVerifier {
         verifyShuffleVector(function, inst);
         break;
       case SELECT:
-        if (inst.getNumOperands() != 3
-            || inst.getOperand(0).getType() != Type.I1
-            || !inst.getType().equals(inst.getOperand(1).getType())
-            || !inst.getType().equals(inst.getOperand(2).getType())
-            || inst.getType().isVector()) {
-          fail(function, "SELECT requires i1 and two equal-typed scalar values");
+        if (inst.getNumOperands() != 3) {
+          fail(function, "SELECT requires exactly three operands");
         }
+        Type conditionType = inst.getOperand(0).getType();
+        boolean validCondition =
+            conditionType == Type.I1
+                || inst.getType().isVector()
+                    && conditionType.isVector()
+                    && conditionType.getElementType() == Type.I1
+                    && conditionType.getLaneCount() == inst.getType().getLaneCount();
+        if (!validCondition
+            || !inst.getType().equals(inst.getOperand(1).getType())
+            || !inst.getType().equals(inst.getOperand(2).getType())) {
+          fail(function, "SELECT requires scalar/vector i1 and two equal-typed values");
+        }
+        break;
+      case VCIX:
+        verifyVCIX(function, inst);
         break;
       case ALLOCA:
         if (inst.getType() != Type.PTR || inst.getAllocatedType() == null || inst.getNumOperands() != 0) {
@@ -229,6 +241,78 @@ public final class IRVerifier {
     }
     if (incomingBlocks.size() != preds.size()) {
       fail(function, "phi must have exactly one incoming value for each predecessor of " + block.getLabel());
+    }
+  }
+
+  private static void verifyVCIX(Function function, Instruction instruction) {
+    var info = instruction.getVCIXInfo();
+    if (info == null) fail(function, "VCIX instruction requires encoding metadata");
+    if (info.writesVectorDestination() != instruction.getType().isVector()) {
+      fail(function, "VCIX result type disagrees with destination encoding");
+    }
+    int expected =
+        1 + (info.form().hasVectorSource2() ? 1 : 0) + (info.form().readsDestination() ? 1 : 0);
+    if (instruction.getNumOperands() != expected) {
+      fail(function, "VCIX operand count does not match " + info.form());
+    }
+    int index = 0;
+    if (info.form().readsDestination()) {
+      if (!instruction.getOperand(index).getType().isVector()) {
+        fail(function, "three-source VCIX old destination must be a vector");
+      }
+      if (info.writesVectorDestination()
+          && !instruction.getOperand(index).getType().equals(instruction.getType())) {
+        fail(function, "three-source VCIX old destination must match its result");
+      }
+      index++;
+    }
+    if (info.form().hasVectorSource2()) {
+      if (!instruction.getOperand(index).getType().isVector()) {
+        fail(function, "VCIX vs2 operand must be a vector");
+      }
+      index++;
+    }
+    Value argument = instruction.getOperand(index);
+    if (info.form().hasVectorSource1() && !argument.getType().isVector()) {
+      fail(function, "VCIX vs1 operand must be a vector");
+    }
+    if (info.form().hasIntegerScalar()
+        && (argument.getType().isVector() || !argument.getType().isInteger())) {
+      fail(function, "VCIX integer operand must be a scalar integer");
+    }
+    if (info.form().hasFloatScalar()
+        && (argument.getType().isVector() || !argument.getType().isFloat())) {
+      fail(function, "VCIX floating operand must be a scalar float");
+    }
+    if (info.form().hasImmediate()
+        && (!(argument instanceof accela.ir.Constant.Int immediate)
+            || immediate.value < -16
+            || immediate.value > 15)) {
+      fail(function, "VCIX immediate must be a signed five-bit integer constant");
+    }
+    if (info.form().isWidening()) {
+      Type wideType =
+          info.writesVectorDestination() ? instruction.getType() : instruction.getOperand(0).getType();
+      int vs2Index = info.form().readsDestination() ? 1 : 0;
+      Type narrowType = instruction.getOperand(vs2Index).getType();
+      if (!wideType.isVector()
+          || !narrowType.isVector()
+          || wideType.getLaneCount() != narrowType.getLaneCount()
+          || MachineType.fromIr(wideType.getElementType()).getSize()
+              != 2 * MachineType.fromIr(narrowType.getElementType()).getSize()) {
+        fail(function, "widening VCIX requires a double-width vd and matching narrow vs2");
+      }
+      if (info.form().hasVectorSource1()
+          && !argument.getType().equals(narrowType)) {
+        fail(function, "widening VCIX vs1 must match the narrow vs2 type");
+      }
+    }
+    boolean hasVectorState =
+        instruction.getType().isVector()
+            || java.util.stream.IntStream.range(0, instruction.getNumOperands())
+                .anyMatch(operand -> instruction.getOperand(operand).getType().isVector());
+    if (!hasVectorState && instruction.getVCIXConfig() == null) {
+      fail(function, "VCIX without vector values requires explicit vl/vtype state");
     }
   }
 

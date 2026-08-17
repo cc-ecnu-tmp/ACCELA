@@ -1,0 +1,47 @@
+package accela.backend.regalloc;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.MachineFunction;
+import accela.backend.machine.MachineType;
+import accela.backend.machine.VectorShape;
+import accela.backend.target.RISCVTarget;
+import accela.backend.target.RISCVTargetOptions;
+import org.junit.jupiter.api.Test;
+
+final class RISCVVectorRegisterInfoTest {
+  @Test
+  void createsAlignedLmulGroupsAndReservesV0() {
+    RISCVTarget target = new RISCVTarget(RISCVTargetOptions.of("rvv", 128));
+    TargetRegisterInfo info = new TargetRegisterInfo(target);
+    MachineFunction function = new MachineFunction("groups", MachineType.VOID);
+    var vector =
+        function.createVectorRegister(new VectorShape(MachineType.I32, 16, false, 4), "wide");
+
+    var groups = info.allocatableRegisters(vector);
+
+    assertEquals(
+        java.util.List.of("v4", "v8", "v12", "v16", "v20", "v24", "v28"),
+        groups.stream().map(register -> register.getName()).toList());
+    assertTrue(groups.stream().allMatch(register -> register.getEncoding() % 4 == 0));
+    assertFalse(groups.stream().anyMatch(register -> register.getAliasUnits().contains(0)));
+    assertTrue(groups.get(0).overlaps(
+        new accela.backend.machine.PhysicalRegister(
+            "v6",
+            MachineType.VECTOR,
+            accela.backend.machine.RegisterClass.VR,
+            6,
+            java.util.Set.of(6))));
+  }
+
+  @Test
+  void allocatesMasksAsOneRegisterButSelectsEnoughVlCapacity() {
+    VectorShape mask = VectorShape.fromIr(accela.ir.Type.vector(accela.ir.Type.I1, 32), 128);
+
+    assertEquals(1, mask.lmul());
+    assertEquals(2, mask.stateLmul());
+    assertEquals(2, accela.backend.machine.RVVConfig.forShape(mask).lmul());
+  }
+}

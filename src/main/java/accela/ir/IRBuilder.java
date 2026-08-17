@@ -1,5 +1,7 @@
 package accela.ir;
 
+import accela.backend.machine.VCIXInfo;
+import accela.backend.machine.RVVConfig;
 import accela.ir.Instruction.Opcode;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -295,6 +297,26 @@ public class IRBuilder {
       return insert(new Instruction(Opcode.XOR, lhs.getType(), lhs, rhs));
     }
     return createPromotedIntegerBinary(Opcode.XOR, lhs, rhs);
+  }
+
+  /** Creates an explicit SiFive VCIX intrinsic; no source-language syntax is implied. */
+  public Instruction createVCIX(Type resultType, VCIXInfo info, Value... operands) {
+    return createVCIX(resultType, info, null, operands);
+  }
+
+  /** Creates VCIX with an explicit configuration, required by forms without vector values. */
+  public Instruction createVCIX(
+      Type resultType, VCIXInfo info, RVVConfig config, Value... operands) {
+    if (info == null) throw new IllegalArgumentException("VCIX encoding info is required");
+    if (resultType == null) resultType = Type.VOID;
+    if (info.writesVectorDestination() != resultType.isVector()) {
+      throw new IllegalArgumentException(
+          "VCIX destination flag and intrinsic result type do not agree");
+    }
+    Instruction instruction = new Instruction(Opcode.VCIX, resultType, operands);
+    instruction.setVCIXInfo(info);
+    instruction.setVCIXConfig(config);
+    return insert(instruction);
   }
 
   public Instruction createAnd(Value lhs, Value rhs) {

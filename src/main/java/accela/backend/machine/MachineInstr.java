@@ -13,6 +13,8 @@ public final class MachineInstr {
   private String predicate;
   private String callee;
   private boolean coalescable = true;
+  private RVVConfig rvvConfig;
+  private VCIXInfo vcixInfo;
 
   public MachineInstr(MachineOpcode opcode, VirtualRegister dest) {
     this.opcode = opcode;
@@ -83,6 +85,22 @@ public final class MachineInstr {
 
   public void setCoalescable(boolean coalescable) {
     this.coalescable = coalescable;
+  }
+
+  public RVVConfig getRVVConfig() {
+    return rvvConfig;
+  }
+
+  public void setRVVConfig(RVVConfig rvvConfig) {
+    this.rvvConfig = rvvConfig;
+  }
+
+  public VCIXInfo getVCIXInfo() {
+    return vcixInfo;
+  }
+
+  public void setVCIXInfo(VCIXInfo vcixInfo) {
+    this.vcixInfo = vcixInfo;
   }
 
   public boolean isTerminator() {

@@ -13,6 +13,7 @@ import accela.backend.machine.StackSlotOperand;
 import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
+import accela.backend.machine.RVVConfig;
 import accela.backend.target.RISCVTarget;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -123,7 +124,7 @@ final class LocalSpillRewriter {
           VirtualRegister register = ((VRegOperand) operand).getRegister();
           MachineInstr recipe = rematerializable.get(register);
           if (recipe != null) {
-            VirtualRegister materialized = blockRematerializations.computeIfAbsent(
+      VirtualRegister materialized = blockRematerializations.computeIfAbsent(
                 register, ignored -> rematerialize(function, rewritten, register, recipe));
             operands.add(new VRegOperand(materialized));
             continue;
@@ -148,7 +149,12 @@ final class LocalSpillRewriter {
       StackSlot destSlot = originalDest == null ? null : slots.get(originalDest);
       VirtualRegister rewrittenDest = originalDest;
       if (destSlot != null) {
-        rewrittenDest = function.createVirtualRegister(originalDest.getType(), originalDest.getHint() + ".spill.def");
+        rewrittenDest =
+            originalDest.getType().isVector()
+                ? function.createVectorRegister(
+                    originalDest.getVectorShape(), originalDest.getHint() + ".spill.def")
+                : function.createVirtualRegister(
+                    originalDest.getType(), originalDest.getHint() + ".spill.def");
       }
 
       MachineInstr rewrittenInstr = cloneInstr(instr, rewrittenDest, operands);
@@ -212,10 +218,20 @@ final class LocalSpillRewriter {
     stackAddr.setType(MachineType.PTR);
     rewritten.add(stackAddr);
 
-    VirtualRegister reload = function.createVirtualRegister(spilled.getType(), spilled.getHint() + ".spill.reload");
-    MachineInstr load = new MachineInstr(MachineOpcode.LOAD, reload);
+    VirtualRegister reload =
+        spilled.getType().isVector()
+            ? function.createVectorRegister(
+                spilled.getVectorShape(), spilled.getHint() + ".spill.reload")
+            : function.createVirtualRegister(
+                spilled.getType(), spilled.getHint() + ".spill.reload");
+    MachineInstr load =
+        new MachineInstr(
+            spilled.getType().isVector() ? MachineOpcode.VLOAD : MachineOpcode.LOAD, reload);
     load.addOperand(new VRegOperand(address));
     load.setType(spilled.getType());
+    if (spilled.getType().isVector()) {
+      load.setRVVConfig(RVVConfig.forShape(spilled.getVectorShape()));
+    }
     rewritten.add(load);
     return reload;
   }
@@ -231,10 +247,15 @@ final class LocalSpillRewriter {
     stackAddr.setType(MachineType.PTR);
     rewritten.add(stackAddr);
 
-    MachineInstr store = new MachineInstr(MachineOpcode.STORE, null);
+    MachineInstr store =
+        new MachineInstr(
+            value.getType().isVector() ? MachineOpcode.VSTORE : MachineOpcode.STORE, null);
     store.addOperand(new VRegOperand(value));
     store.addOperand(new VRegOperand(address));
     store.setType(value.getType());
+    if (value.getType().isVector()) {
+      store.setRVVConfig(RVVConfig.forShape(value.getVectorShape()));
+    }
     rewritten.add(store);
   }
 
@@ -249,6 +270,8 @@ final class LocalSpillRewriter {
     clone.setType(instr.getType());
     clone.setPredicate(instr.getPredicate());
     clone.setCallee(instr.getCallee());
+    clone.setRVVConfig(instr.getRVVConfig());
+    clone.setVCIXInfo(instr.getVCIXInfo());
     return clone;
   }
 
@@ -274,6 +297,13 @@ final class LocalSpillRewriter {
       MachineFunction function,
       VirtualRegister register,
       RISCVTarget target) {
+    if (register.getType().isVector()) {
+      int size = register.getVectorShape().semanticSizeBytes();
+      int align = Math.min(16, Integer.highestOneBit(Math.max(1, size)));
+      return function
+          .getFrameInfo()
+          .createSpillSlot(MachineType.VECTOR, size, align);
+    }
     return function
         .getFrameInfo()
         .createSpillSlot(

@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 import accela.backend.BackendCompiler;
+import accela.backend.target.RISCVTargetOptions;
 import accela.pass.PassBuilder;
 import accela.pass.ir.FunctionAnalysisManager;
 import accela.pass.ir.ModuleAnalysisManager;
@@ -44,6 +45,12 @@ public class Main implements Runnable {
 
   @Option(names = {"--pass-stats"}, description = "Print pass statistics")
   private boolean printPassStats = false;
+
+  @Option(names = {"--simd"}, description = "SIMD backend: none, rvv, or xsfvcp")
+  private String simd = "none";
+
+  @Option(names = {"--riscv-vlen"}, description = "Minimum RISC-V vector length in bits")
+  private int riscvVLEN = RISCVTargetOptions.DEFAULT_VLEN;
 
   @Parameters(index = "0", description = "Source file to compile/run", required = true)
   private String fileName;
@@ -94,7 +101,10 @@ public class Main implements Runnable {
         } else if (emitIR) {
           new IRPrinter(System.out).print(buildOptimizedIR(unit, printPassStats));
         } else if (emitAsm) {
-          System.out.print(new BackendCompiler().compileToAssembly(buildOptimizedIR(unit, printPassStats)));
+          RISCVTargetOptions targetOptions = RISCVTargetOptions.of(simd, riscvVLEN);
+          System.out.print(
+              new BackendCompiler(targetOptions)
+                  .compileToAssembly(buildOptimizedIR(unit, printPassStats)));
         } else {
           Interpreter interpreter = new Interpreter();
           interpreter.run(unit);

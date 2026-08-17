@@ -1,0 +1,34 @@
+package accela.backend.target;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import accela.backend.machine.VCIXInfo;
+import org.junit.jupiter.api.Test;
+
+final class VCIXEncoderTest {
+  @Test
+  void matchesPublishedSifiveEncodingExamples() {
+    VCIXInfo x = new VCIXInfo(VCIXInfo.OperandForm.X, false, 3, 15, 31, true);
+    VCIXInfo i = new VCIXInfo(VCIXInfo.OperandForm.I, false, 3, 15, 31, true);
+
+    assertEquals(0x0ef5cfdb, VCIXEncoder.encode(x, 31, 15, 11));
+    assertEquals(0x0ef7bfdb, VCIXEncoder.encode(i, 31, 15, 15));
+  }
+
+  @Test
+  void encodesAllTwentyEightSpecifiedEnvelopes() {
+    for (VCIXInfo.OperandForm form : VCIXInfo.OperandForm.values()) {
+      int custom = form.hasFloatScalar() ? 1 : 3;
+      for (boolean writesDestination : new boolean[] {false, true}) {
+        VCIXInfo info = new VCIXInfo(form, writesDestination, custom, 7, 9, true);
+        int encoded = VCIXEncoder.encode(info, 9, 7, 5);
+
+        assertEquals(0x5b, encoded & 0x7f);
+        assertEquals(writesDestination ? 0 : 1, encoded >>> 25 & 1);
+        assertEquals(9, encoded >>> 7 & 0x1f);
+        assertEquals(7, encoded >>> 20 & 0x1f);
+        assertEquals(5, encoded >>> 15 & 0x1f);
+      }
+    }
+  }
+}

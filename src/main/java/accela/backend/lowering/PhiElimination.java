@@ -107,7 +107,10 @@ public final class PhiElimination {
         continue;
       }
 
-      VirtualRegister temp = function.createVirtualRegister(cycleCopy.type, "phi.tmp");
+      VirtualRegister temp =
+          cycleCopy.type.isVector()
+              ? function.createVectorRegister(cycleCopy.dest.getVectorShape(), "phi.tmp")
+              : function.createVirtualRegister(cycleCopy.type, "phi.tmp");
       insertMove(block, temp, cycleCopy.src, cycleCopy.type);
       cycleCopy.src = new VRegOperand(temp);
     }

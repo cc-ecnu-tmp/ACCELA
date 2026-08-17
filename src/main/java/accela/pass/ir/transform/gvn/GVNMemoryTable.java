@@ -27,6 +27,10 @@ final class GVNMemoryTable {
     return new GVNMemoryTable(values);
   }
 
+  void invalidateAll() {
+    values.clear();
+  }
+
   Value findOrAdd(Instruction instruction, GlobalModRefAnalysis.Result modRef) {
     if (instruction.getOpcode() == Instruction.Opcode.LOAD) {
       MemoryLocation location = MemoryLocation.fromInstruction(instruction);

@@ -16,6 +16,11 @@ import accela.backend.machine.StackSlotOperand;
 import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
+import accela.backend.machine.RVVConfig;
+import accela.backend.machine.VectorShape;
+import accela.backend.machine.VCIXInfo;
+import accela.backend.machine.VectorConstantOperand;
+import accela.ir.Constant;
 import accela.backend.regalloc.AllocationResult;
 import accela.backend.regalloc.RegisterLocation;
 import accela.backend.regalloc.ValueLocation;
@@ -130,6 +135,52 @@ public final class RISCVAsmEmitter {
         return;
       case STORE:
         emitStore(instr, allocation, lines);
+        return;
+      case VSET:
+        emitVectorConfiguration(instr, lines);
+        return;
+      case VLOAD:
+        emitVectorLoad(instr, allocation, lines);
+        return;
+      case VSTORE:
+        emitVectorStore(instr, allocation, lines);
+        return;
+      case VMOVE:
+      case VSPLAT:
+      case VBUILD:
+      case VEXTRACT:
+      case VINSERT:
+      case VSHUFFLE:
+        emitVectorManipulation(instr, allocation, lines);
+        return;
+      case VADD:
+      case VSUB:
+      case VMUL:
+      case VDIV:
+      case VREM:
+      case VSHL:
+      case VASHR:
+      case VAND:
+      case VXOR:
+      case VFADD:
+      case VFSUB:
+      case VFMUL:
+      case VFDIV:
+      case VFNEG:
+      case VICMP:
+      case VFCMP:
+      case VSELECT:
+      case VZEXT:
+      case VSEXT:
+      case VSITOFP:
+      case VFPTOSI:
+        emitVectorOperation(instr, allocation, lines);
+        return;
+      case VSMULH:
+        throw new UnsupportedOperationException(
+            "vector SMULH requires widening legalization before RVV emission");
+      case VCIX:
+        emitVCIX(instr, allocation, lines);
         return;
       case MEMZERO:
         emitMemzero(instr, allocation, lines);
@@ -303,6 +354,16 @@ public final class RISCVAsmEmitter {
   }
 
   private void emitMove(MachineInstr instr, AllocationResult allocation, List<String> lines) {
+    if (instr.getType().isVector()
+        && (instr.getOperands().get(0) instanceof VRegOperand
+            || instr.getOperands().get(0) instanceof PhysicalRegOperand)) {
+      emitVectorRegisterMove(
+          lines,
+          destReg(instr, allocation),
+          sourceReg(instr.getOperands().get(0), allocation),
+          instr.getDest().getVectorShape());
+      return;
+    }
     emitMoveToRegister(
         lines,
         instr.getOperands().get(0),
@@ -484,6 +545,570 @@ public final class RISCVAsmEmitter {
         return false;
       }
     }
+  }
+
+  private void emitVectorConfiguration(MachineInstr instruction, List<String> lines) {
+    RVVConfig config = instruction.getRVVConfig();
+    if (config == null) throw new IllegalArgumentException("VSET has no vector configuration");
+    if (config.avl() <= 31) {
+      lines.add(
+          "  vsetivli zero, " + config.avl() + ", " + config.vtypeAssembly());
+    } else {
+      lines.add("  li " + INT_SCRATCH_0 + ", " + config.avl());
+      lines.add(
+          "  vsetvli zero, " + INT_SCRATCH_0 + ", " + config.vtypeAssembly());
+    }
+  }
+
+  private void emitVectorLoad(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    VectorShape shape = instruction.getDest().getVectorShape();
+    String address =
+        operandRegisterOrScratch(
+            lines,
+            instruction.getOperands().get(0),
+            INT_SCRATCH_0,
+            MachineType.PTR,
+            allocation);
+    address = vectorAddressWithOffset(instruction, 1, address, lines);
+    String mnemonic = shape.mask() ? "vlm.v" : "vle" + shape.sew() + ".v";
+    lines.add("  " + mnemonic + " " + destReg(instruction, allocation) + ", (" + address + ")");
+  }
+
+  private void emitVectorStore(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    VirtualRegister valueRegister =
+        ((VRegOperand) instruction.getOperands().get(0)).getRegister();
+    VectorShape shape = valueRegister.getVectorShape();
+    String address =
+        operandRegisterOrScratch(
+            lines,
+            instruction.getOperands().get(1),
+            INT_SCRATCH_0,
+            MachineType.PTR,
+            allocation);
+    address = vectorAddressWithOffset(instruction, 2, address, lines);
+    String mnemonic = shape.mask() ? "vsm.v" : "vse" + shape.sew() + ".v";
+    lines.add(
+        "  " + mnemonic + " " + sourceReg(instruction.getOperands().get(0), allocation)
+            + ", (" + address + ")");
+  }
+
+  private String vectorAddressWithOffset(
+      MachineInstr instruction, int offsetIndex, String address, List<String> lines) {
+    if (instruction.getOperands().size() <= offsetIndex) return address;
+    long offset = ((ImmOperand) instruction.getOperands().get(offsetIndex)).getValue();
+    if (offset == 0) return address;
+    frameLowering.emitAddImmediate(
+        lines, INT_SCRATCH_1, address, (int) offset, ADDRESS_SCRATCH);
+    return INT_SCRATCH_1;
+  }
+
+  private void emitVectorManipulation(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    switch (instruction.getOpcode()) {
+      case VMOVE -> emitVectorRegisterMove(
+          lines,
+          destReg(instruction, allocation),
+          sourceReg(instruction.getOperands().get(0), allocation),
+          instruction.getDest().getVectorShape());
+      case VSPLAT -> emitVectorSplat(instruction, allocation, lines);
+      case VBUILD -> emitVectorBuild(instruction, allocation, lines);
+      case VEXTRACT -> emitVectorExtract(instruction, allocation, lines);
+      case VINSERT -> emitVectorInsert(instruction, allocation, lines);
+      case VSHUFFLE -> emitVectorShuffle(instruction, allocation, lines);
+      default -> throw new IllegalStateException("not a vector manipulation opcode");
+    }
+  }
+
+  private void emitVectorSplat(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    VectorShape shape = instruction.getDest().getVectorShape();
+    String destination = destReg(instruction, allocation);
+    MachineOperand value = instruction.getOperands().get(0);
+    if (!shape.elementType().isFloat() && value instanceof ImmOperand immediate
+        && immediate.getValue() >= -16 && immediate.getValue() <= 15) {
+      lines.add("  vmv.v.i " + destination + ", " + immediate.getValue());
+      return;
+    }
+    String source =
+        operandRegisterOrScratch(
+            lines,
+            value,
+            shape.elementType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
+            shape.elementType(),
+            allocation);
+    lines.add(
+        "  " + (shape.elementType().isFloat() ? "vfmv.v.f " : "vmv.v.x ")
+            + destination + ", " + source);
+  }
+
+  private void emitVectorBuild(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    VectorShape shape = instruction.getDest().getVectorShape();
+    String destination = destReg(instruction, allocation);
+    if (!shape.elementType().isFloat()
+        && emitIntegerSequenceBuild(instruction, destination, lines)) return;
+    for (int lane = 0; lane < instruction.getOperands().size(); lane++) {
+      MachineOperand value = instruction.getOperands().get(lane);
+      String source =
+          operandRegisterOrScratch(
+              lines,
+              value,
+              shape.elementType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
+              shape.elementType(),
+              allocation);
+      String insertDestination = lane == 0 ? destination : "v0";
+      lines.add(
+          "  " + (shape.elementType().isFloat() ? "vfmv.s.f " : "vmv.s.x ")
+              + insertDestination + ", " + source);
+      if (lane == 0) {
+        continue;
+      } else if (lane <= 31) {
+        lines.add("  vslideup.vi " + destination + ", v0, " + lane);
+      } else {
+        lines.add("  li " + INT_SCRATCH_1 + ", " + lane);
+        lines.add("  vslideup.vx " + destination + ", v0, " + INT_SCRATCH_1);
+      }
+    }
+  }
+
+  private boolean emitIntegerSequenceBuild(
+      MachineInstr instruction, String destination, List<String> lines) {
+    if (instruction.getOperands().isEmpty()
+        || instruction.getOperands().stream().anyMatch(operand -> !(operand instanceof ImmOperand))) {
+      return false;
+    }
+    long first = ((ImmOperand) instruction.getOperands().get(0)).getValue();
+    long step =
+        instruction.getOperands().size() == 1
+            ? 0
+            : ((ImmOperand) instruction.getOperands().get(1)).getValue() - first;
+    for (int lane = 1; lane < instruction.getOperands().size(); lane++) {
+      long expected = first + step * lane;
+      if (((ImmOperand) instruction.getOperands().get(lane)).getValue() != expected) return false;
+    }
+    if (step == 0) {
+      emitIntegerVectorSplat(destination, first, lines);
+      return true;
+    }
+    lines.add("  vid.v " + destination);
+    if (step != 1) {
+      lines.add("  li " + INT_SCRATCH_0 + ", " + step);
+      lines.add("  vmul.vx " + destination + ", " + destination + ", " + INT_SCRATCH_0);
+    }
+    if (first >= -16 && first <= 15) {
+      if (first != 0) {
+        lines.add("  vadd.vi " + destination + ", " + destination + ", " + first);
+      }
+    } else {
+      lines.add("  li " + INT_SCRATCH_0 + ", " + first);
+      lines.add("  vadd.vx " + destination + ", " + destination + ", " + INT_SCRATCH_0);
+    }
+    return true;
+  }
+
+  private void emitIntegerVectorSplat(String destination, long value, List<String> lines) {
+    if (value >= -16 && value <= 15) {
+      lines.add("  vmv.v.i " + destination + ", " + value);
+    } else {
+      lines.add("  li " + INT_SCRATCH_0 + ", " + value);
+      lines.add("  vmv.v.x " + destination + ", " + INT_SCRATCH_0);
+    }
+  }
+
+  private void emitVectorExtract(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    String vector = sourceReg(instruction.getOperands().get(0), allocation);
+    MachineOperand index = instruction.getOperands().get(1);
+    boolean laneZero = index instanceof ImmOperand immediate && immediate.getValue() == 0;
+    if (laneZero) {
+      // The scalar move reads element zero directly; no slide temporary is needed.
+    } else if (index instanceof ImmOperand immediate && immediate.getValue() >= 0
+        && immediate.getValue() <= 31) {
+      lines.add("  vslidedown.vi v0, " + vector + ", " + immediate.getValue());
+    } else {
+      String indexRegister =
+          operandRegisterOrScratch(
+              lines, index, INT_SCRATCH_0, MachineType.I32, allocation);
+      lines.add("  vslidedown.vx v0, " + vector + ", " + indexRegister);
+    }
+    String destination = destReg(instruction, allocation);
+    String extractionSource = laneZero ? vector : "v0";
+    if (instruction.getType().isFloat()) {
+      lines.add("  vfmv.f.s " + destination + ", " + extractionSource);
+    } else {
+      lines.add("  vmv.x.s " + destination + ", " + extractionSource);
+    }
+  }
+
+  private void emitVectorInsert(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    String destination = destReg(instruction, allocation);
+    String vector = sourceReg(instruction.getOperands().get(0), allocation);
+    VectorShape shape = instruction.getDest().getVectorShape();
+    MachineOperand element = instruction.getOperands().get(1);
+    MachineOperand index = instruction.getOperands().get(2);
+    if (index instanceof ImmOperand immediate && immediate.getValue() == 0) {
+      emitVectorRegisterMove(lines, destination, vector, shape);
+      String elementRegister =
+          operandRegisterOrScratch(
+              lines,
+              element,
+              shape.elementType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
+              shape.elementType(),
+              allocation);
+      lines.add(
+          "  " + (shape.elementType().isFloat() ? "vfmv.s.f " : "vmv.s.x ")
+              + destination + ", " + elementRegister);
+      return;
+    }
+    lines.add("  vid.v " + destination);
+    if (index instanceof ImmOperand immediate
+        && immediate.getValue() >= -16 && immediate.getValue() <= 15) {
+      lines.add("  vmseq.vi v0, " + destination + ", " + immediate.getValue());
+    } else {
+      String indexRegister =
+          operandRegisterOrScratch(lines, index, INT_SCRATCH_0, MachineType.I32, allocation);
+      lines.add("  vmseq.vx v0, " + destination + ", " + indexRegister);
+    }
+    String elementRegister =
+        operandRegisterOrScratch(
+            lines,
+            element,
+            shape.elementType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_1,
+            shape.elementType(),
+            allocation);
+    lines.add(
+        "  " + (shape.elementType().isFloat() ? "vfmerge.vfm " : "vmerge.vxm ")
+            + destination + ", " + vector + ", " + elementRegister + ", v0");
+  }
+
+  private void emitVectorShuffle(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    String destination = destReg(instruction, allocation);
+    VectorShape shape = instruction.getDest().getVectorShape();
+    String left = sourceReg(instruction.getOperands().get(0), allocation);
+    String right = sourceReg(instruction.getOperands().get(1), allocation);
+    VectorConstantOperand mask = (VectorConstantOperand) instruction.getOperands().get(2);
+    boolean hasUndefinedLane =
+        mask.getElements().stream()
+            .mapToLong(element -> ((Constant.Int) element).value)
+            .anyMatch(selected -> selected < 0 || selected >= shape.lanes() * 2L);
+    if (hasUndefinedLane) lines.add("  vmv.v.i " + destination + ", 0");
+    for (int lane = 0; lane < mask.getElements().size(); lane++) {
+      long selected = ((Constant.Int) mask.getElements().get(lane)).value;
+      if (selected < 0 || selected >= shape.lanes() * 2L) continue;
+      String source = selected < shape.lanes() ? left : right;
+      long sourceLane = selected % shape.lanes();
+      if (sourceLane <= 31) {
+        lines.add("  vslidedown.vi v0, " + source + ", " + sourceLane);
+      } else {
+        lines.add("  li " + INT_SCRATCH_0 + ", " + sourceLane);
+        lines.add("  vslidedown.vx v0, " + source + ", " + INT_SCRATCH_0);
+      }
+      if (lane == 0) {
+        lines.add(
+            "  " + (shape.elementType().isFloat() ? "vfmv.f.s " : "vmv.x.s ")
+                + (shape.elementType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0) + ", v0");
+        lines.add(
+            "  " + (shape.elementType().isFloat() ? "vfmv.s.f " : "vmv.s.x ")
+                + destination + ", "
+                + (shape.elementType().isFloat() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0));
+      } else {
+        if (lane <= 31) {
+          lines.add("  vslideup.vi " + destination + ", v0, " + lane);
+        } else {
+          lines.add("  li " + INT_SCRATCH_0 + ", " + lane);
+          lines.add("  vslideup.vx " + destination + ", v0, " + INT_SCRATCH_0);
+        }
+      }
+    }
+  }
+
+  private void emitVectorRegisterMove(
+      List<String> lines, String destination, String source, VectorShape shape) {
+    if (destination.equals(source)) return;
+    lines.add("  vmv" + shape.lmul() + "r.v " + destination + ", " + source);
+  }
+
+  private void emitVectorOperation(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    MachineOpcode opcode = instruction.getOpcode();
+    String destination = destReg(instruction, allocation);
+    if (opcode == MachineOpcode.VSELECT) {
+      MachineOperand condition = instruction.getOperands().get(0);
+      if (condition instanceof ImmOperand immediate) {
+        emitVectorRegisterMove(
+            lines,
+            destination,
+            sourceReg(
+                instruction.getOperands().get(immediate.getValue() != 0 ? 1 : 2), allocation),
+            instruction.getDest().getVectorShape());
+        return;
+      }
+      if (!(condition instanceof VRegOperand conditionOperand)
+          || !conditionOperand.getRegister().getType().isVector()) {
+        int id = selectLabelCounter++;
+        String done = ".L_vector_select_done_" + id;
+        emitVectorRegisterMove(
+            lines,
+            destination,
+            sourceReg(instruction.getOperands().get(2), allocation),
+            instruction.getDest().getVectorShape());
+        lines.add(
+            "  beqz " + sourceReg(condition, allocation) + ", " + done);
+        emitVectorRegisterMove(
+            lines,
+            destination,
+            sourceReg(instruction.getOperands().get(1), allocation),
+            instruction.getDest().getVectorShape());
+        lines.add(done + ":");
+        return;
+      }
+      String mask = sourceReg(instruction.getOperands().get(0), allocation);
+      emitVectorRegisterMove(
+          lines, "v0", mask, conditionOperand.getRegister().getVectorShape());
+      lines.add(
+          "  vmerge.vvm " + destination + ", "
+              + sourceReg(instruction.getOperands().get(2), allocation) + ", "
+              + sourceReg(instruction.getOperands().get(1), allocation) + ", v0");
+      return;
+    }
+    if (opcode == MachineOpcode.VZEXT) {
+      VectorShape sourceShape =
+          ((VRegOperand) instruction.getOperands().get(0)).getRegister().getVectorShape();
+      String source = sourceReg(instruction.getOperands().get(0), allocation);
+      if (sourceShape.mask()) {
+        emitVectorRegisterMove(lines, "v0", source, sourceShape);
+        lines.add("  vmv.v.i " + destination + ", 0");
+        lines.add("  vmerge.vim " + destination + ", " + destination + ", 1, v0");
+      } else {
+        int factor = instruction.getDest().getVectorShape().sew() / sourceShape.sew();
+        lines.add("  vzext.vf" + factor + " " + destination + ", " + source);
+      }
+      return;
+    }
+    if (opcode == MachineOpcode.VSEXT) {
+      VectorShape sourceShape =
+          ((VRegOperand) instruction.getOperands().get(0)).getRegister().getVectorShape();
+      VectorShape destinationShape = instruction.getDest().getVectorShape();
+      int factor = destinationShape.sew() / sourceShape.sew();
+      lines.add(
+          "  vsext.vf" + factor + " " + destination + ", "
+              + sourceReg(instruction.getOperands().get(0), allocation));
+      return;
+    }
+    if (opcode == MachineOpcode.VSITOFP || opcode == MachineOpcode.VFPTOSI) {
+      lines.add(
+          "  " + (opcode == MachineOpcode.VSITOFP ? "vfcvt.f.x.v " : "vfcvt.rtz.x.f.v ")
+              + destination + ", " + sourceReg(instruction.getOperands().get(0), allocation));
+      return;
+    }
+    if (opcode == MachineOpcode.VFNEG) {
+      String source = sourceReg(instruction.getOperands().get(0), allocation);
+      lines.add("  vfsgnjn.vv " + destination + ", " + source + ", " + source);
+      return;
+    }
+    if (opcode == MachineOpcode.VICMP || opcode == MachineOpcode.VFCMP) {
+      emitVectorCompare(instruction, allocation, lines);
+      return;
+    }
+    String mnemonic = switch (opcode) {
+      case VADD -> "vadd.vv";
+      case VSUB -> "vsub.vv";
+      case VMUL -> "vmul.vv";
+      case VDIV -> "vdiv.vv";
+      case VREM -> "vrem.vv";
+      case VSHL -> "vsll.vv";
+      case VASHR -> "vsra.vv";
+      case VAND -> "vand.vv";
+      case VXOR -> "vxor.vv";
+      case VFADD -> "vfadd.vv";
+      case VFSUB -> "vfsub.vv";
+      case VFMUL -> "vfmul.vv";
+      case VFDIV -> "vfdiv.vv";
+      default -> throw new IllegalStateException("unsupported vector operation: " + opcode);
+    };
+    lines.add(
+        "  " + mnemonic + " " + destination + ", "
+            + sourceReg(instruction.getOperands().get(0), allocation) + ", "
+            + sourceReg(instruction.getOperands().get(1), allocation));
+  }
+
+  private void emitVectorCompare(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    boolean floating = instruction.getOpcode() == MachineOpcode.VFCMP;
+    String left = sourceReg(instruction.getOperands().get(0), allocation);
+    String right = sourceReg(instruction.getOperands().get(1), allocation);
+    String predicate = instruction.getPredicate();
+    if (floating && (predicate.equals("one") || predicate.equals("ueq"))) {
+      String destination = destReg(instruction, allocation);
+      lines.add("  vmfeq.vv " + destination + ", " + left + ", " + left);
+      lines.add("  vmfeq.vv v0, " + right + ", " + right);
+      lines.add("  vmand.mm " + destination + ", " + destination + ", v0");
+      lines.add("  vmfne.vv v0, " + left + ", " + right);
+      lines.add("  vmand.mm " + destination + ", " + destination + ", v0");
+      if (predicate.equals("ueq")) {
+        lines.add("  vmnot.m " + destination + ", " + destination);
+      }
+      return;
+    }
+    if (floating
+        && (predicate.equals("ult")
+            || predicate.equals("ule")
+            || predicate.equals("ugt")
+            || predicate.equals("uge"))) {
+      String destination = destReg(instruction, allocation);
+      String orderedInverse =
+          switch (predicate) {
+            case "ult" -> "vmfle.vv " + destination + ", " + right + ", " + left;
+            case "ule" -> "vmflt.vv " + destination + ", " + right + ", " + left;
+            case "ugt" -> "vmfle.vv " + destination + ", " + left + ", " + right;
+            case "uge" -> "vmflt.vv " + destination + ", " + left + ", " + right;
+            default -> throw new IllegalStateException();
+          };
+      lines.add("  " + orderedInverse);
+      lines.add("  vmnot.m " + destination + ", " + destination);
+      return;
+    }
+    boolean swap =
+        predicate.equals("sgt")
+            || predicate.equals("ugt")
+            || predicate.equals("ogt")
+            || predicate.equals("oge");
+    String mnemonic =
+        floating
+            ? switch (predicate) {
+              case "oeq" -> "vmfeq.vv";
+              case "une" -> "vmfne.vv";
+              case "olt", "ogt" -> "vmflt.vv";
+              case "ole", "oge" -> "vmfle.vv";
+              default -> throw new UnsupportedOperationException(
+                  "unsupported vector FP predicate: " + predicate);
+            }
+            : switch (predicate) {
+              case "eq" -> "vmseq.vv";
+              case "ne" -> "vmsne.vv";
+              case "slt", "sgt" -> "vmslt.vv";
+              case "sle", "sge" -> "vmsle.vv";
+              case "ult", "ugt" -> "vmsltu.vv";
+              case "ule", "uge" -> "vmsleu.vv";
+              default -> throw new UnsupportedOperationException(
+                  "unsupported vector integer predicate: " + predicate);
+            };
+    if (!floating && (predicate.equals("sge") || predicate.equals("uge"))) {
+      lines.add(
+          "  " + (predicate.equals("sge") ? "vmslt.vv " : "vmsltu.vv ")
+              + destReg(instruction, allocation) + ", " + left + ", " + right);
+      lines.add("  vmnot.m " + destReg(instruction, allocation) + ", " + destReg(instruction, allocation));
+      return;
+    }
+    lines.add(
+        "  " + mnemonic + " " + destReg(instruction, allocation) + ", "
+            + (swap ? right : left) + ", " + (swap ? left : right));
+  }
+
+  private void emitVCIX(
+      MachineInstr instruction, AllocationResult allocation, List<String> lines) {
+    VCIXInfo info = instruction.getVCIXInfo();
+    if (info == null) throw new IllegalArgumentException("VCIX instruction has no encoding info");
+    VCIXInfo.OperandForm form = info.form();
+    int operandOffset = form.readsDestination() ? 1 : 0;
+    int vd;
+    if (info.writesVectorDestination()) {
+      vd = allocatedPhysical(instruction.getDest(), allocation).getEncoding();
+      if (form.readsDestination()) {
+        String oldDestination = sourceReg(instruction.getOperands().get(0), allocation);
+        emitVectorRegisterMove(
+            lines,
+            "v" + vd,
+            oldDestination,
+            instruction.getDest().getVectorShape());
+      }
+    } else if (form.readsDestination()) {
+      vd = vectorEncoding(instruction.getOperands().get(0), allocation);
+    } else {
+      vd = info.rdCustom();
+    }
+
+    int rs2 =
+        form.hasVectorSource2()
+            ? vectorEncoding(instruction.getOperands().get(operandOffset), allocation)
+            : info.rs2Custom();
+    int argumentIndex = form.hasVectorSource2() ? operandOffset + 1 : 0;
+    int rs1;
+    if (form.hasImmediate()) {
+      long immediate = ((ImmOperand) instruction.getOperands().get(argumentIndex)).getValue();
+      if (immediate < -16 || immediate > 15) {
+        throw new IllegalArgumentException("VCIX immediate is outside signed five-bit range");
+      }
+      rs1 = (int) immediate & 0x1f;
+    } else if (form.hasVectorSource1()) {
+      rs1 = vectorEncoding(instruction.getOperands().get(argumentIndex), allocation);
+    } else {
+      String argumentRegister =
+          operandRegisterOrScratch(
+              lines,
+              instruction.getOperands().get(argumentIndex),
+              form.hasFloatScalar() ? FLOAT_SCRATCH_0 : INT_SCRATCH_0,
+              form.hasFloatScalar() ? MachineType.F32 : MachineType.I32,
+              allocation);
+      rs1 = riscvRegisterEncoding(argumentRegister);
+    }
+
+    int encoded = VCIXEncoder.encode(info, vd, rs2, rs1);
+    lines.add(
+        String.format(
+            "  .4byte 0x%08x # %s", Integer.toUnsignedLong(encoded), info.mnemonic()));
+  }
+
+  private int vectorEncoding(MachineOperand operand, AllocationResult allocation) {
+    if (operand instanceof PhysicalRegOperand physical) {
+      int encoding = physical.getRegister().getEncoding();
+      if (encoding >= 0) return encoding;
+      return parseVectorRegister(physical.getRegister().getName());
+    }
+    if (operand instanceof VRegOperand virtual) {
+      return allocatedPhysical(virtual.getRegister(), allocation).getEncoding();
+    }
+    throw new IllegalArgumentException("VCIX vector operand must be a register");
+  }
+
+  private PhysicalRegister allocatedPhysical(
+      VirtualRegister register, AllocationResult allocation) {
+    ValueLocation location = allocation.locationOf(register);
+    if (!(location instanceof RegisterLocation registerLocation)) {
+      throw new IllegalStateException("VCIX operand was not allocated to a register");
+    }
+    return registerLocation.getRegister();
+  }
+
+  private static int parseVectorRegister(String name) {
+    if (!name.startsWith("v")) throw new IllegalArgumentException("not a vector register: " + name);
+    return Integer.parseInt(name.substring(1));
+  }
+
+  private static int riscvRegisterEncoding(String name) {
+    String[] integerNames = {
+      "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
+      "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
+      "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
+      "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"
+    };
+    for (int index = 0; index < integerNames.length; index++) {
+      if (integerNames[index].equals(name) || name.equals("fp") && index == 8) return index;
+    }
+    String[] floatNames = {
+      "ft0", "ft1", "ft2", "ft3", "ft4", "ft5", "ft6", "ft7",
+      "fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5",
+      "fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
+      "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"
+    };
+    for (int index = 0; index < floatNames.length; index++) {
+      if (floatNames[index].equals(name)) return index;
+    }
+    throw new IllegalArgumentException("unknown RISC-V register: " + name);
   }
 
   private void emitLoad(MachineInstr instr, AllocationResult allocation, List<String> lines) {

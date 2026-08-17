@@ -35,6 +35,10 @@ public final class MachineFunction {
     return new VirtualRegister(nextVRegId++, type, hint);
   }
 
+  public VirtualRegister createVectorRegister(VectorShape shape, String hint) {
+    return new VirtualRegister(nextVRegId++, MachineType.VECTOR, hint, shape);
+  }
+
   public void addArgument(VirtualRegister reg, MachineType type) {
     arguments.add(reg);
     argumentTypes.add(type);

@@ -45,6 +45,12 @@ final class GVNValueTable {
         || instruction.getOpcode() == Instruction.Opcode.CALL) {
       return memory.findOrAdd(instruction, modRef);
     }
+    if (instruction.getOpcode() == Instruction.Opcode.VCIX
+        && instruction.getVCIXInfo() != null
+        && instruction.getVCIXInfo().sideEffect()) {
+      memory.invalidateAll();
+      return null;
+    }
     if (!isPure(instruction)) return null;
     Expression expression = expressionFor(instruction);
     Value existing = available.putIfAbsent(expression, instruction);

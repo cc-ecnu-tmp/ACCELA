@@ -8,6 +8,7 @@ public enum MachineType {
   I64(8),
   PTR(8),
   F32(4),
+  VECTOR(0),
   VOID(0);
 
   private final int size;
@@ -28,6 +29,17 @@ public enum MachineType {
     return this == I1 || this == I32 || this == I64 || this == PTR;
   }
 
+  public boolean isVector() {
+    return this == VECTOR;
+  }
+
+  public RegisterClass registerClass() {
+    if (isVector()) return RegisterClass.VR;
+    if (isFloat()) return RegisterClass.FPR;
+    if (isIntegerLike()) return RegisterClass.GPR;
+    throw new IllegalStateException("type has no register class: " + this);
+  }
+
   public static MachineType fromIr(Type type) {
     if (type == null) return VOID;
     switch (type.dataType) {
@@ -46,8 +58,7 @@ public enum MachineType {
       case ARRAY:
         return PTR;
       case VECTOR:
-        throw new IllegalArgumentException(
-            "vector IR must be scalarized before machine type selection: " + type);
+        return VECTOR;
       default:
         throw new IllegalArgumentException("unsupported IR type: " + type);
     }

@@ -16,6 +16,9 @@ import accela.backend.machine.StackSlotOperand;
 import accela.backend.machine.SymbolOperand;
 import accela.backend.machine.VRegOperand;
 import accela.backend.machine.VirtualRegister;
+import accela.backend.machine.VectorConstantOperand;
+import accela.backend.machine.VectorShape;
+import accela.backend.machine.RVVConfig;
 import accela.backend.target.RISCVTarget;
 import accela.ir.BasicBlock;
 import accela.ir.Constant;
@@ -25,6 +28,8 @@ import accela.ir.Instruction;
 import accela.ir.Type;
 import accela.ir.Value;
 import java.util.IdentityHashMap;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 public final class IRToMachineLowering {
@@ -49,7 +54,7 @@ public final class IRToMachineLowering {
     Map<Value, VirtualRegister> valueToVReg = new IdentityHashMap<>();
     for (Function.Argument argument : function.getArguments()) {
       VirtualRegister vreg =
-          machineFunction.createVirtualRegister(MachineType.fromIr(argument.getType()), argument.getName());
+          createVirtualRegister(machineFunction, argument.getType(), argument.getName());
       machineFunction.addArgument(vreg, MachineType.fromIr(argument.getType()));
       valueToVReg.put(argument, vreg);
     }
@@ -59,8 +64,9 @@ public final class IRToMachineLowering {
         if (inst.hasResult()) {
           valueToVReg.put(
               inst,
-              machineFunction.createVirtualRegister(
-                  MachineType.fromIr(inst.getType()),
+              createVirtualRegister(
+                  machineFunction,
+                  inst.getType(),
                   inst.getName() != null ? inst.getName() : inst.getOpcode().name().toLowerCase()));
         }
       }
@@ -112,7 +118,7 @@ public final class IRToMachineLowering {
       case LOAD:
         emitSimple(
             block,
-            MachineOpcode.LOAD,
+            inst.getType().isVector() ? MachineOpcode.VLOAD : MachineOpcode.LOAD,
             valueToVReg.get(inst),
             MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
@@ -150,7 +156,7 @@ public final class IRToMachineLowering {
       case ZEXT:
         emitSimple(
             block,
-            MachineOpcode.ZEXT,
+            inst.getType().isVector() ? MachineOpcode.VZEXT : MachineOpcode.ZEXT,
             valueToVReg.get(inst),
             MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
@@ -158,7 +164,7 @@ public final class IRToMachineLowering {
       case SEXT:
         emitSimple(
             block,
-            MachineOpcode.SEXT,
+            inst.getType().isVector() ? MachineOpcode.VSEXT : MachineOpcode.SEXT,
             valueToVReg.get(inst),
             MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
@@ -166,17 +172,17 @@ public final class IRToMachineLowering {
       case SITOFP:
         emitSimple(
             block,
-            MachineOpcode.SITOFP,
+            inst.getType().isVector() ? MachineOpcode.VSITOFP : MachineOpcode.SITOFP,
             valueToVReg.get(inst),
-            MachineType.F32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
         return;
       case FPTOSI:
         emitSimple(
             block,
-            MachineOpcode.FPTOSI,
+            inst.getType().isVector() ? MachineOpcode.VFPTOSI : MachineOpcode.FPTOSI,
             valueToVReg.get(inst),
-            MachineType.I32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
         return;
       case BR:
@@ -206,49 +212,72 @@ public final class IRToMachineLowering {
       case FADD:
         emitBinary(
             block,
-            MachineOpcode.FADD,
+            inst.getType().isVector() ? MachineOpcode.VFADD : MachineOpcode.FADD,
             valueToVReg.get(inst),
-            MachineType.F32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks),
             lowerValue(inst.getOperand(1), valueToVReg, blocks));
         return;
       case FSUB:
         emitBinary(
             block,
-            MachineOpcode.FSUB,
+            inst.getType().isVector() ? MachineOpcode.VFSUB : MachineOpcode.FSUB,
             valueToVReg.get(inst),
-            MachineType.F32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks),
             lowerValue(inst.getOperand(1), valueToVReg, blocks));
         return;
       case FMUL:
         emitBinary(
             block,
-            MachineOpcode.FMUL,
+            inst.getType().isVector() ? MachineOpcode.VFMUL : MachineOpcode.FMUL,
             valueToVReg.get(inst),
-            MachineType.F32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks),
             lowerValue(inst.getOperand(1), valueToVReg, blocks));
         return;
       case FDIV:
         emitBinary(
             block,
-            MachineOpcode.FDIV,
+            inst.getType().isVector() ? MachineOpcode.VFDIV : MachineOpcode.FDIV,
             valueToVReg.get(inst),
-            MachineType.F32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks),
             lowerValue(inst.getOperand(1), valueToVReg, blocks));
         return;
       case FNEG:
         emitSimple(
             block,
-            MachineOpcode.FNEG,
+            inst.getType().isVector() ? MachineOpcode.VFNEG : MachineOpcode.FNEG,
             valueToVReg.get(inst),
-            MachineType.F32,
+            MachineType.fromIr(inst.getType()),
             lowerValue(inst.getOperand(0), valueToVReg, blocks));
         return;
       case SELECT:
         lowerSelect(inst, block, valueToVReg, blocks);
+        return;
+      case BUILD_VECTOR:
+        lowerVectorConstruction(
+            inst, MachineOpcode.VBUILD, block, valueToVReg, blocks);
+        return;
+      case SPLAT:
+        lowerVectorConstruction(
+            inst, MachineOpcode.VSPLAT, block, valueToVReg, blocks);
+        return;
+      case EXTRACT_ELEMENT:
+        lowerVectorConstruction(
+            inst, MachineOpcode.VEXTRACT, block, valueToVReg, blocks);
+        return;
+      case INSERT_ELEMENT:
+        lowerVectorConstruction(
+            inst, MachineOpcode.VINSERT, block, valueToVReg, blocks);
+        return;
+      case SHUFFLE_VECTOR:
+        lowerVectorConstruction(
+            inst, MachineOpcode.VSHUFFLE, block, valueToVReg, blocks);
+        return;
+      case VCIX:
+        lowerVCIX(inst, block, valueToVReg, blocks);
         return;
       default:
         throw new UnsupportedOperationException("Unsupported IR opcode: " + inst.getOpcode());
@@ -260,12 +289,72 @@ public final class IRToMachineLowering {
       MachineBasicBlock block,
       Map<Value, VirtualRegister> valueToVReg,
       Map<BasicBlock, MachineBasicBlock> blocks) {
-    MachineInstr select = new MachineInstr(MachineOpcode.SELECT, valueToVReg.get(instruction));
+    MachineInstr select =
+        new MachineInstr(
+            instruction.getType().isVector() ? MachineOpcode.VSELECT : MachineOpcode.SELECT,
+            valueToVReg.get(instruction));
     select.setType(MachineType.fromIr(instruction.getType()));
     for (int operand = 0; operand < instruction.getNumOperands(); operand++) {
       select.addOperand(lowerValue(instruction.getOperand(operand), valueToVReg, blocks));
     }
+    annotateVectorConfig(select);
     block.addInstruction(select);
+  }
+
+  private void lowerVectorConstruction(
+      Instruction instruction,
+      MachineOpcode opcode,
+      MachineBasicBlock block,
+      Map<Value, VirtualRegister> valueToVReg,
+      Map<BasicBlock, MachineBasicBlock> blocks) {
+    MachineInstr lowered = new MachineInstr(opcode, valueToVReg.get(instruction));
+    lowered.setType(MachineType.fromIr(instruction.getType()));
+    for (int index = 0; index < instruction.getNumOperands(); index++) {
+      lowered.addOperand(lowerValue(instruction.getOperand(index), valueToVReg, blocks));
+    }
+    annotateVectorConfig(lowered);
+    block.addInstruction(lowered);
+  }
+
+  private void lowerVCIX(
+      Instruction instruction,
+      MachineBasicBlock block,
+      Map<Value, VirtualRegister> valueToVReg,
+      Map<BasicBlock, MachineBasicBlock> blocks) {
+    if (!target.hasVCIX()) {
+      throw new UnsupportedOperationException("VCIX intrinsic requires the xsfvcp SIMD target");
+    }
+    MachineInstr lowered =
+        new MachineInstr(MachineOpcode.VCIX, valueToVReg.get(instruction));
+    lowered.setType(MachineType.fromIr(instruction.getType()));
+    lowered.setVCIXInfo(instruction.getVCIXInfo());
+    lowered.setRVVConfig(instruction.getVCIXConfig());
+    for (int index = 0; index < instruction.getNumOperands(); index++) {
+      lowered.addOperand(lowerValue(instruction.getOperand(index), valueToVReg, blocks));
+    }
+    if (instruction.getVCIXInfo().form().isWidening()) {
+      if (instruction.getNumOperands() < 2 || !instruction.getOperand(1).getType().isVector()) {
+        throw new IllegalArgumentException("widening VCIX requires a narrow vs2 vector operand");
+      }
+      VectorShape narrowShape = shapeFor(instruction.getOperand(1).getType());
+      Type wideType =
+          instruction.getVCIXInfo().writesVectorDestination()
+              ? instruction.getType()
+              : instruction.getOperand(0).getType();
+      VectorShape wideShape = shapeFor(wideType);
+      if (narrowShape.lmul() >= 8 || wideShape.lmul() != narrowShape.lmul() * 2) {
+        throw new IllegalArgumentException(
+            "widening VCIX requires an allocatable 2x LMUL destination group");
+      }
+      if (lowered.getRVVConfig() == null) {
+        lowered.setRVVConfig(RVVConfig.forShape(narrowShape));
+      }
+    }
+    annotateVectorConfig(lowered);
+    if (lowered.getRVVConfig() == null) {
+      throw new IllegalArgumentException("VCIX intrinsic requires a vector result or operand");
+    }
+    block.addInstruction(lowered);
   }
 
   private void lowerAlloca(
@@ -305,10 +394,15 @@ public final class IRToMachineLowering {
       return;
     }
 
-    MachineInstr store = new MachineInstr(MachineOpcode.STORE, null);
+    MachineInstr store =
+        new MachineInstr(
+            value.getType().isVector() ? MachineOpcode.VSTORE : MachineOpcode.STORE, null);
     store.addOperand(lowerValue(value, valueToVReg, blocks));
     store.addOperand(lowerValue(inst.getOperand(1), valueToVReg, blocks));
     store.setType(MachineType.fromIr(value.getType()));
+    if (value.getType().isVector()) {
+      store.setRVVConfig(RVVConfig.forShape(shapeFor(value.getType())));
+    }
     block.addInstruction(store);
   }
 
@@ -317,11 +411,15 @@ public final class IRToMachineLowering {
       MachineBasicBlock block,
       Map<Value, VirtualRegister> valueToVReg,
       Map<BasicBlock, MachineBasicBlock> blocks) {
-    MachineInstr cmp = new MachineInstr(MachineOpcode.ICMP, valueToVReg.get(inst));
+    MachineInstr cmp =
+        new MachineInstr(
+            inst.getType().isVector() ? MachineOpcode.VICMP : MachineOpcode.ICMP,
+            valueToVReg.get(inst));
     cmp.addOperand(lowerValue(inst.getOperand(0), valueToVReg, blocks));
     cmp.addOperand(lowerValue(inst.getOperand(1), valueToVReg, blocks));
     cmp.setType(MachineType.I1);
     cmp.setPredicate(inst.getPredicate());
+    annotateVectorConfig(cmp);
     block.addInstruction(cmp);
   }
 
@@ -359,11 +457,15 @@ public final class IRToMachineLowering {
       MachineBasicBlock block,
       Map<Value, VirtualRegister> valueToVReg,
       Map<BasicBlock, MachineBasicBlock> blocks) {
-    MachineInstr cmp = new MachineInstr(MachineOpcode.FCMP, valueToVReg.get(inst));
+    MachineInstr cmp =
+        new MachineInstr(
+            inst.getType().isVector() ? MachineOpcode.VFCMP : MachineOpcode.FCMP,
+            valueToVReg.get(inst));
     cmp.addOperand(lowerValue(inst.getOperand(0), valueToVReg, blocks));
     cmp.addOperand(lowerValue(inst.getOperand(1), valueToVReg, blocks));
     cmp.setType(MachineType.I1);
     cmp.setPredicate(inst.getPredicate());
+    annotateVectorConfig(cmp);
     block.addInstruction(cmp);
   }
 
@@ -457,17 +559,18 @@ public final class IRToMachineLowering {
       MachineBasicBlock block,
       Map<Value, VirtualRegister> valueToVReg,
       Map<BasicBlock, MachineBasicBlock> blocks) {
+    boolean vector = instruction.getType().isVector();
     MachineOpcode opcode = switch (instruction.getOpcode()) {
-      case ADD -> MachineOpcode.ADD;
-      case SUB -> MachineOpcode.SUB;
-      case MUL -> MachineOpcode.MUL;
-      case SMULH -> MachineOpcode.SMULH;
-      case SDIV -> MachineOpcode.DIV;
-      case SREM -> MachineOpcode.REM;
-      case SHL -> MachineOpcode.SHL;
-      case ASHR -> MachineOpcode.ASHR;
-      case AND -> MachineOpcode.AND;
-      case XOR -> MachineOpcode.XOR;
+      case ADD -> vector ? MachineOpcode.VADD : MachineOpcode.ADD;
+      case SUB -> vector ? MachineOpcode.VSUB : MachineOpcode.SUB;
+      case MUL -> vector ? MachineOpcode.VMUL : MachineOpcode.MUL;
+      case SMULH -> vector ? MachineOpcode.VSMULH : MachineOpcode.SMULH;
+      case SDIV -> vector ? MachineOpcode.VDIV : MachineOpcode.DIV;
+      case SREM -> vector ? MachineOpcode.VREM : MachineOpcode.REM;
+      case SHL -> vector ? MachineOpcode.VSHL : MachineOpcode.SHL;
+      case ASHR -> vector ? MachineOpcode.VASHR : MachineOpcode.ASHR;
+      case AND -> vector ? MachineOpcode.VAND : MachineOpcode.AND;
+      case XOR -> vector ? MachineOpcode.VXOR : MachineOpcode.XOR;
       default -> throw new IllegalStateException(
           "Not an integer binary instruction: " + instruction.getOpcode());
     };
@@ -520,6 +623,7 @@ public final class IRToMachineLowering {
     MachineInstr instr = new MachineInstr(opcode, dest);
     instr.addOperand(operand);
     instr.setType(type);
+    annotateVectorConfig(instr);
     block.addInstruction(instr);
   }
 
@@ -534,6 +638,7 @@ public final class IRToMachineLowering {
     instr.addOperand(lhs);
     instr.addOperand(rhs);
     instr.setType(type);
+    annotateVectorConfig(instr);
     block.addInstruction(instr);
   }
 
@@ -541,11 +646,21 @@ public final class IRToMachineLowering {
       Value value,
       Map<Value, VirtualRegister> valueToVReg,
       Map<BasicBlock, MachineBasicBlock> blocks) {
+    if (value instanceof Constant.Vector vector) {
+      return new VectorConstantOperand(shapeFor(value.getType()), vector.elements);
+    }
     if (value instanceof Constant.Int) {
       return new ImmOperand(target.lowerIntConstant((Constant.Int) value));
     }
     if (value instanceof Constant.Float) {
       return new FloatImmOperand(((Constant.Float) value).value);
+    }
+    if (value instanceof Constant.Zero && value.getType().isVector()) {
+      Type elementType = value.getType().getElementType();
+      Constant scalarZero = Constant.zero(elementType);
+      return new VectorConstantOperand(
+          shapeFor(value.getType()),
+          Collections.nCopies(value.getType().getLaneCount(), scalarZero));
     }
     if (value instanceof Constant.Zero && !value.getType().isArray()) {
       if (value.getType().isFloat()) return new FloatImmOperand(0.0f);
@@ -562,6 +677,41 @@ public final class IRToMachineLowering {
       return new VRegOperand(register);
     }
     throw new UnsupportedOperationException("Unsupported value in backend lowering: " + value.getClass().getName());
+  }
+
+  private VirtualRegister createVirtualRegister(
+      MachineFunction function, Type type, String hint) {
+    if (type.isVector()) return function.createVectorRegister(shapeFor(type), hint);
+    return function.createVirtualRegister(MachineType.fromIr(type), hint);
+  }
+
+  private VectorShape shapeFor(Type type) {
+    return VectorShape.fromIr(type, target.getMinimumVLEN());
+  }
+
+  private static void annotateVectorConfig(MachineInstr instruction) {
+    if (instruction.getRVVConfig() != null) return;
+    VectorShape shape = null;
+    if (instruction.getOpcode() != MachineOpcode.VICMP
+        && instruction.getOpcode() != MachineOpcode.VFCMP
+        && instruction.getDest() != null
+        && instruction.getDest().getType().isVector()) {
+      shape = instruction.getDest().getVectorShape();
+    }
+    if (shape == null) {
+      for (MachineOperand operand : instruction.getOperands()) {
+        if (operand instanceof VRegOperand register
+            && register.getRegister().getType().isVector()) {
+          shape = register.getRegister().getVectorShape();
+          break;
+        }
+        if (operand instanceof VectorConstantOperand constant) {
+          shape = constant.getShape();
+          break;
+        }
+      }
+    }
+    if (shape != null) instruction.setRVVConfig(RVVConfig.forShape(shape));
   }
 
 }

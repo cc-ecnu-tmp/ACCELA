@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Objects;
 
 final class AllocatorState {
   private final InterferenceGraph graph;
@@ -140,21 +141,21 @@ final class AllocatorState {
   private int registerCountAfterCoalescing(
       VirtualRegister representative, VirtualRegister merged) {
     if (liveAcrossCall.contains(representative) || liveAcrossCall.contains(merged)) {
-      return registers.calleeSavedRegisters(representative.getType()).size();
+      return registers.calleeSavedRegisters(representative).size();
     }
     if (fixedRegisterHazards.contains(representative)
         || fixedRegisterHazards.contains(merged)) {
-      return registers.nonArgumentRegisters(representative.getType()).size();
+      return registers.nonArgumentRegisters(representative).size();
     }
     String left = fixedRegisterAffinities.get(representative);
     String right = fixedRegisterAffinities.get(merged);
     if (left != null && right != null && !left.equals(right)) {
-      return registers.nonArgumentRegisters(representative.getType()).size();
+      return registers.nonArgumentRegisters(representative).size();
     }
     if (left != null || right != null) {
-      return registers.nonArgumentRegisters(representative.getType()).size() + 1;
+      return registers.nonArgumentRegisters(representative).size() + 1;
     }
-    return registers.allocatableRegisters(representative.getType()).size();
+    return registers.allocatableRegisters(representative).size();
   }
 
   private void addMove(VirtualRegister register, InterferenceGraphBuilder.Move move) {
@@ -216,7 +217,9 @@ final class AllocatorState {
     VirtualRegister src = getAlias(move.src());
     VirtualRegister dst = getAlias(move.dst());
 
-    if (src.getType() != dst.getType()) {
+    if (src.getType() != dst.getType()
+        || src.getType().isVector()
+            && !Objects.equals(src.getVectorShape(), dst.getVectorShape())) {
       constrainedMoves.add(move);
       addWorkList(src);
       addWorkList(dst);
@@ -289,20 +292,20 @@ final class AllocatorState {
   void assignColors() {
     while (!selectStack.isEmpty()) {
       VirtualRegister register = selectStack.pop();
-      Set<String> unavailable = new HashSet<>();
+      List<PhysicalRegister> unavailable = new ArrayList<>();
 
       for (VirtualRegister neighbor : graph.neighbors(register)) {
         VirtualRegister aliasNeighbor = getAlias(neighbor);
         PhysicalRegister assigned = color.get(aliasNeighbor);
         if (assigned != null) {
-          unavailable.add(assigned.getName());
+          unavailable.add(assigned);
         }
       }
 
       PhysicalRegister selected = null;
       List<PhysicalRegister> candidates = candidateRegisters(register);
       for (PhysicalRegister candidate : candidates) {
-        if (!unavailable.contains(candidate.getName())) {
+        if (unavailable.stream().noneMatch(candidate::overlaps)) {
           selected = candidate;
           break;
         }
@@ -329,22 +332,22 @@ final class AllocatorState {
 
   private List<PhysicalRegister> candidateRegisters(VirtualRegister register) {
     if (liveAcrossCall.contains(getAlias(register))) {
-      return registers.calleeSavedRegisters(register.getType());
+      return registers.calleeSavedRegisters(register);
     }
     if (fixedRegisterHazards.contains(getAlias(register))) {
-      return registers.nonArgumentRegisters(register.getType());
+      return registers.nonArgumentRegisters(register);
     }
     String preferred = fixedRegisterAffinities.get(getAlias(register));
     if (preferred != null) {
       List<PhysicalRegister> candidates = new ArrayList<>();
-      registers.allocatableRegisters(register.getType()).stream()
+      registers.allocatableRegisters(register).stream()
           .filter(candidate -> candidate.getName().equals(preferred))
           .findFirst()
           .ifPresent(candidates::add);
-      candidates.addAll(registers.nonArgumentRegisters(register.getType()));
+      candidates.addAll(registers.nonArgumentRegisters(register));
       return candidates;
     }
-    return registers.allocatableRegisters(register.getType());
+    return registers.allocatableRegisters(register);
   }
 
   VirtualRegister getAlias(VirtualRegister register) {

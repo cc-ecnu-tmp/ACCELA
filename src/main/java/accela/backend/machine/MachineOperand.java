@@ -8,7 +8,8 @@ public abstract class MachineOperand {
     FLOAT_IMM,
     BLOCK,
     SYMBOL,
-    STACK_SLOT
+    STACK_SLOT,
+    VECTOR_CONSTANT
   }
 
   private final Kind kind;

@@ -39,6 +39,12 @@ public final class GlobalModRefAnalysis {
           effects.addAccess(instruction.getOperand(0), function, false);
         } else if (instruction.getOpcode() == Instruction.Opcode.STORE) {
           effects.addAccess(instruction.getOperand(1), function, true);
+        } else if (instruction.getOpcode() == Instruction.Opcode.VCIX
+            && instruction.getVCIXInfo() != null
+            && instruction.getVCIXInfo().sideEffect()) {
+          effects.unknownRead = true;
+          effects.unknownWrite = true;
+          effects.observable = true;
         }
       }
     }

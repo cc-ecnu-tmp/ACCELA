@@ -22,11 +22,12 @@ import java.util.Set;
 public final class IteratedRegisterAllocator implements RegisterAllocator {
   private static final int MAX_REWRITE_ROUNDS = 20;
 
-  private final TargetRegisterInfo registers = new TargetRegisterInfo();
+  private TargetRegisterInfo registers = new TargetRegisterInfo();
   private final LocalSpillRewriter spillRewriter = new LocalSpillRewriter();
 
   @Override
   public AllocationResult allocate(MachineFunction function, RISCVTarget target) {
+    registers = new TargetRegisterInfo(target);
     LiveRangeSplitting.run(function, target);
     Map<VirtualRegister, StackSlot> spilledLocations = new LinkedHashMap<>();
     for (int round = 0; round < MAX_REWRITE_ROUNDS; round++) {
@@ -173,7 +174,7 @@ public final class IteratedRegisterAllocator implements RegisterAllocator {
       Map<VirtualRegister, String> affinities) {
     if (hazards.contains(register)) return;
     if (fixed == null
-        || fixed.getType().isFloat() != register.getType().isFloat()
+        || fixed.getRegisterClass() != register.getRegisterClass()
         || registers.isAllocatorReserved(fixed)) {
       hazards.add(register);
       affinities.remove(register);

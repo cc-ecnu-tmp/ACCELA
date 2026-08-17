@@ -1,0 +1,189 @@
+package accela.backend;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.backend.machine.VCIXInfo;
+import accela.backend.target.RISCVTargetOptions;
+import accela.ir.BasicBlock;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import org.junit.jupiter.api.Test;
+
+final class RISCVVectorBackendTest {
+  @Test
+  void lowersFixedVectorArithmeticToRatifiedRvv() {
+    accela.ir.Module module = new accela.ir.Module();
+    Function function = new Function("vector_add", Type.INT);
+    var leftPointer = function.addArgument(Type.PTR, "left");
+    var rightPointer = function.addArgument(Type.PTR, "right");
+    var outputPointer = function.addArgument(Type.PTR, "output");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type vectorType = Type.vector(Type.INT, 4);
+    var left = builder.createLoad(vectorType, leftPointer);
+    var right = builder.createLoad(vectorType, rightPointer);
+    var sum = builder.createAdd(left, right);
+    builder.createStore(sum, outputPointer);
+    builder.createRet(builder.createExtractElement(sum, accela.ir.Constant.intConst(0)));
+    module.addFunction(function);
+
+    String assembly =
+        new BackendCompiler(RISCVTargetOptions.of("rvv", 128)).compileToAssembly(module);
+
+    assertTrue(assembly.contains(".attribute arch, \"rv64gcv_zvl128b\""));
+    assertTrue(assembly.contains("vsetivli zero, 4, e32, m1, ta, ma"));
+    assertTrue(assembly.contains("vle32.v"));
+    assertTrue(assembly.contains("vadd.vv"));
+    assertTrue(assembly.contains("vse32.v"));
+    assertTrue(assembly.contains("vmv.x.s"));
+  }
+
+  @Test
+  void keepsScalarTargetBackwardCompatible() {
+    accela.ir.Module module = new accela.ir.Module();
+    Function function = new Function("scalar", Type.INT);
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    builder.createRet(accela.ir.Constant.intConst(0));
+    module.addFunction(function);
+
+    String assembly = new BackendCompiler().compileToAssembly(module);
+
+    assertTrue(assembly.contains(".attribute arch, \"rv64gc\""));
+    assertFalse(assembly.contains("vset"));
+  }
+
+  @Test
+  void emitsExplicitVcixIntrinsicAsCustom2Word() {
+    accela.ir.Module module = new accela.ir.Module();
+    Function function = new Function("vcix_binary", Type.INT);
+    var leftPointer = function.addArgument(Type.PTR, "left");
+    var rightPointer = function.addArgument(Type.PTR, "right");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type vectorType = Type.vector(Type.INT, 4);
+    var left = builder.createLoad(vectorType, leftPointer);
+    var right = builder.createLoad(vectorType, rightPointer);
+    VCIXInfo info =
+        new VCIXInfo(VCIXInfo.OperandForm.VV, true, 3, 0, 0, false);
+    var result = builder.createVCIX(vectorType, info, left, right);
+    builder.createRet(builder.createExtractElement(result, accela.ir.Constant.intConst(0)));
+    module.addFunction(function);
+
+    String assembly =
+        new BackendCompiler(RISCVTargetOptions.of("xsfvcp", 128)).compileToAssembly(module);
+
+    assertTrue(assembly.contains(".attribute arch, \"rv64gcv_zvl128b_xsfvcp\""));
+    assertTrue(assembly.contains("# sf.vc.v.vv"));
+    assertTrue(assembly.contains(".4byte 0x"));
+  }
+
+  @Test
+  void spillsVectorPressureWithFixedWidthLoadsAndStores() {
+    accela.ir.Module module = new accela.ir.Module();
+    Function function = new Function("vector_pressure", Type.INT);
+    var pointer = function.addArgument(Type.PTR, "pointer");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type vectorType = Type.vector(Type.INT, 4);
+    java.util.List<accela.ir.Value> values = new java.util.ArrayList<>();
+    for (int index = 0; index < 34; index++) {
+      values.add(builder.createLoad(vectorType, pointer));
+    }
+    accela.ir.Value sum = values.getFirst();
+    for (int index = 1; index < values.size(); index++) {
+      sum = builder.createAdd(sum, values.get(index));
+    }
+    builder.createRet(builder.createExtractElement(sum, accela.ir.Constant.intConst(0)));
+    module.addFunction(function);
+
+    String assembly =
+        new BackendCompiler(RISCVTargetOptions.of("rvv", 128)).compileToAssembly(module);
+
+    assertTrue(assembly.contains("vse32.v"));
+    assertTrue(assembly.contains("vle32.v"));
+  }
+
+  @Test
+  void scalarizesOnlyUnsupportedVectorFunctions() {
+    accela.ir.Module module = new accela.ir.Module();
+    module.addFunction(binaryVectorFunction("native_add", Instruction.Opcode.ADD));
+    module.addFunction(binaryVectorFunction("fallback_mulh", Instruction.Opcode.SMULH));
+
+    String assembly =
+        new BackendCompiler(RISCVTargetOptions.of("rvv", 128)).compileToAssembly(module);
+
+    assertTrue(assembly.contains("native_add:"));
+    assertTrue(assembly.contains("vadd.vv"));
+    assertTrue(assembly.contains("fallback_mulh:"));
+  }
+
+  @Test
+  void handlesConstantScalarVectorSelect() {
+    accela.ir.Module module = new accela.ir.Module();
+    Function function = new Function("constant_select", Type.INT);
+    var leftPointer = function.addArgument(Type.PTR, "left");
+    var rightPointer = function.addArgument(Type.PTR, "right");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type vectorType = Type.vector(Type.INT, 4);
+    var selected =
+        builder.createSelect(
+            accela.ir.Constant.boolConst(true),
+            builder.createLoad(vectorType, leftPointer),
+            builder.createLoad(vectorType, rightPointer));
+    builder.createRet(builder.createExtractElement(selected, accela.ir.Constant.intConst(0)));
+    module.addFunction(function);
+
+    String assembly =
+        new BackendCompiler(RISCVTargetOptions.of("rvv", 128)).compileToAssembly(module);
+
+    assertTrue(assembly.contains("constant_select:"));
+    assertFalse(assembly.contains(".L_vector_select_done_"));
+  }
+
+  @Test
+  void keepsMultiInstructionFpCompareDestinationDistinct() {
+    accela.ir.Module module = new accela.ir.Module();
+    Function function = new Function("fp_compare", Type.INT);
+    var leftPointer = function.addArgument(Type.PTR, "left");
+    var rightPointer = function.addArgument(Type.PTR, "right");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type floatVector = Type.vector(Type.FLOAT, 4);
+    var compared =
+        builder.createFCmp(
+            "one",
+            builder.createLoad(floatVector, leftPointer),
+            builder.createLoad(floatVector, rightPointer));
+    var widened = builder.createZExt(compared, Type.vector(Type.INT, 4));
+    builder.createRet(builder.createExtractElement(widened, accela.ir.Constant.intConst(0)));
+    module.addFunction(function);
+
+    String assembly =
+        new BackendCompiler(RISCVTargetOptions.of("rvv", 128)).compileToAssembly(module);
+    var match =
+        java.util.regex.Pattern.compile("vmfeq\\.vv (v\\d+), (v\\d+),")
+            .matcher(assembly);
+
+    assertTrue(match.find());
+    assertFalse(match.group(1).equals(match.group(2)));
+  }
+
+  private static Function binaryVectorFunction(String name, Instruction.Opcode opcode) {
+    Function function = new Function(name, Type.INT);
+    var leftPointer = function.addArgument(Type.PTR, "left");
+    var rightPointer = function.addArgument(Type.PTR, "right");
+    BasicBlock entry = function.addBlock("entry");
+    IRBuilder builder = new IRBuilder(entry);
+    Type vectorType = Type.vector(Type.INT, 4);
+    var left = builder.createLoad(vectorType, leftPointer);
+    var right = builder.createLoad(vectorType, rightPointer);
+    var result = builder.createBinary(opcode, left, right);
+    builder.createRet(builder.createExtractElement(result, accela.ir.Constant.intConst(0)));
+    return function;
+  }
+}

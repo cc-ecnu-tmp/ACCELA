@@ -1,0 +1,9 @@
+int main() {
+    int lane = getint() % 4;
+    int value = getint();
+    int4 vector = {1, 2, 3, 4};
+    vector[lane] = value;
+    putint(vector[lane] + vector[0]);
+    putch(10);
+    return 0;
+}

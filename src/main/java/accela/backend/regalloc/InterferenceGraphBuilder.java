@@ -45,6 +45,13 @@ public final class InterferenceGraphBuilder {
                     }
                     graph.addEdge(def, register);
                 }
+                if (requiresDistinctVectorDestination(instr)) {
+                    for (VirtualRegister register : getInstrUse(instr)) {
+                        if (!register.equals(def) && sharesRegisterClass(def, register)) {
+                            graph.addEdge(def, register);
+                        }
+                    }
+                }
                 instructionOrder++;
             }
         }
@@ -66,7 +73,9 @@ public final class InterferenceGraphBuilder {
     }
 
     private static VirtualRegister getRegisterMoveSource(MachineInstr instr) {
-        if (instr.getOpcode() != MachineOpcode.MOVE || !instr.isCoalescable()) {
+        if ((instr.getOpcode() != MachineOpcode.MOVE
+                && instr.getOpcode() != MachineOpcode.VMOVE)
+            || !instr.isCoalescable()) {
         return null;
         }
 
@@ -83,13 +92,7 @@ public final class InterferenceGraphBuilder {
     }
 
     private static boolean sharesRegisterClass(VirtualRegister left, VirtualRegister right) {
-        if (left.getType().isFloat()) {
-            return right.getType().isFloat();
-        }
-        if (left.getType().isIntegerLike()) {
-            return right.getType().isIntegerLike();
-        }
-        return false;
+        return left.getRegisterClass() == right.getRegisterClass();
     }
 
     private static Set<VirtualRegister> getInstrUse(MachineInstr instr) {
@@ -102,5 +105,16 @@ public final class InterferenceGraphBuilder {
       }
 
       return result;
+    }
+
+    private static boolean requiresDistinctVectorDestination(MachineInstr instruction) {
+      return switch (instruction.getOpcode()) {
+        case VINSERT, VSHUFFLE, VSELECT, VZEXT, VSEXT, VFCMP -> true;
+        case VCIX ->
+            instruction.getVCIXInfo() != null
+                && instruction.getVCIXInfo().writesVectorDestination()
+                && instruction.getVCIXInfo().form().readsDestination();
+        default -> false;
+      };
     }
 }

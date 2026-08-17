@@ -51,6 +51,18 @@ public final class VectorScalarization {
     return changed;
   }
 
+  /** Scalarizes one ABI-compatible function without touching native-vector neighbors. */
+  public static boolean runFunction(Function function) {
+    if (function.getReturnType().isVector()
+        || function.getArguments().stream().anyMatch(argument -> argument.getType().isVector())) {
+      throw unsupported("function-local scalarization requires a scalar ABI", function);
+    }
+    IRVerifier.verifyFunction(function);
+    boolean changed = scalarizeFunction(function, new IdentityHashMap<>());
+    IRVerifier.verifyFunction(function);
+    return changed;
+  }
+
   /** Expands each defined vector parameter into ordinary scalar ABI parameters. */
   private static boolean scalarizeVectorArguments(accela.ir.Module module) {
     Map<Function, List<Type>> originalSignatures = new IdentityHashMap<>();
@@ -274,6 +286,7 @@ public final class VectorScalarization {
       case LOAD -> lowerVectorLoad(builder, instruction, storageLanes);
       case INSERT_ELEMENT -> lowerInsert(builder, instruction, lanes, function);
       case SHUFFLE_VECTOR -> lowerShuffle(instruction, lanes, function);
+      case SELECT -> lowerSelect(builder, instruction, lanes);
       case CALL -> throw unsupported("vector call result ABI", function);
       default -> throw unsupported(
           "vector result from unsupported opcode " + instruction.getOpcode(), function);
@@ -391,6 +404,21 @@ public final class VectorScalarization {
     for (int lane = 0; lane < original.size(); lane++) {
       Value matches = builder.createICmp("eq", index, Constant.intConst(lane));
       result.add(builder.createSelect(matches, element, original.get(lane)));
+    }
+    return result;
+  }
+
+  private static List<Value> lowerSelect(
+      IRBuilder builder, Instruction select, Map<Value, List<Value>> lanes) {
+    List<Value> ifTrue = getLanes(select.getOperand(1), lanes);
+    List<Value> ifFalse = getLanes(select.getOperand(2), lanes);
+    List<Value> conditions =
+        select.getOperand(0).getType().isVector()
+            ? getLanes(select.getOperand(0), lanes)
+            : Collections.nCopies(ifTrue.size(), select.getOperand(0));
+    List<Value> result = new ArrayList<>();
+    for (int lane = 0; lane < ifTrue.size(); lane++) {
+      result.add(builder.createSelect(conditions.get(lane), ifTrue.get(lane), ifFalse.get(lane)));
     }
     return result;
   }

@@ -17,6 +17,8 @@ SECTIONS {
     __global_pointer$ = . + 0x800;
     *(.sdata .sdata.*)
   } > ram
+  . = ALIGN(64);
+  .tohost : { KEEP(*(.tohost)) } > ram
   . = ALIGN(16);
   __bss_start = .;
   .bss : { *(.bss .bss.* COMMON) } > ram

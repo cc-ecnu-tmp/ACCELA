@@ -1,0 +1,9 @@
+int main() {
+    int x = getint();
+    int4 left = {x, x + 1, x + 2, x + 3};
+    int4 right = {10, 20, 30, 40};
+    int4 sum = left + right;
+    putint(sum[2]);
+    putch(10);
+    return 0;
+}

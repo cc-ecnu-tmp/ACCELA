@@ -95,6 +95,12 @@ public final class EarlyCSE {
         }
         case LOAD -> availableLoads.putIfAbsent(
             MemoryLocation.fromInstruction(instruction), instruction);
+        case VCIX -> {
+          if (instruction.getVCIXInfo() != null && instruction.getVCIXInfo().sideEffect()) {
+            availableLoads.clear();
+          }
+          yield null;
+        }
         default -> {
           if (!isSimple(instruction)) yield null;
           yield available.putIfAbsent(expressionFor(instruction), instruction);

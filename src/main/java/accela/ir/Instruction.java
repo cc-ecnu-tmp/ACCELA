@@ -1,5 +1,7 @@
 package accela.ir;
 
+import accela.backend.machine.VCIXInfo;
+import accela.backend.machine.RVVConfig;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,7 +34,7 @@ public class Instruction extends Value {
     // Vector construction and lane manipulation
     BUILD_VECTOR, SPLAT, EXTRACT_ELEMENT, INSERT_ELEMENT, SHUFFLE_VECTOR,
     // Other
-    CALL, PHI, SELECT, XOR;
+    CALL, PHI, SELECT, XOR, VCIX;
 
     public boolean isTerminator() {
       return this == BR || this == CONDBR || this == RET;
@@ -48,6 +50,8 @@ public class Instruction extends Value {
   private Type gepSourceType;   // for GEP: the source element type
   private boolean gepInbounds;  // for GEP: inbounds flag
   private Function callee;      // for CALL: the called function (null for indirect)
+  private VCIXInfo vcixInfo;
+  private RVVConfig vcixConfig;
 
   Instruction(Opcode opcode, Type resultType, Value... operandValues) {
     super(resultType, null);
@@ -141,6 +145,22 @@ public class Instruction extends Value {
     this.callee = callee;
   }
 
+  public VCIXInfo getVCIXInfo() {
+    return vcixInfo;
+  }
+
+  public void setVCIXInfo(VCIXInfo vcixInfo) {
+    this.vcixInfo = vcixInfo;
+  }
+
+  public RVVConfig getVCIXConfig() {
+    return vcixConfig;
+  }
+
+  public void setVCIXConfig(RVVConfig vcixConfig) {
+    this.vcixConfig = vcixConfig;
+  }
+
   /** Copies this instruction's opcode and metadata, leaving operands and parent unset. */
   public Instruction copyWithoutOperands() {
     Instruction copy = new Instruction(opcode, type);
@@ -150,6 +170,8 @@ public class Instruction extends Value {
     copy.setGepSourceType(gepSourceType);
     copy.setGepInbounds(gepInbounds);
     copy.setCallee(callee);
+    copy.setVCIXInfo(vcixInfo);
+    copy.setVCIXConfig(vcixConfig);
     return copy;
   }
 

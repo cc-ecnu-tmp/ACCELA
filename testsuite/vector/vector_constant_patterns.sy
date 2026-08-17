@@ -1,0 +1,9 @@
+int main() {
+    int lane = getint() % 8;
+    int8 ramp = {3, 5, 7, 9, 11, 13, 15, 17};
+    int8 uniform = {7, 7, 7, 7, 7, 7, 7, 7};
+    int8 result = ramp + uniform;
+    putint(result[lane]);
+    putch(10);
+    return 0;
+}

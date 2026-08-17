@@ -12,6 +12,8 @@ public final class RISCVTarget {
   static final PhysicalRegister SP = new PhysicalRegister("sp", MachineType.PTR);
   static final PhysicalRegister RA = new PhysicalRegister("ra", MachineType.PTR);
 
+  private final RISCVTargetOptions options;
+
   private final List<PhysicalRegister> intScratch =
       List.of(
           new PhysicalRegister("a4", MachineType.I32),
@@ -24,6 +26,42 @@ public final class RISCVTarget {
           new PhysicalRegister("fa5", MachineType.F32),
           new PhysicalRegister("fa6", MachineType.F32),
           new PhysicalRegister("fa7", MachineType.F32));
+
+  public RISCVTarget() {
+    this(RISCVTargetOptions.scalarDefault());
+  }
+
+  public RISCVTarget(RISCVTargetOptions options) {
+    this.options = options;
+  }
+
+  public RISCVTargetOptions getOptions() {
+    return options;
+  }
+
+  public SIMDFeature getSIMDFeature() {
+    return options.simdFeature();
+  }
+
+  public boolean hasRVV() {
+    return getSIMDFeature().hasRVV();
+  }
+
+  public boolean hasVCIX() {
+    return getSIMDFeature().hasVCIX();
+  }
+
+  public int getMinimumVLEN() {
+    return options.minimumVLEN();
+  }
+
+  public String architectureAttribute() {
+    String architecture = options.scalarISA().architectureName();
+    if (hasRVV()) architecture += "v";
+    if (hasRVV()) architecture += "_zvl" + getMinimumVLEN() + "b";
+    if (hasVCIX()) architecture += "_xsfvcp";
+    return architecture;
+  }
 
   public List<PhysicalRegister> getIntScratch() {
     return intScratch;

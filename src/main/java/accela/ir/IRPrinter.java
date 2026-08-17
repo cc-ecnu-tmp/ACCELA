@@ -147,6 +147,7 @@ public class IRPrinter {
       case CALL: return printCall(inst);
       case PHI:  return printPhi(inst);
       case SELECT: return printSelect(inst);
+      case VCIX: return printVCIX(inst);
       default:   return "; unknown instruction";
     }
   }
@@ -161,6 +162,15 @@ public class IRPrinter {
   private String printSelect(Instruction inst) {
     return name(inst) + " = select i1 " + val(inst.getOperand(0)) + ", "
         + typed(inst.getOperand(1)) + ", " + typed(inst.getOperand(2));
+  }
+
+  private String printVCIX(Instruction inst) {
+    String operands =
+        java.util.stream.IntStream.range(0, inst.getNumOperands())
+            .mapToObj(index -> typed(inst.getOperand(index)))
+            .collect(java.util.stream.Collectors.joining(", "));
+    String prefix = inst.hasResult() ? name(inst) + " = " : "";
+    return prefix + "vcix \"" + inst.getVCIXInfo().mnemonic() + "\" " + operands;
   }
 
   /** Expands the internal i32 smulh primitive into valid LLVM IR for debug execution. */

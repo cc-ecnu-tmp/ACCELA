@@ -228,6 +228,8 @@ public final class InstSimplify {
     switch (inst.getOpcode()) {
       case STORE: case CALL: case RET: case BR: case CONDBR:
         return true;
+      case VCIX:
+        return inst.getVCIXInfo() != null && inst.getVCIXInfo().sideEffect();
       default:
         return false;
     }

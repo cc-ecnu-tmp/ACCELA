@@ -34,5 +34,41 @@ public enum MachineOpcode {
   CONDBR,
   CALL,
   RET,
-  PHI
+  PHI,
+
+  // Target-independent fixed-vector operations.
+  VLOAD,
+  VSTORE,
+  VMOVE,
+  VSPLAT,
+  VBUILD,
+  VEXTRACT,
+  VINSERT,
+  VSHUFFLE,
+  VADD,
+  VSUB,
+  VMUL,
+  VSMULH,
+  VDIV,
+  VREM,
+  VSHL,
+  VASHR,
+  VAND,
+  VXOR,
+  VFADD,
+  VFSUB,
+  VFMUL,
+  VFDIV,
+  VFNEG,
+  VICMP,
+  VFCMP,
+  VSELECT,
+  VZEXT,
+  VSEXT,
+  VSITOFP,
+  VFPTOSI,
+  VSET,
+
+  // SiFive Vector Coprocessor Interface instruction envelope.
+  VCIX
 }

@@ -4,11 +4,20 @@ public final class VirtualRegister {
   private final int id;
   private final MachineType type;
   private final String hint;
+  private final VectorShape vectorShape;
 
   public VirtualRegister(int id, MachineType type, String hint) {
+    this(id, type, hint, null);
+  }
+
+  public VirtualRegister(int id, MachineType type, String hint, VectorShape vectorShape) {
     this.id = id;
     this.type = type;
     this.hint = hint;
+    if (type.isVector() != (vectorShape != null)) {
+      throw new IllegalArgumentException("vector machine type and shape must be specified together");
+    }
+    this.vectorShape = vectorShape;
   }
 
   public int getId() {
@@ -21,6 +30,14 @@ public final class VirtualRegister {
 
   public String getHint() {
     return hint;
+  }
+
+  public RegisterClass getRegisterClass() {
+    return type.registerClass();
+  }
+
+  public VectorShape getVectorShape() {
+    return vectorShape;
   }
 
   @Override
