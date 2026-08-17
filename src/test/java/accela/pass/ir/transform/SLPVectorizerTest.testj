@@ -1,0 +1,144 @@
+package accela.pass.ir.transform;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import accela.ir.BasicBlock;
+import accela.ir.Constant;
+import accela.ir.Function;
+import accela.ir.IRBuilder;
+import accela.ir.Instruction;
+import accela.ir.Type;
+import accela.ir.Value;
+import accela.pass.ir.FunctionAnalysisManager;
+import accela.pass.ir.verify.IRVerifier;
+import org.junit.jupiter.api.Test;
+
+final class SLPVectorizerTest {
+  @Test
+  void vectorizesConsecutiveLoadAddStores() {
+    Function function = new Function("slp_add", Type.VOID);
+    Value a = function.addArgument(Type.PTR, "a");
+    Value b = function.addArgument(Type.PTR, "b");
+    Value c = function.addArgument(Type.PTR, "c");
+    BasicBlock entry = function.addBlock("entry");
+
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction[] loadsA = new Instruction[4];
+    Instruction[] loadsB = new Instruction[4];
+    Instruction[] sums = new Instruction[4];
+    for (int lane = 0; lane < 4; lane++) {
+      Value index = Constant.int64Const(lane);
+      Value addressA = builder.createGEP(Type.INT, a, new Value[] {index}, true);
+      Value addressB = builder.createGEP(Type.INT, b, new Value[] {index}, true);
+      Value addressC = builder.createGEP(Type.INT, c, new Value[] {index}, true);
+      loadsA[lane] = builder.createLoad(Type.INT, addressA);
+      loadsB[lane] = builder.createLoad(Type.INT, addressB);
+      sums[lane] = builder.createAdd(loadsA[lane], loadsB[lane]);
+      builder.createStore(sums[lane], addressC);
+    }
+    builder.createRetVoid();
+
+    assertTrue(SLPVectorizer.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+
+    long vectorStores = entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.STORE)
+        .filter(instruction -> instruction.getOperand(0).getType().isVector())
+        .count();
+    assertEquals(1, vectorStores);
+    assertTrue(loadsA[0].getParent() == null);
+    assertTrue(sums[3].getParent() == null);
+  }
+
+  @Test
+  void vectorizesConsecutiveFloatStores() {
+    Function function = new Function("slp_float", Type.VOID);
+    Value a = function.addArgument(Type.PTR, "a");
+    Value b = function.addArgument(Type.PTR, "b");
+    BasicBlock entry = function.addBlock("entry");
+
+    IRBuilder builder = new IRBuilder(entry);
+    for (int lane = 0; lane < 2; lane++) {
+      Value index = Constant.int64Const(lane);
+      Value addressA = builder.createGEP(Type.FLOAT, a, new Value[] {index}, true);
+      Value addressB = builder.createGEP(Type.FLOAT, b, new Value[] {index}, true);
+      Instruction loadA = builder.createLoad(Type.FLOAT, addressA);
+      Instruction loadB = builder.createLoad(Type.FLOAT, addressB);
+      builder.createStore(builder.createFAdd(loadA, loadB), addressB);
+    }
+    builder.createRetVoid();
+
+    assertTrue(SLPVectorizer.run(function, analysisManager()));
+    IRVerifier.verifyFunction(function);
+    assertEquals(1, entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.STORE)
+        .count());
+  }
+
+  @Test
+  void rejectsNonConsecutiveStoreAddresses() {
+    Function function = new Function("slp_gap", Type.VOID);
+    Value a = function.addArgument(Type.PTR, "a");
+    BasicBlock entry = function.addBlock("entry");
+
+    IRBuilder builder = new IRBuilder(entry);
+    for (int lane : new int[] {0, 2}) {
+      Value address = builder.createGEP(Type.INT, a, new Value[] {Constant.int64Const(lane)}, true);
+      Instruction load = builder.createLoad(Type.INT, address);
+      builder.createStore(builder.createAdd(load, Constant.intConst(1)), address);
+    }
+    builder.createRetVoid();
+
+    assertFalse(SLPVectorizer.run(function, analysisManager()));
+    assertEquals(2, entry.getInstructions().stream()
+        .filter(instruction -> instruction.getOpcode() == Instruction.Opcode.STORE)
+        .count());
+  }
+
+  @Test
+  void rejectsStoresWithDifferentOperationShapes() {
+    Function function = new Function("slp_mismatch", Type.VOID);
+    Value a = function.addArgument(Type.PTR, "a");
+    Value b = function.addArgument(Type.PTR, "b");
+    BasicBlock entry = function.addBlock("entry");
+
+    IRBuilder builder = new IRBuilder(entry);
+    for (int lane = 0; lane < 2; lane++) {
+      Value index = Constant.int64Const(lane);
+      Value addressA = builder.createGEP(Type.INT, a, new Value[] {index}, true);
+      Value addressB = builder.createGEP(Type.INT, b, new Value[] {index}, true);
+      Instruction loadA = builder.createLoad(Type.INT, addressA);
+      Instruction loadB = builder.createLoad(Type.INT, addressB);
+      Value value = lane == 0
+          ? builder.createAdd(loadA, loadB)
+          : builder.createSub(loadA, loadB);
+      builder.createStore(value, addressB);
+    }
+    builder.createRetVoid();
+
+    assertFalse(SLPVectorizer.run(function, analysisManager()));
+  }
+
+  @Test
+  void rejectsStackAllocaStores() {
+    Function function = new Function("slp_stack", Type.VOID);
+    BasicBlock entry = function.addBlock("entry");
+
+    IRBuilder builder = new IRBuilder(entry);
+    Instruction buffer = builder.createAllocaInEntry(Type.array(Type.INT, 4), entry);
+    for (int lane = 0; lane < 4; lane++) {
+      Value address = builder.createGEP(
+          Type.INT, buffer, new Value[] {Constant.int64Const(lane)}, true);
+      builder.createStore(Constant.intConst(lane), address);
+    }
+    builder.createRetVoid();
+
+    assertFalse(SLPVectorizer.run(function, analysisManager()));
+  }
+
+  private static FunctionAnalysisManager analysisManager() {
+    return new FunctionAnalysisManager();
+  }
+}

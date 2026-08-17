@@ -27,6 +27,7 @@ import accela.pass.ir.transform.LoopCanonicalizationCleanup;
 import accela.pass.ir.transform.Mem2Reg;
 import accela.pass.ir.transform.ReductionPushdown;
 import accela.pass.ir.transform.SCCP;
+import accela.pass.ir.transform.SLPVectorizer;
 import accela.pass.ir.transform.simplifycfg.SimplifyCFG;
 import accela.pass.ir.transform.SROA;
 import accela.pass.ir.transform.StrengthReduction;
@@ -163,6 +164,12 @@ public final class PassBuilder {
 
   private static boolean isRankedRecurrenceTabulationEnabled() {
     String disable = System.getenv("ACCELA_DISABLE_RRT");
+    return disable == null || disable.isEmpty() || disable.equals("0")
+        || disable.equalsIgnoreCase("false");
+  }
+
+  private static boolean isSlpVectorizerEnabled() {
+    String disable = System.getenv("ACCELA_DISABLE_SLP_VECTORIZER");
     return disable == null || disable.isEmpty() || disable.equals("0")
         || disable.equalsIgnoreCase("false");
   }
@@ -323,6 +330,9 @@ public final class PassBuilder {
       }
     }
     postIpsccpFpm.addPass(new StrengthReduction.Pass());
+    if (isSlpVectorizerEnabled()) {
+      postIpsccpFpm.addPass(new SLPVectorizer.Pass());
+    }
     if (isLoopStrengthReduceEnabled() && enableAdce) {
       postIpsccpFpm.addPass(new ADCE.Pass());
     }
