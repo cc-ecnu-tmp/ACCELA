@@ -25,6 +25,12 @@ import accela.cli.*;
     description = "Accela compiler command line interface."
 )
 public class Main implements Runnable {
+  /**
+   * Source-level backend selection: 0 = scalar only, 1 = RVV 1.0,
+   * 2 = SiFive XSfVcp/VCIX. An explicit --simd command-line option overrides this value.
+   */
+  public static final int SIMD_BACKEND = 0;
+
   @Option(names = {"--ast"}, description = "Print AST")
   private boolean printAst = false;
 
@@ -47,7 +53,7 @@ public class Main implements Runnable {
   private boolean printPassStats = false;
 
   @Option(names = {"--simd"}, description = "SIMD backend: none, rvv, or xsfvcp")
-  private String simd = "none";
+  private String simd;
 
   @Option(names = {"--riscv-vlen"}, description = "Minimum RISC-V vector length in bits")
   private int riscvVLEN = RISCVTargetOptions.DEFAULT_VLEN;
@@ -101,7 +107,7 @@ public class Main implements Runnable {
         } else if (emitIR) {
           new IRPrinter(System.out).print(buildOptimizedIR(unit, printPassStats));
         } else if (emitAsm) {
-          RISCVTargetOptions targetOptions = RISCVTargetOptions.of(simd, riscvVLEN);
+          RISCVTargetOptions targetOptions = targetOptions(simd, riscvVLEN);
           System.out.print(
               new BackendCompiler(targetOptions)
                   .compileToAssembly(buildOptimizedIR(unit, printPassStats)));
@@ -126,6 +132,22 @@ public class Main implements Runnable {
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public static RISCVTargetOptions targetOptions(String commandLineSimd, int minimumVLEN) {
+    if (commandLineSimd != null) {
+      return RISCVTargetOptions.of(commandLineSimd, minimumVLEN);
+    }
+    String configuredBackend =
+        switch (SIMD_BACKEND) {
+          case 0 -> "none";
+          case 1 -> "rvv";
+          case 2 -> "xsfvcp";
+          default ->
+              throw new IllegalStateException(
+                  "SIMD_BACKEND must be 0 (scalar), 1 (RVV), or 2 (XSfVcp)");
+        };
+    return RISCVTargetOptions.of(configuredBackend, minimumVLEN);
   }
 
   public static void main(String[] args) {

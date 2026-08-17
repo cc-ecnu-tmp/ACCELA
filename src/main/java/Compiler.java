@@ -1,5 +1,6 @@
 import accela.ast.Interpreter;
 import accela.ast.Node;
+import accela.Main;
 import accela.backend.BackendCompiler;
 import accela.backend.target.RISCVTargetOptions;
 import accela.ir.AST2IR;
@@ -24,7 +25,7 @@ public class Compiler {
 
     if (compileArgument.outputFilePath() != null) {
       RISCVTargetOptions targetOptions =
-          RISCVTargetOptions.of(compileArgument.simd(), compileArgument.minimumVLEN());
+          Main.targetOptions(compileArgument.simd(), compileArgument.minimumVLEN());
       String assembly =
           new BackendCompiler(targetOptions).compileToAssembly(buildOptimizedIR(unit));
       try (PrintStream stream = new PrintStream(compileArgument.outputFilePath())) {
@@ -66,7 +67,7 @@ public class Compiler {
   static CompileArgument parseArguments(String[] args) {
     String inputFilePath = null;
     String outputFilePath = null;
-    String simd = "none";
+    String simd = null;
     int minimumVLEN = RISCVTargetOptions.DEFAULT_VLEN;
 
     for (int i = 0; i < args.length; i++) {
