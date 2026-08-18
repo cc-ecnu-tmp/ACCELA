@@ -443,8 +443,15 @@ public class Sema {
 
   /** Computes APL-style scalar extension plus fixed-vector numeric promotion. */
   private Ty commonNumericType(Node left, Node right) {
-    Ty lt = effectiveNumericType(left), rt = effectiveNumericType(right);
+    Ty lt = tyOf(left), rt = tyOf(right);
     boolean vector = lt.isVector() || rt.isVector();
+    // SysY scalar literals keep their lexical type: `1. / 2.` is floating-point division.
+    // The integral-float compatibility rule exists only for vector scalar-extension (for example,
+    // `int4 + 1.0`) and must not leak into ordinary scalar arithmetic.
+    if (vector) {
+      lt = effectiveVectorNumericType(left);
+      rt = effectiveVectorNumericType(right);
+    }
     Ty elem = lt.isFloat() || rt.isFloat() ? Ty.FLOAT : Ty.INT;
     if (!vector) return elem;
     int lanes = Math.max(lt.isVector() ? lt.lanes : 1, rt.isVector() ? rt.lanes : 1);
@@ -452,7 +459,7 @@ public class Sema {
   }
 
   /** Integral float literals retain integer behavior when mixed with vectors. */
-  private Ty effectiveNumericType(Node node) {
+  private Ty effectiveVectorNumericType(Node node) {
     Ty type = tyOf(node);
     if (node.tag != LIT || !node.literal.isFloat()) return type;
     float value = node.literal.asFloat();

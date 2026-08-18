@@ -44,3 +44,6 @@ bin/
 /.gradle-local
 /.claude
 /testsuite/perf
+
+/.tmp
+__pycache__

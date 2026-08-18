@@ -74,6 +74,28 @@ final class VectorFrontendTest {
   }
 
   @Test
+  void keepsIntegralFloatLiteralsFloatingInScalarArithmetic() {
+    Module module = new AST2IR().convert(parseAndAnalyze(
+        "float half() { return 1. / 2.; }"
+            + "int main() { int4 a = {1,2,3,4}; int4 b = a + 1.0; return b[0]; }"));
+
+    Function half = module.getFunctions().stream()
+        .filter(function -> function.getName().equals("half"))
+        .findFirst()
+        .orElseThrow();
+    assertEquals(1, count(half, Instruction.Opcode.FDIV));
+
+    Function main = module.getFunctions().stream()
+        .filter(function -> function.getName().equals("main"))
+        .findFirst()
+        .orElseThrow();
+    assertTrue(main.getBlocks().stream()
+        .flatMap(block -> block.getInstructions().stream())
+        .anyMatch(instruction -> instruction.getOpcode() == Instruction.Opcode.ADD
+            && instruction.getType().equals(Type.vector(Type.INT, 4))));
+  }
+
+  @Test
   void preservesVectorLeavesInCStyleArrays() {
     Module module = new AST2IR().convert(parseAndAnalyze(
         "int main() {"
