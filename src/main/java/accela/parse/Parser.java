@@ -22,6 +22,7 @@ import accela.parse.Lexer.Token;
 public class Parser {
   private final List<Token> tokens;
   private int pos = 0;
+  private boolean parsedTensorType;
 
   public Parser(List<Token> tokens) {
     this.tokens = tokens;
@@ -41,6 +42,12 @@ public class Parser {
   private boolean isFuncDef() {
     int la = 0;
     if (peek(la).type == CONST) return false;
+    if (peek(la).type == IDENT && peek(la).text.equals("tensor")) {
+      la++;
+      if (peek(la).type != INT && peek(la).type != FLOAT) return false;
+      la++;
+      return peek(la).type == IDENT && peek(la + 1).type == LP;
+    }
     if (peek(la).type == INT || peek(la).type == VOID || peek(la).type == FLOAT) {
       la++;
       if (peek(la).type == IDENT) return peek(la + 1).type == LP;
@@ -50,12 +57,10 @@ public class Parser {
 
   /** Parses a function definition, storing parameters as leading children and the body last. */
   private Node parseFuncDef() {
-    Token tt = peek();
-    if (tt.type == INT) consume(INT);
-    else if (tt.type == FLOAT) consume(FLOAT);
-    else consume(VOID);
-    Ty retTy = tt.type == INT ? Ty.INT : tt.type == FLOAT ? Ty.FLOAT : Ty.VOID;
+    Ty retTy = parseVarType();
+    boolean tensor = parsedTensorType;
     Node func = new Node(Tag.FUNC, consume(IDENT).text, retTy);
+    func.tensor = tensor;
     consume(LP);
     if (peek().type != RP) {
       func.kids.add(parseFuncFParam());
@@ -77,8 +82,10 @@ public class Parser {
    */
   private Node parseFuncFParam() {
     Ty paramType = parseVarType();
+    boolean tensor = parsedTensorType;
     if (paramType == Ty.VOID) throw new RuntimeException("Function parameter cannot be void");
     Node p = new Node(Tag.PARM, consume(IDENT).text, paramType);
+    p.tensor = tensor;
     List<Node> dimExprs = new ArrayList<>();
     if (peek().type == LS) {
       consume(LS);
@@ -125,9 +132,10 @@ public class Parser {
       isConst = true;
     }
     Ty baseTy = parseVarType();
+    boolean tensor = parsedTensorType;
     List<Node> decls = new ArrayList<>();
     while (true) {
-      decls.add(parseVarDef(baseTy, isConst));
+      decls.add(parseVarDef(baseTy, isConst, tensor));
       if (peek().type == COMMA) consume(COMMA);
       else break;
     }
@@ -137,7 +145,15 @@ public class Parser {
 
   /** Parses scalar types plus the two provisional fixed-vector spellings. */
   private Ty parseVarType() {
+    parsedTensorType = false;
     Token tok = peek();
+    if (tok.type == IDENT && tok.text.equals("tensor")) {
+      consume(IDENT);
+      parsedTensorType = true;
+      tok = peek();
+      if (tok.type != INT && tok.type != FLOAT)
+        throw new RuntimeException("Expected int or float after tensor");
+    }
     if (tok.type == INT) {
       consume(INT);
       return Ty.INT;
@@ -170,6 +186,10 @@ public class Parser {
     Token tok = peek(lookahead);
     if (tok.type == INT || tok.type == FLOAT || tok.type == VOID) return true;
     if (tok.type != IDENT) return false;
+    if (tok.text.equals("tensor")) {
+      T next = peek(lookahead + 1).type;
+      return next == INT || next == FLOAT;
+    }
     if (tok.text.equals("vector")) {
       T next = peek(lookahead + 1).type;
       return next == INT || next == FLOAT;
@@ -193,9 +213,10 @@ public class Parser {
   }
 
   /** Parses one declared variable/constant, including optional dimensions and initializer. */
-  private Node parseVarDef(Ty baseTy, boolean isConst) {
+  private Node parseVarDef(Ty baseTy, boolean isConst, boolean tensor) {
     Node v = new Node(Tag.VAR, consume(IDENT).text, baseTy);
     v.flag = isConst;
+    v.tensor = tensor;
     List<Node> dimExprs = new ArrayList<>();
     while (peek().type == LS) {
       consume(LS);
@@ -300,8 +321,8 @@ public class Parser {
    *
    * <p>This is why {@link Lexer.T} ordering is effectively part of the parser contract.
    */
-  static final int[] PREC = new int[36];
-  static final Op[] BIN_OP = new Op[36];
+  static final int[] PREC = new int[T.values().length];
+  static final Op[] BIN_OP = new Op[T.values().length];
 
   static {
     PREC[OR.ordinal()] = 1;
@@ -317,11 +338,13 @@ public class Parser {
     PREC[STAR.ordinal()] = 6;
     PREC[SLASH.ordinal()] = 6;
     PREC[PERCENT.ordinal()] = 6;
+    PREC[AT.ordinal()] = 6;
     BIN_OP[PLUS.ordinal()] = Op.ADD;
     BIN_OP[MINUS.ordinal()] = Op.SUB;
     BIN_OP[STAR.ordinal()] = Op.MUL;
     BIN_OP[SLASH.ordinal()] = Op.DIV;
     BIN_OP[PERCENT.ordinal()] = Op.MOD;
+    BIN_OP[AT.ordinal()] = Op.MUL;
     BIN_OP[LT.ordinal()] = Op.LT;
     BIN_OP[LE.ordinal()] = Op.LE;
     BIN_OP[GT.ordinal()] = Op.GT;
@@ -362,6 +385,7 @@ public class Parser {
       Token op = consume(peek().type);
       Node bin = new Node(Tag.BIN);
       bin.op = BIN_OP[op.type.ordinal()];
+      bin.tensorMatmul = op.type == AT;
       bin.kids.add(lhs);
       bin.kids.add(parseExpr(PREC[op.type.ordinal()] + 1));
       lhs = bin;
@@ -384,8 +408,7 @@ public class Parser {
       u.kids.add(parseUnaryExp());
       return u;
     }
-    if (tok.type == IDENT && peek(1).type == LP) return parseFuncCall();
-    Node primary = parsePrimaryExp();
+    Node primary = tok.type == IDENT && peek(1).type == LP ? parseFuncCall() : parsePrimaryExp();
     while (peek().type == LS) {
       consume(LS);
       Node sub = new Node(Tag.SUB);

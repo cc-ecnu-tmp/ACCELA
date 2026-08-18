@@ -13,6 +13,7 @@ import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.verify.IRVerifier;
+import accela.preprocess.TensorLowering;
 
 import java.io.PrintStream;
 import java.nio.file.Files;
@@ -21,7 +22,13 @@ import java.nio.file.Paths;
 public class Compiler {
   public static void main(String[] args) throws Exception {
     CompileArgument compileArgument = parseArguments(args);
-    Node unit = parseSource(compileArgument.inputFilePath());
+    String source = new String(Files.readAllBytes(Paths.get(compileArgument.inputFilePath())));
+    Node unit = parseSyntax(source, compileArgument.inputFilePath());
+    if (TensorLowering.isRequired(unit)) {
+      TensorLowering.lower(unit, compileArgument.inputFilePath());
+    }
+
+    new Sema().analyze(unit);
 
     if (compileArgument.outputFilePath() != null) {
       RISCVTargetOptions targetOptions =
@@ -41,13 +48,10 @@ public class Compiler {
     }
   }
 
-  private static Node parseSource(String inputFilePath) throws Exception {
-    String source = new String(Files.readAllBytes(Paths.get(inputFilePath)));
+  private static Node parseSyntax(String source, String inputFilePath) {
     Lexer lexer = new Lexer(source, inputFilePath);
     Parser parser = new Parser(lexer.tokenize());
-    Node unit = parser.parse();
-    new Sema().analyze(unit);
-    return unit;
+    return parser.parse();
   }
 
   private static accela.ir.Module buildOptimizedIR(Node unit) {
@@ -92,6 +96,8 @@ public class Compiler {
           minimumVLEN = Integer.parseInt(args[++i]);
         } else if (arg.startsWith("--riscv-vlen=")) {
           minimumVLEN = Integer.parseInt(arg.substring("--riscv-vlen=".length()));
+        } else {
+          throw new IllegalArgumentException("unknown option: " + arg);
         }
       } else {
         inputFilePath = arg;

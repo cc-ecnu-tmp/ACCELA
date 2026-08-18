@@ -45,6 +45,7 @@ public class Lexer {
     STAR,
     SLASH,
     PERCENT,
+    AT,
     LT,
     LE,
     GT,
@@ -76,9 +77,9 @@ public class Lexer {
 
   /** Precomputes constant-time punctuation/operator classification tables. */
   static {
-    String o = "+-*/%<>=!;,()[]{}";
+    String o = "+-*/%@<>=!;,()[]{}";
     T[] t = {
-      T.PLUS, T.MINUS, T.STAR, T.SLASH, T.PERCENT, T.LT, T.GT, T.EQ, T.NOT, T.SEMI, T.COMMA, T.LP,
+      T.PLUS, T.MINUS, T.STAR, T.SLASH, T.PERCENT, T.AT, T.LT, T.GT, T.EQ, T.NOT, T.SEMI, T.COMMA, T.LP,
       T.RP, T.LS, T.RS, T.LB, T.RB
     };
     for (int i = 0; i < o.length(); i++) CT[o.charAt(i)] = t[i];

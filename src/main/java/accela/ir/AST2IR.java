@@ -863,7 +863,7 @@ public class AST2IR {
             Type elemType = Type.fromSysY(astTy.deref());
             return emitGEPIndices(loadedPtr, elemType, n.kids, 1, true);
           } else if (astTy.dims[0] == 0) {
-            Type elemType = astTy.isFloat() ? Type.FLOAT : Type.INT;
+            Type elemType = Type.fromSysY(astTy.elem);
             return emitGEPIndices(loadedPtr, elemType, n.kids, 1, true);
           }
         }

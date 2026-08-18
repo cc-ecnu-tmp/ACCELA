@@ -136,6 +136,12 @@ public class Node {
    * <p>- `PARM`: marks that the first array dimension was omitted in the source parameter list
    */
   public boolean flag;
+  /** Marks Tensor declarations/functions until the Tensor lowering pass removes the extension. */
+  public boolean tensor;
+  /** Distinguishes source {@code @} from ordinary multiplication before Tensor lowering. */
+  public boolean tensorMatmul;
+  /** Tensor shape before the Tensor desugaring pass replaces it with array/vector storage. */
+  public TensorShape tensorShape;
   /**
    * Link to the declaration associated with a reference-like node.
    *
