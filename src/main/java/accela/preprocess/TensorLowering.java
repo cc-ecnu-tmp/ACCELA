@@ -55,7 +55,7 @@ public final class TensorLowering {
   private enum Storage { VECTOR_ROWS, DYNAMIC_SCALARS }
 
   private record TensorSymbol(
-      String name, TensorShape shape, boolean constant, Storage storage, String extentName) {}
+      String name, TensorShape shape, boolean constant, Storage storage) {}
 
   private static final class FunctionInfo {
     final Node source;
@@ -70,10 +70,9 @@ public final class TensorLowering {
     }
   }
 
-  private record ScalarValue(List<Node> prefix, Node expression, Ty type, List<Node> suffix) {}
-  private record TensorValue(
-      List<Node> prefix, TensorSymbol storage, boolean temporary, List<Node> suffix) {}
-  private record CallParts(List<Node> prefix, Node call, List<Node> suffix) {}
+  private record ScalarValue(List<Node> prefix, Node expression, Ty type) {}
+  private record TensorValue(List<Node> prefix, TensorSymbol storage) {}
+  private record CallParts(List<Node> prefix, Node call) {}
 
   private static final class Scope {
     final Scope parent;
@@ -141,20 +140,19 @@ public final class TensorLowering {
     if (!parameter.flag)
       fail("Tensor parameter " + parameter.s + " must omit its first dimension");
     int trailing = parameter.dimExprs == null ? 0 : parameter.dimExprs.size();
-    int[] dimensions = new int[trailing + 1];
-    dimensions[0] = TensorShape.DYNAMIC;
-    for (int i = 0; i < trailing; i++) {
-      Integer value = evalConst(parameter.dimExprs.get(i));
-      if (value == null || value <= 0)
-        fail("Tensor parameter " + parameter.s + " has a non-constant trailing dimension");
-      dimensions[i + 1] = value;
-    }
-    return new TensorShape(parameter.ty, dimensions);
+    if (trailing > 1)
+      fail("Tensor parameter " + parameter.s + " must have form [] or [][N]");
+    if (trailing == 0) return new TensorShape(parameter.ty, TensorShape.DYNAMIC);
+    Integer columns = evalConst(parameter.dimExprs.getFirst());
+    if (columns == null || columns <= 0)
+      fail("Tensor parameter " + parameter.s + " requires a positive constant column count");
+    return new TensorShape(parameter.ty, TensorShape.DYNAMIC, columns);
   }
 
   private TensorShape fixedShape(Node declaration) {
-    if (declaration.dimExprs == null || declaration.dimExprs.isEmpty())
-      fail("Tensor " + declaration.s + " requires at least one dimension");
+    if (declaration.dimExprs == null
+        || declaration.dimExprs.isEmpty() || declaration.dimExprs.size() > 2)
+      fail("Tensor " + declaration.s + " must have shape [N] or [M][N]");
     int[] dimensions = new int[declaration.dimExprs.size()];
     for (int i = 0; i < dimensions.length; i++) {
       Integer value = evalConst(declaration.dimExprs.get(i));
@@ -264,7 +262,7 @@ public final class TensorLowering {
       result.tensorShape = info.returnShape;
       parameters.add(result);
       scope.put(new TensorSymbol(
-          resultName, info.returnShape, false, Storage.VECTOR_ROWS, null));
+          resultName, info.returnShape, false, Storage.VECTOR_ROWS));
       function.ty = Ty.VOID;
     }
     for (int index = 0; index < original.size(); index++) {
@@ -279,7 +277,6 @@ public final class TensorLowering {
         parameter.dimExprs = new ArrayList<>();
         parameter.tensor = false;
         parameters.add(parameter);
-        parameters.add(new Node(PARM, hidden(parameter.s, "dim0"), Ty.INT));
       }
     }
     function.kids.clear();
@@ -316,14 +313,11 @@ public final class TensorLowering {
     }
     if (shapeOf(statement, scope) != null) {
       TensorValue value = lowerTensor(statement, scope, null);
-      List<Node> code = new ArrayList<>(value.prefix);
-      code.addAll(value.suffix);
-      return code;
+      return value.prefix;
     }
     ScalarValue value = lowerScalar(statement, scope);
     List<Node> code = new ArrayList<>(value.prefix);
     code.add(value.expression);
-    code.addAll(value.suffix);
     return code;
   }
 
@@ -338,7 +332,6 @@ public final class TensorLowering {
           code.addAll(value.prefix);
           declaration.kids.set(0, value.expression);
           code.add(declarationStatement(declaration));
-          code.addAll(value.suffix);
         } else {
           code.add(declarationStatement(declaration));
         }
@@ -364,7 +357,6 @@ public final class TensorLowering {
         TensorValue value = lowerTensor(initializer, scope, shape);
         code.addAll(value.prefix);
         code.addAll(copy(symbol, value.storage));
-        code.addAll(value.suffix);
       }
     }
     return code;
@@ -399,7 +391,6 @@ public final class TensorLowering {
       result.kids.add(value.expression);
       List<Node> code = new ArrayList<>(value.prefix);
       code.add(result);
-      code.addAll(value.suffix);
       return code;
     }
     if (statement.kids.isEmpty())
@@ -407,10 +398,9 @@ public final class TensorLowering {
     TensorValue value = lowerTensor(statement.kids.getFirst(), scope, function.returnShape);
     TensorSymbol output = new TensorSymbol(
         hidden(function.source.s, "result"), function.returnShape,
-        false, Storage.VECTOR_ROWS, null);
+        false, Storage.VECTOR_ROWS);
     List<Node> code = new ArrayList<>(value.prefix);
     code.addAll(copy(output, value.storage));
-    code.addAll(value.suffix);
     code.add(new Node(RET));
     return code;
   }
@@ -425,14 +415,13 @@ public final class TensorLowering {
       result.kids.add(controlled(statement.kids.get(2), new Scope(scope), function));
     List<Node> code = new ArrayList<>(condition.prefix);
     code.add(result);
-    code.addAll(condition.suffix);
     return code;
   }
 
   private List<Node> lowerWhile(Node statement, Scope scope, FunctionInfo function) {
     if (shapeOf(statement.kids.get(0), scope) != null) fail("Tensor condition is not defined");
     ScalarValue condition = lowerScalar(statement.kids.get(0), scope);
-    if (!condition.prefix.isEmpty() || !condition.suffix.isEmpty())
+    if (!condition.prefix.isEmpty())
       fail("Tensor argument adaptation in while conditions is not supported");
     Node result = new Node(WHILE);
     result.kids.add(condition.expression);
@@ -450,108 +439,36 @@ public final class TensorLowering {
   private List<Node> lowerTensorAssignment(Node left, Node right, Scope scope) {
     TensorSymbol target = requireTensorLValue(left, scope);
     if (target.constant) fail("cannot assign to const Tensor " + target.name);
-    if (target.shape.dynamic()) return lowerDynamicAssignment(target, right, scope);
+    if (target.shape.dynamic())
+      fail("whole assignment to Tensor parameter requires an explicit fixed-shape destination");
     TensorValue value = lowerTensor(right, scope, target.shape);
     List<Node> code = new ArrayList<>(value.prefix);
     code.addAll(copy(target, value.storage));
-    code.addAll(value.suffix);
     return code;
-  }
-
-  private List<Node> lowerDynamicAssignment(TensorSymbol target, Node expression, Scope scope) {
-    if (expression.tag == REF && scope.find(expression.s) != null)
-      return copy(target, scope.require(expression.s));
-    if (expression.tag == BIN && expression.tensorMatmul)
-      return dynamicMatmul(target, expression, scope);
-    if (expression.tag == UNARY) {
-      if (expression.op == NOT) fail("Tensor logical negation is not defined");
-      TensorSymbol operand = directDynamicOperand(expression.kids.getFirst(), scope);
-      return dynamicElementwise(target, operand, null, expression.op, null, true);
-    }
-    if (expression.tag != BIN || expression.op == ASSIGN
-        || expression.op.isLogical() || expression.op.isRelational()) {
-      fail("dynamic Tensor assignment requires an elementwise expression or @");
-    }
-    TensorShape leftShape = shapeOf(expression.kids.get(0), scope);
-    TensorShape rightShape = shapeOf(expression.kids.get(1), scope);
-    TensorSymbol left = leftShape == null ? null
-        : directDynamicOperand(expression.kids.get(0), scope);
-    TensorSymbol right = rightShape == null ? null
-        : directDynamicOperand(expression.kids.get(1), scope);
-    ScalarValue leftScalar = left == null ? lowerScalar(expression.kids.get(0), scope) : null;
-    ScalarValue rightScalar = right == null ? lowerScalar(expression.kids.get(1), scope) : null;
-    if (expression.op == MOD && (target.shape.element == Ty.FLOAT
-        || leftScalar != null && leftScalar.type == Ty.FLOAT
-        || rightScalar != null && rightScalar.type == Ty.FLOAT)) {
-      fail("remainder is only defined for tensor int");
-    }
-    if (left != null) validateArgumentShape(target.shape, left.shape);
-    if (right != null) validateArgumentShape(target.shape, right.shape);
-    List<Node> code = new ArrayList<>();
-    if (leftScalar != null) code.addAll(leftScalar.prefix);
-    if (rightScalar != null) code.addAll(rightScalar.prefix);
-    Node scalar = leftScalar != null ? leftScalar.expression
-        : rightScalar == null ? null : rightScalar.expression;
-    code.addAll(dynamicElementwise(target, left, right, expression.op, scalar, false));
-    if (leftScalar != null) code.addAll(leftScalar.suffix);
-    if (rightScalar != null) code.addAll(rightScalar.suffix);
-    return code;
-  }
-
-  private TensorSymbol directDynamicOperand(Node expression, Scope scope) {
-    if (expression.tag != REF || scope.find(expression.s) == null)
-      fail("nested dynamic Tensor expressions must be assigned in separate statements");
-    return scope.require(expression.s);
-  }
-
-  private List<Node> dynamicElementwise(
-      TensorSymbol target, TensorSymbol left, TensorSymbol right,
-      Op operator, Node scalar, boolean unary) {
-    String index = fresh(target.shape.rank() == 1 ? "lane" : "row");
-    Node destination = target.shape.rank() == 1
-        ? scalarAt(target, ref(index)) : row(target, ref(index));
-    Node lhs = left == null ? scalar : left.shape.rank() == 1
-        ? scalarAt(left, ref(index)) : row(left, ref(index));
-    Node rhs = right == null ? scalar : right.shape.rank() == 1
-        ? scalarAt(right, ref(index)) : row(right, ref(index));
-    Node value = unary ? unary(operator, lhs) : binary(operator, lhs, rhs);
-    return List.of(loop(index, rowCount(target), assign(destination, value)));
-  }
-
-  private List<Node> dynamicMatmul(TensorSymbol target, Node expression, Scope scope) {
-    TensorSymbol left = directDynamicOperand(expression.kids.get(0), scope);
-    TensorSymbol right = directDynamicOperand(expression.kids.get(1), scope);
-    TensorShape a = left.shape, b = right.shape;
-    if (target.shape.rank() != 2 || a.rank() != 2 || b.rank() != 2
-        || a.element != b.element || a.element != target.shape.element
-        || a.dimensions[1] != b.dimensions[0]
-        || b.dimensions[1] != target.shape.dimensions[1]) {
-      fail("dynamic @ requires A[][K], B[K][N], and destination [][N]");
-    }
-    if (target.name.equals(left.name) || target.name.equals(right.name))
-      fail("dynamic @ cannot overwrite either operand");
-    String i = fresh("mat_i"), k = fresh("mat_k");
-    Node accumulate = assign(row(target, ref(i)),
-        binary(ADD, row(target, ref(i)),
-            binary(MUL, row(right, ref(k)), element(left, ref(i), ref(k)))));
-    Node inner = loop(k, Node.intLiteral(a.dimensions[1]), accumulate);
-    Node body = block(assign(row(target, ref(i)), zero(target.shape.element)), inner);
-    return List.of(loop(i, ref(target.extentName), body));
   }
 
   private TensorValue lowerTensor(Node expression, Scope scope, TensorShape preferred) {
     TensorShape inferred = shapeOf(expression, scope);
     if (inferred == null) fail("expected Tensor expression");
     TensorShape shape = inferred;
+    if (preferred != null && !inferred.compatibleDimensions(preferred)) {
+      fail("Tensor expression " + inferred + " does not fit destination " + preferred);
+    }
     if (shape.dynamic()) {
       if (preferred == null || preferred.dynamic())
         fail("dynamic Tensor expression requires a fixed-shape destination");
-      if (shape.rank() != preferred.rank())
-        fail("dynamic Tensor rank does not match destination");
       shape = preferred;
     }
-    if (expression.tag == REF)
-      return new TensorValue(List.of(), scope.require(expression.s), false, List.of());
+    if (expression.tag == REF) {
+      TensorSymbol source = scope.require(expression.s);
+      if (source.storage == Storage.VECTOR_ROWS)
+        return new TensorValue(List.of(), source);
+      TensorSymbol result = temporary(shape);
+      List<Node> code = new ArrayList<>();
+      code.add(declarationStatement(temporaryDeclaration(result)));
+      code.addAll(copy(result, source));
+      return new TensorValue(code, result);
+    }
     if (expression.tag == CALL) return lowerTensorCall(expression, scope);
     if (expression.tag == UNARY) {
       if (expression.op == NOT) fail("Tensor logical negation is not defined");
@@ -563,12 +480,11 @@ public final class TensorLowering {
       code.add(loop(index, rowCount(result),
           assign(row(result, ref(index)),
               unary(expression.op, row(operand.storage, ref(index))))));
-      code.addAll(operand.suffix);
-      return new TensorValue(code, result, true, List.of());
+      return new TensorValue(code, result);
     }
     if (expression.tag != BIN || expression.op == ASSIGN)
       fail("unsupported Tensor expression");
-    if (expression.tensorMatmul) return lowerMatmul(expression, scope);
+    if (expression.tensorMatmul) return lowerMatmul(expression, scope, shape);
     if (expression.op.isLogical() || expression.op.isRelational())
       fail("Tensor comparison and logical operators are not defined");
 
@@ -595,23 +511,30 @@ public final class TensorLowering {
     Node rhs = rightTensor == null ? rightScalar.expression : row(rightTensor.storage, ref(index));
     code.add(loop(index, rowCount(result),
         assign(row(result, ref(index)), binary(expression.op, lhs, rhs))));
-    if (leftTensor != null) code.addAll(leftTensor.suffix); else code.addAll(leftScalar.suffix);
-    if (rightTensor != null) code.addAll(rightTensor.suffix); else code.addAll(rightScalar.suffix);
-    return new TensorValue(code, result, true, List.of());
+    return new TensorValue(code, result);
   }
 
-  private TensorValue lowerMatmul(Node expression, Scope scope) {
-    TensorValue left = lowerTensor(expression.kids.get(0), scope, null);
-    TensorValue right = lowerTensor(expression.kids.get(1), scope, null);
-    TensorShape a = left.storage.shape, b = right.storage.shape;
-    if (a.dynamic() || b.dynamic())
-      fail("dynamic @ must be assigned directly to a dynamic destination");
-    if (a.rank() != 2 || b.rank() != 2 || a.element != b.element
-        || a.dimensions[1] != b.dimensions[0]) {
+  private TensorValue lowerMatmul(
+      Node expression, Scope scope, TensorShape resultShape) {
+    TensorShape a = shapeOf(expression.kids.get(0), scope);
+    TensorShape b = shapeOf(expression.kids.get(1), scope);
+    if (a.rank() != 2 || b.rank() != 2 || resultShape.rank() != 2)
+      fail("@ is only defined for rank-two Tensors");
+    if (resultShape.dynamic())
+      fail("@ with a pointer-style Tensor requires a fixed-shape destination");
+    if (a.element != b.element || resultShape.element != a.element
+        || resultShape.dimensions[1] != b.dimensions[1]
+        || b.dimensions[0] != TensorShape.DYNAMIC
+            && a.dimensions[1] != b.dimensions[0]) {
       fail("@ requires same-type A[M][K] and B[K][N]");
     }
-    TensorShape shape = new TensorShape(a.element, a.dimensions[0], b.dimensions[1]);
-    TensorSymbol result = temporary(shape);
+    TensorShape leftShape = new TensorShape(
+        a.element, resultShape.dimensions[0], a.dimensions[1]);
+    TensorShape rightShape = new TensorShape(
+        b.element, a.dimensions[1], b.dimensions[1]);
+    TensorValue left = lowerTensor(expression.kids.get(0), scope, leftShape);
+    TensorValue right = lowerTensor(expression.kids.get(1), scope, rightShape);
+    TensorSymbol result = temporary(resultShape);
     String i = fresh("mat_i"), k = fresh("mat_k");
     List<Node> code = new ArrayList<>(left.prefix);
     code.addAll(right.prefix);
@@ -620,11 +543,9 @@ public final class TensorLowering {
         binary(ADD, row(result, ref(i)),
             binary(MUL, row(right.storage, ref(k)), element(left.storage, ref(i), ref(k)))));
     Node inner = loop(k, Node.intLiteral(a.dimensions[1]), accumulate);
-    Node body = block(assign(row(result, ref(i)), zero(shape.element)), inner);
-    code.add(loop(i, Node.intLiteral(a.dimensions[0]), body));
-    code.addAll(left.suffix);
-    code.addAll(right.suffix);
-    return new TensorValue(code, result, true, List.of());
+    Node body = block(assign(row(result, ref(i)), zero(resultShape.element)), inner);
+    code.add(loop(i, Node.intLiteral(resultShape.dimensions[0]), body));
+    return new TensorValue(code, result);
   }
 
   private TensorValue lowerTensorCall(Node sourceCall, Scope scope) {
@@ -637,17 +558,16 @@ public final class TensorLowering {
     List<Node> code = new ArrayList<>(call.prefix);
     code.add(declarationStatement(temporaryDeclaration(result)));
     code.add(call.call);
-    code.addAll(call.suffix);
-    return new TensorValue(code, result, true, List.of());
+    return new TensorValue(code, result);
   }
 
   private ScalarValue lowerScalar(Node expression, Scope scope) {
     if (shapeOf(expression, scope) != null) fail("Tensor value used where scalar is required");
     if (expression.tag == LIT)
-      return new ScalarValue(List.of(), expression, expression.type(), List.of());
+      return new ScalarValue(List.of(), expression, expression.type());
     if (expression.tag == REF)
       return new ScalarValue(List.of(), expression,
-          scope.scalar(expression.s) == Ty.FLOAT ? Ty.FLOAT : Ty.INT, List.of());
+          scope.scalar(expression.s) == Ty.FLOAT ? Ty.FLOAT : Ty.INT);
     if (expression.tag == Node.Tag.SUB) return lowerSubscript(expression, scope);
     if (expression.tag == CALL) {
       String name = expression.kids.getFirst().s;
@@ -656,33 +576,22 @@ public final class TensorLowering {
         fail("Tensor-returning call requires Tensor context");
       CallParts parts = lowerCall(expression, function, scope, null);
       Ty type = function == null ? Ty.INT : function.scalarReturn;
-      if (parts.suffix.isEmpty())
-        return new ScalarValue(parts.prefix, parts.call, type, List.of());
-      String temporary = fresh("call_result");
-      Node declaration = new Node(VAR, temporary, type);
-      declaration.dimExprs = new ArrayList<>();
-      declaration.kids.add(parts.call);
-      List<Node> prefix = new ArrayList<>(parts.prefix);
-      prefix.add(declarationStatement(declaration));
-      prefix.addAll(parts.suffix);
-      return new ScalarValue(prefix, ref(temporary), type, List.of());
+      return new ScalarValue(parts.prefix, parts.call, type);
     }
     if (expression.tag == UNARY) {
       ScalarValue operand = lowerScalar(expression.kids.getFirst(), scope);
       return new ScalarValue(
-          operand.prefix, unary(expression.op, operand.expression), operand.type, operand.suffix);
+          operand.prefix, unary(expression.op, operand.expression), operand.type);
     }
     if (expression.tag != BIN)
-      return new ScalarValue(List.of(), expression, Ty.INT, List.of());
+      return new ScalarValue(List.of(), expression, Ty.INT);
     ScalarValue left = lowerScalar(expression.kids.get(0), scope);
     ScalarValue right = lowerScalar(expression.kids.get(1), scope);
     List<Node> prefix = new ArrayList<>(left.prefix);
     prefix.addAll(right.prefix);
-    List<Node> suffix = new ArrayList<>(left.suffix);
-    suffix.addAll(right.suffix);
     Ty type = left.type == Ty.FLOAT || right.type == Ty.FLOAT ? Ty.FLOAT : Ty.INT;
     return new ScalarValue(
-        prefix, binary(expression.op, left.expression, right.expression), type, suffix);
+        prefix, binary(expression.op, left.expression, right.expression), type);
   }
 
   private ScalarValue lowerSubscript(Node source, Scope scope) {
@@ -697,25 +606,22 @@ public final class TensorLowering {
       base = base.kids.getFirst();
     }
     TensorSymbol symbol = base.tag == REF ? scope.find(base.s) : null;
-    List<Node> prefix = new ArrayList<>(), suffix = new ArrayList<>();
+    List<Node> prefix = new ArrayList<>();
     if (symbol == null && shapeOf(base, scope) != null) {
       TensorValue value = lowerTensor(base, scope, null);
       prefix.addAll(value.prefix);
-      suffix.addAll(value.suffix);
       symbol = value.storage;
     }
     if (symbol == null) {
       ScalarValue loweredBase = lowerScalar(base, scope);
       prefix.addAll(loweredBase.prefix);
-      suffix.addAll(loweredBase.suffix);
       Node result = loweredBase.expression;
       for (Node index : indices) {
         ScalarValue lowered = lowerScalar(index, scope);
         prefix.addAll(lowered.prefix);
         result = sub(result, lowered.expression);
-        suffix.addAll(lowered.suffix);
       }
-      return new ScalarValue(prefix, result, Ty.INT, suffix);
+      return new ScalarValue(prefix, result, Ty.INT);
     }
     if (indices.size() != symbol.shape.rank())
       fail("partial Tensor indexing is not defined for " + symbol.shape);
@@ -724,7 +630,6 @@ public final class TensorLowering {
       ScalarValue lowered = lowerScalar(index, scope);
       prefix.addAll(lowered.prefix);
       loweredIndices.add(lowered.expression);
-      suffix.addAll(lowered.suffix);
     }
     Node result;
     if (symbol.storage == Storage.DYNAMIC_SCALARS) {
@@ -739,12 +644,12 @@ public final class TensorLowering {
       }
       result = sub(sub(ref(symbol.name), row), loweredIndices.getLast());
     }
-    return new ScalarValue(prefix, result, symbol.shape.element, suffix);
+    return new ScalarValue(prefix, result, symbol.shape.element);
   }
 
   private CallParts lowerCall(
       Node sourceCall, FunctionInfo function, Scope scope, TensorSymbol output) {
-    List<Node> prefix = new ArrayList<>(), suffix = new ArrayList<>(), arguments = new ArrayList<>();
+    List<Node> prefix = new ArrayList<>(), arguments = new ArrayList<>();
     if (output != null) arguments.add(ref(output.name));
     int argumentCount = sourceCall.kids.size() - 1;
     if (function != null && argumentCount != function.parameters.size())
@@ -758,40 +663,20 @@ public final class TensorLowering {
         ScalarValue value = lowerScalar(argument, scope);
         prefix.addAll(value.prefix);
         arguments.add(value.expression);
-        suffix.addAll(value.suffix);
         continue;
       }
       if (actual == null) fail("scalar passed to Tensor parameter");
       validateArgumentShape(expected, actual);
       TensorValue value = argument.tag == REF
-          ? new TensorValue(List.of(), scope.require(argument.s), false, List.of())
+          ? new TensorValue(List.of(), scope.require(argument.s))
           : lowerTensor(argument, scope, actual.dynamic() ? null : actual);
       prefix.addAll(value.prefix);
-      if (expected.rank() == 1 && value.storage.storage != Storage.DYNAMIC_SCALARS) {
-        String adapter = fresh("arg_data"), lane = fresh("arg_lane");
-        Node array = new Node(VAR, adapter, expected.element);
-        array.dimExprs = new ArrayList<>(List.of(Node.intLiteral(actual.last())));
-        prefix.add(declarationStatement(array));
-        prefix.add(loop(lane, Node.intLiteral(actual.last()),
-            assign(sub(ref(adapter), ref(lane)), scalarAt(value.storage, ref(lane)))));
-        arguments.add(ref(adapter));
-        arguments.add(Node.intLiteral(actual.last()));
-        if (!value.temporary && !value.storage.constant) {
-          String copyLane = fresh("arg_copy_lane");
-          suffix.add(loop(copyLane, Node.intLiteral(actual.last()),
-              assign(scalarAt(value.storage, ref(copyLane)),
-                  sub(ref(adapter), ref(copyLane)))));
-        }
-      } else {
-        arguments.add(ref(value.storage.name));
-        arguments.add(extent(value.storage));
-      }
-      suffix.addAll(value.suffix);
+      arguments.add(ref(value.storage.name));
     }
     Node call = new Node(CALL);
     call.kids.add(ref(sourceCall.kids.getFirst().s));
     call.kids.addAll(arguments);
-    return new CallParts(prefix, call, suffix);
+    return new CallParts(prefix, call);
   }
 
   private void validateArgumentShape(TensorShape expected, TensorShape actual) {
@@ -829,7 +714,9 @@ public final class TensorLowering {
     if (expression.op == ASSIGN) return left;
     if (expression.tensorMatmul) {
       if (left == null || right == null || left.rank() != 2 || right.rank() != 2
-          || left.element != right.element || left.dimensions[1] != right.dimensions[0]) {
+          || left.element != right.element
+          || right.dimensions[0] != TensorShape.DYNAMIC
+              && left.dimensions[1] != right.dimensions[0]) {
         fail("@ requires same-type A[M][K] and B[K][N]");
       }
       return new TensorShape(left.element, left.dimensions[0], right.dimensions[1]);
@@ -840,9 +727,10 @@ public final class TensorLowering {
       return null;
     }
     if (left == null && right == null) return null;
-    if (left != null && right != null && !left.compatibleOuterDimensions(right))
-      fail("Tensor outer dimensions must match");
-    TensorShape basis = left != null ? left : right;
+    if (left != null && right != null && !left.compatibleDimensions(right))
+      fail("Tensor dimensions must match");
+    TensorShape basis = left != null && !left.dynamic() ? left
+        : right != null && !right.dynamic() ? right : left != null ? left : right;
     Ty element = basis.element;
     if (left != null && right != null
         && (left.element == Ty.FLOAT || right.element == Ty.FLOAT)) {
@@ -852,12 +740,7 @@ public final class TensorLowering {
           : right == null ? expression.kids.get(1) : null;
       if (scalar != null && scalarType(scalar, scope) == Ty.FLOAT) element = Ty.FLOAT;
     }
-    int[] dimensions = basis.dimensions.clone();
-    if (left != null && right != null
-        && left.last() != TensorShape.DYNAMIC && right.last() != TensorShape.DYNAMIC) {
-      dimensions[dimensions.length - 1] = Math.max(left.last(), right.last());
-    }
-    TensorShape result = new TensorShape(element, dimensions);
+    TensorShape result = new TensorShape(element, basis.dimensions);
     expression.tensorShape = result;
     return result;
   }
@@ -883,16 +766,14 @@ public final class TensorLowering {
   }
 
   private List<Node> copy(TensorSymbol target, TensorSymbol source) {
-    if (target.shape.rank() != source.shape.rank()
-        || !target.shape.compatibleOuterDimensions(source.shape)) {
+    if (target.shape.dynamic())
+      fail("whole assignment to Tensor parameter requires an explicit fixed-shape destination");
+    if (!target.shape.compatibleDimensions(source.shape)) {
       fail("incompatible Tensor assignment shapes " + source.shape + " and " + target.shape);
     }
-    if (target.shape.rank() == 1
-        && (target.storage == Storage.DYNAMIC_SCALARS
-            || source.storage == Storage.DYNAMIC_SCALARS)) {
+    if (target.shape.rank() == 1 && source.storage == Storage.DYNAMIC_SCALARS) {
       String index = fresh("copy_lane");
-      Node count = target.storage == Storage.DYNAMIC_SCALARS ? extent(target) : extent(source);
-      return List.of(loop(index, count,
+      return List.of(loop(index, Node.intLiteral(target.shape.last()),
           assign(scalarAt(target, ref(index)), scalarAt(source, ref(index)))));
     }
     String index = fresh("copy_row");
@@ -949,13 +830,12 @@ public final class TensorLowering {
   }
 
   private TensorSymbol fixedSymbol(String name, TensorShape shape, boolean constant) {
-    return new TensorSymbol(name, shape, constant, Storage.VECTOR_ROWS, null);
+    return new TensorSymbol(name, shape, constant, Storage.VECTOR_ROWS);
   }
 
   private TensorSymbol parameterSymbol(String name, TensorShape shape) {
     return new TensorSymbol(name, shape, false,
-        shape.rank() == 1 ? Storage.DYNAMIC_SCALARS : Storage.VECTOR_ROWS,
-        hidden(name, "dim0"));
+        shape.rank() == 1 ? Storage.DYNAMIC_SCALARS : Storage.VECTOR_ROWS);
   }
 
   private TensorSymbol temporary(TensorShape shape) {
@@ -989,17 +869,9 @@ public final class TensorLowering {
   }
 
   private Node rowCount(TensorSymbol symbol) {
-    if (!symbol.shape.dynamic()) return Node.intLiteral(symbol.shape.rows());
-    Node count = ref(symbol.extentName);
-    int factor = 1;
-    for (int i = 1; i + 1 < symbol.shape.rank(); i++)
-      factor = Math.multiplyExact(factor, symbol.shape.dimensions[i]);
-    return factor == 1 ? count : binary(MUL, count, Node.intLiteral(factor));
-  }
-
-  private Node extent(TensorSymbol symbol) {
-    return symbol.shape.dynamic()
-        ? ref(symbol.extentName) : Node.intLiteral(symbol.shape.dimensions[0]);
+    if (symbol.shape.dynamic())
+      fail("dynamic Tensor row count requires a fixed-shape destination");
+    return Node.intLiteral(symbol.shape.rows());
   }
 
   private Node loop(String index, Node bound, Node... statements) {

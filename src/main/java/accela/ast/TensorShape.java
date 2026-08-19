@@ -12,11 +12,11 @@ public final class TensorShape {
   public TensorShape(Ty element, int... dimensions) {
     if (element != Ty.INT && element != Ty.FLOAT)
       throw new IllegalArgumentException("Tensor element type must be int or float");
-    if (dimensions.length == 0) throw new IllegalArgumentException("Tensor rank must be positive");
-    for (int dimension : dimensions) {
-      if (dimension == 0 || dimension < DYNAMIC)
-        throw new IllegalArgumentException("Tensor dimensions must be positive or dynamic");
-    }
+    if (dimensions.length < 1 || dimensions.length > 2)
+      throw new IllegalArgumentException("Tensor rank must be one or two");
+    if (dimensions[0] == 0 || dimensions[0] < DYNAMIC
+        || dimensions.length == 2 && dimensions[1] <= 0)
+      throw new IllegalArgumentException("Tensor dimensions must be positive except parameter dim0");
     this.element = element;
     this.dimensions = dimensions.clone();
   }
@@ -47,10 +47,6 @@ public final class TensorShape {
     return Math.multiplyExact(rows(), last());
   }
 
-  public TensorShape withElement(Ty type) {
-    return type == element ? this : new TensorShape(type, dimensions);
-  }
-
   public boolean sameTrailingDimensions(TensorShape other) {
     if (other == null || element != other.element || rank() != other.rank()) return false;
     for (int i = 1; i < dimensions.length; i++) {
@@ -59,9 +55,9 @@ public final class TensorShape {
     return true;
   }
 
-  public boolean compatibleOuterDimensions(TensorShape other) {
+  public boolean compatibleDimensions(TensorShape other) {
     if (other == null || rank() != other.rank()) return false;
-    for (int i = 0; i + 1 < dimensions.length; i++) {
+    for (int i = 0; i < dimensions.length; i++) {
       int left = dimensions[i], right = other.dimensions[i];
       if (left != DYNAMIC && right != DYNAMIC && left != right) return false;
     }

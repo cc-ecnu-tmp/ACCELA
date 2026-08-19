@@ -13,7 +13,6 @@ import accela.pass.ir.ModuleAnalysisManager;
 import accela.pass.ir.ModulePassManager;
 import accela.pass.ir.instrument.PassInstrumentation;
 import accela.pass.ir.verify.IRVerifier;
-import accela.preprocess.TensorLowering;
 
 import java.io.PrintStream;
 import java.nio.file.Files;
@@ -24,10 +23,6 @@ public class Compiler {
     CompileArgument compileArgument = parseArguments(args);
     String source = new String(Files.readAllBytes(Paths.get(compileArgument.inputFilePath())));
     Node unit = parseSyntax(source, compileArgument.inputFilePath());
-    if (TensorLowering.isRequired(unit)) {
-      TensorLowering.lower(unit, compileArgument.inputFilePath());
-    }
-
     new Sema().analyze(unit);
 
     if (compileArgument.outputFilePath() != null) {

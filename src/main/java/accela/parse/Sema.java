@@ -6,6 +6,7 @@ import accela.ast.Node;
 import accela.ast.Node.Op;
 import accela.ast.Node.Tag;
 import accela.ast.Ty;
+import accela.preprocess.TensorLowering;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -56,6 +57,7 @@ public class Sema {
 
   /** Analyzes the whole translation unit in source order. */
   public void analyze(Node unit) {
+    if (TensorLowering.isRequired(unit)) TensorLowering.lower(unit, "<frontend>");
     for (Node child : unit.kids) {
       if (child.tag == FUNC) analyzeFuncDef(child);
       else if (child.tag == VAR) analyzeVarDecl(child);
